@@ -71,18 +71,49 @@ class HeatpumpOptimizerSensor(SensorEntity):
 
         prices: list[float] = []
         price_attr = price_state.attributes
-        if isinstance(price_attr.get("next_hours"), list):
-            prices = price_attr["next_hours"][: self.horizon]
+
+        if isinstance(price_attr.get("raw_today"), list):
+            today_values = [p.get("value", 0.0) for p in price_attr["raw_today"]]
+            prices.extend(today_values)
+
+        if isinstance(price_attr.get("raw_tomorrow"), list):
+            tomorrow_values = [p.get("value", 0.0) for p in price_attr["raw_tomorrow"]]
+            prices.extend(tomorrow_values)
+
+        if not prices and isinstance(price_attr.get("next_hours"), list):
+            prices = price_attr["next_hours"]
+
         if not prices:
             try:
                 prices = [float(price_state.state)] * self.horizon
             except (ValueError, TypeError):
                 prices = [0.0] * self.horizon
 
+        prices = prices[: self.horizon]
+
         solar: list[float] = [0.0] * self.horizon
         for state in solar_states:
-            if state and isinstance(state.attributes.get("forecast"), list):
-                values = [f.get("pv_estimate", 0.0) for f in state.attributes["forecast"]]
+            if not state:
+                continue
+            attr = state.attributes
+            forecast = (
+                attr.get("forecast")
+                or attr.get("forecasts")
+                or attr.get("detailedForecast")
+            )
+            if isinstance(forecast, list):
+                values = []
+                for entry in forecast:
+                    val = (
+                        entry.get("pv_estimate")
+                        or entry.get("pv_estimate_kw")
+                        or entry.get("energy")
+                    )
+                    try:
+                        values.append(float(val))
+                    except (TypeError, ValueError):
+                        values.append(0.0)
+
                 for idx, val in enumerate(values[: self.horizon]):
                     solar[idx] += val
 
