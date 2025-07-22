@@ -4,11 +4,17 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlow, ConfigEntry
+import voluptuous as vol
 from homeassistant.core import callback
 from homeassistant.helpers.selector import selector
 
 from .const import (
     DOMAIN,
+    CONF_K_FACTOR,
+    CONF_HEAT_LOSS_LABEL,
+    CONF_FLOOR_AREA,
+    HEAT_LOSS_FACTORS,
+    DEFAULT_K_FACTOR,
     CONF_PRICE_SENSOR,
     CONF_SOLAR_SENSOR,
     CONF_OUTDOOR_TEMP_SENSOR,
@@ -48,6 +54,24 @@ class HeatpumpOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="already_configured")
         if user_input is not None:
             return self.async_create_entry(title="Heatpump Optimizer", data=user_input)
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_K_FACTOR, default=DEFAULT_K_FACTOR): vol.Coerce(
+                    float
+                ),
+                vol.Required(CONF_HEAT_LOSS_LABEL, default="A/B"): selector(
+                    {
+                        "select": {
+                            "options": list(HEAT_LOSS_FACTORS.keys()),
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Required(CONF_FLOOR_AREA): vol.Coerce(float),
+            }
+        )
+        return self.async_show_form(step_id="user", data_schema=schema)
 
         price_options = await self._get_price_sensors()
         energy_options = await self._get_sensors({"energy", "power"})
@@ -107,6 +131,7 @@ class HeatpumpOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
 
+
 class HeatpumpOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle options for the heatpump optimizer."""
 
@@ -136,6 +161,30 @@ class HeatpumpOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
+
+        data = {**self.config_entry.data, **self.config_entry.options}
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_K_FACTOR, default=data.get(CONF_K_FACTOR, DEFAULT_K_FACTOR)
+                ): vol.Coerce(float),
+                vol.Required(
+                    CONF_HEAT_LOSS_LABEL, default=data.get(CONF_HEAT_LOSS_LABEL, "A/B")
+                ): selector(
+                    {
+                        "select": {
+                            "options": list(HEAT_LOSS_FACTORS.keys()),
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Required(
+                    CONF_FLOOR_AREA, default=data.get(CONF_FLOOR_AREA, 0.0)
+                ): vol.Coerce(float),
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=schema)
+
 
         price_options = await self._get_price_sensors()
         energy_options = await self._get_sensors({"energy", "power"})
@@ -213,3 +262,4 @@ class HeatpumpOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> config_entries.OptionsFlow:
         return HeatpumpOptimizerOptionsFlowHandler(config_entry)
+

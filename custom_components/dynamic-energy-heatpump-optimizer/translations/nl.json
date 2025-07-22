@@ -4,7 +4,9 @@
       "user": {
         "title": "Dynamic Energy Heatpump Optimizer",
         "data": {
-          "source_type": "Type bron"
+          "k_factor": "Correctiefactor k",
+          "heat_loss_label": "Energielabel",
+          "floor_area": "Oppervlakte (m²)"
         }
       },
       "select_sources": {
@@ -42,7 +44,9 @@
       "user": {
         "title": "Dynamic Energy Heatpump Optimizer",
         "data": {
-          "source_type": "Type bron"
+          "k_factor": "Correctiefactor k",
+          "heat_loss_label": "Energielabel",
+          "floor_area": "Oppervlakte (m²)"
         }
       },
       "select_sources": {

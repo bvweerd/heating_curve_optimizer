@@ -59,3 +59,22 @@ DEFAULT_PRICE_SETTINGS = {
     "vat_percentage": 21.0,
     "production_price_include_vat": True,
 }
+
+# COP polynomial coefficients as extracted from reference PDFs.
+# Formulas are of the form: COP(T) = a + b*T + c*T**2
+COP_OUTDOOR_COEFFS = (-0.00, 0.071, 4.55363)
+COP_SUPPLY_COEFFS = (0.00, -0.152, 8.88286)
+
+# Heat loss coefficients per energy label (kW per m² per °C)
+HEAT_LOSS_FACTORS = {
+    "A/B": 1.5,
+    "C/D": 2.5,
+    "E/F/G": 3.5,
+}
+
+# Additional configuration keys
+CONF_K_FACTOR = "k_factor"
+CONF_HEAT_LOSS_LABEL = "heat_loss_label"
+CONF_FLOOR_AREA = "floor_area"
+
+DEFAULT_K_FACTOR = 1.0
