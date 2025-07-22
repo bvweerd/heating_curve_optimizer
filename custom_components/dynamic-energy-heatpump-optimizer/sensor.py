@@ -7,6 +7,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from typing import Any
 
 from .const import (
     HEAT_LOSS_FACTORS,
@@ -40,9 +41,16 @@ class _DiagnosticSensor(SensorEntity):
         self._attr_device_class = device_class
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_value = 0.0
+        self._attributes: dict[str, Any] = {}
 
-    def update_value(self, value: float) -> None:
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._attributes
+
+    def update_value(self, value: float, attrs: dict[str, Any] | None = None) -> None:
         self._attr_native_value = round(float(value), 3)
+        if attrs is not None:
+            self._attributes = attrs
         self.async_write_ha_state()
 
 
@@ -82,6 +90,7 @@ class HeatpumpOptimizerSensor(SensorEntity):
         self.heat_loss = factor * area / 1000.0
         self.horizon = int(data.get("planning_horizon", 12))
         self._forecast: list[float] = []
+        self._demand: list[float] = []
         # Diagnostic sensors
         self.heat_loss_sensor = _DiagnosticSensor(
             "Heatpump Heat Loss",
@@ -120,6 +129,8 @@ class HeatpumpOptimizerSensor(SensorEntity):
         considering solar production, COP and the house heat loss.
         """
 
+        _LOGGER.debug("Starting optimizer update")
+
         # Gather input values from Home Assistant
         price_state = self.hass.states.get(self.price_entity)
         solar_states = [self.hass.states.get(ent) for ent in self.solar_entities]
@@ -129,6 +140,8 @@ class HeatpumpOptimizerSensor(SensorEntity):
         if not price_state or price_state.state in ("unknown", "unavailable"):
             _LOGGER.debug("Price sensor unavailable")
             return
+
+        _LOGGER.debug("Price attributes: %s", price_state.attributes)
 
         prices: list[float] = []
         price_attr = price_state.attributes
@@ -151,6 +164,7 @@ class HeatpumpOptimizerSensor(SensorEntity):
                 prices = [0.0] * self.horizon
 
         prices = prices[: self.horizon]
+        _LOGGER.debug("Parsed prices for horizon: %s", prices)
 
         solar: list[float] = [0.0] * self.horizon
         for state in solar_states:
@@ -178,6 +192,8 @@ class HeatpumpOptimizerSensor(SensorEntity):
                 for idx, val in enumerate(values[: self.horizon]):
                     solar[idx] += val
 
+        _LOGGER.debug("Combined solar forecast: %s", solar)
+
         try:
             outdoor_temp = float(outdoor_state.state) if outdoor_state else 10.0
         except (ValueError, TypeError):
@@ -194,11 +210,26 @@ class HeatpumpOptimizerSensor(SensorEntity):
         except (ValueError, TypeError):
             room_temp = 20.0
 
+        _LOGGER.debug(
+            "Temps - outdoor: %.2f, supply: %.2f, room: %.2f",
+            outdoor_temp,
+            supply_temp,
+            room_temp,
+        )
+
         # Simple linear COP approximation
         cop = max(1.0, 6.0 - 0.08 * (supply_temp - outdoor_temp))
         demand_kw = max(0.0, self.heat_loss * (room_temp - outdoor_temp))
         total_energy = demand_kw * self.horizon / cop
         net_energy = max(0.0, total_energy - sum(solar[: self.horizon]))
+
+        _LOGGER.debug(
+            "cop=%.2f demand_kw=%.2f total_energy=%.2f net_energy=%.2f",
+            cop,
+            demand_kw,
+            total_energy,
+            net_energy,
+        )
 
         allocation = [0.0] * self.horizon
         remaining = net_energy
@@ -209,6 +240,8 @@ class HeatpumpOptimizerSensor(SensorEntity):
             allocation[idx] = alloc
             remaining -= alloc
 
+        _LOGGER.debug("Allocation per hour: %s", allocation)
+
         costs = [allocation[i] * prices[i] for i in range(self.horizon)]
 
         if net_energy > 0:
@@ -218,7 +251,11 @@ class HeatpumpOptimizerSensor(SensorEntity):
         shift = int(round(avg_idx - self.horizon / 2))
         shift = max(-5, min(5, shift))
 
+        _LOGGER.debug("Costs forecast: %s", costs)
+        _LOGGER.debug("Calculated shift: %s", shift)
+
         self._forecast = costs
+        self._demand = allocation
         self._attr_native_value = float(shift)
-        self.demand_sensor.update_value(demand_kw)
+        self.demand_sensor.update_value(demand_kw, {"demand": self._demand})
         self.net_energy_sensor.update_value(net_energy)
