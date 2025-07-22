@@ -18,3 +18,11 @@ Op basis van bovenstaand materiaal kan je een optimalisatieberekening maken die 
 De output is een sensor met de verschuiving van de stooklijn van de warmtepomp om de kosten van het energieverbruik zo laag mogelijk te houden.
 
 Genereer de nieuwe custom component in de map custom_components/dynamic-energy-heatpump-optimizer. gebruik het voorbeeld uit het referentiemateriaal voor de basis.
+
+## Huidige aanpak
+
+De berekende verschuiving wordt bepaald met een lichtgewicht heuristiek. Een
+volwaardig mixed integer programming model is voor dit doel overbodig. De
+sensor kijkt naar de stroomprijs en verwachte zonneproductie voor de komende
+uren in combinatie met COP- en warmteverliesdata. Vervolgens wordt het meest
+voordelige uur gekozen en wordt de stooklijn dienovereenkomstig verschoven.
