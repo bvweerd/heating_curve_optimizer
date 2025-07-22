@@ -17,6 +17,7 @@ CONF_OUTDOOR_TEMP_SENSOR = "outdoor_temperature_sensor"
 CONF_SUPPLY_TEMP_SENSOR = "supply_temperature_sensor"
 CONF_ROOM_TEMP_SENSOR = "room_temperature_sensor"
 CONF_MAX_HEATPUMP_POWER = "max_heatpump_power"
+CONF_CURRENT_POWER_SENSOR = "current_power_sensor"
 
 # Possible source types
 SOURCE_TYPE_CONSUMPTION = "Electricity consumption"

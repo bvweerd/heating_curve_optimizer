@@ -24,6 +24,7 @@ from .const import (
     CONF_SUPPLY_TEMP_SENSOR,
     CONF_ROOM_TEMP_SENSOR,
     CONF_MAX_HEATPUMP_POWER,
+    CONF_CURRENT_POWER_SENSOR,
 )
 
 
@@ -147,6 +148,15 @@ class HeatpumpOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                         {
                             "select": {
                                 "options": temp_options,
+                                "mode": "dropdown",
+                                "multiple": False,
+                            }
+                        }
+                    ),
+                    vol.Required(CONF_CURRENT_POWER_SENSOR): selector(
+                        {
+                            "select": {
+                                "options": energy_options,
                                 "mode": "dropdown",
                                 "multiple": False,
                             }
@@ -298,6 +308,18 @@ class HeatpumpOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         {
                             "select": {
                                 "options": temp_options,
+                                "mode": "dropdown",
+                                "multiple": False,
+                            }
+                        }
+                    ),
+                    vol.Required(
+                        CONF_CURRENT_POWER_SENSOR,
+                        default=defaults.get(CONF_CURRENT_POWER_SENSOR, ""),
+                    ): selector(
+                        {
+                            "select": {
+                                "options": energy_options,
                                 "mode": "dropdown",
                                 "multiple": False,
                             }
