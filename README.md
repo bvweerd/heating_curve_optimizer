@@ -12,7 +12,8 @@ In de map referentiemateriaal staan formules voor de COP vs buitentemperatuur en
 
 Dan moet er nog een input komen voor het warmteverlies van de woning. dit is op basis van het rappport in het referentiemateriaal. Maak hiervoor ook de juiste inputs voor aan.
 
-Op basis van bovenstaand materiaal kan je een optimalisatieberekening maken die een nieuwe output berekent. Analyseer of dit moet met een MIP model, of dat er een ander algoritme aan te bevelen is.
+Op basis van bovenstaand materiaal kan je een optimalisatieberekening maken die een nieuwe output berekent. Analyseer of dit moet met een MIP model, of dat er een ander algoritme aan te bevelen is. Je maakt dus gebruik van de warmtebuffer van de woning om eerder of later warmte toe te voegen aan de woning. Je hebt hierbij een instelbare planningshorizon van bijvoorbeeld 6...24 uur (instelbaar) en afhankelijk van de informatie die je uit de externe sensoren kunt halen.
+
 
 De output is een sensor met de verschuiving van de stooklijn van de warmtepomp om de kosten van het energieverbruik zo laag mogelijk te houden.
 
