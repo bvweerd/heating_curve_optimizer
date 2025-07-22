@@ -8,10 +8,10 @@
         "title": "Sensor settings",
         "data": {
           "price_sensor": "Electricity price sensor",
-          "solar_sensor": "Solar forecast sensor",
+          "energy_sensors": "Energy sensors",
+          "solar_sensors": "Solar forecast sensors",
           "outdoor_temperature_sensor": "Outdoor temperature sensor",
-          "supply_temperature_sensor": "Supply temperature sensor",
-          "heat_loss_sensor": "Heat loss sensor"
+          "supply_temperature_sensor": "Supply temperature sensor"
         }
       }
     },
@@ -28,10 +28,10 @@
         "title": "Sensor settings",
         "data": {
           "price_sensor": "Electricity price sensor",
-          "solar_sensor": "Solar forecast sensor",
+          "energy_sensors": "Energy sensors",
+          "solar_sensors": "Solar forecast sensors",
           "outdoor_temperature_sensor": "Outdoor temperature sensor",
-          "supply_temperature_sensor": "Supply temperature sensor",
-          "heat_loss_sensor": "Heat loss sensor"
+          "supply_temperature_sensor": "Supply temperature sensor"
         }
       }
     },
