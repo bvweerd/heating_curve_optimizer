@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import (
+    SensorEntity,
+    SensorDeviceClass,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
@@ -20,11 +24,35 @@ import logging
 _LOGGER = logging.getLogger(__name__)
 
 
+class _DiagnosticSensor(SensorEntity):
+    """Internal sensor for exposing diagnostic values."""
+
+    def __init__(
+        self,
+        name: str,
+        unique_id: str,
+        unit: str,
+        device_class: SensorDeviceClass | str | None = None,
+    ) -> None:
+        self._attr_name = name
+        self._attr_unique_id = unique_id
+        self._attr_native_unit_of_measurement = unit
+        self._attr_device_class = device_class
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_value = 0.0
+
+    def update_value(self, value: float) -> None:
+        self._attr_native_value = round(float(value), 3)
+        self.async_write_ha_state()
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities
 ) -> None:
     """Set up the heatpump optimizer sensor."""
-    async_add_entities([HeatpumpOptimizerSensor(hass, entry)])
+    optimizer = HeatpumpOptimizerSensor(hass, entry)
+    entities = [optimizer] + optimizer.diagnostic_sensors
+    async_add_entities(entities)
 
 
 class HeatpumpOptimizerSensor(SensorEntity):
@@ -46,9 +74,7 @@ class HeatpumpOptimizerSensor(SensorEntity):
         self.supply_entity = data.get(
             "supply_temp", "sensor.heatpump_supply_temperature"
         )
-        self.room_entity = data.get(
-            CONF_ROOM_TEMP_SENSOR, "sensor.indoor_temperature"
-        )
+        self.room_entity = data.get(CONF_ROOM_TEMP_SENSOR, "sensor.indoor_temperature")
         self.max_power = float(data.get(CONF_MAX_HEATPUMP_POWER, 5.0))
         label = data.get(CONF_HEAT_LOSS_LABEL, "A/B")
         area = float(data.get(CONF_FLOOR_AREA, 0.0))
@@ -56,6 +82,29 @@ class HeatpumpOptimizerSensor(SensorEntity):
         self.heat_loss = factor * area / 1000.0
         self.horizon = int(data.get("planning_horizon", 12))
         self._forecast: list[float] = []
+        # Diagnostic sensors
+        self.heat_loss_sensor = _DiagnosticSensor(
+            "Heatpump Heat Loss",
+            "heatpump_heat_loss",
+            "kW/°C",
+        )
+        self.demand_sensor = _DiagnosticSensor(
+            "Heatpump Heat Demand",
+            "heatpump_heat_demand",
+            "kW",
+        )
+        self.net_energy_sensor = _DiagnosticSensor(
+            "Heatpump Net Energy",
+            "heatpump_net_energy",
+            "kWh",
+            SensorDeviceClass.ENERGY,
+        )
+        self.diagnostic_sensors = [
+            self.heat_loss_sensor,
+            self.demand_sensor,
+            self.net_energy_sensor,
+        ]
+        self.heat_loss_sensor._attr_native_value = round(self.heat_loss, 3)
 
     @property
     def extra_state_attributes(self) -> dict[str, list[float]]:
@@ -171,3 +220,5 @@ class HeatpumpOptimizerSensor(SensorEntity):
 
         self._forecast = costs
         self._attr_native_value = float(shift)
+        self.demand_sensor.update_value(demand_kw)
+        self.net_energy_sensor.update_value(net_energy)
