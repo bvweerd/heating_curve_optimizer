@@ -335,5 +335,7 @@ class HeatpumpOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry: ConfigEntry) -> config_entries.OptionsFlow:
+    def async_get_options_flow(
+        config_entry: ConfigEntry,
+    ) -> config_entries.OptionsFlow:
         return HeatpumpOptimizerOptionsFlowHandler(config_entry)

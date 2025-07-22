@@ -7,9 +7,12 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceEntryType
+from homeassistant.helpers.entity import DeviceInfo
 from typing import Any
 
 from .const import (
+    DOMAIN,
     HEAT_LOSS_FACTORS,
     CONF_ENERGY_SENSORS,
     CONF_SOLAR_SENSORS,
@@ -41,6 +44,7 @@ class _DiagnosticSensor(SensorEntity):
         unique_id: str,
         unit: str,
         device_class: SensorDeviceClass | str | None = None,
+        device: DeviceInfo | None = None,
     ) -> None:
         self._attr_name = name
         self._attr_unique_id = unique_id
@@ -49,6 +53,8 @@ class _DiagnosticSensor(SensorEntity):
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_value = 0.0
         self._attributes: dict[str, Any] = {}
+        if device is not None:
+            self._attr_device_info = device
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -65,9 +71,19 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities
 ) -> None:
     """Set up the heatpump optimizer sensor."""
-    optimizer = HeatpumpOptimizerSensor(hass, entry)
+    device = DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        name="Dynamic Energy Heatpump Optimizer",
+        entry_type=DeviceEntryType.SERVICE,
+        manufacturer="DynamicEnergy",
+        model="heatpump_optimizer",
+    )
+
+    optimizer = HeatpumpOptimizerSensor(hass, entry, device)
     entities = [optimizer] + optimizer.diagnostic_sensors
     async_add_entities(entities)
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN]["entities"] = {ent.entity_id: ent for ent in entities}
 
 
 class HeatpumpOptimizerSensor(SensorEntity):
@@ -77,9 +93,12 @@ class HeatpumpOptimizerSensor(SensorEntity):
     _attr_unique_id = "heatpump_optimizer"
     _attr_native_value = 0.0
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+    def __init__(
+        self, hass: HomeAssistant, entry: ConfigEntry, device: DeviceInfo
+    ) -> None:
         self.hass = hass
         self._entry = entry
+        self._attr_device_info = device
         data = entry.data
         # Default entities if none are provided in the config entry
         self.price_entity = data.get("price_sensor", "sensor.energy_price")
@@ -104,17 +123,20 @@ class HeatpumpOptimizerSensor(SensorEntity):
             "Heatpump Heat Loss",
             "heatpump_heat_loss",
             "kW/°C",
+            device=device,
         )
         self.demand_sensor = _DiagnosticSensor(
             "Heatpump Heat Demand",
             "heatpump_heat_demand",
             "kW",
+            device=device,
         )
         self.net_energy_sensor = _DiagnosticSensor(
             "Heatpump Net Energy",
             "heatpump_net_energy",
             "kWh",
             SensorDeviceClass.ENERGY,
+            device=device,
         )
         self.diagnostic_sensors = [
             self.heat_loss_sensor,
@@ -224,7 +246,9 @@ class HeatpumpOptimizerSensor(SensorEntity):
                 break
 
         if total_energy > 0:
-            weighted_avg = sum(i * energy_alloc[i] for i in range(len(prices))) / total_energy
+            weighted_avg = (
+                sum(i * energy_alloc[i] for i in range(len(prices))) / total_energy
+            )
         else:
             weighted_avg = 0.0
 
