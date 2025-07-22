@@ -13,8 +13,10 @@ from .const import (
     CONF_K_FACTOR,
     CONF_HEAT_LOSS_LABEL,
     CONF_FLOOR_AREA,
+    CONF_PLANNING_HORIZON,
     HEAT_LOSS_FACTORS,
     DEFAULT_K_FACTOR,
+    DEFAULT_PLANNING_HORIZON,
     CONF_PRICE_SENSOR,
     CONF_ENERGY_SENSORS,
     CONF_SOLAR_SENSORS,
@@ -75,6 +77,10 @@ class HeatpumpOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                     }
                 ),
                 vol.Required(CONF_FLOOR_AREA): vol.Coerce(float),
+                vol.Required(
+                    CONF_PLANNING_HORIZON,
+                    default=DEFAULT_PLANNING_HORIZON,
+                ): vol.Coerce(int),
             }
         )
         return self.async_show_form(step_id="user", data_schema=schema)
@@ -146,7 +152,9 @@ class HeatpumpOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                             }
                         }
                     ),
-                    vol.Required(CONF_MAX_HEATPUMP_POWER, default=5.0): vol.Coerce(float),
+                    vol.Required(CONF_MAX_HEATPUMP_POWER, default=5.0): vol.Coerce(
+                        float
+                    ),
                 }
             ),
         )
@@ -203,6 +211,10 @@ class HeatpumpOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Required(
                     CONF_FLOOR_AREA, default=data.get(CONF_FLOOR_AREA, 0.0)
                 ): vol.Coerce(float),
+                vol.Required(
+                    CONF_PLANNING_HORIZON,
+                    default=data.get(CONF_PLANNING_HORIZON, DEFAULT_PLANNING_HORIZON),
+                ): vol.Coerce(int),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)
@@ -233,7 +245,8 @@ class HeatpumpOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         }
                     ),
                     vol.Required(
-                        CONF_ENERGY_SENSORS, default=defaults.get(CONF_ENERGY_SENSORS, [])
+                        CONF_ENERGY_SENSORS,
+                        default=defaults.get(CONF_ENERGY_SENSORS, []),
                     ): selector(
                         {
                             "select": {
