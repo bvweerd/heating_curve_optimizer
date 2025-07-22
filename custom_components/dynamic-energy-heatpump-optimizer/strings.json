@@ -2,7 +2,10 @@
   "config": {
     "step": {
       "user": {
-        "title": "Dynamic Energy Heatpump Optimizer",
+        "title": "Dynamic Energy Heatpump Optimizer"
+      },
+      "sensors": {
+        "title": "Sensor settings",
         "data": {
           "price_sensor": "Electricity price sensor",
           "solar_sensor": "Solar forecast sensor",
@@ -19,7 +22,10 @@
   "options": {
     "step": {
       "init": {
-        "title": "Dynamic Energy Heatpump Optimizer",
+        "title": "Dynamic Energy Heatpump Optimizer"
+      },
+      "sensors": {
+        "title": "Sensor settings",
         "data": {
           "price_sensor": "Electricity price sensor",
           "solar_sensor": "Solar forecast sensor",
