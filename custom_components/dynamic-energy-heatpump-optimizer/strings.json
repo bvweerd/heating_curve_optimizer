@@ -11,7 +11,9 @@
           "energy_sensors": "Energy sensors",
           "solar_sensors": "Solar forecast sensors",
           "outdoor_temperature_sensor": "Outdoor temperature sensor",
-          "supply_temperature_sensor": "Supply temperature sensor"
+          "supply_temperature_sensor": "Supply temperature sensor",
+          "room_temperature_sensor": "Room temperature sensor",
+          "max_heatpump_power": "Max heatpump power (kW)"
         }
       }
     },
@@ -31,7 +33,9 @@
           "energy_sensors": "Energy sensors",
           "solar_sensors": "Solar forecast sensors",
           "outdoor_temperature_sensor": "Outdoor temperature sensor",
-          "supply_temperature_sensor": "Supply temperature sensor"
+          "supply_temperature_sensor": "Supply temperature sensor",
+          "room_temperature_sensor": "Room temperature sensor",
+          "max_heatpump_power": "Max heatpump power (kW)"
         }
       }
     },

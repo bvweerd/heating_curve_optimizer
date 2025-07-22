@@ -15,6 +15,8 @@ CONF_ENERGY_SENSORS = "energy_sensors"
 CONF_SOLAR_SENSORS = "solar_sensors"
 CONF_OUTDOOR_TEMP_SENSOR = "outdoor_temperature_sensor"
 CONF_SUPPLY_TEMP_SENSOR = "supply_temperature_sensor"
+CONF_ROOM_TEMP_SENSOR = "room_temperature_sensor"
+CONF_MAX_HEATPUMP_POWER = "max_heatpump_power"
 
 # Possible source types
 SOURCE_TYPE_CONSUMPTION = "Electricity consumption"
@@ -76,5 +78,7 @@ HEAT_LOSS_FACTORS = {
 CONF_K_FACTOR = "k_factor"
 CONF_HEAT_LOSS_LABEL = "heat_loss_label"
 CONF_FLOOR_AREA = "floor_area"
+
+DEFAULT_MAX_HEATPUMP_POWER = 5.0
 
 DEFAULT_K_FACTOR = 1.0

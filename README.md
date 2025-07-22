@@ -7,6 +7,11 @@ De instellingen van de sensoren is hetzelfde als bij het referentiemateriaal van
 Er moet aan de instellingen een groep toegevoegd worden met de verwachte opbrengst van de zonnepanelen. Er kunnen net als bij de energiesensoren meerdere zonnepanelen sets worden gekozen. Je kunt kiezen uit de entiteiten van de integratie Forecast.Solar.
 
 Ook moet je een buitentemperatuur sensor kunnen kiezen en een supply temperatuur.
+Daarnaast kun je nu ook een kamertemperatuursensor selecteren en het maximale
+vermogen van de warmtepomp instellen. Het algoritme berekent het warmteverlies
+voor de komende uren op basis van deze temperaturen en verdeelt de
+warmteproductie zodat de kosten minimaal blijven binnen het opgegeven
+vermogenslimiet.
 
 In de map referentiemateriaal staan formules voor de COP vs buitentemperatuur en supply temperatuur. neem deze grafieken op en maak de correctiefactor beschikbaar als instelling
 
