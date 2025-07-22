@@ -112,9 +112,9 @@ class HeatpumpOptimizerSensor(SensorEntity):
         self.power_entity = data.get(CONF_CURRENT_POWER_SENSOR)
         self.max_power = float(data.get(CONF_MAX_HEATPUMP_POWER, 5.0))
         label = data.get(CONF_HEAT_LOSS_LABEL, "A/B")
-        area = float(data.get(CONF_FLOOR_AREA, 0.0))
-        factor = HEAT_LOSS_FACTORS.get(label, 1.5)
-        self.heat_loss = factor * area / 1000.0
+        self.floor_area = float(data.get(CONF_FLOOR_AREA, 0.0))
+        self.loss_factor = HEAT_LOSS_FACTORS.get(label, 1.5)
+        self.heat_loss_per_degree = self.loss_factor * self.floor_area / 1000.0
         self.horizon = int(data.get(CONF_PLANNING_HORIZON, DEFAULT_PLANNING_HORIZON))
         self._forecast: list[float] = []
         self._demand: list[float] = []
@@ -143,7 +143,7 @@ class HeatpumpOptimizerSensor(SensorEntity):
             self.demand_sensor,
             self.net_energy_sensor,
         ]
-        self.heat_loss_sensor._attr_native_value = round(self.heat_loss, 3)
+        self.heat_loss_sensor._attr_native_value = round(self.heat_loss_per_degree, 3)
 
     @property
     def extra_state_attributes(self) -> dict[str, list[float]]:
@@ -212,7 +212,7 @@ class HeatpumpOptimizerSensor(SensorEntity):
             return
 
         delta_t = room_temp - outdoor_temp
-        heat_loss_kw = self.heat_loss * delta_t
+        heat_loss_kw = self.loss_factor * self.floor_area * delta_t / 1000.0
 
         a_o, b_o, c_o = COP_OUTDOOR_COEFFS
         a_s, b_s, c_s = COP_SUPPLY_COEFFS
