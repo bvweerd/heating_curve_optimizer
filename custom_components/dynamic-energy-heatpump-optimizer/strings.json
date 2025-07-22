@@ -8,11 +8,8 @@
         "title": "Sensor settings",
         "data": {
           "price_sensor": "Electricity price sensor",
-          "energy_sensors": "Energy sensors",
-          "solar_sensors": "Solar forecast sensors",
           "outdoor_temperature_sensor": "Outdoor temperature sensor",
           "supply_temperature_sensor": "Supply temperature sensor",
-          "room_temperature_sensor": "Room temperature sensor",
           "max_heatpump_power": "Max heatpump power (kW)"
         }
       }
@@ -30,11 +27,8 @@
         "title": "Sensor settings",
         "data": {
           "price_sensor": "Electricity price sensor",
-          "energy_sensors": "Energy sensors",
-          "solar_sensors": "Solar forecast sensors",
           "outdoor_temperature_sensor": "Outdoor temperature sensor",
           "supply_temperature_sensor": "Supply temperature sensor",
-          "room_temperature_sensor": "Room temperature sensor",
           "max_heatpump_power": "Max heatpump power (kW)"
         }
       }
