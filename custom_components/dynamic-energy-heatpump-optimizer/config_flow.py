@@ -4,7 +4,7 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlow, ConfigEntry
-import voluptuous as vol
+from typing import Any
 from homeassistant.core import callback
 from homeassistant.helpers.selector import selector
 
@@ -27,6 +27,9 @@ class HeatpumpOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for the heatpump optimizer."""
 
     VERSION = 1
+
+    def __init__(self) -> None:
+        self.data: dict[str, Any] = {}
 
     async def _get_sensors(self, device_classes: set[str] | None = None) -> list[str]:
         sensors = []
@@ -53,7 +56,8 @@ class HeatpumpOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
         if self._async_current_entries():
             return self.async_abort(reason="already_configured")
         if user_input is not None:
-            return self.async_create_entry(title="Heatpump Optimizer", data=user_input)
+            self.data.update(user_input)
+            return await self.async_step_sensors()
 
         schema = vol.Schema(
             {
@@ -73,12 +77,17 @@ class HeatpumpOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(step_id="user", data_schema=schema)
 
+    async def async_step_sensors(self, user_input=None):
+        if user_input is not None:
+            data = {**self.data, **user_input}
+            return self.async_create_entry(title="Heatpump Optimizer", data=data)
+
         price_options = await self._get_price_sensors()
         energy_options = await self._get_sensors({"energy", "power"})
         temp_options = await self._get_sensors({"temperature"})
 
         return self.async_show_form(
-            step_id="user",
+            step_id="sensors",
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_PRICE_SENSOR): selector(
@@ -131,12 +140,12 @@ class HeatpumpOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
 
-
 class HeatpumpOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle options for the heatpump optimizer."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         self.config_entry = config_entry
+        self.data: dict[str, Any] = {}
 
     async def _get_sensors(self, device_classes: set[str] | None = None) -> list[str]:
         sensors = []
@@ -160,7 +169,8 @@ class HeatpumpOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input=None):
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            self.data.update(user_input)
+            return await self.async_step_sensors()
 
         data = {**self.config_entry.data, **self.config_entry.options}
         schema = vol.Schema(
@@ -185,15 +195,18 @@ class HeatpumpOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
         )
         return self.async_show_form(step_id="init", data_schema=schema)
 
+    async def async_step_sensors(self, user_input=None):
+        defaults = {**self.config_entry.data, **self.config_entry.options}
+        if user_input is not None:
+            data = {**self.data, **user_input}
+            return self.async_create_entry(title="", data=data)
 
         price_options = await self._get_price_sensors()
         energy_options = await self._get_sensors({"energy", "power"})
         temp_options = await self._get_sensors({"temperature"})
 
-        defaults = {**self.config_entry.data, **self.config_entry.options}
-
         return self.async_show_form(
-            step_id="init",
+            step_id="sensors",
             data_schema=vol.Schema(
                 {
                     vol.Required(
@@ -262,4 +275,3 @@ class HeatpumpOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> config_entries.OptionsFlow:
         return HeatpumpOptimizerOptionsFlowHandler(config_entry)
-
