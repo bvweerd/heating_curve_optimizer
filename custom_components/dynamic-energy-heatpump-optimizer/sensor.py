@@ -49,6 +49,12 @@ class HeatpumpOptimizerSensor(SensorEntity):
         factor = HEAT_LOSS_FACTORS.get(label, 1.5)
         self.heat_loss = factor * area / 1000.0
         self.horizon = int(data.get("planning_horizon", 12))
+        self._forecast: list[float] = []
+
+    @property
+    def extra_state_attributes(self) -> dict[str, list[float]]:
+        """Return additional attributes including the forecast."""
+        return {"forecast": self._forecast}
 
     async def async_update(self) -> None:
         """Calculate the optimal heating curve shift.
@@ -140,4 +146,5 @@ class HeatpumpOptimizerSensor(SensorEntity):
         shift = best_hour - len(costs) // 2
         shift = max(-5, min(5, shift))
 
+        self._forecast = costs
         self._attr_native_value = float(shift)
