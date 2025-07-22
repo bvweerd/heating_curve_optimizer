@@ -149,7 +149,10 @@
       },
       "current_gas_consumption_price": {
         "name": "Huidige gasverbruiksprijs"
-      }
+      },
+      "heatpump_heat_loss": {"name": "Warmteverlies"},
+      "heatpump_heat_demand": {"name": "Warmtevraag"},
+      "heatpump_net_energy": {"name": "Netto energie"}
     }
   },
   "issues": {
