@@ -20,6 +20,8 @@ from .const import (
     CONF_SOLAR_SENSORS,
     CONF_OUTDOOR_TEMP_SENSOR,
     CONF_SUPPLY_TEMP_SENSOR,
+    CONF_ROOM_TEMP_SENSOR,
+    CONF_MAX_HEATPUMP_POWER,
 )
 
 
@@ -135,6 +137,16 @@ class HeatpumpOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                             }
                         }
                     ),
+                    vol.Required(CONF_ROOM_TEMP_SENSOR): selector(
+                        {
+                            "select": {
+                                "options": temp_options,
+                                "mode": "dropdown",
+                                "multiple": False,
+                            }
+                        }
+                    ),
+                    vol.Required(CONF_MAX_HEATPUMP_POWER, default=5.0): vol.Coerce(float),
                 }
             ),
         )
@@ -266,6 +278,22 @@ class HeatpumpOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                             }
                         }
                     ),
+                    vol.Required(
+                        CONF_ROOM_TEMP_SENSOR,
+                        default=defaults.get(CONF_ROOM_TEMP_SENSOR, ""),
+                    ): selector(
+                        {
+                            "select": {
+                                "options": temp_options,
+                                "mode": "dropdown",
+                                "multiple": False,
+                            }
+                        }
+                    ),
+                    vol.Required(
+                        CONF_MAX_HEATPUMP_POWER,
+                        default=defaults.get(CONF_MAX_HEATPUMP_POWER, 5.0),
+                    ): vol.Coerce(float),
                 }
             ),
         )

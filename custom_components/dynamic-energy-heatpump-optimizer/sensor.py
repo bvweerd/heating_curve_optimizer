@@ -10,6 +10,8 @@ from .const import (
     CONF_SOLAR_SENSORS,
     CONF_HEAT_LOSS_LABEL,
     CONF_FLOOR_AREA,
+    CONF_ROOM_TEMP_SENSOR,
+    CONF_MAX_HEATPUMP_POWER,
 )
 
 import logging
@@ -44,6 +46,10 @@ class HeatpumpOptimizerSensor(SensorEntity):
         self.supply_entity = data.get(
             "supply_temp", "sensor.heatpump_supply_temperature"
         )
+        self.room_entity = data.get(
+            CONF_ROOM_TEMP_SENSOR, "sensor.indoor_temperature"
+        )
+        self.max_power = float(data.get(CONF_MAX_HEATPUMP_POWER, 5.0))
         label = data.get(CONF_HEAT_LOSS_LABEL, "A/B")
         area = float(data.get(CONF_FLOOR_AREA, 0.0))
         factor = HEAT_LOSS_FACTORS.get(label, 1.5)
@@ -133,17 +139,34 @@ class HeatpumpOptimizerSensor(SensorEntity):
         except (ValueError, TypeError):
             supply_temp = 35.0
 
+        room_state = self.hass.states.get(self.room_entity)
+        try:
+            room_temp = float(room_state.state) if room_state else 20.0
+        except (ValueError, TypeError):
+            room_temp = 20.0
+
         # Simple linear COP approximation
         cop = max(1.0, 6.0 - 0.08 * (supply_temp - outdoor_temp))
-        demand = max(0.0, self.heat_loss * (20.0 - outdoor_temp))
+        demand_kw = max(0.0, self.heat_loss * (room_temp - outdoor_temp))
+        total_energy = demand_kw * self.horizon / cop
+        net_energy = max(0.0, total_energy - sum(solar[: self.horizon]))
 
-        costs = []
-        for p, s in zip(prices, solar):
-            net = (demand / cop - s) * p
-            costs.append(net)
+        allocation = [0.0] * self.horizon
+        remaining = net_energy
+        for idx in sorted(range(self.horizon), key=prices.__getitem__):
+            if remaining <= 0:
+                break
+            alloc = min(self.max_power, remaining)
+            allocation[idx] = alloc
+            remaining -= alloc
 
-        best_hour = min(range(len(costs)), key=costs.__getitem__)
-        shift = best_hour - len(costs) // 2
+        costs = [allocation[i] * prices[i] for i in range(self.horizon)]
+
+        if net_energy > 0:
+            avg_idx = sum(i * allocation[i] for i in range(self.horizon)) / net_energy
+        else:
+            avg_idx = self.horizon / 2
+        shift = int(round(avg_idx - self.horizon / 2))
         shift = max(-5, min(5, shift))
 
         self._forecast = costs
