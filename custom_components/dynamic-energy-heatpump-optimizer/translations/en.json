@@ -123,7 +123,10 @@
       "total_energy_cost": {"name": "Energy Contract Cost (Total)"},
       "current_consumption_price": {"name": "Current Consumption Price"},
       "current_production_price": {"name": "Current Production Price"},
-      "current_gas_consumption_price": {"name": "Current Gas Consumption Price"}
+      "current_gas_consumption_price": {"name": "Current Gas Consumption Price"},
+      "heatpump_heat_loss": {"name": "Heat Loss"},
+      "heatpump_heat_demand": {"name": "Heat Demand"},
+      "heatpump_net_energy": {"name": "Net Energy"}
     }
     },
     "issues": {

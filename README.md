@@ -31,3 +31,13 @@ volwaardig mixed integer programming model is voor dit doel overbodig. De
 sensor kijkt naar de stroomprijs en verwachte zonneproductie voor de komende
 uren in combinatie met COP- en warmteverliesdata. Vervolgens wordt het meest
 voordelige uur gekozen en wordt de stooklijn dienovereenkomstig verschoven.
+
+### Werking van het algoritme
+
+1. De integratie leest de elektriciteitsprijs voor de komende `planning_horizon` uren.
+2. Voor dezelfde tijdsperiode wordt de verwachte zonneproductie opgehaald.
+3. Het warmteverlies wordt bepaald aan de hand van het gekozen energielabel en het vloeroppervlak.
+4. Met een lineaire benadering van de COP wordt het warmteverlies omgerekend naar het benodigde elektrische vermogen.
+5. De netto energiebehoefte (na aftrek van zonneproductie) wordt verdeeld over de goedkoopste uren, waarbij het maximale vermogen van de warmtepomp wordt gerespecteerd.
+6. Uit de gewogen positie van deze toewijzing volgt de uiteindelijke verschuiving van de stooklijn.
+7. De berekende kosten per uur en overige tussenresultaten zijn beschikbaar als diagnostische sensoren.
