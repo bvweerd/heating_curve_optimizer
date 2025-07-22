@@ -11,10 +11,10 @@ CONF_SOURCE_TYPE = "source_type"
 CONF_SOURCES = "sources"
 CONF_PRICE_SENSOR = "price_sensor"
 CONF_PRICE_SETTINGS = "price_settings"
-CONF_SOLAR_SENSOR = "solar_sensor"
+CONF_ENERGY_SENSORS = "energy_sensors"
+CONF_SOLAR_SENSORS = "solar_sensors"
 CONF_OUTDOOR_TEMP_SENSOR = "outdoor_temperature_sensor"
 CONF_SUPPLY_TEMP_SENSOR = "supply_temperature_sensor"
-CONF_HEAT_LOSS_SENSOR = "heat_loss_sensor"
 
 # Possible source types
 SOURCE_TYPE_CONSUMPTION = "Electricity consumption"

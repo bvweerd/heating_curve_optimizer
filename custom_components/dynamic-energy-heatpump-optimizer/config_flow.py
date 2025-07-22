@@ -16,10 +16,10 @@ from .const import (
     HEAT_LOSS_FACTORS,
     DEFAULT_K_FACTOR,
     CONF_PRICE_SENSOR,
-    CONF_SOLAR_SENSOR,
+    CONF_ENERGY_SENSORS,
+    CONF_SOLAR_SENSORS,
     CONF_OUTDOOR_TEMP_SENSOR,
     CONF_SUPPLY_TEMP_SENSOR,
-    CONF_HEAT_LOSS_SENSOR,
 )
 
 
@@ -99,12 +99,21 @@ class HeatpumpOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                             }
                         }
                     ),
-                    vol.Required(CONF_SOLAR_SENSOR): selector(
+                    vol.Required(CONF_ENERGY_SENSORS): selector(
                         {
                             "select": {
                                 "options": energy_options,
                                 "mode": "dropdown",
-                                "multiple": False,
+                                "multiple": True,
+                            }
+                        }
+                    ),
+                    vol.Required(CONF_SOLAR_SENSORS): selector(
+                        {
+                            "select": {
+                                "options": energy_options,
+                                "mode": "dropdown",
+                                "multiple": True,
                             }
                         }
                     ),
@@ -121,15 +130,6 @@ class HeatpumpOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
                         {
                             "select": {
                                 "options": temp_options,
-                                "mode": "dropdown",
-                                "multiple": False,
-                            }
-                        }
-                    ),
-                    vol.Required(CONF_HEAT_LOSS_SENSOR): selector(
-                        {
-                            "select": {
-                                "options": energy_options,
                                 "mode": "dropdown",
                                 "multiple": False,
                             }
@@ -221,13 +221,24 @@ class HeatpumpOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         }
                     ),
                     vol.Required(
-                        CONF_SOLAR_SENSOR, default=defaults.get(CONF_SOLAR_SENSOR, "")
+                        CONF_ENERGY_SENSORS, default=defaults.get(CONF_ENERGY_SENSORS, [])
                     ): selector(
                         {
                             "select": {
                                 "options": energy_options,
                                 "mode": "dropdown",
-                                "multiple": False,
+                                "multiple": True,
+                            }
+                        }
+                    ),
+                    vol.Required(
+                        CONF_SOLAR_SENSORS, default=defaults.get(CONF_SOLAR_SENSORS, [])
+                    ): selector(
+                        {
+                            "select": {
+                                "options": energy_options,
+                                "mode": "dropdown",
+                                "multiple": True,
                             }
                         }
                     ),
@@ -250,18 +261,6 @@ class HeatpumpOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         {
                             "select": {
                                 "options": temp_options,
-                                "mode": "dropdown",
-                                "multiple": False,
-                            }
-                        }
-                    ),
-                    vol.Required(
-                        CONF_HEAT_LOSS_SENSOR,
-                        default=defaults.get(CONF_HEAT_LOSS_SENSOR, ""),
-                    ): selector(
-                        {
-                            "select": {
-                                "options": energy_options,
                                 "mode": "dropdown",
                                 "multiple": False,
                             }

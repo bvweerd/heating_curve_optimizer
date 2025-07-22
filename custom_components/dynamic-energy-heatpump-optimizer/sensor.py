@@ -4,6 +4,14 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from .const import (
+    HEAT_LOSS_FACTORS,
+    CONF_ENERGY_SENSORS,
+    CONF_SOLAR_SENSORS,
+    CONF_HEAT_LOSS_LABEL,
+    CONF_FLOOR_AREA,
+)
+
 import logging
 
 
@@ -30,12 +38,16 @@ class HeatpumpOptimizerSensor(SensorEntity):
         data = entry.data
         # Default entities if none are provided in the config entry
         self.price_entity = data.get("price_sensor", "sensor.energy_price")
-        self.solar_entity = data.get("solar_sensor", "sensor.solar_forecast_production")
+        self.energy_entities = data.get(CONF_ENERGY_SENSORS, [])
+        self.solar_entities = data.get(CONF_SOLAR_SENSORS, [])
         self.outdoor_entity = data.get("outdoor_temp", "sensor.outdoor_temperature")
         self.supply_entity = data.get(
             "supply_temp", "sensor.heatpump_supply_temperature"
         )
-        self.heat_loss = float(data.get("heat_loss", 0.5))
+        label = data.get(CONF_HEAT_LOSS_LABEL, "A/B")
+        area = float(data.get(CONF_FLOOR_AREA, 0.0))
+        factor = HEAT_LOSS_FACTORS.get(label, 1.5)
+        self.heat_loss = factor * area / 1000.0
         self.horizon = int(data.get("planning_horizon", 12))
 
     async def async_update(self) -> None:
@@ -49,7 +61,7 @@ class HeatpumpOptimizerSensor(SensorEntity):
 
         # Gather input values from Home Assistant
         price_state = self.hass.states.get(self.price_entity)
-        solar_state = self.hass.states.get(self.solar_entity)
+        solar_states = [self.hass.states.get(ent) for ent in self.solar_entities]
         outdoor_state = self.hass.states.get(self.outdoor_entity)
         supply_state = self.hass.states.get(self.supply_entity)
 
@@ -67,14 +79,12 @@ class HeatpumpOptimizerSensor(SensorEntity):
             except (ValueError, TypeError):
                 prices = [0.0] * self.horizon
 
-        solar: list[float] = []
-        if solar_state and isinstance(solar_state.attributes.get("forecast"), list):
-            solar = [
-                f.get("pv_estimate", 0.0) for f in solar_state.attributes["forecast"]
-            ]
-            solar = solar[: self.horizon]
-        if not solar:
-            solar = [0.0] * self.horizon
+        solar: list[float] = [0.0] * self.horizon
+        for state in solar_states:
+            if state and isinstance(state.attributes.get("forecast"), list):
+                values = [f.get("pv_estimate", 0.0) for f in state.attributes["forecast"]]
+                for idx, val in enumerate(values[: self.horizon]):
+                    solar[idx] += val
 
         try:
             outdoor_temp = float(outdoor_state.state) if outdoor_state else 10.0
