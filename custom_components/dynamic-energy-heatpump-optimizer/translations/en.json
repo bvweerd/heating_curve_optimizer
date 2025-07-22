@@ -6,7 +6,8 @@
         "data": {
           "k_factor": "COP correction factor",
           "heat_loss_label": "Energy label",
-          "floor_area": "Floor area (m²)"
+          "floor_area": "Floor area (m²)",
+          "planning_horizon": "Planning horizon (hours)"
         }
       },
       "select_sources": {
@@ -46,7 +47,8 @@
         "data": {
           "k_factor": "COP correction factor",
           "heat_loss_label": "Energy label",
-          "floor_area": "Floor area (m²)"
+          "floor_area": "Floor area (m²)",
+          "planning_horizon": "Planning horizon (hours)"
         }
       },
       "select_sources": {

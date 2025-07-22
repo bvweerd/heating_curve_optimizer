@@ -17,6 +17,8 @@ from .const import (
     CONF_FLOOR_AREA,
     CONF_ROOM_TEMP_SENSOR,
     CONF_MAX_HEATPUMP_POWER,
+    CONF_PLANNING_HORIZON,
+    DEFAULT_PLANNING_HORIZON,
 )
 
 import logging
@@ -88,7 +90,7 @@ class HeatpumpOptimizerSensor(SensorEntity):
         area = float(data.get(CONF_FLOOR_AREA, 0.0))
         factor = HEAT_LOSS_FACTORS.get(label, 1.5)
         self.heat_loss = factor * area / 1000.0
-        self.horizon = int(data.get("planning_horizon", 12))
+        self.horizon = int(data.get(CONF_PLANNING_HORIZON, DEFAULT_PLANNING_HORIZON))
         self._forecast: list[float] = []
         self._demand: list[float] = []
         # Diagnostic sensors
@@ -123,25 +125,19 @@ class HeatpumpOptimizerSensor(SensorEntity):
     async def async_update(self) -> None:
         """Calculate the optimal heating curve shift.
 
-        A full MIP approach would be overkill for this simple use case, so a
-        lightweight heuristic is applied instead. It looks at the next
-        ``planning_horizon`` hours and shifts heating towards the cheapest hour
-        considering solar production, COP and the house heat loss.
+        The house itself acts as a heat buffer. The stooklijn keeps the
+        temperature stable, so the optimizer only needs to determine when to run
+        the heatpump within the ``planning_horizon`` to minimise costs. The
+        sensor therefore returns the number of hours the stooklijn should be
+        advanced or delayed based solely on the electricity price forecast.
         """
 
         _LOGGER.debug("Starting optimizer update")
 
-        # Gather input values from Home Assistant
         price_state = self.hass.states.get(self.price_entity)
-        solar_states = [self.hass.states.get(ent) for ent in self.solar_entities]
-        outdoor_state = self.hass.states.get(self.outdoor_entity)
-        supply_state = self.hass.states.get(self.supply_entity)
-
         if not price_state or price_state.state in ("unknown", "unavailable"):
             _LOGGER.debug("Price sensor unavailable")
             return
-
-        _LOGGER.debug("Price attributes: %s", price_state.attributes)
 
         prices: list[float] = []
         price_attr = price_state.attributes
@@ -166,96 +162,13 @@ class HeatpumpOptimizerSensor(SensorEntity):
         prices = prices[: self.horizon]
         _LOGGER.debug("Parsed prices for horizon: %s", prices)
 
-        solar: list[float] = [0.0] * self.horizon
-        for state in solar_states:
-            if not state:
-                continue
-            attr = state.attributes
-            forecast = (
-                attr.get("forecast")
-                or attr.get("forecasts")
-                or attr.get("detailedForecast")
-            )
-            if isinstance(forecast, list):
-                values = []
-                for entry in forecast:
-                    val = (
-                        entry.get("pv_estimate")
-                        or entry.get("pv_estimate_kw")
-                        or entry.get("energy")
-                    )
-                    try:
-                        values.append(float(val))
-                    except (TypeError, ValueError):
-                        values.append(0.0)
-
-                for idx, val in enumerate(values[: self.horizon]):
-                    solar[idx] += val
-
-        _LOGGER.debug("Combined solar forecast: %s", solar)
-
-        try:
-            outdoor_temp = float(outdoor_state.state) if outdoor_state else 10.0
-        except (ValueError, TypeError):
-            outdoor_temp = 10.0
-
-        try:
-            supply_temp = float(supply_state.state) if supply_state else 35.0
-        except (ValueError, TypeError):
-            supply_temp = 35.0
-
-        room_state = self.hass.states.get(self.room_entity)
-        try:
-            room_temp = float(room_state.state) if room_state else 20.0
-        except (ValueError, TypeError):
-            room_temp = 20.0
-
-        _LOGGER.debug(
-            "Temps - outdoor: %.2f, supply: %.2f, room: %.2f",
-            outdoor_temp,
-            supply_temp,
-            room_temp,
-        )
-
-        # Simple linear COP approximation
-        cop = max(1.0, 6.0 - 0.08 * (supply_temp - outdoor_temp))
-        demand_kw = max(0.0, self.heat_loss * (room_temp - outdoor_temp))
-        total_energy = demand_kw * self.horizon / cop
-        net_energy = max(0.0, total_energy - sum(solar[: self.horizon]))
-
-        _LOGGER.debug(
-            "cop=%.2f demand_kw=%.2f total_energy=%.2f net_energy=%.2f",
-            cop,
-            demand_kw,
-            total_energy,
-            net_energy,
-        )
-
-        allocation = [0.0] * self.horizon
-        remaining = net_energy
-        for idx in sorted(range(self.horizon), key=prices.__getitem__):
-            if remaining <= 0:
-                break
-            alloc = min(self.max_power, remaining)
-            allocation[idx] = alloc
-            remaining -= alloc
-
-        _LOGGER.debug("Allocation per hour: %s", allocation)
-
-        costs = [allocation[i] * prices[i] for i in range(self.horizon)]
-
-        if net_energy > 0:
-            avg_idx = sum(i * allocation[i] for i in range(self.horizon)) / net_energy
-        else:
-            avg_idx = self.horizon / 2
-        shift = int(round(avg_idx - self.horizon / 2))
+        cheapest_idx = prices.index(min(prices))
+        shift = cheapest_idx - self.horizon // 2
         shift = max(-5, min(5, shift))
 
-        _LOGGER.debug("Costs forecast: %s", costs)
         _LOGGER.debug("Calculated shift: %s", shift)
 
-        self._forecast = costs
-        self._demand = allocation
+        self._forecast = prices
         self._attr_native_value = float(shift)
-        self.demand_sensor.update_value(demand_kw, {"demand": self._demand})
-        self.net_energy_sensor.update_value(net_energy)
+        self.demand_sensor.update_value(0.0, {"demand": []})
+        self.net_energy_sensor.update_value(0.0)

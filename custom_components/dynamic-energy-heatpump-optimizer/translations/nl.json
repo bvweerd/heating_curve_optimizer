@@ -6,7 +6,8 @@
         "data": {
           "k_factor": "Correctiefactor k",
           "heat_loss_label": "Energielabel",
-          "floor_area": "Oppervlakte (m²)"
+          "floor_area": "Oppervlakte (m²)",
+          "planning_horizon": "Planningshorizon (uren)"
         }
       },
       "select_sources": {
@@ -46,7 +47,8 @@
         "data": {
           "k_factor": "Correctiefactor k",
           "heat_loss_label": "Energielabel",
-          "floor_area": "Oppervlakte (m²)"
+          "floor_area": "Oppervlakte (m²)",
+          "planning_horizon": "Planningshorizon (uren)"
         }
       },
       "select_sources": {
