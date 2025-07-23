@@ -1,8 +1,0 @@
-{
-  "domain": "dynamic_heat_curve_prediction",
-  "name": "Dynamic Heat Curve Prediction",
-  "version": "1.0",
-  "requirements": ["pandas"],
-  "dependencies": [],
-  "codeowners": []
-}
