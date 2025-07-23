@@ -1,4 +1,4 @@
-# 🔥 Dynamic Heat Curve Prediction
+# 🔥 Heatpump Curve Optimizer
 
 Deze Home Assistant custom integratie past automatisch en voorspellend de stooklijn-offset van je warmtepomp aan op basis van:
 
@@ -19,7 +19,7 @@ Het doel is om de **aanvoertemperatuur slim te verhogen of verlagen**, afhankeli
 - Berekent netto warmtevraag (verlies - zoninstraling)
 - Voert COP-berekening uit (geschat of werkelijk)
 - Optimaliseert de stooklijn-offset op basis van verwachte kosten
-- Publiceert offset in een sensor met toekomstvoorspelling als attributen
+- Publiceert offset in een sensor met toekomstvoorspelling als attributes
 
 ---
 
@@ -78,7 +78,7 @@ dynamic_heat_curve_prediction:
 
 ### `sensor.dynamic_heat_offset`
 - Huidige geadviseerde offset (bijv. +1.5 °C)
-- Attributen:
+- Attributes:
   - `future_offsets`: lijst met voorspelde offsets komende uren
   - `indoor_temperature_forecast`: voorspelde binnentemperatuur
   - (toekomstig) `predicted_savings`: verwachte energiekostenbesparing
@@ -119,7 +119,7 @@ Q_{netto} = Q_{verlies} - Q_{zon}
 COP = 6 - 0.1 \cdot (T_{aanvoer} - T_{buiten})
 \]
 
-2. **Werkelijk** (indien warmtepompvermogen bekend):
+2. **Werkelijk** (als warmtepompvermogen bekend):
 
 \[
 COP = \frac{Q_{netto}}{P_{verbruik}}
