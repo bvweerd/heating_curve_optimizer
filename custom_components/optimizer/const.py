@@ -1,4 +1,4 @@
-"""Constants for the Dynamic Energy Contract Calculator integration."""
+"""Constants for the Heatpump Curve Optimizer integration."""
 
 # Domain of the integration
 DOMAIN = "optimizer"
