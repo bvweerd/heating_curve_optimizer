@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 
 from typing import cast
 
@@ -10,16 +9,8 @@ from homeassistant.components.sensor import (
     SensorStateClass,
     SensorDeviceClass,
 )
-from homeassistant.const import UnitOfEnergy
-from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.event import async_track_state_change_event
 
-from .const import (
-    SOURCE_TYPE_CONSUMPTION,
-    SOURCE_TYPE_PRODUCTION,
-)
-from .repair import async_report_issue, async_clear_issue
 
 import logging
 

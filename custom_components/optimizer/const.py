@@ -10,6 +10,7 @@ PLATFORMS = ["sensor"]
 CONF_SOURCE_TYPE = "source_type"
 CONF_SOURCES = "sources"
 CONF_PRICE_SENSOR = "price_sensor"
+CONF_PRICE_SETTINGS = "price_settings"
 
 # Possible source types
 SOURCE_TYPE_CONSUMPTION = "Electricity consumption"
@@ -22,4 +23,3 @@ SOURCE_TYPES = [
 ]
 
 CONF_CONFIGS = "configurations"
-
