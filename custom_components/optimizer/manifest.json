@@ -1,5 +1,5 @@
 {
-  "domain": "dynamic_energy_contract_calculator",
+  "domain": "optimizer",
   "name": "Heatpump Curve Optimizer",
   "codeowners": ["@bvweerd"],
   "config_flow": true,
