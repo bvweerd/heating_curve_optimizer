@@ -1,37 +1,29 @@
 from __future__ import annotations
 
-from typing import Any, cast
 
 from homeassistant.components.sensor import SensorStateClass
-from homeassistant.const import UnitOfEnergy, UnitOfVolume
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.event import (
-    async_track_state_change_event,
-    async_track_time_change,
-)
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.device_registry import DeviceEntryType
 
 from .const import (
     DOMAIN,
-    DOMAIN_ABBREVIATION,
-    CONF_CONFIGS,
-    CONF_SOURCE_TYPE,
-    CONF_SOURCES,
     CONF_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
     SOURCE_TYPE_CONSUMPTION,
     SOURCE_TYPE_PRODUCTION,
 )
+from .entity import BaseUtilitySensor
 
 import logging
 
 _LOGGER = logging.getLogger(__name__)
 
+UTILITY_ENTITIES: list[BaseUtilitySensor] = []
 PARALLEL_UPDATES = 1
+
 
 class CurrentElectricityPriceSensor(BaseUtilitySensor):
     def __init__(
@@ -101,9 +93,12 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    configs = entry.data.get(CONF_CONFIGS, [])
     price_settings = entry.options.get(
         CONF_PRICE_SETTINGS, entry.data.get(CONF_PRICE_SETTINGS, {})
+    )
+    device_info = DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        name="Dynamic Energy Optimizer",
     )
     entities: list[BaseUtilitySensor] = []
 
@@ -133,6 +128,8 @@ async def async_setup_entry(
                 device=device_info,
             )
         )
+
+        UTILITY_ENTITIES.extend(entities)
 
     async_add_entities(entities, True)
 

@@ -17,6 +17,7 @@ from .const import (
     CONF_SOURCE_TYPE,
     CONF_SOURCES,
     CONF_PRICE_SENSOR,
+    CONF_PRICE_SETTINGS,
     SOURCE_TYPES,
 )
 
