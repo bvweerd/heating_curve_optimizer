@@ -16,8 +16,9 @@ CONF_PRICE_SETTINGS = "price_settings"
 CONF_AREA_M2 = "area_m2"
 CONF_ENERGY_LABEL = "energy_label"
 CONF_OUTDOOR_TEMPERATURE = "outdoor_temperature"
-# One or more Forecast.Solar sensors containing the attribute ``all`` with
-# the next 24 hour production forecast.
+# One or more Solcast sensors. The sensors should expose a ``detailed forecast``
+# attribute with the expected PV production for the coming hours. The raw list
+# from these attributes will be copied to the solar gain sensor attributes.
 CONF_SOLAR_FORECAST = "solar_forecasts"
 CONF_POWER_CONSUMPTION = "power_consumption"
 
