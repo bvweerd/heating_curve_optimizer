@@ -20,8 +20,10 @@ from .const import (
     CONF_PRICE_SETTINGS,
     CONF_AREA_M2,
     CONF_ENERGY_LABEL,
-    CONF_OUTDOOR_TEMPERATURE,
-    CONF_OUTDOOR_FORECAST,
+    CONF_GLASS_EAST_M2,
+    CONF_GLASS_WEST_M2,
+    CONF_GLASS_SOUTH_M2,
+    CONF_GLASS_U_VALUE,
     CONF_SOLAR_FORECAST,
     CONF_POWER_CONSUMPTION,
     ENERGY_LABELS,
@@ -48,8 +50,10 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         self.price_settings: dict[str, Any] = {}
         self.area_m2: float | None = None
         self.energy_label: str | None = None
-        self.outdoor_temperature: str | None = None
-        self.outdoor_forecast: str | None = None
+        self.glass_east_m2: float | None = None
+        self.glass_west_m2: float | None = None
+        self.glass_south_m2: float | None = None
+        self.glass_u_value: float | None = None
         self.solar_forecast: list[str] | None = None
         self.power_consumption: str | None = None
 
@@ -85,8 +89,10 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         CONF_PRICE_SENSOR: self.price_settings.get(CONF_PRICE_SENSOR),
                         CONF_AREA_M2: self.area_m2,
                         CONF_ENERGY_LABEL: self.energy_label,
-                        CONF_OUTDOOR_TEMPERATURE: self.outdoor_temperature,
-                        CONF_OUTDOOR_FORECAST: self.outdoor_forecast,
+                        CONF_GLASS_EAST_M2: self.glass_east_m2,
+                        CONF_GLASS_WEST_M2: self.glass_west_m2,
+                        CONF_GLASS_SOUTH_M2: self.glass_south_m2,
+                        CONF_GLASS_U_VALUE: self.glass_u_value,
                         CONF_SOLAR_FORECAST: self.solar_forecast,
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                     },
@@ -126,15 +132,6 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             ]
         )
 
-    async def _get_temperature_sensors(self) -> list[str]:
-        return sorted(
-            [
-                state.entity_id
-                for state in self.hass.states.async_all("sensor")
-                if state.attributes.get("device_class") == "temperature"
-            ]
-        )
-
     async def _get_power_sensors(self) -> list[str]:
         return sorted(
             [
@@ -144,17 +141,14 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             ]
         )
 
-    async def _get_weather_entities(self) -> list[str]:
-        return sorted(
-            [state.entity_id for state in self.hass.states.async_all("weather")]
-        )
-
     async def async_step_basic_options(self, user_input=None):
         if user_input is not None:
             self.area_m2 = float(user_input[CONF_AREA_M2])
             self.energy_label = user_input[CONF_ENERGY_LABEL]
-            self.outdoor_temperature = user_input[CONF_OUTDOOR_TEMPERATURE]
-            self.outdoor_forecast = user_input.get(CONF_OUTDOOR_FORECAST)
+            self.glass_east_m2 = float(user_input.get(CONF_GLASS_EAST_M2, 0))
+            self.glass_west_m2 = float(user_input.get(CONF_GLASS_WEST_M2, 0))
+            self.glass_south_m2 = float(user_input.get(CONF_GLASS_SOUTH_M2, 0))
+            self.glass_u_value = float(user_input.get(CONF_GLASS_U_VALUE, 1.2))
             sf = user_input[CONF_SOLAR_FORECAST]
             if isinstance(sf, str):
                 sf = [sf]
@@ -162,10 +156,8 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
             return await self.async_step_user()
 
-        temperature_sensors = await self._get_temperature_sensors()
         energy_sensors = await self._get_energy_sensors()
         power_sensors = await self._get_power_sensors()
-        weather_entities = await self._get_weather_entities()
 
         schema = vol.Schema(
             {
@@ -179,24 +171,10 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         }
                     }
                 ),
-                vol.Required(CONF_OUTDOOR_TEMPERATURE): selector(
-                    {
-                        "select": {
-                            "options": temperature_sensors,
-                            "multiple": False,
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
-                vol.Optional(CONF_OUTDOOR_FORECAST): selector(
-                    {
-                        "select": {
-                            "options": weather_entities,
-                            "multiple": False,
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
+                vol.Optional(CONF_GLASS_EAST_M2, default=0.0): float,
+                vol.Optional(CONF_GLASS_WEST_M2, default=0.0): float,
+                vol.Optional(CONF_GLASS_SOUTH_M2, default=0.0): float,
+                vol.Optional(CONF_GLASS_U_VALUE, default=1.2): float,
                 vol.Required(CONF_SOLAR_FORECAST): selector(
                     {
                         "select": {
@@ -224,8 +202,10 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         if user_input is not None:
             self.area_m2 = float(user_input[CONF_AREA_M2])
             self.energy_label = user_input[CONF_ENERGY_LABEL]
-            self.outdoor_temperature = user_input[CONF_OUTDOOR_TEMPERATURE]
-            self.outdoor_forecast = user_input.get(CONF_OUTDOOR_FORECAST)
+            self.glass_east_m2 = float(user_input.get(CONF_GLASS_EAST_M2, 0))
+            self.glass_west_m2 = float(user_input.get(CONF_GLASS_WEST_M2, 0))
+            self.glass_south_m2 = float(user_input.get(CONF_GLASS_SOUTH_M2, 0))
+            self.glass_u_value = float(user_input.get(CONF_GLASS_U_VALUE, 1.2))
             sf = user_input[CONF_SOLAR_FORECAST]
             if isinstance(sf, str):
                 sf = [sf]
@@ -233,10 +213,8 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
             return await self.async_step_user()
 
-        temperature_sensors = await self._get_temperature_sensors()
         energy_sensors = await self._get_energy_sensors()
         power_sensors = await self._get_power_sensors()
-        weather_entities = await self._get_weather_entities()
 
         schema = vol.Schema(
             {
@@ -250,24 +228,10 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         }
                     }
                 ),
-                vol.Required(CONF_OUTDOOR_TEMPERATURE): selector(
-                    {
-                        "select": {
-                            "options": temperature_sensors,
-                            "multiple": False,
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
-                vol.Optional(CONF_OUTDOOR_FORECAST): selector(
-                    {
-                        "select": {
-                            "options": weather_entities,
-                            "multiple": False,
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
+                vol.Optional(CONF_GLASS_EAST_M2, default=0.0): float,
+                vol.Optional(CONF_GLASS_WEST_M2, default=0.0): float,
+                vol.Optional(CONF_GLASS_SOUTH_M2, default=0.0): float,
+                vol.Optional(CONF_GLASS_U_VALUE, default=1.2): float,
                 vol.Required(CONF_SOLAR_FORECAST): selector(
                     {
                         "select": {
@@ -380,8 +344,10 @@ class DynamicEnergyCalculatorOptionsFlowHandler(config_entries.OptionsFlow):
         )
         self.area_m2 = config_entry.data.get(CONF_AREA_M2)
         self.energy_label = config_entry.data.get(CONF_ENERGY_LABEL)
-        self.outdoor_temperature = config_entry.data.get(CONF_OUTDOOR_TEMPERATURE)
-        self.outdoor_forecast = config_entry.data.get(CONF_OUTDOOR_FORECAST)
+        self.glass_east_m2 = config_entry.data.get(CONF_GLASS_EAST_M2)
+        self.glass_west_m2 = config_entry.data.get(CONF_GLASS_WEST_M2)
+        self.glass_south_m2 = config_entry.data.get(CONF_GLASS_SOUTH_M2)
+        self.glass_u_value = config_entry.data.get(CONF_GLASS_U_VALUE, 1.2)
         sf = config_entry.data.get(CONF_SOLAR_FORECAST)
         if isinstance(sf, str):
             self.solar_forecast = [sf]
@@ -407,15 +373,6 @@ class DynamicEnergyCalculatorOptionsFlowHandler(config_entries.OptionsFlow):
             ]
         )
 
-    async def _get_temperature_sensors(self) -> list[str]:
-        return sorted(
-            [
-                state.entity_id
-                for state in self.hass.states.async_all("sensor")
-                if state.attributes.get("device_class") == "temperature"
-            ]
-        )
-
     async def _get_power_sensors(self) -> list[str]:
         return sorted(
             [
@@ -423,11 +380,6 @@ class DynamicEnergyCalculatorOptionsFlowHandler(config_entries.OptionsFlow):
                 for state in self.hass.states.async_all("sensor")
                 if state.attributes.get("device_class") in ("power", "energy")
             ]
-        )
-
-    async def _get_weather_entities(self) -> list[str]:
-        return sorted(
-            [state.entity_id for state in self.hass.states.async_all("weather")]
         )
 
     async def async_step_init(self, user_input=None):
@@ -460,8 +412,10 @@ class DynamicEnergyCalculatorOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_PRICE_SENSOR: self.price_settings.get(CONF_PRICE_SENSOR),
                         CONF_AREA_M2: self.area_m2,
                         CONF_ENERGY_LABEL: self.energy_label,
-                        CONF_OUTDOOR_TEMPERATURE: self.outdoor_temperature,
-                        CONF_OUTDOOR_FORECAST: self.outdoor_forecast,
+                        CONF_GLASS_EAST_M2: self.glass_east_m2,
+                        CONF_GLASS_WEST_M2: self.glass_west_m2,
+                        CONF_GLASS_SOUTH_M2: self.glass_south_m2,
+                        CONF_GLASS_U_VALUE: self.glass_u_value,
                         CONF_SOLAR_FORECAST: self.solar_forecast,
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                     },
