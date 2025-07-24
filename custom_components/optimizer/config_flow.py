@@ -37,6 +37,7 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         self.configs: list[dict] = []
         self.source_type: str | None = None
         self.sources: list[str] | None = None
+        self.price_settings: dict[str, Any] = {}
 
     async def async_step_user(
         self, user_input: dict[str, str] | None = None
@@ -187,6 +188,7 @@ class DynamicEnergyCalculatorOptionsFlowHandler(config_entries.OptionsFlow):
         self.price_settings = copy.deepcopy(
             config_entry.options.get(
                 CONF_PRICE_SETTINGS,
+                {},
             )
         )
         self.source_type: str | None = None
