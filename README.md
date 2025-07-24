@@ -68,7 +68,7 @@ dynamic_heat_curve_prediction:
 | `area_m2`            | YAML                       | Oppervlakte woning in m²                             |
 | `energy_label`       | YAML                       | Wordt omgezet naar U-waarde per m² per Kelvin       |
 | `outdoor_temperature`| sensor                     | Actuele buitentemperatuur                           |
-| `solar_forecast`     | Forecast.Solar             | Totale dagopbrengst → verdeeld over forecast-horizon |
+| `solar_forecast`     | Forecast.Solar (1 of meer) | Totale dagopbrengst → verdeeld over forecast-horizon |
 | `price_forecast`     | Nordpool                   | Prijs per uur over horizon                           |
 | `power_consumption`  | DSMR of vermogenssensor    | Actuele warmtepompverbruik (optioneel)              |
 

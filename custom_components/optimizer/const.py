@@ -16,7 +16,9 @@ CONF_PRICE_SETTINGS = "price_settings"
 CONF_AREA_M2 = "area_m2"
 CONF_ENERGY_LABEL = "energy_label"
 CONF_OUTDOOR_TEMPERATURE = "outdoor_temperature"
-CONF_SOLAR_FORECAST = "solar_forecast"
+# One or more Forecast.Solar sensors containing the attribute ``all`` with
+# the next 24 hour production forecast.
+CONF_SOLAR_FORECAST = "solar_forecasts"
 CONF_POWER_CONSUMPTION = "power_consumption"
 
 # Allowed energy labels

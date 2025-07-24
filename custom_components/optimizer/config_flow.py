@@ -48,7 +48,7 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         self.area_m2: float | None = None
         self.energy_label: str | None = None
         self.outdoor_temperature: str | None = None
-        self.solar_forecast: str | None = None
+        self.solar_forecast: list[str] | None = None
         self.power_consumption: str | None = None
 
     async def async_step_user(
@@ -141,7 +141,10 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             self.area_m2 = float(user_input[CONF_AREA_M2])
             self.energy_label = user_input[CONF_ENERGY_LABEL]
             self.outdoor_temperature = user_input[CONF_OUTDOOR_TEMPERATURE]
-            self.solar_forecast = user_input[CONF_SOLAR_FORECAST]
+            sf = user_input[CONF_SOLAR_FORECAST]
+            if isinstance(sf, str):
+                sf = [sf]
+            self.solar_forecast = sf
             self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
             return await self.async_step_user()
 
@@ -174,7 +177,7 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                     {
                         "select": {
                             "options": energy_sensors,
-                            "multiple": False,
+                            "multiple": True,
                             "mode": "dropdown",
                         }
                     }
@@ -283,7 +286,11 @@ class DynamicEnergyCalculatorOptionsFlowHandler(config_entries.OptionsFlow):
         self.area_m2 = config_entry.data.get(CONF_AREA_M2)
         self.energy_label = config_entry.data.get(CONF_ENERGY_LABEL)
         self.outdoor_temperature = config_entry.data.get(CONF_OUTDOOR_TEMPERATURE)
-        self.solar_forecast = config_entry.data.get(CONF_SOLAR_FORECAST)
+        sf = config_entry.data.get(CONF_SOLAR_FORECAST)
+        if isinstance(sf, str):
+            self.solar_forecast = [sf]
+        else:
+            self.solar_forecast = sf
         self.power_consumption = config_entry.data.get(CONF_POWER_CONSUMPTION)
         self.price_settings = copy.deepcopy(
             config_entry.options.get(
