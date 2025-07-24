@@ -22,6 +22,23 @@ CONF_POWER_CONSUMPTION = "power_consumption"
 # Allowed energy labels
 ENERGY_LABELS = ["A", "B", "C", "D", "E", "F", "G"]
 
+# Mapping energielabel -> U-waarde (W/m²K)
+U_VALUE_MAP = {
+    "A": 0.6,
+    "B": 0.8,
+    "C": 1.0,
+    "D": 1.2,
+    "E": 1.4,
+    "F": 1.6,
+    "G": 1.8,
+}
+
+# Binnentemperatuur in °C voor warmteverliesberekening
+INDOOR_TEMPERATURE = 21.0
+
+# Efficiëntiefactor voor zoninstraling
+SOLAR_EFFICIENCY = 0.15
+
 # Possible source types
 SOURCE_TYPE_CONSUMPTION = "Electricity consumption"
 SOURCE_TYPE_PRODUCTION = "Electricity production"
