@@ -168,7 +168,7 @@ class SolarGainSensor(BaseUtilitySensor):
         hass: HomeAssistant,
         name: str,
         unique_id: str,
-        solar_sensor: str,
+        solar_sensor: list[str],
         area_m2: float,
         icon: str,
         device: DeviceInfo,
@@ -185,27 +185,54 @@ class SolarGainSensor(BaseUtilitySensor):
         )
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self.hass = hass
-        self.solar_sensor = solar_sensor
+        self.solar_sensors = solar_sensor
+        self._extra_attrs: dict[str, list[float]] = {}
         self.area_m2 = area_m2
 
+    @property
+    def extra_state_attributes(self) -> dict[str, list[float]]:
+        return self._extra_attrs
+
     def _compute_value(self) -> None:
-        state = self.hass.states.get(self.solar_sensor)
-        if state is None or state.state in ("unknown", "unavailable"):
+        total_solar = 0.0
+        attr_data: dict[str, list[float]] = {}
+        cumulative: list[float] = []
+
+        for sensor in self.solar_sensors:
+            state = self.hass.states.get(sensor)
+            if state is None or state.state in ("unknown", "unavailable"):
+                _LOGGER.warning("Solar forecast sensor %s is unavailable", sensor)
+                continue
+            try:
+                val = float(state.state)
+            except ValueError:
+                _LOGGER.warning("Solar forecast sensor %s has invalid state", sensor)
+                continue
+            total_solar += val
+
+            forecast = state.attributes.get("all") or []
+            if isinstance(forecast, (list, tuple)):
+                attr_data[sensor] = list(forecast)
+                for i, v in enumerate(forecast):
+                    if len(cumulative) <= i:
+                        cumulative.append(float(v))
+                    else:
+                        cumulative[i] += float(v)
+
+        if not attr_data:
             self._attr_available = False
-            _LOGGER.warning(
-                "Solar forecast sensor %s is unavailable", self.solar_sensor
-            )
             return
-        try:
-            solar = float(state.state)
-        except ValueError:
-            self._attr_available = False
-            _LOGGER.warning(
-                "Solar forecast sensor %s has invalid state", self.solar_sensor
-            )
-            return
+
+        run = 0.0
+        cum_list: list[float] = []
+        for v in cumulative:
+            run += v
+            cum_list.append(run)
+        attr_data["cumulative"] = cum_list
+
+        self._extra_attrs = attr_data
         self._attr_available = True
-        q_solar = solar * self.area_m2 * SOLAR_EFFICIENCY / 1000.0
+        q_solar = total_solar * self.area_m2 * SOLAR_EFFICIENCY / 1000.0
         self._attr_native_value = round(q_solar, 3)
 
     async def async_update(self):
@@ -213,11 +240,12 @@ class SolarGainSensor(BaseUtilitySensor):
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
-        self.async_on_remove(
-            async_track_state_change_event(
-                self.hass, self.solar_sensor, self._handle_change
+        for sensor in self.solar_sensors:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass, sensor, self._handle_change
+                )
             )
-        )
 
     async def _handle_change(self, event):
         self._compute_value()
@@ -231,7 +259,7 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         name: str,
         unique_id: str,
         outdoor_sensor: str,
-        solar_sensor: str,
+        solar_sensor: list[str],
         area_m2: float,
         energy_label: str,
         icon: str,
@@ -250,31 +278,35 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self.hass = hass
         self.outdoor_sensor = outdoor_sensor
-        self.solar_sensor = solar_sensor
+        self.solar_sensors = solar_sensor
         self.area_m2 = area_m2
         self.energy_label = energy_label
 
     def _compute_value(self) -> None:
         outdoor_state = self.hass.states.get(self.outdoor_sensor)
-        solar_state = self.hass.states.get(self.solar_sensor)
-        if (
-            outdoor_state is None
-            or outdoor_state.state in ("unknown", "unavailable")
-            or solar_state is None
-            or solar_state.state in ("unknown", "unavailable")
-        ):
+        if outdoor_state is None or outdoor_state.state in ("unknown", "unavailable"):
             self._attr_available = False
             return
         try:
             t_outdoor = float(outdoor_state.state)
-            solar = float(solar_state.state)
         except ValueError:
             self._attr_available = False
             return
+
+        solar_total = 0.0
+        for sensor in self.solar_sensors:
+            state = self.hass.states.get(sensor)
+            if state is None or state.state in ("unknown", "unavailable"):
+                continue
+            try:
+                solar_total += float(state.state)
+            except ValueError:
+                continue
+
         self._attr_available = True
         u_value = U_VALUE_MAP.get(self.energy_label.upper(), 1.0)
         q_loss = self.area_m2 * u_value * (INDOOR_TEMPERATURE - t_outdoor) / 1000.0
-        q_solar = solar * self.area_m2 * SOLAR_EFFICIENCY / 1000.0
+        q_solar = solar_total * self.area_m2 * SOLAR_EFFICIENCY / 1000.0
         q_net = max(q_loss - q_solar, 0.0)
         self._attr_native_value = round(q_net, 3)
 
@@ -288,11 +320,12 @@ class NetHeatDemandSensor(BaseUtilitySensor):
                 self.hass, self.outdoor_sensor, self._handle_change
             )
         )
-        self.async_on_remove(
-            async_track_state_change_event(
-                self.hass, self.solar_sensor, self._handle_change
+        for sensor in self.solar_sensors:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass, sensor, self._handle_change
+                )
             )
-        )
 
     async def _handle_change(self, event):
         self._compute_value()
@@ -315,6 +348,8 @@ async def async_setup_entry(
     energy_label = entry.data.get(CONF_ENERGY_LABEL)
     outdoor_sensor = entry.data.get(CONF_OUTDOOR_TEMPERATURE)
     solar_sensor = entry.data.get(CONF_SOLAR_FORECAST)
+    if isinstance(solar_sensor, str):
+        solar_sensor = [solar_sensor]
 
     price_sensor = entry.data.get(CONF_PRICE_SENSOR)
     if price_sensor:
