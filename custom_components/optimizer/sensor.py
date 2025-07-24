@@ -189,6 +189,39 @@ class SolarGainSensor(BaseUtilitySensor):
         self._extra_attrs: dict[str, list[float]] = {}
         self.area_m2 = area_m2
 
+    def _extract_forecast(self, state) -> list[float]:
+        """Extract forecast list from a Solcast or Forecast.Solar sensor."""
+        for key in (
+            "detailed forecast",
+            "detailed_forecast",
+            "detailedForecast",
+            "forecast",
+            "all",
+        ):
+            data = state.attributes.get(key)
+            if data:
+                break
+        else:
+            data = []
+
+        values: list[float] = []
+        if isinstance(data, (list, tuple)):
+            for item in data:
+                if isinstance(item, dict):
+                    val = (
+                        item.get("pv_estimate")
+                        or item.get("value")
+                        or item.get("energy")
+                        or item.get("wh")
+                    )
+                else:
+                    val = item
+                try:
+                    values.append(float(val))
+                except (TypeError, ValueError):
+                    continue
+        return values
+
     @property
     def extra_state_attributes(self) -> dict[str, list[float]]:
         return self._extra_attrs
@@ -210,9 +243,9 @@ class SolarGainSensor(BaseUtilitySensor):
                 continue
             total_solar += val
 
-            forecast = state.attributes.get("all") or []
-            if isinstance(forecast, (list, tuple)):
-                attr_data[sensor] = list(forecast)
+            forecast = self._extract_forecast(state)
+            if forecast:
+                attr_data[sensor] = forecast
                 for i, v in enumerate(forecast):
                     if len(cumulative) <= i:
                         cumulative.append(float(v))
@@ -242,9 +275,7 @@ class SolarGainSensor(BaseUtilitySensor):
         await super().async_added_to_hass()
         for sensor in self.solar_sensors:
             self.async_on_remove(
-                async_track_state_change_event(
-                    self.hass, sensor, self._handle_change
-                )
+                async_track_state_change_event(self.hass, sensor, self._handle_change)
             )
 
     async def _handle_change(self, event):
@@ -322,9 +353,7 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         )
         for sensor in self.solar_sensors:
             self.async_on_remove(
-                async_track_state_change_event(
-                    self.hass, sensor, self._handle_change
-                )
+                async_track_state_change_event(self.hass, sensor, self._handle_change)
             )
 
     async def _handle_change(self, event):
