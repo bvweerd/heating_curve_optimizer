@@ -9,7 +9,7 @@
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/bvweerd/dynamic_energy_contract_calculator/issues",
   "quality_scale": "silver",
-  "requirements": [],
+  "requirements": ["aiohttp"],
   "ssdp": [],
   "version": "0.0.1",
   "zeroconf": []

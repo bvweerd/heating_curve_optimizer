@@ -15,9 +15,11 @@ CONF_PRICE_SETTINGS = "price_settings"
 # New configuration keys for the heatpump optimizer
 CONF_AREA_M2 = "area_m2"
 CONF_ENERGY_LABEL = "energy_label"
-CONF_OUTDOOR_TEMPERATURE = "outdoor_temperature"
-# Optional weather entity providing a temperature forecast array
-CONF_OUTDOOR_FORECAST = "outdoor_forecast"
+# Glass related configuration
+CONF_GLASS_EAST_M2 = "glass_east_m2"
+CONF_GLASS_WEST_M2 = "glass_west_m2"
+CONF_GLASS_SOUTH_M2 = "glass_south_m2"
+CONF_GLASS_U_VALUE = "glass_u_value"
 # One or more Solcast sensors. The sensors should expose a ``detailed forecast``
 # attribute with the expected PV production for the coming hours. The raw list
 # from these attributes will be copied to the solar gain sensor attributes.
