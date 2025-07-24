@@ -17,6 +17,7 @@ from .const import (
     CONF_AREA_M2,
     CONF_ENERGY_LABEL,
     CONF_OUTDOOR_TEMPERATURE,
+    CONF_OUTDOOR_FORECAST,
     CONF_SOLAR_FORECAST,
     U_VALUE_MAP,
     INDOOR_TEMPERATURE,
@@ -104,6 +105,7 @@ class HeatLossSensor(BaseUtilitySensor):
         name: str,
         unique_id: str,
         outdoor_sensor: str,
+        forecast_sensor: str | None,
         area_m2: float,
         energy_label: str,
         icon: str,
@@ -122,8 +124,28 @@ class HeatLossSensor(BaseUtilitySensor):
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self.hass = hass
         self.outdoor_sensor = outdoor_sensor
+        self.forecast_sensor = forecast_sensor
+        self._extra_attrs: dict[str, list[float]] = {}
         self.area_m2 = area_m2
         self.energy_label = energy_label
+
+    def _extract_forecast(self, state) -> list[float]:
+        data = state.attributes.get("forecast") or []
+        temps: list[float] = []
+        if isinstance(data, (list, tuple)):
+            for item in data:
+                val = item.get("temperature") if isinstance(item, dict) else item
+                if val is None:
+                    val = item.get("temp") if isinstance(item, dict) else None
+                try:
+                    temps.append(float(val))
+                except (TypeError, ValueError):
+                    continue
+        return temps
+
+    @property
+    def extra_state_attributes(self) -> dict[str, list[float]]:
+        return self._extra_attrs
 
     def _compute_value(self) -> None:
         state = self.hass.states.get(self.outdoor_sensor)
@@ -145,6 +167,18 @@ class HeatLossSensor(BaseUtilitySensor):
         u_value = U_VALUE_MAP.get(self.energy_label.upper(), 1.0)
         q_loss = self.area_m2 * u_value * (INDOOR_TEMPERATURE - t_outdoor) / 1000.0
         self._attr_native_value = round(q_loss, 3)
+
+        if self.forecast_sensor:
+            forecast_state = self.hass.states.get(self.forecast_sensor)
+            forecast_values: list[float] = []
+            if forecast_state:
+                temps = self._extract_forecast(forecast_state)
+                for temp in temps:
+                    qf = self.area_m2 * u_value * (INDOOR_TEMPERATURE - temp) / 1000.0
+                    forecast_values.append(round(qf, 3))
+            self._extra_attrs = {"forecast": forecast_values}
+        else:
+            self._extra_attrs = {}
 
     async def async_update(self):
         self._compute_value()
@@ -376,6 +410,7 @@ async def async_setup_entry(
     area_m2 = entry.data.get(CONF_AREA_M2)
     energy_label = entry.data.get(CONF_ENERGY_LABEL)
     outdoor_sensor = entry.data.get(CONF_OUTDOOR_TEMPERATURE)
+    outdoor_forecast = entry.data.get(CONF_OUTDOOR_FORECAST)
     solar_sensor = entry.data.get(CONF_SOLAR_FORECAST)
     if isinstance(solar_sensor, str):
         solar_sensor = [solar_sensor]
@@ -416,6 +451,7 @@ async def async_setup_entry(
                 name="Hourly Heat Loss",
                 unique_id=f"{DOMAIN}_hourly_heat_loss",
                 outdoor_sensor=outdoor_sensor,
+                forecast_sensor=outdoor_forecast,
                 area_m2=float(area_m2),
                 energy_label=energy_label,
                 icon="mdi:home-thermometer",
