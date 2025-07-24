@@ -83,6 +83,15 @@ dynamic_heat_curve_prediction:
   - `indoor_temperature_forecast`: voorspelde binnentemperatuur
   - (toekomstig) `predicted_savings`: verwachte energiekostenbesparing
 
+### `sensor.hourly_heat_loss`
+- Berekend warmteverlies van de woning in kW
+
+### `sensor.hourly_solar_gain`
+- Verwachte zonnewinst in kW
+
+### `sensor.hourly_net_heat_demand`
+- Netto warmtevraag na aftrek van zonwinst in kW
+
 ---
 
 ## 🧮 Berekening
@@ -161,6 +170,9 @@ Voeg de volgende sensoren toe aan je Lovelace-dashboard:
 - `sensor.outdoor_temperature`
 - `sensor.nordpool_kwh_nl_eur_0_10`
 - `sensor.forecast_solar_energy_production_today`
+- `sensor.hourly_heat_loss`
+- `sensor.hourly_solar_gain`
+- `sensor.hourly_net_heat_demand`
 
 Gebruik een kaarttype zoals **entities**, **sensor graph**, of **custom:apexcharts-card** om toekomstige waarden te tonen.
 

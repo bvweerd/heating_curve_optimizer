@@ -14,6 +14,13 @@ from .const import (
     CONF_PRICE_SETTINGS,
     SOURCE_TYPE_CONSUMPTION,
     SOURCE_TYPE_PRODUCTION,
+    CONF_AREA_M2,
+    CONF_ENERGY_LABEL,
+    CONF_OUTDOOR_TEMPERATURE,
+    CONF_SOLAR_FORECAST,
+    U_VALUE_MAP,
+    INDOOR_TEMPERATURE,
+    SOLAR_EFFICIENCY,
 )
 from .entity import BaseUtilitySensor
 
@@ -90,6 +97,208 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
         self.async_write_ha_state()
 
 
+class HeatLossSensor(BaseUtilitySensor):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        outdoor_sensor: str,
+        area_m2: float,
+        energy_label: str,
+        icon: str,
+        device: DeviceInfo,
+    ):
+        super().__init__(
+            name=None,
+            unique_id=unique_id,
+            unit="kW",
+            device_class=None,
+            icon=icon,
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self.hass = hass
+        self.outdoor_sensor = outdoor_sensor
+        self.area_m2 = area_m2
+        self.energy_label = energy_label
+
+    def _compute_value(self) -> None:
+        state = self.hass.states.get(self.outdoor_sensor)
+        if state is None or state.state in ("unknown", "unavailable"):
+            self._attr_available = False
+            _LOGGER.warning(
+                "Outdoor temperature sensor %s is unavailable", self.outdoor_sensor
+            )
+            return
+        try:
+            t_outdoor = float(state.state)
+        except ValueError:
+            self._attr_available = False
+            _LOGGER.warning(
+                "Outdoor temperature sensor %s has invalid state", self.outdoor_sensor
+            )
+            return
+        self._attr_available = True
+        u_value = U_VALUE_MAP.get(self.energy_label.upper(), 1.0)
+        q_loss = self.area_m2 * u_value * (INDOOR_TEMPERATURE - t_outdoor) / 1000.0
+        self._attr_native_value = round(q_loss, 3)
+
+    async def async_update(self):
+        self._compute_value()
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass, self.outdoor_sensor, self._handle_change
+            )
+        )
+
+    async def _handle_change(self, event):
+        self._compute_value()
+        self.async_write_ha_state()
+
+
+class SolarGainSensor(BaseUtilitySensor):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        solar_sensor: str,
+        area_m2: float,
+        icon: str,
+        device: DeviceInfo,
+    ):
+        super().__init__(
+            name=None,
+            unique_id=unique_id,
+            unit="kW",
+            device_class=None,
+            icon=icon,
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self.hass = hass
+        self.solar_sensor = solar_sensor
+        self.area_m2 = area_m2
+
+    def _compute_value(self) -> None:
+        state = self.hass.states.get(self.solar_sensor)
+        if state is None or state.state in ("unknown", "unavailable"):
+            self._attr_available = False
+            _LOGGER.warning(
+                "Solar forecast sensor %s is unavailable", self.solar_sensor
+            )
+            return
+        try:
+            solar = float(state.state)
+        except ValueError:
+            self._attr_available = False
+            _LOGGER.warning(
+                "Solar forecast sensor %s has invalid state", self.solar_sensor
+            )
+            return
+        self._attr_available = True
+        q_solar = solar * self.area_m2 * SOLAR_EFFICIENCY / 1000.0
+        self._attr_native_value = round(q_solar, 3)
+
+    async def async_update(self):
+        self._compute_value()
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass, self.solar_sensor, self._handle_change
+            )
+        )
+
+    async def _handle_change(self, event):
+        self._compute_value()
+        self.async_write_ha_state()
+
+
+class NetHeatDemandSensor(BaseUtilitySensor):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        outdoor_sensor: str,
+        solar_sensor: str,
+        area_m2: float,
+        energy_label: str,
+        icon: str,
+        device: DeviceInfo,
+    ):
+        super().__init__(
+            name=None,
+            unique_id=unique_id,
+            unit="kW",
+            device_class=None,
+            icon=icon,
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self.hass = hass
+        self.outdoor_sensor = outdoor_sensor
+        self.solar_sensor = solar_sensor
+        self.area_m2 = area_m2
+        self.energy_label = energy_label
+
+    def _compute_value(self) -> None:
+        outdoor_state = self.hass.states.get(self.outdoor_sensor)
+        solar_state = self.hass.states.get(self.solar_sensor)
+        if (
+            outdoor_state is None
+            or outdoor_state.state in ("unknown", "unavailable")
+            or solar_state is None
+            or solar_state.state in ("unknown", "unavailable")
+        ):
+            self._attr_available = False
+            return
+        try:
+            t_outdoor = float(outdoor_state.state)
+            solar = float(solar_state.state)
+        except ValueError:
+            self._attr_available = False
+            return
+        self._attr_available = True
+        u_value = U_VALUE_MAP.get(self.energy_label.upper(), 1.0)
+        q_loss = self.area_m2 * u_value * (INDOOR_TEMPERATURE - t_outdoor) / 1000.0
+        q_solar = solar * self.area_m2 * SOLAR_EFFICIENCY / 1000.0
+        q_net = max(q_loss - q_solar, 0.0)
+        self._attr_native_value = round(q_net, 3)
+
+    async def async_update(self):
+        self._compute_value()
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass, self.outdoor_sensor, self._handle_change
+            )
+        )
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass, self.solar_sensor, self._handle_change
+            )
+        )
+
+    async def _handle_change(self, event):
+        self._compute_value()
+        self.async_write_ha_state()
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -101,6 +310,11 @@ async def async_setup_entry(
         name="Heatpump Curve Optimizer",
     )
     entities: list[BaseUtilitySensor] = []
+
+    area_m2 = entry.data.get(CONF_AREA_M2)
+    energy_label = entry.data.get(CONF_ENERGY_LABEL)
+    outdoor_sensor = entry.data.get(CONF_OUTDOOR_TEMPERATURE)
+    solar_sensor = entry.data.get(CONF_SOLAR_FORECAST)
 
     price_sensor = entry.data.get(CONF_PRICE_SENSOR)
     if price_sensor:
@@ -130,6 +344,51 @@ async def async_setup_entry(
         )
 
         UTILITY_ENTITIES.extend(entities)
+
+    if outdoor_sensor and area_m2 and energy_label:
+        entities.append(
+            HeatLossSensor(
+                hass=hass,
+                name="Hourly Heat Loss",
+                unique_id=f"{DOMAIN}_hourly_heat_loss",
+                outdoor_sensor=outdoor_sensor,
+                area_m2=float(area_m2),
+                energy_label=energy_label,
+                icon="mdi:home-thermometer",
+                device=device_info,
+            )
+        )
+
+    if solar_sensor and area_m2:
+        entities.append(
+            SolarGainSensor(
+                hass=hass,
+                name="Hourly Solar Gain",
+                unique_id=f"{DOMAIN}_hourly_solar_gain",
+                solar_sensor=solar_sensor,
+                area_m2=float(area_m2),
+                icon="mdi:weather-sunny",
+                device=device_info,
+            )
+        )
+
+    if outdoor_sensor and solar_sensor and area_m2 and energy_label:
+        entities.append(
+            NetHeatDemandSensor(
+                hass=hass,
+                name="Hourly Net Heat Demand",
+                unique_id=f"{DOMAIN}_hourly_net_heat_demand",
+                outdoor_sensor=outdoor_sensor,
+                solar_sensor=solar_sensor,
+                area_m2=float(area_m2),
+                energy_label=energy_label,
+                icon="mdi:fire",
+                device=device_info,
+            )
+        )
+
+    if entities:
+        UTILITY_ENTITIES.extend(ent for ent in entities if ent not in UTILITY_ENTITIES)
 
     async_add_entities(entities, True)
 
