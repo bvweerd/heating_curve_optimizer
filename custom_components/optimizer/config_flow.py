@@ -18,11 +18,18 @@ from .const import (
     CONF_SOURCES,
     CONF_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
+    CONF_AREA_M2,
+    CONF_ENERGY_LABEL,
+    CONF_OUTDOOR_TEMPERATURE,
+    CONF_SOLAR_FORECAST,
+    CONF_POWER_CONSUMPTION,
+    ENERGY_LABELS,
     SOURCE_TYPES,
 )
 
 STEP_SELECT_SOURCES = "select_sources"
 STEP_PRICE_SETTINGS = "price_settings"
+STEP_BASIC = "basic"
 
 
 class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
@@ -38,6 +45,11 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         self.source_type: str | None = None
         self.sources: list[str] | None = None
         self.price_settings: dict[str, Any] = {}
+        self.area_m2: float | None = None
+        self.energy_label: str | None = None
+        self.outdoor_temperature: str | None = None
+        self.solar_forecast: str | None = None
+        self.power_consumption: str | None = None
 
     async def async_step_user(
         self, user_input: dict[str, str] | None = None
@@ -45,6 +57,8 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         await self.async_set_unique_id(DOMAIN)
         if self._async_current_entries():
             return self.async_abort(reason="already_configured")
+        if self.area_m2 is None:
+            return await self.async_step_basic()
         if user_input is not None:
             choice = user_input[CONF_SOURCE_TYPE]
             if choice == "finish":
@@ -59,6 +73,11 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                     data={
                         CONF_CONFIGS: self.configs,
                         CONF_PRICE_SENSOR: self.price_settings.get(CONF_PRICE_SENSOR),
+                        CONF_AREA_M2: self.area_m2,
+                        CONF_ENERGY_LABEL: self.energy_label,
+                        CONF_OUTDOOR_TEMPERATURE: self.outdoor_temperature,
+                        CONF_SOLAR_FORECAST: self.solar_forecast,
+                        CONF_POWER_CONSUMPTION: self.power_consumption,
                     },
                 )
             elif choice == "price_settings":
@@ -97,6 +116,82 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                 or state.attributes.get("device_class") == "gas"
             ]
         )
+
+    async def _get_temperature_sensors(self) -> list[str]:
+        return sorted(
+            [
+                state.entity_id
+                for state in self.hass.states.async_all("sensor")
+                if state.attributes.get("device_class") == "temperature"
+            ]
+        )
+
+    async def _get_power_sensors(self) -> list[str]:
+        return sorted(
+            [
+                state.entity_id
+                for state in self.hass.states.async_all("sensor")
+                if state.attributes.get("device_class") in ("power", "energy")
+            ]
+        )
+
+    async def async_step_basic(self, user_input=None) -> ConfigFlowResult:
+        """Collect basic configuration values."""
+        if user_input is not None:
+            self.area_m2 = float(user_input[CONF_AREA_M2])
+            self.energy_label = user_input[CONF_ENERGY_LABEL]
+            self.outdoor_temperature = user_input[CONF_OUTDOOR_TEMPERATURE]
+            self.solar_forecast = user_input[CONF_SOLAR_FORECAST]
+            self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
+            return await self.async_step_user()
+
+        temperature_sensors = await self._get_temperature_sensors()
+        energy_sensors = await self._get_energy_sensors()
+        power_sensors = await self._get_power_sensors()
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_AREA_M2): float,
+                vol.Required(CONF_ENERGY_LABEL): selector(
+                    {
+                        "select": {
+                            "options": ENERGY_LABELS,
+                            "mode": "dropdown",
+                            "custom_value": False,
+                        }
+                    }
+                ),
+                vol.Required(CONF_OUTDOOR_TEMPERATURE): selector(
+                    {
+                        "select": {
+                            "options": temperature_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Required(CONF_SOLAR_FORECAST): selector(
+                    {
+                        "select": {
+                            "options": energy_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Optional(CONF_POWER_CONSUMPTION): selector(
+                    {
+                        "select": {
+                            "options": power_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+            }
+        )
+
+        return self.async_show_form(step_id=STEP_BASIC, data_schema=schema)
 
     async def async_step_select_sources(self, user_input=None) -> ConfigFlowResult:
         if user_input is not None:
@@ -185,6 +280,11 @@ class DynamicEnergyCalculatorOptionsFlowHandler(config_entries.OptionsFlow):
                 CONF_CONFIGS, config_entry.data.get(CONF_CONFIGS, [])
             )
         )
+        self.area_m2 = config_entry.data.get(CONF_AREA_M2)
+        self.energy_label = config_entry.data.get(CONF_ENERGY_LABEL)
+        self.outdoor_temperature = config_entry.data.get(CONF_OUTDOOR_TEMPERATURE)
+        self.solar_forecast = config_entry.data.get(CONF_SOLAR_FORECAST)
+        self.power_consumption = config_entry.data.get(CONF_POWER_CONSUMPTION)
         self.price_settings = copy.deepcopy(
             config_entry.options.get(
                 CONF_PRICE_SETTINGS,
@@ -212,6 +312,11 @@ class DynamicEnergyCalculatorOptionsFlowHandler(config_entries.OptionsFlow):
                     data={
                         CONF_CONFIGS: self.configs,
                         CONF_PRICE_SENSOR: self.price_settings.get(CONF_PRICE_SENSOR),
+                        CONF_AREA_M2: self.area_m2,
+                        CONF_ENERGY_LABEL: self.energy_label,
+                        CONF_OUTDOOR_TEMPERATURE: self.outdoor_temperature,
+                        CONF_SOLAR_FORECAST: self.solar_forecast,
+                        CONF_POWER_CONSUMPTION: self.power_consumption,
                     },
                 )
             elif choice == "price_settings":
