@@ -16,6 +16,8 @@ CONF_PRICE_SETTINGS = "price_settings"
 CONF_AREA_M2 = "area_m2"
 CONF_ENERGY_LABEL = "energy_label"
 CONF_OUTDOOR_TEMPERATURE = "outdoor_temperature"
+# Optional weather entity providing a temperature forecast array
+CONF_OUTDOOR_FORECAST = "outdoor_forecast"
 # One or more Solcast sensors. The sensors should expose a ``detailed forecast``
 # attribute with the expected PV production for the coming hours. The raw list
 # from these attributes will be copied to the solar gain sensor attributes.

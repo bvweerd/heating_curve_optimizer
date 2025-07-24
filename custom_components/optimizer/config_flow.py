@@ -21,6 +21,7 @@ from .const import (
     CONF_AREA_M2,
     CONF_ENERGY_LABEL,
     CONF_OUTDOOR_TEMPERATURE,
+    CONF_OUTDOOR_FORECAST,
     CONF_SOLAR_FORECAST,
     CONF_POWER_CONSUMPTION,
     ENERGY_LABELS,
@@ -48,6 +49,7 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         self.area_m2: float | None = None
         self.energy_label: str | None = None
         self.outdoor_temperature: str | None = None
+        self.outdoor_forecast: str | None = None
         self.solar_forecast: list[str] | None = None
         self.power_consumption: str | None = None
 
@@ -60,7 +62,7 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         if user_input is not None:
             choice = user_input[CONF_SOURCE_TYPE]
             if choice == STEP_BASIC:
-                return await self.async_step_basic()
+                return await self.async_step_basic_options()
             if choice == STEP_PRICE_SETTINGS:
                 return await self.async_step_price_settings()
             if choice == "finish":
@@ -84,6 +86,7 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         CONF_AREA_M2: self.area_m2,
                         CONF_ENERGY_LABEL: self.energy_label,
                         CONF_OUTDOOR_TEMPERATURE: self.outdoor_temperature,
+                        CONF_OUTDOOR_FORECAST: self.outdoor_forecast,
                         CONF_SOLAR_FORECAST: self.solar_forecast,
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                     },
@@ -141,12 +144,17 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             ]
         )
 
-    async def async_step_basic(self, user_input=None) -> ConfigFlowResult:
-        """Collect basic configuration values."""
+    async def _get_weather_entities(self) -> list[str]:
+        return sorted(
+            [state.entity_id for state in self.hass.states.async_all("weather")]
+        )
+
+    async def async_step_basic_options(self, user_input=None):
         if user_input is not None:
             self.area_m2 = float(user_input[CONF_AREA_M2])
             self.energy_label = user_input[CONF_ENERGY_LABEL]
             self.outdoor_temperature = user_input[CONF_OUTDOOR_TEMPERATURE]
+            self.outdoor_forecast = user_input.get(CONF_OUTDOOR_FORECAST)
             sf = user_input[CONF_SOLAR_FORECAST]
             if isinstance(sf, str):
                 sf = [sf]
@@ -157,6 +165,7 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         temperature_sensors = await self._get_temperature_sensors()
         energy_sensors = await self._get_energy_sensors()
         power_sensors = await self._get_power_sensors()
+        weather_entities = await self._get_weather_entities()
 
         schema = vol.Schema(
             {
@@ -174,6 +183,86 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                     {
                         "select": {
                             "options": temperature_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Optional(CONF_OUTDOOR_FORECAST): selector(
+                    {
+                        "select": {
+                            "options": weather_entities,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Required(CONF_SOLAR_FORECAST): selector(
+                    {
+                        "select": {
+                            "options": energy_sensors,
+                            "multiple": True,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Optional(CONF_POWER_CONSUMPTION): selector(
+                    {
+                        "select": {
+                            "options": power_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+            }
+        )
+
+        return self.async_show_form(step_id=STEP_BASIC, data_schema=schema)
+
+    async def async_step_basic(self, user_input=None):
+        if user_input is not None:
+            self.area_m2 = float(user_input[CONF_AREA_M2])
+            self.energy_label = user_input[CONF_ENERGY_LABEL]
+            self.outdoor_temperature = user_input[CONF_OUTDOOR_TEMPERATURE]
+            self.outdoor_forecast = user_input.get(CONF_OUTDOOR_FORECAST)
+            sf = user_input[CONF_SOLAR_FORECAST]
+            if isinstance(sf, str):
+                sf = [sf]
+            self.solar_forecast = sf
+            self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
+            return await self.async_step_user()
+
+        temperature_sensors = await self._get_temperature_sensors()
+        energy_sensors = await self._get_energy_sensors()
+        power_sensors = await self._get_power_sensors()
+        weather_entities = await self._get_weather_entities()
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_AREA_M2): float,
+                vol.Required(CONF_ENERGY_LABEL): selector(
+                    {
+                        "select": {
+                            "options": ENERGY_LABELS,
+                            "mode": "dropdown",
+                            "custom_value": False,
+                        }
+                    }
+                ),
+                vol.Required(CONF_OUTDOOR_TEMPERATURE): selector(
+                    {
+                        "select": {
+                            "options": temperature_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Optional(CONF_OUTDOOR_FORECAST): selector(
+                    {
+                        "select": {
+                            "options": weather_entities,
                             "multiple": False,
                             "mode": "dropdown",
                         }
@@ -292,6 +381,7 @@ class DynamicEnergyCalculatorOptionsFlowHandler(config_entries.OptionsFlow):
         self.area_m2 = config_entry.data.get(CONF_AREA_M2)
         self.energy_label = config_entry.data.get(CONF_ENERGY_LABEL)
         self.outdoor_temperature = config_entry.data.get(CONF_OUTDOOR_TEMPERATURE)
+        self.outdoor_forecast = config_entry.data.get(CONF_OUTDOOR_FORECAST)
         sf = config_entry.data.get(CONF_SOLAR_FORECAST)
         if isinstance(sf, str):
             self.solar_forecast = [sf]
@@ -306,6 +396,39 @@ class DynamicEnergyCalculatorOptionsFlowHandler(config_entries.OptionsFlow):
         )
         self.source_type: str | None = None
         self.sources: list[str] | None = None
+
+    async def _get_energy_sensors(self) -> list[str]:
+        return sorted(
+            [
+                state.entity_id
+                for state in self.hass.states.async_all("sensor")
+                if state.attributes.get("device_class") == "energy"
+                or state.attributes.get("device_class") == "gas"
+            ]
+        )
+
+    async def _get_temperature_sensors(self) -> list[str]:
+        return sorted(
+            [
+                state.entity_id
+                for state in self.hass.states.async_all("sensor")
+                if state.attributes.get("device_class") == "temperature"
+            ]
+        )
+
+    async def _get_power_sensors(self) -> list[str]:
+        return sorted(
+            [
+                state.entity_id
+                for state in self.hass.states.async_all("sensor")
+                if state.attributes.get("device_class") in ("power", "energy")
+            ]
+        )
+
+    async def _get_weather_entities(self) -> list[str]:
+        return sorted(
+            [state.entity_id for state in self.hass.states.async_all("weather")]
+        )
 
     async def async_step_init(self, user_input=None):
         return await self.async_step_user()
@@ -338,6 +461,7 @@ class DynamicEnergyCalculatorOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_AREA_M2: self.area_m2,
                         CONF_ENERGY_LABEL: self.energy_label,
                         CONF_OUTDOOR_TEMPERATURE: self.outdoor_temperature,
+                        CONF_OUTDOOR_FORECAST: self.outdoor_forecast,
                         CONF_SOLAR_FORECAST: self.solar_forecast,
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                     },
