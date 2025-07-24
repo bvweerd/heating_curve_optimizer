@@ -57,11 +57,19 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         await self.async_set_unique_id(DOMAIN)
         if self._async_current_entries():
             return self.async_abort(reason="already_configured")
-        if self.area_m2 is None:
-            return await self.async_step_basic()
         if user_input is not None:
             choice = user_input[CONF_SOURCE_TYPE]
+            if choice == STEP_BASIC:
+                return await self.async_step_basic()
+            if choice == STEP_PRICE_SETTINGS:
+                return await self.async_step_price_settings()
             if choice == "finish":
+                if self.area_m2 is None:
+                    return self.async_show_form(
+                        step_id="user",
+                        data_schema=self._schema_user(),
+                        errors={"base": "missing_basic"},
+                    )
                 if not self.configs:
                     return self.async_show_form(
                         step_id="user",
@@ -80,17 +88,15 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                     },
                 )
-            elif choice == "price_settings":
-                return await self.async_step_price_settings()
-
             self.source_type = choice
             return await self.async_step_select_sources()
 
         return self.async_show_form(step_id="user", data_schema=self._schema_user())
 
     def _schema_user(self) -> vol.Schema:
-        options = [{"value": t, "label": t.title()} for t in SOURCE_TYPES]
-        options.append({"value": "price_settings", "label": "Price Settings"})
+        options = [{"value": STEP_BASIC, "label": "Basic Settings"}]
+        options.extend({"value": t, "label": t.title()} for t in SOURCE_TYPES)
+        options.append({"value": STEP_PRICE_SETTINGS, "label": "Price Settings"})
         options.append({"value": "finish", "label": "Finish"})
 
         return vol.Schema(
@@ -307,7 +313,17 @@ class DynamicEnergyCalculatorOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_user(self, user_input=None):
         if user_input and CONF_SOURCE_TYPE in user_input:
             choice = user_input[CONF_SOURCE_TYPE]
+            if choice == STEP_BASIC:
+                return await self.async_step_basic()
+            if choice == STEP_PRICE_SETTINGS:
+                return await self.async_step_price_settings()
             if choice == "finish":
+                if self.area_m2 is None:
+                    return self.async_show_form(
+                        step_id="user",
+                        data_schema=self._schema_user(),
+                        errors={"base": "missing_basic"},
+                    )
                 if not self.configs:
                     return self.async_show_form(
                         step_id="user",
@@ -326,16 +342,15 @@ class DynamicEnergyCalculatorOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                     },
                 )
-            elif choice == "price_settings":
-                return await self.async_step_price_settings()
             self.source_type = choice
             return await self.async_step_select_sources()
 
         return self.async_show_form(step_id="user", data_schema=self._schema_user())
 
     def _schema_user(self) -> vol.Schema:
-        options = [{"value": t, "label": t.title()} for t in SOURCE_TYPES]
-        options.append({"value": "price_settings", "label": "Price Settings"})
+        options = [{"value": STEP_BASIC, "label": "Basic Settings"}]
+        options.extend({"value": t, "label": t.title()} for t in SOURCE_TYPES)
+        options.append({"value": STEP_PRICE_SETTINGS, "label": "Price Settings"})
         options.append({"value": "finish", "label": "Finish"})
 
         return vol.Schema(
