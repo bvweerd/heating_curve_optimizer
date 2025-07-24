@@ -46,7 +46,7 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
     ):
         unit = "€/kWh"
         super().__init__(
-            name=None,
+            name=name,
             unique_id=unique_id,
             unit=unit,
             device_class=None,
@@ -110,7 +110,7 @@ class HeatLossSensor(BaseUtilitySensor):
         device: DeviceInfo,
     ):
         super().__init__(
-            name=None,
+            name=name,
             unique_id=unique_id,
             unit="kW",
             device_class=None,
@@ -174,7 +174,7 @@ class SolarGainSensor(BaseUtilitySensor):
         device: DeviceInfo,
     ):
         super().__init__(
-            name=None,
+            name=name,
             unique_id=unique_id,
             unit="kW",
             device_class=None,
@@ -238,7 +238,7 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         device: DeviceInfo,
     ):
         super().__init__(
-            name=None,
+            name=name,
             unique_id=unique_id,
             unit="kW",
             device_class=None,
