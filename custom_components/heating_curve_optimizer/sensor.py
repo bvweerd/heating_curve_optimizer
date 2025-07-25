@@ -534,7 +534,7 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
         if not sensors:
             return {}
 
-        func = cast(Any, history.state_changes_during_period)
+        func = cast(Any, history.get_significant_states)
         return cast(
             dict[str, list],
             await self.hass.async_add_executor_job(
@@ -543,8 +543,9 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
                 start,
                 end,
                 sensors,
-                False,
+                None,
                 True,
+                False,
             ),
         )
 
