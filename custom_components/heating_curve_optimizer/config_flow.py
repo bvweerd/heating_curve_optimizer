@@ -21,7 +21,6 @@ from .const import (
     CONF_POWER_CONSUMPTION,
     CONF_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
-    CONF_SOLAR_FORECAST,
     CONF_SOURCE_TYPE,
     CONF_SOURCES,
     DOMAIN,
@@ -53,7 +52,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.glass_west_m2: float | None = None
         self.glass_south_m2: float | None = None
         self.glass_u_value: float | None = None
-        self.solar_forecast: list[str] | None = None
         self.power_consumption: str | None = None
         self.indoor_temperature_sensor: str | None = None
 
@@ -93,7 +91,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_GLASS_WEST_M2: self.glass_west_m2,
                         CONF_GLASS_SOUTH_M2: self.glass_south_m2,
                         CONF_GLASS_U_VALUE: self.glass_u_value,
-                        CONF_SOLAR_FORECAST: self.solar_forecast,
                         CONF_INDOOR_TEMPERATURE_SENSOR: self.indoor_temperature_sensor,
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                     },
@@ -159,10 +156,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.glass_west_m2 = float(user_input.get(CONF_GLASS_WEST_M2, 0))
             self.glass_south_m2 = float(user_input.get(CONF_GLASS_SOUTH_M2, 0))
             self.glass_u_value = float(user_input.get(CONF_GLASS_U_VALUE, 1.2))
-            sf = user_input[CONF_SOLAR_FORECAST]
-            if isinstance(sf, str):
-                sf = [sf]
-            self.solar_forecast = sf
             self.indoor_temperature_sensor = user_input.get(
                 CONF_INDOOR_TEMPERATURE_SENSOR
             )
@@ -189,15 +182,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_GLASS_WEST_M2, default=0.0): vol.Coerce(float),
                 vol.Optional(CONF_GLASS_SOUTH_M2, default=0.0): vol.Coerce(float),
                 vol.Optional(CONF_GLASS_U_VALUE, default=1.2): vol.Coerce(float),
-                vol.Required(CONF_SOLAR_FORECAST): selector(
-                    {
-                        "select": {
-                            "options": energy_sensors,
-                            "multiple": True,
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
                 vol.Optional(CONF_INDOOR_TEMPERATURE_SENSOR): selector(
                     {
                         "select": {
@@ -229,10 +213,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.glass_west_m2 = float(user_input.get(CONF_GLASS_WEST_M2, 0))
             self.glass_south_m2 = float(user_input.get(CONF_GLASS_SOUTH_M2, 0))
             self.glass_u_value = float(user_input.get(CONF_GLASS_U_VALUE, 1.2))
-            sf = user_input[CONF_SOLAR_FORECAST]
-            if isinstance(sf, str):
-                sf = [sf]
-            self.solar_forecast = sf
             self.indoor_temperature_sensor = user_input.get(
                 CONF_INDOOR_TEMPERATURE_SENSOR
             )
@@ -259,15 +239,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_GLASS_WEST_M2, default=0.0): vol.Coerce(float),
                 vol.Optional(CONF_GLASS_SOUTH_M2, default=0.0): vol.Coerce(float),
                 vol.Optional(CONF_GLASS_U_VALUE, default=1.2): vol.Coerce(float),
-                vol.Required(CONF_SOLAR_FORECAST): selector(
-                    {
-                        "select": {
-                            "options": energy_sensors,
-                            "multiple": True,
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
                 vol.Optional(CONF_INDOOR_TEMPERATURE_SENSOR): selector(
                     {
                         "select": {
@@ -384,11 +355,6 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
         self.glass_west_m2 = config_entry.data.get(CONF_GLASS_WEST_M2)
         self.glass_south_m2 = config_entry.data.get(CONF_GLASS_SOUTH_M2)
         self.glass_u_value = config_entry.data.get(CONF_GLASS_U_VALUE, 1.2)
-        sf = config_entry.data.get(CONF_SOLAR_FORECAST)
-        if isinstance(sf, str):
-            self.solar_forecast = [sf]
-        else:
-            self.solar_forecast = sf
         self.indoor_temperature_sensor = config_entry.data.get(
             CONF_INDOOR_TEMPERATURE_SENSOR
         )
@@ -455,7 +421,6 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_GLASS_WEST_M2: self.glass_west_m2,
                         CONF_GLASS_SOUTH_M2: self.glass_south_m2,
                         CONF_GLASS_U_VALUE: self.glass_u_value,
-                        CONF_SOLAR_FORECAST: self.solar_forecast,
                         CONF_INDOOR_TEMPERATURE_SENSOR: self.indoor_temperature_sensor,
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                     },
