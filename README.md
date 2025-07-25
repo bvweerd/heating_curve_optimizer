@@ -55,7 +55,7 @@ Het doel is om de **aanvoertemperatuur slim te verhogen of verlagen**, afhankeli
 Plaats deze configuratie in je `configuration.yaml` of configureer via toekomstige UI-configuratie:
 
 ```yaml
-dynamic_heat_curve_prediction:
+heatcurve_optimizer:
   area_m2: 120                  # Woonoppervlakte in vierkante meters
   energy_label: B              # Energielabel: A t/m G (voor warmteverlies)
   horizon_hours: 4             # Aantal uur vooruit voorspellen en optimaliseren
@@ -184,7 +184,7 @@ Gebruik een kaarttype zoals **entities**, **sensor graph**, of **custom:apexchar
 
 1. Pak de ZIP uit in je `config/custom_components/` map.
 2. Herstart Home Assistant.
-3. Voeg `dynamic_heat_curve_prediction` toe via YAML.
+3. Voeg `heatcurve_optimizer` toe via YAML.
 4. Herstart opnieuw en controleer de sensoren.
 5. Koppel aan je automatiseringen of visualiseer de uitkomsten.
 

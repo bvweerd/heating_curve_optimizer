@@ -1,5 +1,5 @@
 {
-  "domain": "optimizer",
+  "domain": "heatcurve_optimizer",
   "name": "Heatpump Curve Optimizer",
   "codeowners": ["@bvweerd"],
   "config_flow": true,
