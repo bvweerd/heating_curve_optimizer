@@ -20,6 +20,10 @@ CONF_GLASS_EAST_M2 = "glass_east_m2"
 CONF_GLASS_WEST_M2 = "glass_west_m2"
 CONF_GLASS_SOUTH_M2 = "glass_south_m2"
 CONF_GLASS_U_VALUE = "glass_u_value"
+# One or more Solcast sensors. The sensors should expose a ``detailed forecast``
+# attribute with the expected PV production for the coming hours. The raw list
+# from these attributes will be copied to the solar panel yield sensor attributes.
+CONF_SOLAR_FORECAST = "solar_forecasts"
 CONF_POWER_CONSUMPTION = "power_consumption"
 CONF_INDOOR_TEMPERATURE_SENSOR = "indoor_temperature_sensor"
 

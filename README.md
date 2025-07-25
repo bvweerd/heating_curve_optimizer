@@ -3,6 +3,7 @@
 Deze Home Assistant custom integratie past automatisch en voorspellend de stooklijn-offset van je warmtepomp aan op basis van:
 
 - **Dynamische stroomprijzen** (via Nordpool)
+- **Zonneproductie-verwachting** (via Solcast)
 - **Warmteverlies van de woning** (oppervlak, energielabel)
 - **Buitentemperatuur en -voorspelling**
 - **Actueel verbruik van de warmtepomp (via DSMR)**
@@ -24,6 +25,12 @@ Het doel is om de **aanvoertemperatuur slim te verhogen of verlagen**, afhankeli
 
 ## ⚙️ Vereiste sensoren
 
+### 🟠 Solcast
+- `sensor.solcast_pv_forecast_forecast_today`
+  - Verwachte opbrengst van vandaag in kWh
+- `sensor.solcast_pv_forecast_forecast_tomorrow`
+  - Verwachte opbrengst van morgen in kWh
+  - Wordt gebruikt om verwachte zonnewinst per m² te schatten
 
 ### 🟠 Nordpool
 - `sensor.nordpool_kwh_nl_eur_0_10`
@@ -68,6 +75,7 @@ heating_curve_optimizer:
 | `area_m2`            | YAML                       | Oppervlakte woning in m²                             |
 | `energy_label`       | YAML                       | Wordt omgezet naar U-waarde per m² per Kelvin       |
 | `outdoor_temperature`| sensor                     | Actuele buitentemperatuur                           |
+| `solar_forecast`     | Solcast (1 of meer) | Totale dagopbrengst → verdeeld over forecast-horizon |
 | `price_forecast`     | Nordpool                   | Prijs per uur over horizon                           |
 | `power_consumption`  | DSMR of vermogenssensor    | Actuele warmtepompverbruik (optioneel)              |
 | `indoor_temperature` | sensor                     | Actuele binnentemperatuur                            |
@@ -86,6 +94,11 @@ heating_curve_optimizer:
 ### `sensor.hourly_heat_loss`
 - Berekend warmteverlies van de woning in kW
 
+### `sensor.solar_panel_yield`
+- Verwachte opbrengst van zonnepanelen in kW
+
+### `sensor.hourly_net_heat_demand`
+- Netto warmtevraag na aftrek van zonwinst in kW
 
 ---
 
@@ -106,6 +119,7 @@ Q_{verlies} = A \cdot U \cdot (T_{binnen} - T_{buiten})
 Q_{zon} = \text{zoninstraling} \cdot A \cdot \eta
 \]
 
+- Geschatte opbrengst per uur op basis van Solcast-data
 - Efficiëntiefactor \( \eta \approx 0.15 \)
 
 ### Netto warmtevraag
@@ -163,7 +177,10 @@ Voeg de volgende sensoren toe aan je Lovelace-dashboard:
 - `sensor.power_consumption`
 - `sensor.outdoor_temperature`
 - `sensor.nordpool_kwh_nl_eur_0_10`
+- `sensor.solcast_pv_forecast_forecast_today`
 - `sensor.hourly_heat_loss`
+- `sensor.solar_panel_yield`
+- `sensor.hourly_net_heat_demand`
 
 Gebruik een kaarttype zoals **entities**, **sensor graph**, of **custom:apexcharts-card** om toekomstige waarden te tonen.
 
@@ -182,6 +199,7 @@ Gebruik een kaarttype zoals **entities**, **sensor graph**, of **custom:apexchar
 ## 📞 Ondersteuning
 
 - DSMR P1 sensor: [DSMR Slimme Meter integratie](https://www.home-assistant.io/integrations/dsmr/)
+- Solcast PV Forecast: [Solcast integratie](https://github.com/solcast/solcast-ha)
 - Nordpool: [nordpool integratie](https://github.com/custom-components/nordpool)
 
 ---
@@ -200,6 +218,16 @@ gebruikt de oppervlakte van de woning en het energielabel om een U-waarde te
 bepalen. Deze U-waarde wordt vermenigvuldigd met het temperatuurverschil tussen
 binnen en buiten.
 
+### `sensor.solar_panel_yield`
+De totale opbrengst van zonnepanelen die verwacht wordt. De integratie leest de
+`detailed forecast` van de opgegeven Solcast sensoren uit, telt de waarden op en
+past een efficiëntiefactor toe zodat de output in kilowatt wordt weergegeven.
+
+### `sensor.hourly_net_heat_demand`
+Dit is het verschil tussen het warmteverlies en de zonnewinst. Negatieve waarden
+worden op nul gezet. Deze sensor gebruikt direct de opgegeven Solcast sensoren
+en **niet** `sensor.solar_panel_yield`. Zo zie je hoeveel netto warmte er per uur
+nodig is om de binnentemperatuur op peil te houden.
 
 
 Gemaakt voor maximale efficiëntie, flexibiliteit en inzicht!
