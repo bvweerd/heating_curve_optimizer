@@ -13,16 +13,10 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 
-import aiohttp
-import math
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.entity import DeviceInfo
-from typing import Any, cast
+from typing import Any
 
 from .const import (
     DOMAIN,
-    CONF_PRICE_SENSOR,
-    CONF_PRICE_SETTINGS,
     SOURCE_TYPE_CONSUMPTION,
     SOURCE_TYPE_PRODUCTION,
     CONF_SOURCE_TYPE,
@@ -38,7 +32,6 @@ from .const import (
     CONF_PRICE_SETTINGS,
     CONF_SOLAR_FORECAST,
     CONF_CONFIGS,
-    U_VALUE_MAP,
     INDOOR_TEMPERATURE,
     SOLAR_EFFICIENCY,
     U_VALUE_MAP,
@@ -352,12 +345,35 @@ class WindowSolarGainSensor(BaseUtilitySensor):
         self._extra_attrs: dict[str, list[float]] = {}
 
     async def _fetch_radiation(self) -> list[float]:
+        from datetime import datetime
+
         url = (
-            "https://api.open-meteo.com/v1/forecast?latitude={self.latitude}&longitude={self.longitude}&hourly=shortwave_radiation&timezone=UTC"
+            "https://api.open-meteo.com/v1/forecast"
+            f"?latitude={self.latitude}&longitude={self.longitude}"
+            "&hourly=shortwave_radiation&timezone=UTC"
         )
         async with self.session.get(url) as resp:
             data = await resp.json()
-        return [float(v) for v in data.get("hourly", {}).get("shortwave_radiation", [])]
+
+        hourly = data.get("hourly", {})
+        times = hourly.get("time", [])
+        values = hourly.get("shortwave_radiation", [])
+
+        if not times or not values:
+            return []
+
+        now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+        start_idx = 0
+        for i, ts in enumerate(times):
+            try:
+                t = datetime.fromisoformat(ts)
+            except ValueError:
+                continue
+            if t >= now:
+                start_idx = i
+                break
+
+        return [float(v) for v in values[start_idx : start_idx + 24]]
 
     def _orientation_factor(self, azimuth: float, orientation: float) -> float:
         diff = abs(azimuth - orientation)
@@ -550,7 +566,9 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
                     val = float(s.state)
                 except (ValueError, TypeError):
                     continue
-                ts = dt_util.as_utc(getattr(s, "last_updated", None) or dt_util.utcnow())
+                ts = dt_util.as_utc(
+                    getattr(s, "last_updated", None) or dt_util.utcnow()
+                )
                 if prev_val is None:
                     prev_val = val
                     prev_ts = ts
