@@ -409,6 +409,10 @@ class WindowSolarGainSensor(BaseUtilitySensor):
             diff = 360 - diff
         return max(math.cos(math.radians(diff)), 0)
 
+    @property
+    def extra_state_attributes(self) -> dict[str, list[float]]:
+        return self._extra_attrs
+
     async def _compute_value(self) -> None:
         rad = await self._fetch_radiation()
         sun = self.hass.states.get("sun.sun")
