@@ -84,6 +84,10 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
+
+    async def async_will_remove_from_hass(self):
+        await super().async_will_remove_from_hass()
+        await self.session.close()
         self.async_on_remove(
             async_track_state_change_event(
                 self.hass,
