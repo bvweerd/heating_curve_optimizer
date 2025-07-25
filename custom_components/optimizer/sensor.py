@@ -96,6 +96,9 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
             )
         )
 
+    async def async_will_remove_from_hass(self):
+        await super().async_will_remove_from_hass()
+
     async def _handle_price_change(self, event):
         new_state = event.data.get("new_state")
         if new_state is None or new_state.state in ("unknown", "unavailable"):
@@ -278,7 +281,7 @@ class SolarGainSensor(BaseUtilitySensor):
         self._attr_native_value = round(q_solar, 3)
 
     async def async_update(self):
-        self._compute_value()
+        await self._compute_value()
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
@@ -289,10 +292,9 @@ class SolarGainSensor(BaseUtilitySensor):
 
     async def async_will_remove_from_hass(self):
         await super().async_will_remove_from_hass()
-        await self.session.close()
 
     async def _handle_change(self, event):
-        self._compute_value()
+        await self._compute_value()
         self.async_write_ha_state()
 
 
@@ -413,7 +415,7 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         self.longitude = hass.config.longitude
         self.session = aiohttp.ClientSession()
 
-    def _compute_value(self) -> None:
+    async def _compute_value(self) -> None:
         url = (
             "https://api.open-meteo.com/v1/forecast"
             f"?latitude={self.latitude}&longitude={self.longitude}"
