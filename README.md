@@ -94,8 +94,8 @@ heating_curve_optimizer:
 ### `sensor.hourly_heat_loss`
 - Berekend warmteverlies van de woning in kW
 
-### `sensor.hourly_solar_gain`
-- Verwachte zonnewinst in kW
+### `sensor.solar_panel_yield`
+- Verwachte opbrengst van zonnepanelen in kW
 
 ### `sensor.hourly_net_heat_demand`
 - Netto warmtevraag na aftrek van zonwinst in kW
@@ -179,7 +179,7 @@ Voeg de volgende sensoren toe aan je Lovelace-dashboard:
 - `sensor.nordpool_kwh_nl_eur_0_10`
 - `sensor.solcast_pv_forecast_forecast_today`
 - `sensor.hourly_heat_loss`
-- `sensor.hourly_solar_gain`
+- `sensor.solar_panel_yield`
 - `sensor.hourly_net_heat_demand`
 
 Gebruik een kaarttype zoals **entities**, **sensor graph**, of **custom:apexcharts-card** om toekomstige waarden te tonen.
@@ -218,15 +218,15 @@ gebruikt de oppervlakte van de woning en het energielabel om een U-waarde te
 bepalen. Deze U-waarde wordt vermenigvuldigd met het temperatuurverschil tussen
 binnen en buiten.
 
-### `sensor.hourly_solar_gain`
-De totale zonnewarmte die via zonnepanelen verwacht wordt. De integratie leest
-de `detailed forecast` van de opgegeven Solcast sensoren uit, telt de waarden op
-en past een efficiëntiefactor toe zodat de output in kilowatt wordt weergegeven.
+### `sensor.solar_panel_yield`
+De totale opbrengst van zonnepanelen die verwacht wordt. De integratie leest de
+`detailed forecast` van de opgegeven Solcast sensoren uit, telt de waarden op en
+past een efficiëntiefactor toe zodat de output in kilowatt wordt weergegeven.
 
 ### `sensor.hourly_net_heat_demand`
 Dit is het verschil tussen het warmteverlies en de zonnewinst. Negatieve waarden
 worden op nul gezet. Deze sensor gebruikt direct de opgegeven Solcast sensoren
-en **niet** `sensor.hourly_solar_gain`. Zo zie je hoeveel netto warmte er per uur
+en **niet** `sensor.solar_panel_yield`. Zo zie je hoeveel netto warmte er per uur
 nodig is om de binnentemperatuur op peil te houden.
 
 
