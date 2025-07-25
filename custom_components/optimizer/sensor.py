@@ -329,9 +329,7 @@ class WindowSolarGainSensor(BaseUtilitySensor):
 
     async def _fetch_radiation(self) -> list[float]:
         url = (
-            "https://api.open-meteo.com/v1/forecast"
-            f"?latitude={self.latitude}&longitude={self.longitude}"
-            "&hourly=shortwave_radiation&timezone=UTC"
+            "https://api.open-meteo.com/v1/forecast?latitude={self.latitude}&longitude={self.longitude}&hourly=shortwave_radiation&timezone=UTC"
         )
         async with self.session.get(url) as resp:
             data = await resp.json()
