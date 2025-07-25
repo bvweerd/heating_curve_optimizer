@@ -696,7 +696,7 @@ async def async_setup_entry(
     )
     entities: list[BaseUtilitySensor] = []
 
-    configs = entry.data.get(CONF_CONFIGS, [])
+    configs = entry.options.get(CONF_CONFIGS, entry.data.get(CONF_CONFIGS, []))
     consumption_sources: list[str] = []
     production_sources: list[str] = []
     for cfg in configs:
