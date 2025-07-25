@@ -48,6 +48,12 @@ INDOOR_TEMPERATURE = 21.0
 # Efficiëntiefactor voor zoninstraling
 SOLAR_EFFICIENCY = 0.15
 
+# Default COP at a supply temperature of 35 °C
+DEFAULT_COP_AT_35 = 4.2
+
+# Default decline in COP per °C supply temperature increase
+DEFAULT_K_FACTOR = 0.11
+
 # Possible source types
 SOURCE_TYPE_CONSUMPTION = "Electricity consumption"
 SOURCE_TYPE_PRODUCTION = "Electricity production"

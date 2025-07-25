@@ -23,6 +23,7 @@ from .const import (
     CONF_K_FACTOR,
     CONF_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
+    DEFAULT_K_FACTOR,
     CONF_SOLAR_FORECAST,
     CONF_SOURCE_TYPE,
     CONF_SOURCES,
@@ -185,7 +186,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.supply_temperature_sensor = user_input.get(
                 CONF_SUPPLY_TEMPERATURE_SENSOR
             )
-            self.k_factor = float(user_input.get(CONF_K_FACTOR, 1.0))
+            self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
             return await self.async_step_user()
 
         energy_sensors = await self._get_energy_sensors()
@@ -247,9 +248,9 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         }
                     }
                 ),
-                vol.Optional(CONF_K_FACTOR, default=self.k_factor or 3.5): vol.Coerce(
-                    float
-                ),
+                vol.Optional(
+                    CONF_K_FACTOR, default=self.k_factor or DEFAULT_K_FACTOR
+                ): vol.Coerce(float),
             }
         )
 
@@ -274,7 +275,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.supply_temperature_sensor = user_input.get(
                 CONF_SUPPLY_TEMPERATURE_SENSOR
             )
-            self.k_factor = float(user_input.get(CONF_K_FACTOR, 1.0))
+            self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
             return await self.async_step_user()
 
         energy_sensors = await self._get_energy_sensors()
@@ -336,9 +337,9 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         }
                     }
                 ),
-                vol.Optional(CONF_K_FACTOR, default=self.k_factor or 3.5): vol.Coerce(
-                    float
-                ),
+                vol.Optional(
+                    CONF_K_FACTOR, default=self.k_factor or DEFAULT_K_FACTOR
+                ): vol.Coerce(float),
             }
         )
 

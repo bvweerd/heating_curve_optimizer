@@ -34,6 +34,8 @@ from .const import (
     CONF_CONFIGS,
     INDOOR_TEMPERATURE,
     SOLAR_EFFICIENCY,
+    DEFAULT_COP_AT_35,
+    DEFAULT_K_FACTOR,
     U_VALUE_MAP,
 )
 from .entity import BaseUtilitySensor
@@ -601,7 +603,7 @@ class NetPowerConsumptionSensor(BaseUtilitySensor):
 
 
 class QuadraticCopSensor(BaseUtilitySensor):
-    """COP sensor using a quadratic model."""
+    """COP sensor using a linear k-factor model."""
 
     def __init__(
         self,
@@ -610,8 +612,9 @@ class QuadraticCopSensor(BaseUtilitySensor):
         unique_id: str,
         supply_sensor: str,
         outdoor_sensor: str,
-        k_factor: float,
         device: DeviceInfo,
+        k_factor: float = DEFAULT_K_FACTOR,
+        base_cop: float = DEFAULT_COP_AT_35,
     ):
         super().__init__(
             name=name,
@@ -627,6 +630,7 @@ class QuadraticCopSensor(BaseUtilitySensor):
         self.supply_sensor = supply_sensor
         self.outdoor_sensor = outdoor_sensor
         self.k_factor = k_factor
+        self.base_cop = base_cop
 
     async def async_update(self):
         s_state = self.hass.states.get(self.supply_sensor)
@@ -641,12 +645,12 @@ class QuadraticCopSensor(BaseUtilitySensor):
             return
         try:
             s_temp = float(s_state.state)
-            o_temp = float(o_state.state)
+            float(o_state.state)
         except ValueError:
             self._attr_available = False
             return
-        delta = s_temp - o_temp
-        cop = self.k_factor * (-0.152 * delta + 8.88286 * (delta**2))
+        delta = s_temp - 35
+        cop = self.base_cop - self.k_factor * delta
         self._attr_available = True
         self._attr_native_value = round(cop, 3)
 
@@ -819,7 +823,7 @@ async def async_setup_entry(
         solar_sensor = [solar_sensor]
     indoor_sensor = entry.data.get(CONF_INDOOR_TEMPERATURE_SENSOR)
     supply_temp_sensor = entry.data.get(CONF_SUPPLY_TEMPERATURE_SENSOR)
-    k_factor = float(entry.data.get(CONF_K_FACTOR, 3.5))
+    k_factor = float(entry.data.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
     glass_east = float(entry.data.get(CONF_GLASS_EAST_M2, 0))
     glass_west = float(entry.data.get(CONF_GLASS_WEST_M2, 0))
     glass_south = float(entry.data.get(CONF_GLASS_SOUTH_M2, 0))
@@ -933,6 +937,7 @@ async def async_setup_entry(
                 supply_sensor=supply_temp_sensor,
                 outdoor_sensor="sensor.outdoor_temperature",
                 k_factor=k_factor,
+                base_cop=DEFAULT_COP_AT_35,
                 device=device_info,
             )
         )
