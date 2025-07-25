@@ -1,4 +1,4 @@
-"""Constants for the Heatpump Curve Optimizer integration."""
+"""Constants for the Heating Curve Optimizer integration."""
 
 # Domain of the integration
 DOMAIN = "optimizer"
@@ -12,7 +12,7 @@ CONF_SOURCES = "sources"
 CONF_PRICE_SENSOR = "price_sensor"
 CONF_PRICE_SETTINGS = "price_settings"
 
-# New configuration keys for the heatpump optimizer
+# New configuration keys for the heating curve optimizer
 CONF_AREA_M2 = "area_m2"
 CONF_ENERGY_LABEL = "energy_label"
 # Glass related configuration

@@ -24,7 +24,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     if not hass.data[DOMAIN].get("services_registered"):
         await async_register_services(hass)
         hass.data[DOMAIN]["services_registered"] = True
-    _LOGGER.info("Initialized Heatpump Curve Optimizer")
+    _LOGGER.info("Initialized Heating Curve Optimizer")
     return True
 
 

@@ -642,7 +642,7 @@ async def async_setup_entry(
     )
     device_info = DeviceInfo(
         identifiers={(DOMAIN, entry.entry_id)},
-        name="Heatpump Curve Optimizer",
+        name="Heating Curve Optimizer",
     )
     entities: list[BaseUtilitySensor] = []
 
