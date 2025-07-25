@@ -43,6 +43,11 @@ Het doel is om de **aanvoertemperatuur slim te verhogen of verlagen**, afhankeli
   - Actuele buitentemperatuur in °C
   - Kan ook van een andere sensor of weather entity komen
 
+### 🟠 Binnentemperatuur
+- `sensor.indoor_temperature`
+  - Actuele binnentemperatuur in °C
+  - Wordt gebruikt voor berekening van warmteverlies
+
 ### 🟠 Warmtepompverbruik
 - `sensor.power_consumption`
   - Actueel opgenomen vermogen (W) van de warmtepomp
@@ -73,6 +78,7 @@ dynamic_heat_curve_prediction:
 | `solar_forecast`     | Solcast (1 of meer) | Totale dagopbrengst → verdeeld over forecast-horizon |
 | `price_forecast`     | Nordpool                   | Prijs per uur over horizon                           |
 | `power_consumption`  | DSMR of vermogenssensor    | Actuele warmtepompverbruik (optioneel)              |
+| `indoor_temperature` | sensor                     | Actuele binnentemperatuur                            |
 
 ---
 
@@ -219,7 +225,8 @@ en past een efficiëntiefactor toe zodat de output in kilowatt wordt weergegeven
 
 ### `sensor.hourly_net_heat_demand`
 Dit is het verschil tussen het warmteverlies en de zonnewinst. Negatieve waarden
-worden op nul gezet. Deze sensor laat dus zien hoeveel netto warmte er per uur
+worden op nul gezet. Deze sensor gebruikt direct de opgegeven Solcast sensoren
+en **niet** `sensor.hourly_solar_gain`. Zo zie je hoeveel netto warmte er per uur
 nodig is om de binnentemperatuur op peil te houden.
 
 
