@@ -26,6 +26,8 @@ from .const import (
     CONF_GLASS_U_VALUE,
     CONF_GLASS_WEST_M2,
     CONF_INDOOR_TEMPERATURE_SENSOR,
+    CONF_SUPPLY_TEMPERATURE_SENSOR,
+    CONF_K_FACTOR,
     CONF_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
     CONF_SOLAR_FORECAST,
@@ -40,6 +42,80 @@ _LOGGER = logging.getLogger(__name__)
 
 UTILITY_ENTITIES: list[BaseUtilitySensor] = []
 PARALLEL_UPDATES = 1
+
+
+class OutdoorTemperatureSensor(BaseUtilitySensor):
+    """Sensor with current outdoor temperature and 24h forecast."""
+
+    def __init__(
+        self, hass: HomeAssistant, name: str, unique_id: str, device: DeviceInfo
+    ):
+        super().__init__(
+            name=name,
+            unique_id=unique_id,
+            unit="°C",
+            device_class="temperature",
+            icon="mdi:thermometer",
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self.hass = hass
+        self.latitude = hass.config.latitude
+        self.longitude = hass.config.longitude
+        self.session = aiohttp.ClientSession()
+        self._extra_attrs: dict[str, list[float]] = {}
+
+    @property
+    def extra_state_attributes(self) -> dict[str, list[float]]:
+        return self._extra_attrs
+
+    async def _fetch_weather(self) -> tuple[float, list[float]]:
+        from datetime import datetime
+
+        url = (
+            "https://api.open-meteo.com/v1/forecast"
+            f"?latitude={self.latitude}&longitude={self.longitude}"
+            "&hourly=temperature_2m&current_weather=true&timezone=UTC"
+        )
+        async with self.session.get(url) as resp:
+            data = await resp.json()
+
+        current = float(data.get("current_weather", {}).get("temperature", 0))
+
+        hourly = data.get("hourly", {})
+        times = hourly.get("time", [])
+        values = hourly.get("temperature_2m", [])
+
+        if not times or not values:
+            return current, []
+
+        now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+        start_idx = 0
+        for i, ts in enumerate(times):
+            try:
+                t = datetime.fromisoformat(ts)
+            except ValueError:
+                continue
+            if t >= now:
+                start_idx = i
+                break
+
+        temps = [float(v) for v in values[start_idx : start_idx + 24]]
+        return current, temps
+
+    async def async_update(self):
+        current, forecast = await self._fetch_weather()
+        self._attr_available = True
+        self._attr_native_value = round(current, 2)
+        self._extra_attrs = {"forecast": [round(v, 2) for v in forecast]}
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+
+    async def async_will_remove_from_hass(self):
+        await super().async_will_remove_from_hass()
+        await self.session.close()
 
 
 class CurrentElectricityPriceSensor(BaseUtilitySensor):
@@ -122,6 +198,7 @@ class HeatLossSensor(BaseUtilitySensor):
         indoor_sensor: str | None,
         icon: str,
         device: DeviceInfo,
+        outdoor_sensor: str | None = None,
     ):
         super().__init__(
             name=name,
@@ -139,6 +216,7 @@ class HeatLossSensor(BaseUtilitySensor):
         self.area_m2 = area_m2
         self.energy_label = energy_label
         self.indoor_sensor = indoor_sensor
+        self.outdoor_sensor = outdoor_sensor
         self.latitude = hass.config.latitude
         self.longitude = hass.config.longitude
         self.session = aiohttp.ClientSession()
@@ -183,7 +261,22 @@ class HeatLossSensor(BaseUtilitySensor):
         return self._extra_attrs
 
     async def _compute_value(self) -> None:
-        current, forecast = await self._fetch_weather()
+        current = None
+        forecast: list[float] = []
+        if self.outdoor_sensor:
+            state = self.hass.states.get(self.outdoor_sensor)
+            if state and state.state not in ("unknown", "unavailable"):
+                try:
+                    current = float(state.state)
+                except ValueError:
+                    current = None
+                forecast = [
+                    float(v)
+                    for v in state.attributes.get("forecast", [])
+                    if isinstance(v, (int, float, str))
+                ]
+        if current is None:
+            current, forecast = await self._fetch_weather()
         self._attr_available = True
         u_value = U_VALUE_MAP.get(self.energy_label.upper(), 1.0)
         indoor = INDOOR_TEMPERATURE
@@ -333,6 +426,7 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         device: DeviceInfo,
         heat_loss_sensor: HeatLossSensor | None = None,
         window_gain_sensor: WindowSolarGainSensor | None = None,
+        outdoor_sensor: str | None = None,
     ):
         super().__init__(
             name=name,
@@ -355,6 +449,7 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         self.session = aiohttp.ClientSession()
         self.heat_loss_sensor = heat_loss_sensor
         self.window_gain_sensor = window_gain_sensor
+        self.outdoor_sensor = outdoor_sensor
         self._extra_attrs: dict[str, list[float]] = {}
 
     @property
@@ -362,14 +457,23 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         return self._extra_attrs
 
     async def _compute_value(self) -> None:
-        url = (
-            "https://api.open-meteo.com/v1/forecast"
-            f"?latitude={self.latitude}&longitude={self.longitude}"
-            "&current_weather=true&hourly=temperature_2m&timezone=UTC"
-        )
-        async with self.session.get(url) as resp:
-            data = await resp.json()
-        t_outdoor = float(data.get("current_weather", {}).get("temperature", 0))
+        t_outdoor = None
+        if self.outdoor_sensor:
+            state = self.hass.states.get(self.outdoor_sensor)
+            if state and state.state not in ("unknown", "unavailable"):
+                try:
+                    t_outdoor = float(state.state)
+                except ValueError:
+                    t_outdoor = None
+        if t_outdoor is None:
+            url = (
+                "https://api.open-meteo.com/v1/forecast"
+                f"?latitude={self.latitude}&longitude={self.longitude}"
+                "&current_weather=true&hourly=temperature_2m&timezone=UTC"
+            )
+            async with self.session.get(url) as resp:
+                data = await resp.json()
+            t_outdoor = float(data.get("current_weather", {}).get("temperature", 0))
 
         solar_total = 0.0
         for sensor in self.solar_sensors:
@@ -494,6 +598,57 @@ class NetPowerConsumptionSensor(BaseUtilitySensor):
     async def _handle_change(self, event):
         self._compute_value()
         self.async_write_ha_state()
+
+
+class QuadraticCopSensor(BaseUtilitySensor):
+    """COP sensor using a quadratic model."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        supply_sensor: str,
+        outdoor_sensor: str,
+        k_factor: float,
+        device: DeviceInfo,
+    ):
+        super().__init__(
+            name=name,
+            unique_id=unique_id,
+            unit="",
+            device_class=None,
+            icon="mdi:alpha-c-circle",
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self.hass = hass
+        self.supply_sensor = supply_sensor
+        self.outdoor_sensor = outdoor_sensor
+        self.k_factor = k_factor
+
+    async def async_update(self):
+        s_state = self.hass.states.get(self.supply_sensor)
+        o_state = self.hass.states.get(self.outdoor_sensor)
+        if (
+            s_state is None
+            or o_state is None
+            or s_state.state in ("unknown", "unavailable")
+            or o_state.state in ("unknown", "unavailable")
+        ):
+            self._attr_available = False
+            return
+        try:
+            s_temp = float(s_state.state)
+            o_temp = float(o_state.state)
+        except ValueError:
+            self._attr_available = False
+            return
+        delta = s_temp - o_temp
+        cop = self.k_factor * (-0.152 * delta + 8.88286 * (delta**2))
+        self._attr_available = True
+        self._attr_native_value = round(cop, 3)
 
 
 class EnergyConsumptionForecastSensor(BaseUtilitySensor):
@@ -640,6 +795,14 @@ async def async_setup_entry(
     )
     entities: list[BaseUtilitySensor] = []
 
+    outdoor_sensor_entity = OutdoorTemperatureSensor(
+        hass=hass,
+        name="Outdoor Temperature",
+        unique_id=f"{DOMAIN}_outdoor_temperature",
+        device=device_info,
+    )
+    entities.append(outdoor_sensor_entity)
+
     configs = entry.options.get(CONF_CONFIGS, entry.data.get(CONF_CONFIGS, []))
     consumption_sources: list[str] = []
     production_sources: list[str] = []
@@ -655,6 +818,8 @@ async def async_setup_entry(
     if isinstance(solar_sensor, str):
         solar_sensor = [solar_sensor]
     indoor_sensor = entry.data.get(CONF_INDOOR_TEMPERATURE_SENSOR)
+    supply_temp_sensor = entry.data.get(CONF_SUPPLY_TEMPERATURE_SENSOR)
+    k_factor = float(entry.data.get(CONF_K_FACTOR, 3.5))
     glass_east = float(entry.data.get(CONF_GLASS_EAST_M2, 0))
     glass_west = float(entry.data.get(CONF_GLASS_WEST_M2, 0))
     glass_south = float(entry.data.get(CONF_GLASS_SOUTH_M2, 0))
@@ -756,6 +921,19 @@ async def async_setup_entry(
                 device=device_info,
                 heat_loss_sensor=heat_loss_sensor,
                 window_gain_sensor=window_gain_sensor,
+            )
+        )
+
+    if supply_temp_sensor:
+        entities.append(
+            QuadraticCopSensor(
+                hass=hass,
+                name="Heat Pump COP",
+                unique_id=f"{DOMAIN}_cop",
+                supply_sensor=supply_temp_sensor,
+                outdoor_sensor="sensor.outdoor_temperature",
+                k_factor=k_factor,
+                device=device_info,
             )
         )
 

@@ -19,6 +19,8 @@ from .const import (
     CONF_GLASS_WEST_M2,
     CONF_INDOOR_TEMPERATURE_SENSOR,
     CONF_POWER_CONSUMPTION,
+    CONF_SUPPLY_TEMPERATURE_SENSOR,
+    CONF_K_FACTOR,
     CONF_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
     CONF_SOLAR_FORECAST,
@@ -56,6 +58,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.solar_forecast: list[str] | None = None
         self.power_consumption: str | None = None
         self.indoor_temperature_sensor: str | None = None
+        self.supply_temperature_sensor: str | None = None
+        self.k_factor: float | None = None
 
     async def async_step_user(
         self, user_input: dict[str, str] | None = None
@@ -96,6 +100,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_SOLAR_FORECAST: self.solar_forecast,
                         CONF_INDOOR_TEMPERATURE_SENSOR: self.indoor_temperature_sensor,
                         CONF_POWER_CONSUMPTION: self.power_consumption,
+                        CONF_SUPPLY_TEMPERATURE_SENSOR: self.supply_temperature_sensor,
+                        CONF_K_FACTOR: self.k_factor,
                     },
                 )
             self.source_type = choice
@@ -151,6 +157,15 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ]
         )
 
+    async def _get_temperature_sensors(self) -> list[str]:
+        return sorted(
+            [
+                state.entity_id
+                for state in self.hass.states.async_all("sensor")
+                if state.attributes.get("device_class") == "temperature"
+            ]
+        )
+
     async def async_step_basic_options(self, user_input=None):
         if user_input is not None:
             self.area_m2 = float(user_input[CONF_AREA_M2])
@@ -167,6 +182,10 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_INDOOR_TEMPERATURE_SENSOR
             )
             self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
+            self.supply_temperature_sensor = user_input.get(
+                CONF_SUPPLY_TEMPERATURE_SENSOR
+            )
+            self.k_factor = float(user_input.get(CONF_K_FACTOR, 1.0))
             return await self.async_step_user()
 
         energy_sensors = await self._get_energy_sensors()
@@ -215,6 +234,21 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             "mode": "dropdown",
                         }
                     }
+                ),
+                vol.Optional(
+                    CONF_SUPPLY_TEMPERATURE_SENSOR,
+                    default=self.supply_temperature_sensor,
+                ): selector(
+                    {
+                        "select": {
+                            "options": temp_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Optional(CONF_K_FACTOR, default=self.k_factor or 3.5): vol.Coerce(
+                    float
                 ),
             }
         )
@@ -237,6 +271,10 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_INDOOR_TEMPERATURE_SENSOR
             )
             self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
+            self.supply_temperature_sensor = user_input.get(
+                CONF_SUPPLY_TEMPERATURE_SENSOR
+            )
+            self.k_factor = float(user_input.get(CONF_K_FACTOR, 1.0))
             return await self.async_step_user()
 
         energy_sensors = await self._get_energy_sensors()
@@ -285,6 +323,21 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             "mode": "dropdown",
                         }
                     }
+                ),
+                vol.Optional(
+                    CONF_SUPPLY_TEMPERATURE_SENSOR,
+                    default=self.supply_temperature_sensor,
+                ): selector(
+                    {
+                        "select": {
+                            "options": temp_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Optional(CONF_K_FACTOR, default=self.k_factor or 3.5): vol.Coerce(
+                    float
                 ),
             }
         )
@@ -393,6 +446,10 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             CONF_INDOOR_TEMPERATURE_SENSOR
         )
         self.power_consumption = config_entry.data.get(CONF_POWER_CONSUMPTION)
+        self.supply_temperature_sensor = config_entry.data.get(
+            CONF_SUPPLY_TEMPERATURE_SENSOR
+        )
+        self.k_factor = config_entry.data.get(CONF_K_FACTOR)
         self.price_settings = copy.deepcopy(
             config_entry.options.get(
                 CONF_PRICE_SETTINGS,
@@ -458,6 +515,8 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_SOLAR_FORECAST: self.solar_forecast,
                         CONF_INDOOR_TEMPERATURE_SENSOR: self.indoor_temperature_sensor,
                         CONF_POWER_CONSUMPTION: self.power_consumption,
+                        CONF_SUPPLY_TEMPERATURE_SENSOR: self.supply_temperature_sensor,
+                        CONF_K_FACTOR: self.k_factor,
                     },
                 )
             self.source_type = choice

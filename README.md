@@ -78,6 +78,8 @@ heating_curve_optimizer:
 | `solar_forecast`     | Solcast (1 of meer) | Totale dagopbrengst → verdeeld over forecast-horizon |
 | `price_forecast`     | Nordpool                   | Prijs per uur over horizon                           |
 | `power_consumption`  | DSMR of vermogenssensor    | Actuele warmtepompverbruik (optioneel)              |
+| `supply_temperature` | sensor                     | Aanvoertemperatuur warmtepomp                       |
+| `k_factor`           | UI-config                  | Correctiefactor voor COP-berekening                 |
 | `indoor_temperature` | sensor                     | Actuele binnentemperatuur                            |
 
 ---
@@ -99,6 +101,12 @@ heating_curve_optimizer:
 
 ### `sensor.current_net_consumption`
 - Actuele netto stroomafname (verbruik min productie) in kW
+
+### `sensor.outdoor_temperature`
+- Buitentemperatuur met een 24-uurs voorspelling
+
+### `sensor.heat_pump_cop`
+- Actuele COP berekend met k-factor
 
 ---
 
