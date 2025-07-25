@@ -215,7 +215,10 @@ class SolarGainSensor(BaseUtilitySensor):
         self.area_m2 = area_m2
 
     def _extract_forecast(self, state) -> list[float]:
-        """Extract forecast list from a Solcast or Forecast.Solar sensor."""
+        """Return forecast values for the next 24h for a Solcast/Forecast.Solar sensor."""
+        from datetime import timedelta
+        from homeassistant.util import dt as dt_util
+
         for key in (
             "detailed forecast",
             "detailed_forecast",
@@ -229,23 +232,47 @@ class SolarGainSensor(BaseUtilitySensor):
         else:
             data = []
 
+        now = dt_util.utcnow()
+        end = now + timedelta(hours=24)
         values: list[float] = []
         if isinstance(data, (list, tuple)):
             for item in data:
+                ts = None
                 if isinstance(item, dict):
                     val = (
                         item.get("pv_estimate")
                         or item.get("value")
                         or item.get("energy")
                         or item.get("wh")
+                        or item.get("watts")
+                    )
+                    ts = (
+                        item.get("period_end")
+                        or item.get("period")
+                        or item.get("time")
+                        or item.get("dt")
                     )
                 else:
                     val = item
                 try:
-                    if val is not None:
-                        values.append(float(val))
+                    if val is None:
+                        continue
+                    val_float = float(val)
                 except (TypeError, ValueError):
                     continue
+
+                if ts:
+                    dt_obj = dt_util.parse_datetime(str(ts))
+                    if dt_obj is None:
+                        continue
+                    dt_obj = dt_util.as_utc(dt_obj)
+                    if dt_obj < now or dt_obj >= end:
+                        continue
+
+                if len(values) >= 24:
+                    break
+                values.append(val_float)
+
         return values
 
     @property
@@ -262,21 +289,22 @@ class SolarGainSensor(BaseUtilitySensor):
             if state is None or state.state in ("unknown", "unavailable"):
                 _LOGGER.warning("Solar forecast sensor %s is unavailable", sensor)
                 continue
-            try:
-                val = float(state.state)
-            except ValueError:
-                _LOGGER.warning("Solar forecast sensor %s has invalid state", sensor)
-                continue
-            total_solar += val
 
             forecast = self._extract_forecast(state)
-            if forecast:
-                attr_data[sensor] = forecast
-                for i, v in enumerate(forecast[:24]):
-                    if len(aggregated) <= i:
-                        aggregated.append(float(v))
-                    else:
-                        aggregated[i] += float(v)
+            if not forecast:
+                _LOGGER.warning(
+                    "Solar forecast sensor %s has no usable forecast", sensor
+                )
+                continue
+
+            attr_data[sensor] = forecast
+            total_solar += forecast[0]
+
+            for i, v in enumerate(forecast[:24]):
+                if len(aggregated) <= i:
+                    aggregated.append(float(v))
+                else:
+                    aggregated[i] += float(v)
 
         if not attr_data:
             self._attr_available = False
