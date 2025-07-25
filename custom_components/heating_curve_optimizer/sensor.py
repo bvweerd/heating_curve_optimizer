@@ -535,19 +535,41 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
             return {}
 
         func = cast(Any, history.get_significant_states)
-        return cast(
-            dict[str, list],
-            await self.hass.async_add_executor_job(
-                func,
-                self.hass,
-                start,
-                end,
-                sensors,
-                None,
-                True,
-                False,
-            ),
-        )
+
+        try:
+            return cast(
+                dict[str, list],
+                await self.hass.async_add_executor_job(
+                    func,
+                    self.hass,
+                    start,
+                    end,
+                    sensors,
+                    None,
+                    True,
+                    False,
+                ),
+            )
+        except AttributeError:
+            # Older HA versions expect a single entity_id
+            result: dict[str, list] = {}
+            for sensor in sensors:
+                data = cast(
+                    dict[str, list],
+                    await self.hass.async_add_executor_job(
+                        func,
+                        self.hass,
+                        start,
+                        end,
+                        sensor,
+                        None,
+                        True,
+                        False,
+                    ),
+                )
+                for ent_id, states in data.items():
+                    result.setdefault(ent_id, []).extend(states)
+            return result
 
     def _hourly_averages(self, data: dict[str, list]) -> list[float]:
         from homeassistant.util import dt as dt_util
