@@ -43,7 +43,6 @@ _LOGGER = logging.getLogger(__name__)
 UTILITY_ENTITIES: list[BaseUtilitySensor] = []
 PARALLEL_UPDATES = 1
 
-
 class CurrentElectricityPriceSensor(BaseUtilitySensor):
     def __init__(
         self,
@@ -111,7 +110,6 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
             return
         await self.async_update()
         self.async_write_ha_state()
-
 
 class HeatLossSensor(BaseUtilitySensor):
     def __init__(
@@ -208,174 +206,6 @@ class HeatLossSensor(BaseUtilitySensor):
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
-
-
-class SolarPanelYieldSensor(BaseUtilitySensor):
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        name: str,
-        unique_id: str,
-        solar_sensor: list[str],
-        area_m2: float,
-        icon: str,
-        device: DeviceInfo,
-    ):
-        super().__init__(
-            name=name,
-            unique_id=unique_id,
-            unit="kW",
-            device_class=None,
-            icon=icon,
-            visible=True,
-            device=device,
-            translation_key=name.lower().replace(" ", "_"),
-        )
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self.hass = hass
-        self.solar_sensors = solar_sensor
-        self._extra_attrs: dict[str, list[float]] = {}
-        self.area_m2 = area_m2
-
-    def _extract_forecast(self, sensor: str, state) -> list[float]:
-        """Return hourly forecast for the next 24h.
-
-        The timestamps in the source data are validated against the current
-        hour to avoid using stale or misaligned information.
-        """
-        from datetime import timedelta
-        from homeassistant.util import dt as dt_util
-
-        for key in (
-            "detailed forecast",
-            "detailed_forecast",
-            "detailedForecast",
-            "forecast",
-            "all",
-        ):
-            data = state.attributes.get(key)
-            if data:
-                break
-        else:
-            data = []
-
-        now = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
-        end = now + timedelta(hours=24)
-        values: list[tuple] = []
-        if isinstance(data, (list, tuple)):
-            for item in data:
-                ts = None
-                if isinstance(item, dict):
-                    val = (
-                        item.get("pv_estimate")
-                        or item.get("value")
-                        or item.get("energy")
-                        or item.get("wh")
-                        or item.get("watts")
-                    )
-                    ts = (
-                        item.get("period_start")
-                        or item.get("period_end")
-                        or item.get("period")
-                        or item.get("time")
-                        or item.get("dt")
-                    )
-                else:
-                    val = item
-                try:
-                    if val is None:
-                        continue
-                    val_float = float(val)
-                except (TypeError, ValueError):
-                    continue
-
-                if ts:
-                    dt_obj = dt_util.parse_datetime(str(ts))
-                    if dt_obj is None:
-                        continue
-                    dt_obj = dt_util.as_utc(dt_obj)
-                else:
-                    dt_obj = now + timedelta(hours=len(values))
-
-                if dt_obj < now or dt_obj >= end:
-                    continue
-
-                values.append((dt_obj, val_float))
-                if len(values) >= 24:
-                    break
-
-        values.sort(key=lambda x: x[0])
-        hourly: list[float] = []
-        for idx, (ts, val) in enumerate(values[:24]):
-            expected = now + timedelta(hours=idx)
-            if ts.replace(minute=0, second=0, microsecond=0) != expected:
-                _LOGGER.warning(
-                    "Skipping forecast from %s due to timestamp mismatch %s != %s",
-                    sensor,
-                    ts,
-                    expected,
-                )
-                return []
-            hourly.append(val)
-
-        return hourly
-
-    @property
-    def extra_state_attributes(self) -> dict[str, list[float]]:
-        return self._extra_attrs
-
-    async def _compute_value(self) -> None:
-        hourly_total: list[float] = []
-
-        for sensor in self.solar_sensors:
-            state = self.hass.states.get(sensor)
-            if state is None or state.state in ("unknown", "unavailable"):
-                _LOGGER.warning("Solar forecast sensor %s is unavailable", sensor)
-                continue
-
-            forecast = self._extract_forecast(sensor, state)
-            if not forecast:
-                _LOGGER.warning(
-                    "Solar forecast sensor %s has no usable forecast", sensor
-                )
-                continue
-
-            for i, v in enumerate(forecast):
-                if len(hourly_total) <= i:
-                    hourly_total.append(float(v))
-                else:
-                    hourly_total[i] += float(v)
-
-        if not hourly_total:
-            self._attr_available = False
-            return
-
-        forecast_gain = [
-            round(v * self.area_m2 * SOLAR_EFFICIENCY / 1000.0, 3) for v in hourly_total
-        ]
-        if len(forecast_gain) < 24:
-            forecast_gain.extend([None] * (24 - len(forecast_gain)))
-
-        self._extra_attrs = {"forecast": forecast_gain}
-        self._attr_available = True
-        self._attr_native_value = forecast_gain[0] if forecast_gain else 0.0
-
-    async def async_update(self):
-        await self._compute_value()
-
-    async def async_added_to_hass(self):
-        await super().async_added_to_hass()
-        for sensor in self.solar_sensors:
-            self.async_on_remove(
-                async_track_state_change_event(self.hass, sensor, self._handle_change)
-            )
-
-    async def async_will_remove_from_hass(self):
-        await super().async_will_remove_from_hass()
-
-    async def _handle_change(self, event):
-        await self._compute_value()
-        self.async_write_ha_state()
 
 
 class WindowSolarGainSensor(BaseUtilitySensor):
@@ -756,19 +586,6 @@ async def async_setup_entry(
                 energy_label=energy_label,
                 indoor_sensor=indoor_sensor,
                 icon="mdi:home-thermometer",
-                device=device_info,
-            )
-        )
-
-    if solar_sensor and area_m2:
-        entities.append(
-            SolarPanelYieldSensor(
-                hass=hass,
-                name="Solar Panel Yield",
-                unique_id=f"{DOMAIN}_solar_panel_yield",
-                solar_sensor=solar_sensor,
-                area_m2=float(area_m2),
-                icon="mdi:weather-sunny",
                 device=device_info,
             )
         )
