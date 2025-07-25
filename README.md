@@ -141,8 +141,14 @@ Q_{netto} = Q_{verlies} - Q_{zon}
 1. **Fallback-model** (als geen werkelijk verbruik beschikbaar):
 
 \[
-COP = 6 - 0.1 \cdot (T_{aanvoer} - T_{buiten})
+COP(T_a) = a - k \cdot (T_a - 35)
 \]
+
+waarbij:
+
+- \(a\): gemeten COP bij \(T_a=35\,\degree C\) (typisch 4–4,5)
+- \(k\): afname in COP per graad (ongeveer 0,10–0,12)
+- \(T_a\): gewenste aanvoertemperatuur in \(^\circ C\)
 
 2. **Werkelijk** (als warmtepompvermogen bekend):
 
