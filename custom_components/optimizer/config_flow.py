@@ -161,7 +161,7 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_AREA_M2): float,
+                vol.Required(CONF_AREA_M2): vol.Coerce(float),
                 vol.Required(CONF_ENERGY_LABEL): selector(
                     {
                         "select": {
@@ -171,10 +171,10 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         }
                     }
                 ),
-                vol.Optional(CONF_GLASS_EAST_M2, default=0.0): float,
-                vol.Optional(CONF_GLASS_WEST_M2, default=0.0): float,
-                vol.Optional(CONF_GLASS_SOUTH_M2, default=0.0): float,
-                vol.Optional(CONF_GLASS_U_VALUE, default=1.2): float,
+                vol.Optional(CONF_GLASS_EAST_M2, default=0.0): vol.Coerce(float),
+                vol.Optional(CONF_GLASS_WEST_M2, default=0.0): vol.Coerce(float),
+                vol.Optional(CONF_GLASS_SOUTH_M2, default=0.0): vol.Coerce(float),
+                vol.Optional(CONF_GLASS_U_VALUE, default=1.2): vol.Coerce(float),
                 vol.Required(CONF_SOLAR_FORECAST): selector(
                     {
                         "select": {
@@ -218,7 +218,7 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_AREA_M2): float,
+                vol.Required(CONF_AREA_M2): vol.Coerce(float),
                 vol.Required(CONF_ENERGY_LABEL): selector(
                     {
                         "select": {
@@ -228,10 +228,10 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         }
                     }
                 ),
-                vol.Optional(CONF_GLASS_EAST_M2, default=0.0): float,
-                vol.Optional(CONF_GLASS_WEST_M2, default=0.0): float,
-                vol.Optional(CONF_GLASS_SOUTH_M2, default=0.0): float,
-                vol.Optional(CONF_GLASS_U_VALUE, default=1.2): float,
+                vol.Optional(CONF_GLASS_EAST_M2, default=0.0): vol.Coerce(float),
+                vol.Optional(CONF_GLASS_WEST_M2, default=0.0): vol.Coerce(float),
+                vol.Optional(CONF_GLASS_SOUTH_M2, default=0.0): vol.Coerce(float),
+                vol.Optional(CONF_GLASS_U_VALUE, default=1.2): vol.Coerce(float),
                 vol.Required(CONF_SOLAR_FORECAST): selector(
                     {
                         "select": {
