@@ -146,6 +146,9 @@ class HeatLossSensor(BaseUtilitySensor):
         self.session = aiohttp.ClientSession()
 
     async def _fetch_weather(self) -> tuple[float, list[float]]:
+        """Return current temperature and the next 24h forecast."""
+        from datetime import datetime
+
         url = (
             "https://api.open-meteo.com/v1/forecast"
             f"?latitude={self.latitude}&longitude={self.longitude}"
@@ -153,8 +156,28 @@ class HeatLossSensor(BaseUtilitySensor):
         )
         async with self.session.get(url) as resp:
             data = await resp.json()
+
         current = float(data.get("current_weather", {}).get("temperature", 0))
-        temps = [float(t) for t in data.get("hourly", {}).get("temperature_2m", [])]
+
+        hourly = data.get("hourly", {})
+        times = hourly.get("time", [])
+        values = hourly.get("temperature_2m", [])
+
+        if not times or not values:
+            return current, []
+
+        now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+        start_idx = 0
+        for i, ts in enumerate(times):
+            try:
+                t = datetime.fromisoformat(ts)
+            except ValueError:
+                continue
+            if t >= now:
+                start_idx = i
+                break
+
+        temps = [float(v) for v in values[start_idx : start_idx + 24]]
         return current, temps
 
     @property
@@ -412,7 +435,7 @@ class WindowSolarGainSensor(BaseUtilitySensor):
     @property
     def extra_state_attributes(self) -> dict[str, list[float]]:
         return self._extra_attrs
-        
+
     async def _compute_value(self) -> None:
         rad = await self._fetch_radiation()
         sun = self.hass.states.get("sun.sun")
@@ -571,6 +594,9 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
         """Fetch history data for the given sensors."""  # mypy: ignore-errors
         from homeassistant.components.recorder import history
 
+        if not sensors:
+            return {}
+
         func = cast(Any, history.state_changes_during_period)
         return cast(
             dict[str, list],
@@ -648,6 +674,10 @@ async def async_setup_entry(
         identifiers={(DOMAIN, entry.entry_id)},
         name="Heating Curve Optimizer",
     )
+    price_device_info = DeviceInfo(
+        identifiers={(DOMAIN, f"{entry.entry_id}_prices")},
+        name="Energy Prices",
+    )
     entities: list[BaseUtilitySensor] = []
 
     configs = entry.data.get(CONF_CONFIGS, [])
@@ -681,7 +711,7 @@ async def async_setup_entry(
                 source_type=SOURCE_TYPE_CONSUMPTION,
                 price_settings=price_settings,
                 icon="mdi:transmission-tower-import",
-                device=device_info,
+                device=price_device_info,
             )
         )
         entities.append(
@@ -693,7 +723,7 @@ async def async_setup_entry(
                 source_type=SOURCE_TYPE_PRODUCTION,
                 price_settings=price_settings,
                 icon="mdi:transmission-tower-export",
-                device=device_info,
+                device=price_device_info,
             )
         )
 
@@ -741,7 +771,7 @@ async def async_setup_entry(
             )
         )
 
-    if consumption_sources and production_sources:
+    if consumption_sources or production_sources:
         entities.append(
             EnergyConsumptionForecastSensor(
                 hass=hass,
