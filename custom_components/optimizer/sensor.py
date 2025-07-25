@@ -9,6 +9,7 @@ import aiohttp
 import math
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity import DeviceInfo
+from typing import Any, cast
 
 from .const import (
     DOMAIN,
@@ -16,6 +17,8 @@ from .const import (
     CONF_PRICE_SETTINGS,
     SOURCE_TYPE_CONSUMPTION,
     SOURCE_TYPE_PRODUCTION,
+    CONF_SOURCE_TYPE,
+    CONF_SOURCES,
     CONF_AREA_M2,
     CONF_ENERGY_LABEL,
     CONF_GLASS_EAST_M2,
@@ -23,6 +26,7 @@ from .const import (
     CONF_GLASS_SOUTH_M2,
     CONF_GLASS_U_VALUE,
     CONF_SOLAR_FORECAST,
+    CONF_CONFIGS,
     U_VALUE_MAP,
     INDOOR_TEMPERATURE,
     SOLAR_EFFICIENCY,
@@ -226,7 +230,8 @@ class SolarGainSensor(BaseUtilitySensor):
                 else:
                     val = item
                 try:
-                    values.append(float(val))
+                    if val is not None:
+                        values.append(float(val))
                 except (TypeError, ValueError):
                     continue
         return values
@@ -237,7 +242,7 @@ class SolarGainSensor(BaseUtilitySensor):
 
     async def _compute_value(self) -> None:
         total_solar = 0.0
-        attr_data: dict[str, list[float]] = {}
+        attr_data: dict[str, list] = {}
         aggregated: list[float] = []
 
         for sensor in self.solar_sensors:
@@ -456,6 +461,106 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         await self.session.close()
 
 
+class EnergyConsumptionForecastSensor(BaseUtilitySensor):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        consumption_sensors: list[str],
+        production_sensors: list[str],
+        icon: str,
+        device: DeviceInfo,
+    ):
+        super().__init__(
+            name=name,
+            unique_id=unique_id,
+            unit="kWh",
+            device_class=None,
+            icon=icon,
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self.hass = hass
+        self.consumption_sensors = consumption_sensors
+        self.production_sensors = production_sensors
+        self._extra_attrs: dict[str, list[float]] = {}
+
+    @property
+    def extra_state_attributes(self) -> dict[str, list[float]]:
+        return self._extra_attrs
+
+    async def _fetch_history(self, sensors: list[str], start, end) -> dict[str, list]:
+        """Fetch history data for the given sensors."""  # mypy: ignore-errors
+        from homeassistant.components.recorder import history
+
+        func = cast(Any, history.state_changes_during_period)
+        return cast(
+            dict[str, list],
+            await self.hass.async_add_executor_job(
+                func,
+                self.hass,
+                start,
+                end,
+                sensors,
+                False,
+                True,
+            ),
+        )
+
+    def _hourly_averages(self, data: dict[str, list]) -> list[float]:
+        from homeassistant.util import dt as dt_util
+
+        totals = [0.0] * 24
+        counts = [0] * 24
+        for states in data.values():
+            prev_val = None
+            prev_ts = None
+            for s in states:
+                try:
+                    val = float(s.state)
+                except (ValueError, TypeError):
+                    continue
+                ts = dt_util.as_utc(getattr(s, "last_updated", None) or dt_util.utcnow())
+                if prev_val is None:
+                    prev_val = val
+                    prev_ts = ts
+                    continue
+                if prev_ts is not None and ts <= prev_ts:
+                    continue
+                assert prev_ts is not None
+                hour = prev_ts.hour
+                totals[hour] += val - prev_val
+                counts[hour] += 1
+                prev_val = val
+                prev_ts = ts
+        return [totals[i] / counts[i] if counts[i] else 0.0 for i in range(24)]
+
+    async def _compute_value(self) -> None:
+        from datetime import timedelta
+        from homeassistant.util import dt as dt_util
+
+        end = dt_util.utcnow()
+        start = end - timedelta(days=14)
+
+        cons_hist = await self._fetch_history(self.consumption_sensors, start, end)
+        prod_hist = await self._fetch_history(self.production_sensors, start, end)
+
+        cons_avg = self._hourly_averages(cons_hist)
+        prod_avg = self._hourly_averages(prod_hist)
+
+        net = [cons_avg[i] - prod_avg[i] for i in range(24)]
+
+        self._attr_native_value = round(net[end.hour], 3)
+        self._extra_attrs = {"standby_forecast": [round(v, 3) for v in net]}
+        self._attr_available = True
+
+    async def async_update(self):
+        await self._compute_value()
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -467,6 +572,15 @@ async def async_setup_entry(
         name="Heatpump Curve Optimizer",
     )
     entities: list[BaseUtilitySensor] = []
+
+    configs = entry.data.get(CONF_CONFIGS, [])
+    consumption_sources: list[str] = []
+    production_sources: list[str] = []
+    for cfg in configs:
+        if cfg.get(CONF_SOURCE_TYPE) == SOURCE_TYPE_CONSUMPTION:
+            consumption_sources.extend(cfg.get(CONF_SOURCES, []))
+        elif cfg.get(CONF_SOURCE_TYPE) == SOURCE_TYPE_PRODUCTION:
+            production_sources.extend(cfg.get(CONF_SOURCES, []))
 
     area_m2 = entry.data.get(CONF_AREA_M2)
     energy_label = entry.data.get(CONF_ENERGY_LABEL)
@@ -544,6 +658,19 @@ async def async_setup_entry(
                 south_m2=glass_south,
                 u_value=glass_u,
                 icon="mdi:window-closed-variant",
+                device=device_info,
+            )
+        )
+
+    if consumption_sources and production_sources:
+        entities.append(
+            EnergyConsumptionForecastSensor(
+                hass=hass,
+                name="Expected Energy Consumption",
+                unique_id=f"{DOMAIN}_expected_energy_consumption",
+                consumption_sensors=consumption_sources,
+                production_sensors=production_sources,
+                icon="mdi:flash-clock",
                 device=device_info,
             )
         )
