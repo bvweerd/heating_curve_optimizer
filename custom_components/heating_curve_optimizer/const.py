@@ -1,8 +1,8 @@
 """Constants for the Heating Curve Optimizer integration."""
 
 # Domain of the integration
-DOMAIN = "optimizer"
-DOMAIN_ABBREVIATION = "OPT"
+DOMAIN = "heating_curve_optimizer"
+DOMAIN_ABBREVIATION = "HCO"
 
 PLATFORMS = ["sensor"]
 
