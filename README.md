@@ -198,4 +198,29 @@ Gebruik een kaarttype zoals **entities**, **sensor graph**, of **custom:apexchar
 
 ---
 
+## 📊 Uitleg output sensoren
+
+### `sensor.dynamic_heat_offset`
+Deze sensor toont de geadviseerde offset voor de stooklijn. De waarde wordt
+berekend door voor de komende uren de verwachte warmtevraag, COP en
+elektriciteitsprijs te combineren. Het algoritme kiest de offset die de laagste
+totale kosten oplevert binnen de ingestelde grenzen.
+
+### `sensor.hourly_heat_loss`
+Geeft het geschatte warmteverlies per uur in kilowatt weer. De berekening
+gebruikt de oppervlakte van de woning en het energielabel om een U-waarde te
+bepalen. Deze U-waarde wordt vermenigvuldigd met het temperatuurverschil tussen
+binnen en buiten.
+
+### `sensor.hourly_solar_gain`
+De totale zonnewarmte die via zonnepanelen verwacht wordt. De integratie leest
+de `detailed forecast` van de opgegeven Solcast sensoren uit, telt de waarden op
+en past een efficiëntiefactor toe zodat de output in kilowatt wordt weergegeven.
+
+### `sensor.hourly_net_heat_demand`
+Dit is het verschil tussen het warmteverlies en de zonnewinst. Negatieve waarden
+worden op nul gezet. Deze sensor laat dus zien hoeveel netto warmte er per uur
+nodig is om de binnentemperatuur op peil te houden.
+
+
 Gemaakt voor maximale efficiëntie, flexibiliteit en inzicht!
