@@ -237,8 +237,12 @@ class SolarGainSensor(BaseUtilitySensor):
         self._extra_attrs: dict[str, list[float]] = {}
         self.area_m2 = area_m2
 
-    def _extract_forecast(self, state) -> list[float]:
-        """Return forecast values for the next 24h for a Solcast/Forecast.Solar sensor."""
+    def _extract_forecast(self, sensor: str, state) -> list[float]:
+        """Return hourly forecast for the next 24h.
+
+        The timestamps in the source data are validated against the current
+        hour to avoid using stale or misaligned information.
+        """
         from datetime import timedelta
         from homeassistant.util import dt as dt_util
 
@@ -255,9 +259,9 @@ class SolarGainSensor(BaseUtilitySensor):
         else:
             data = []
 
-        now = dt_util.utcnow()
+        now = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
         end = now + timedelta(hours=24)
-        values: list[float] = []
+        values: list[tuple] = []
         if isinstance(data, (list, tuple)):
             for item in data:
                 ts = None
@@ -289,23 +293,38 @@ class SolarGainSensor(BaseUtilitySensor):
                     if dt_obj is None:
                         continue
                     dt_obj = dt_util.as_utc(dt_obj)
-                    if dt_obj < now or dt_obj >= end:
-                        continue
+                else:
+                    dt_obj = now + timedelta(hours=len(values))
 
+                if dt_obj < now or dt_obj >= end:
+                    continue
+
+                values.append((dt_obj, val_float))
                 if len(values) >= 24:
                     break
-                values.append(val_float)
 
-        return values
+        values.sort(key=lambda x: x[0])
+        hourly: list[float] = []
+        for idx, (ts, val) in enumerate(values[:24]):
+            expected = now + timedelta(hours=idx)
+            if ts.replace(minute=0, second=0, microsecond=0) != expected:
+                _LOGGER.warning(
+                    "Skipping forecast from %s due to timestamp mismatch %s != %s",
+                    sensor,
+                    ts,
+                    expected,
+                )
+                return []
+            hourly.append(val)
+
+        return hourly
 
     @property
     def extra_state_attributes(self) -> dict[str, list[float]]:
         return self._extra_attrs
 
     async def _compute_value(self) -> None:
-        total_solar = 0.0
-        attr_data: dict[str, list] = {}
-        aggregated: list[float] = []
+        hourly_total: list[float] = []
 
         for sensor in self.solar_sensors:
             state = self.hass.states.get(sensor)
@@ -313,35 +332,32 @@ class SolarGainSensor(BaseUtilitySensor):
                 _LOGGER.warning("Solar forecast sensor %s is unavailable", sensor)
                 continue
 
-            forecast = self._extract_forecast(state)
+            forecast = self._extract_forecast(sensor, state)
             if not forecast:
                 _LOGGER.warning(
                     "Solar forecast sensor %s has no usable forecast", sensor
                 )
                 continue
 
-            attr_data[sensor] = forecast
-            total_solar += forecast[0]
-
-            for i, v in enumerate(forecast[:24]):
-                if len(aggregated) <= i:
-                    aggregated.append(float(v))
+            for i, v in enumerate(forecast):
+                if len(hourly_total) <= i:
+                    hourly_total.append(float(v))
                 else:
-                    aggregated[i] += float(v)
+                    hourly_total[i] += float(v)
 
-        if not attr_data:
+        if not hourly_total:
             self._attr_available = False
             return
 
-        agg_list: list[float | None] = [round(v, 3) for v in aggregated]
-        if len(agg_list) < 24:
-            agg_list.extend([None] * (24 - len(agg_list)))
-        attr_data["aggregated"] = cast(list[float], agg_list)
+        forecast_gain = [
+            round(v * self.area_m2 * SOLAR_EFFICIENCY / 1000.0, 3) for v in hourly_total
+        ]
+        if len(forecast_gain) < 24:
+            forecast_gain.extend([None] * (24 - len(forecast_gain)))
 
-        self._extra_attrs = attr_data
+        self._extra_attrs = {"forecast": forecast_gain}
         self._attr_available = True
-        q_solar = total_solar * self.area_m2 * SOLAR_EFFICIENCY / 1000.0
-        self._attr_native_value = round(q_solar, 3)
+        self._attr_native_value = forecast_gain[0] if forecast_gain else 0.0
 
     async def async_update(self):
         await self._compute_value()
