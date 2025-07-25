@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
 
 import logging
 import math
@@ -12,8 +12,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
-
-from typing import Any
 
 from .const import (
     DOMAIN,
@@ -42,6 +40,7 @@ _LOGGER = logging.getLogger(__name__)
 
 UTILITY_ENTITIES: list[BaseUtilitySensor] = []
 PARALLEL_UPDATES = 1
+
 
 class CurrentElectricityPriceSensor(BaseUtilitySensor):
     def __init__(
@@ -110,6 +109,7 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
             return
         await self.async_update()
         self.async_write_ha_state()
+
 
 class HeatLossSensor(BaseUtilitySensor):
     def __init__(
@@ -331,6 +331,8 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         indoor_sensor: str | None,
         icon: str,
         device: DeviceInfo,
+        heat_loss_sensor: HeatLossSensor | None = None,
+        window_gain_sensor: WindowSolarGainSensor | None = None,
     ):
         super().__init__(
             name=name,
@@ -351,6 +353,13 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         self.latitude = hass.config.latitude
         self.longitude = hass.config.longitude
         self.session = aiohttp.ClientSession()
+        self.heat_loss_sensor = heat_loss_sensor
+        self.window_gain_sensor = window_gain_sensor
+        self._extra_attrs: dict[str, list[float]] = {}
+
+    @property
+    def extra_state_attributes(self) -> dict[str, list[float]]:
+        return self._extra_attrs
 
     async def _compute_value(self) -> None:
         url = (
@@ -386,6 +395,22 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         q_solar = solar_total * self.area_m2 * SOLAR_EFFICIENCY / 1000.0
         q_net = max(q_loss - q_solar, 0.0)
         self._attr_native_value = round(q_net, 3)
+
+        loss_fc = []
+        gain_fc = []
+        if self.heat_loss_sensor:
+            loss_fc = self.heat_loss_sensor.extra_state_attributes.get("forecast", [])
+        if self.window_gain_sensor:
+            gain_fc = self.window_gain_sensor.extra_state_attributes.get("forecast", [])
+
+        n = max(len(loss_fc), len(gain_fc))
+        forecast = []
+        for i in range(n):
+            lf = loss_fc[i] if i < len(loss_fc) else 0.0
+            gf = gain_fc[i] if i < len(gain_fc) else 0.0
+            forecast.append(round(max(lf - gf, 0.0), 3))
+
+        self._extra_attrs = {"forecast": forecast}
 
     async def async_update(self):
         await self._compute_value()
@@ -576,34 +601,34 @@ async def async_setup_entry(
 
         UTILITY_ENTITIES.extend(entities)
 
+    heat_loss_sensor = None
     if area_m2 and energy_label:
-        entities.append(
-            HeatLossSensor(
-                hass=hass,
-                name="Hourly Heat Loss",
-                unique_id=f"{DOMAIN}_hourly_heat_loss",
-                area_m2=float(area_m2),
-                energy_label=energy_label,
-                indoor_sensor=indoor_sensor,
-                icon="mdi:home-thermometer",
-                device=device_info,
-            )
+        heat_loss_sensor = HeatLossSensor(
+            hass=hass,
+            name="Hourly Heat Loss",
+            unique_id=f"{DOMAIN}_hourly_heat_loss",
+            area_m2=float(area_m2),
+            energy_label=energy_label,
+            indoor_sensor=indoor_sensor,
+            icon="mdi:home-thermometer",
+            device=device_info,
         )
+        entities.append(heat_loss_sensor)
 
+    window_gain_sensor = None
     if area_m2 and (glass_east or glass_west or glass_south):
-        entities.append(
-            WindowSolarGainSensor(
-                hass=hass,
-                name="Window Solar Gain",
-                unique_id=f"{DOMAIN}_window_solar_gain",
-                east_m2=glass_east,
-                west_m2=glass_west,
-                south_m2=glass_south,
-                u_value=glass_u,
-                icon="mdi:window-closed-variant",
-                device=device_info,
-            )
+        window_gain_sensor = WindowSolarGainSensor(
+            hass=hass,
+            name="Window Solar Gain",
+            unique_id=f"{DOMAIN}_window_solar_gain",
+            east_m2=glass_east,
+            west_m2=glass_west,
+            south_m2=glass_south,
+            u_value=glass_u,
+            icon="mdi:window-closed-variant",
+            device=device_info,
         )
+        entities.append(window_gain_sensor)
 
     if consumption_sources or production_sources:
         entities.append(
@@ -630,6 +655,8 @@ async def async_setup_entry(
                 indoor_sensor=indoor_sensor,
                 icon="mdi:fire",
                 device=device_info,
+                heat_loss_sensor=heat_loss_sensor,
+                window_gain_sensor=window_gain_sensor,
             )
         )
 
