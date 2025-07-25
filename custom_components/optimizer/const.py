@@ -25,6 +25,7 @@ CONF_GLASS_U_VALUE = "glass_u_value"
 # from these attributes will be copied to the solar gain sensor attributes.
 CONF_SOLAR_FORECAST = "solar_forecasts"
 CONF_POWER_CONSUMPTION = "power_consumption"
+CONF_INDOOR_TEMPERATURE_SENSOR = "indoor_temperature_sensor"
 
 # Allowed energy labels
 ENERGY_LABELS = ["A", "B", "C", "D", "E", "F", "G"]

@@ -1,31 +1,30 @@
 from __future__ import annotations
 
-import voluptuous as vol
 import copy
-
 from typing import Any
 
 from homeassistant import config_entries
-from homeassistant.config_entries import ConfigFlowContext
+from homeassistant.config_entries import ConfigFlowContext, ConfigFlowResult
 from homeassistant.core import callback
-from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers.selector import selector
+import voluptuous as vol
 
 from .const import (
-    DOMAIN,
-    CONF_CONFIGS,
-    CONF_SOURCE_TYPE,
-    CONF_SOURCES,
-    CONF_PRICE_SENSOR,
-    CONF_PRICE_SETTINGS,
     CONF_AREA_M2,
+    CONF_CONFIGS,
     CONF_ENERGY_LABEL,
     CONF_GLASS_EAST_M2,
-    CONF_GLASS_WEST_M2,
     CONF_GLASS_SOUTH_M2,
     CONF_GLASS_U_VALUE,
-    CONF_SOLAR_FORECAST,
+    CONF_GLASS_WEST_M2,
+    CONF_INDOOR_TEMPERATURE_SENSOR,
     CONF_POWER_CONSUMPTION,
+    CONF_PRICE_SENSOR,
+    CONF_PRICE_SETTINGS,
+    CONF_SOLAR_FORECAST,
+    CONF_SOURCE_TYPE,
+    CONF_SOURCES,
+    DOMAIN,
     ENERGY_LABELS,
     SOURCE_TYPES,
 )
@@ -56,6 +55,7 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         self.glass_u_value: float | None = None
         self.solar_forecast: list[str] | None = None
         self.power_consumption: str | None = None
+        self.indoor_temperature_sensor: str | None = None
 
     async def async_step_user(
         self, user_input: dict[str, str] | None = None
@@ -94,6 +94,7 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         CONF_GLASS_SOUTH_M2: self.glass_south_m2,
                         CONF_GLASS_U_VALUE: self.glass_u_value,
                         CONF_SOLAR_FORECAST: self.solar_forecast,
+                        CONF_INDOOR_TEMPERATURE_SENSOR: self.indoor_temperature_sensor,
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                     },
                 )
@@ -141,6 +142,15 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             ]
         )
 
+    async def _get_temperature_sensors(self) -> list[str]:
+        return sorted(
+            [
+                state.entity_id
+                for state in self.hass.states.async_all("sensor")
+                if state.attributes.get("device_class") == "temperature"
+            ]
+        )
+
     async def async_step_basic_options(self, user_input=None):
         if user_input is not None:
             self.area_m2 = float(user_input[CONF_AREA_M2])
@@ -153,11 +163,15 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             if isinstance(sf, str):
                 sf = [sf]
             self.solar_forecast = sf
+            self.indoor_temperature_sensor = user_input.get(
+                CONF_INDOOR_TEMPERATURE_SENSOR
+            )
             self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
             return await self.async_step_user()
 
         energy_sensors = await self._get_energy_sensors()
         power_sensors = await self._get_power_sensors()
+        temp_sensors = await self._get_temperature_sensors()
 
         schema = vol.Schema(
             {
@@ -180,6 +194,15 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         "select": {
                             "options": energy_sensors,
                             "multiple": True,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Optional(CONF_INDOOR_TEMPERATURE_SENSOR): selector(
+                    {
+                        "select": {
+                            "options": temp_sensors,
+                            "multiple": False,
                             "mode": "dropdown",
                         }
                     }
@@ -210,11 +233,15 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             if isinstance(sf, str):
                 sf = [sf]
             self.solar_forecast = sf
+            self.indoor_temperature_sensor = user_input.get(
+                CONF_INDOOR_TEMPERATURE_SENSOR
+            )
             self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
             return await self.async_step_user()
 
         energy_sensors = await self._get_energy_sensors()
         power_sensors = await self._get_power_sensors()
+        temp_sensors = await self._get_temperature_sensors()
 
         schema = vol.Schema(
             {
@@ -237,6 +264,15 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         "select": {
                             "options": energy_sensors,
                             "multiple": True,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Optional(CONF_INDOOR_TEMPERATURE_SENSOR): selector(
+                    {
+                        "select": {
+                            "options": temp_sensors,
+                            "multiple": False,
                             "mode": "dropdown",
                         }
                     }
@@ -353,6 +389,9 @@ class DynamicEnergyCalculatorOptionsFlowHandler(config_entries.OptionsFlow):
             self.solar_forecast = [sf]
         else:
             self.solar_forecast = sf
+        self.indoor_temperature_sensor = config_entry.data.get(
+            CONF_INDOOR_TEMPERATURE_SENSOR
+        )
         self.power_consumption = config_entry.data.get(CONF_POWER_CONSUMPTION)
         self.price_settings = copy.deepcopy(
             config_entry.options.get(
@@ -417,6 +456,7 @@ class DynamicEnergyCalculatorOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_GLASS_SOUTH_M2: self.glass_south_m2,
                         CONF_GLASS_U_VALUE: self.glass_u_value,
                         CONF_SOLAR_FORECAST: self.solar_forecast,
+                        CONF_INDOOR_TEMPERATURE_SENSOR: self.indoor_temperature_sensor,
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                     },
                 )

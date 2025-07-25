@@ -50,7 +50,7 @@ class BaseUtilitySensor(SensorEntity, RestoreEntity):
 
     @property
     def native_value(self) -> float:
-        return float(round(float(cast(float, self._attr_native_value or 0.0)), 8))
+        return float(round(float(self._attr_native_value or 0.0), 8))
 
     async def async_added_to_hass(self):
         last_state = await self.async_get_last_state()
