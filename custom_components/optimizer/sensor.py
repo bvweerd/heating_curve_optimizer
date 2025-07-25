@@ -1,35 +1,37 @@
 from __future__ import annotations
 
+from typing import cast
 
+import logging
+import math
+
+import aiohttp
 from homeassistant.components.sensor import SensorStateClass
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
-import aiohttp
-import math
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.entity import DeviceInfo
 
 from .const import (
-    DOMAIN,
-    CONF_PRICE_SENSOR,
-    CONF_PRICE_SETTINGS,
-    SOURCE_TYPE_CONSUMPTION,
-    SOURCE_TYPE_PRODUCTION,
     CONF_AREA_M2,
     CONF_ENERGY_LABEL,
     CONF_GLASS_EAST_M2,
-    CONF_GLASS_WEST_M2,
     CONF_GLASS_SOUTH_M2,
     CONF_GLASS_U_VALUE,
+    CONF_GLASS_WEST_M2,
+    CONF_INDOOR_TEMPERATURE_SENSOR,
+    CONF_PRICE_SENSOR,
+    CONF_PRICE_SETTINGS,
     CONF_SOLAR_FORECAST,
-    U_VALUE_MAP,
+    DOMAIN,
     INDOOR_TEMPERATURE,
     SOLAR_EFFICIENCY,
+    SOURCE_TYPE_CONSUMPTION,
+    SOURCE_TYPE_PRODUCTION,
+    U_VALUE_MAP,
 )
 from .entity import BaseUtilitySensor
-
-import logging
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -114,6 +116,7 @@ class HeatLossSensor(BaseUtilitySensor):
         unique_id: str,
         area_m2: float,
         energy_label: str,
+        indoor_sensor: str | None,
         icon: str,
         device: DeviceInfo,
     ):
@@ -132,6 +135,7 @@ class HeatLossSensor(BaseUtilitySensor):
         self._extra_attrs: dict[str, list[float]] = {}
         self.area_m2 = area_m2
         self.energy_label = energy_label
+        self.indoor_sensor = indoor_sensor
         self.latitude = hass.config.latitude
         self.longitude = hass.config.longitude
         self.session = aiohttp.ClientSession()
@@ -156,11 +160,18 @@ class HeatLossSensor(BaseUtilitySensor):
         current, forecast = await self._fetch_weather()
         self._attr_available = True
         u_value = U_VALUE_MAP.get(self.energy_label.upper(), 1.0)
-        q_loss = self.area_m2 * u_value * (INDOOR_TEMPERATURE - current) / 1000.0
+        indoor = INDOOR_TEMPERATURE
+        if self.indoor_sensor:
+            state = self.hass.states.get(self.indoor_sensor)
+            if state and state.state not in ("unknown", "unavailable"):
+                try:
+                    indoor = float(state.state)
+                except ValueError:
+                    indoor = INDOOR_TEMPERATURE
+        q_loss = self.area_m2 * u_value * (indoor - current) / 1000.0
         self._attr_native_value = round(q_loss, 3)
         forecast_values = [
-            round(self.area_m2 * u_value * (INDOOR_TEMPERATURE - t) / 1000.0, 3)
-            for t in forecast
+            round(self.area_m2 * u_value * (indoor - t) / 1000.0, 3) for t in forecast
         ]
         self._extra_attrs = {"forecast": forecast_values}
 
@@ -225,10 +236,11 @@ class SolarGainSensor(BaseUtilitySensor):
                     )
                 else:
                     val = item
-                try:
-                    values.append(float(val))
-                except (TypeError, ValueError):
-                    continue
+                if val is not None:
+                    try:
+                        values.append(float(val))
+                    except (TypeError, ValueError):
+                        continue
         return values
 
     @property
@@ -268,7 +280,7 @@ class SolarGainSensor(BaseUtilitySensor):
         agg_list: list[float | None] = [round(v, 3) for v in aggregated]
         if len(agg_list) < 24:
             agg_list.extend([None] * (24 - len(agg_list)))
-        attr_data["aggregated"] = agg_list
+        attr_data["aggregated"] = cast(list[float], agg_list)
 
         self._extra_attrs = attr_data
         self._attr_available = True
@@ -388,6 +400,7 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         solar_sensor: list[str],
         area_m2: float,
         energy_label: str,
+        indoor_sensor: str | None,
         icon: str,
         device: DeviceInfo,
     ):
@@ -406,6 +419,7 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         self.solar_sensors = solar_sensor
         self.area_m2 = area_m2
         self.energy_label = energy_label
+        self.indoor_sensor = indoor_sensor
         self.latitude = hass.config.latitude
         self.longitude = hass.config.longitude
         self.session = aiohttp.ClientSession()
@@ -432,7 +446,15 @@ class NetHeatDemandSensor(BaseUtilitySensor):
 
         self._attr_available = True
         u_value = U_VALUE_MAP.get(self.energy_label.upper(), 1.0)
-        q_loss = self.area_m2 * u_value * (INDOOR_TEMPERATURE - t_outdoor) / 1000.0
+        indoor = INDOOR_TEMPERATURE
+        if self.indoor_sensor:
+            state = self.hass.states.get(self.indoor_sensor)
+            if state and state.state not in ("unknown", "unavailable"):
+                try:
+                    indoor = float(state.state)
+                except ValueError:
+                    indoor = INDOOR_TEMPERATURE
+        q_loss = self.area_m2 * u_value * (indoor - t_outdoor) / 1000.0
         q_solar = solar_total * self.area_m2 * SOLAR_EFFICIENCY / 1000.0
         q_net = max(q_loss - q_solar, 0.0)
         self._attr_native_value = round(q_net, 3)
@@ -473,6 +495,7 @@ async def async_setup_entry(
     solar_sensor = entry.data.get(CONF_SOLAR_FORECAST)
     if isinstance(solar_sensor, str):
         solar_sensor = [solar_sensor]
+    indoor_sensor = entry.data.get(CONF_INDOOR_TEMPERATURE_SENSOR)
     glass_east = float(entry.data.get(CONF_GLASS_EAST_M2, 0))
     glass_west = float(entry.data.get(CONF_GLASS_WEST_M2, 0))
     glass_south = float(entry.data.get(CONF_GLASS_SOUTH_M2, 0))
@@ -515,6 +538,7 @@ async def async_setup_entry(
                 unique_id=f"{DOMAIN}_hourly_heat_loss",
                 area_m2=float(area_m2),
                 energy_label=energy_label,
+                indoor_sensor=indoor_sensor,
                 icon="mdi:home-thermometer",
                 device=device_info,
             )
@@ -557,6 +581,7 @@ async def async_setup_entry(
                 solar_sensor=solar_sensor,
                 area_m2=float(area_m2),
                 energy_label=energy_label,
+                indoor_sensor=indoor_sensor,
                 icon="mdi:fire",
                 device=device_info,
             )
