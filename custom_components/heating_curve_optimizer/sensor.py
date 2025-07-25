@@ -43,6 +43,7 @@ _LOGGER = logging.getLogger(__name__)
 UTILITY_ENTITIES: list[BaseUtilitySensor] = []
 PARALLEL_UPDATES = 1
 
+
 class CurrentElectricityPriceSensor(BaseUtilitySensor):
     def __init__(
         self,
@@ -110,6 +111,7 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
             return
         await self.async_update()
         self.async_write_ha_state()
+
 
 class HeatLossSensor(BaseUtilitySensor):
     def __init__(
@@ -406,6 +408,71 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         await self.session.close()
 
 
+class NetPowerConsumptionSensor(BaseUtilitySensor):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        consumption_sensors: list[str],
+        production_sensors: list[str],
+        icon: str,
+        device: DeviceInfo,
+    ):
+        super().__init__(
+            name=name,
+            unique_id=unique_id,
+            unit="W",
+            device_class=None,
+            icon=icon,
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self.hass = hass
+        self.consumption_sensors = consumption_sensors
+        self.production_sensors = production_sensors
+
+    def _compute_value(self) -> None:
+        consumption = 0.0
+        for sensor in self.consumption_sensors:
+            state = self.hass.states.get(sensor)
+            if state is None or state.state in ("unknown", "unavailable"):
+                continue
+            try:
+                consumption += float(state.state)
+            except ValueError:
+                continue
+
+        production = 0.0
+        for sensor in self.production_sensors:
+            state = self.hass.states.get(sensor)
+            if state is None or state.state in ("unknown", "unavailable"):
+                continue
+            try:
+                production += float(state.state)
+            except ValueError:
+                continue
+
+        self._attr_available = True
+        self._attr_native_value = round(consumption - production, 3)
+
+    async def async_update(self):
+        self._compute_value()
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        for sensor in self.consumption_sensors + self.production_sensors:
+            self.async_on_remove(
+                async_track_state_change_event(self.hass, sensor, self._handle_change)
+            )
+
+    async def _handle_change(self, event):
+        self._compute_value()
+        self.async_write_ha_state()
+
+
 class EnergyConsumptionForecastSensor(BaseUtilitySensor):
     def __init__(
         self,
@@ -614,6 +681,17 @@ async def async_setup_entry(
                 consumption_sensors=consumption_sources,
                 production_sensors=production_sources,
                 icon="mdi:flash-clock",
+                device=device_info,
+            )
+        )
+        entities.append(
+            NetPowerConsumptionSensor(
+                hass=hass,
+                name="Current Net Consumption",
+                unique_id=f"{DOMAIN}_current_net_consumption",
+                consumption_sensors=consumption_sources,
+                production_sensors=production_sources,
+                icon="mdi:flash",
                 device=device_info,
             )
         )

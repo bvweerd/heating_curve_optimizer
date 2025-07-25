@@ -97,6 +97,9 @@ heating_curve_optimizer:
 ### `sensor.hourly_net_heat_demand`
 - Netto warmtevraag na aftrek van zonwinst in kW
 
+### `sensor.current_net_consumption`
+- Actuele netto stroomafname (verbruik min productie) in kW
+
 ---
 
 ## 🧮 Berekening
@@ -177,6 +180,7 @@ Voeg de volgende sensoren toe aan je Lovelace-dashboard:
 - `sensor.solcast_pv_forecast_forecast_today`
 - `sensor.hourly_heat_loss`
 - `sensor.hourly_net_heat_demand`
+- `sensor.current_net_consumption`
 
 Gebruik een kaarttype zoals **entities**, **sensor graph**, of **custom:apexcharts-card** om toekomstige waarden te tonen.
 
