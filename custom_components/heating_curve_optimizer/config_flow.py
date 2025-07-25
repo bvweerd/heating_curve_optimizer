@@ -34,7 +34,7 @@ STEP_PRICE_SETTINGS = "price_settings"
 STEP_BASIC = "basic"
 
 
-class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
+class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     """Handle a config flow for Heating Curve Optimizer."""
 
     VERSION = 1
@@ -366,10 +366,10 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
-        return DynamicEnergyCalculatorOptionsFlowHandler(config_entry)
+        return HeatingCurveOptimizerOptionsFlowHandler(config_entry)
 
 
-class DynamicEnergyCalculatorOptionsFlowHandler(config_entries.OptionsFlow):
+class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle updates to a config entry (options)."""
 
     def __init__(self, config_entry):

@@ -60,7 +60,7 @@ Het doel is om de **aanvoertemperatuur slim te verhogen of verlagen**, afhankeli
 Plaats deze configuratie in je `configuration.yaml` of configureer via toekomstige UI-configuratie:
 
 ```yaml
-dynamic_heat_curve_prediction:
+heating_curve_optimizer:
   area_m2: 120                  # Woonoppervlakte in vierkante meters
   energy_label: B              # Energielabel: A t/m G (voor warmteverlies)
   horizon_hours: 4             # Aantal uur vooruit voorspellen en optimaliseren
@@ -84,7 +84,7 @@ dynamic_heat_curve_prediction:
 
 ## 📤 Output
 
-### `sensor.dynamic_heat_offset`
+### `sensor.heating_curve_offset`
 - Huidige geadviseerde offset (bijv. +1.5 °C)
 - Attributes:
   - `future_offsets`: lijst met voorspelde offsets komende uren
@@ -158,13 +158,13 @@ De offset wordt gekozen die over de hele horizon de **laagste totale kostprijs**
 - alias: "Stel offset in op warmtepomp"
   trigger:
     - platform: state
-      entity_id: sensor.dynamic_heat_offset
+      entity_id: sensor.heating_curve_offset
   action:
     - service: number.set_value
       target:
         entity_id: number.heat_curve_offset
       data:
-        value: "{{ states('sensor.dynamic_heat_offset') | float }}"
+        value: "{{ states('sensor.heating_curve_offset') | float }}"
 ```
 
 ---
@@ -173,7 +173,7 @@ De offset wordt gekozen die over de hele horizon de **laagste totale kostprijs**
 
 Voeg de volgende sensoren toe aan je Lovelace-dashboard:
 
-- `sensor.dynamic_heat_offset`
+- `sensor.heating_curve_offset`
 - `sensor.power_consumption`
 - `sensor.outdoor_temperature`
 - `sensor.nordpool_kwh_nl_eur_0_10`
@@ -190,7 +190,7 @@ Gebruik een kaarttype zoals **entities**, **sensor graph**, of **custom:apexchar
 
 1. Pak de ZIP uit in je `config/custom_components/` map.
 2. Herstart Home Assistant.
-3. Voeg `dynamic_heat_curve_prediction` toe via YAML.
+3. Voeg `heating_curve_optimizer` toe via YAML.
 4. Herstart opnieuw en controleer de sensoren.
 5. Koppel aan je automatiseringen of visualiseer de uitkomsten.
 
@@ -206,7 +206,7 @@ Gebruik een kaarttype zoals **entities**, **sensor graph**, of **custom:apexchar
 
 ## 📊 Uitleg output sensoren
 
-### `sensor.dynamic_heat_offset`
+### `sensor.heating_curve_offset`
 Deze sensor toont de geadviseerde offset voor de stooklijn. De waarde wordt
 berekend door voor de komende uren de verwachte warmtevraag, COP en
 elektriciteitsprijs te combineren. Het algoritme kiest de offset die de laagste

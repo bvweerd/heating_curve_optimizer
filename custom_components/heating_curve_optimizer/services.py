@@ -1,4 +1,4 @@
-"""Service registration for the Optimizer integration."""
+"""Service registration for the Heating Curve Optimizer integration."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from .sensor import UTILITY_ENTITIES
 
 
 async def async_register_services(hass: HomeAssistant) -> None:
-    """Register optimizer services."""
+    """Register Heating Curve Optimizer services."""
 
     async def handle_reset(call: ServiceCall) -> None:
         for entity in UTILITY_ENTITIES:
@@ -19,5 +19,5 @@ async def async_register_services(hass: HomeAssistant) -> None:
 
 
 async def async_unregister_services(hass: HomeAssistant) -> None:
-    """Unregister optimizer services."""
+    """Unregister Heating Curve Optimizer services."""
     hass.services.async_remove(DOMAIN, "reset")
