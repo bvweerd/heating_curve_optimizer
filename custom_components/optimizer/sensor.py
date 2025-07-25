@@ -373,10 +373,35 @@ class WindowSolarGainSensor(BaseUtilitySensor):
         self._extra_attrs: dict[str, list[float]] = {}
 
     async def _fetch_radiation(self) -> list[float]:
-        url = "https://api.open-meteo.com/v1/forecast?latitude={self.latitude}&longitude={self.longitude}&hourly=shortwave_radiation&timezone=UTC"
+        from datetime import datetime
+
+        url = (
+            "https://api.open-meteo.com/v1/forecast"
+            f"?latitude={self.latitude}&longitude={self.longitude}"
+            "&hourly=shortwave_radiation&timezone=UTC"
+        )
         async with self.session.get(url) as resp:
             data = await resp.json()
-        return [float(v) for v in data.get("hourly", {}).get("shortwave_radiation", [])]
+
+        hourly = data.get("hourly", {})
+        times = hourly.get("time", [])
+        values = hourly.get("shortwave_radiation", [])
+
+        if not times or not values:
+            return []
+
+        now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+        start_idx = 0
+        for i, ts in enumerate(times):
+            try:
+                t = datetime.fromisoformat(ts)
+            except ValueError:
+                continue
+            if t >= now:
+                start_idx = i
+                break
+
+        return [float(v) for v in values[start_idx : start_idx + 24]]
 
     def _orientation_factor(self, azimuth: float, orientation: float) -> float:
         diff = abs(azimuth - orientation)
