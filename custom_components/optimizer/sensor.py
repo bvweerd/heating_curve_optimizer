@@ -96,9 +96,6 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
             )
         )
 
-    async def async_will_remove_from_hass(self):
-        await super().async_will_remove_from_hass()
-
     async def _handle_price_change(self, event):
         new_state = event.data.get("new_state")
         if new_state is None or new_state.state in ("unknown", "unavailable"):
@@ -241,7 +238,7 @@ class SolarGainSensor(BaseUtilitySensor):
     async def _compute_value(self) -> None:
         total_solar = 0.0
         attr_data: dict[str, list[float]] = {}
-        cumulative: list[float] = []
+        aggregated: list[float] = []
 
         for sensor in self.solar_sensors:
             state = self.hass.states.get(sensor)
@@ -258,22 +255,20 @@ class SolarGainSensor(BaseUtilitySensor):
             forecast = self._extract_forecast(state)
             if forecast:
                 attr_data[sensor] = forecast
-                for i, v in enumerate(forecast):
-                    if len(cumulative) <= i:
-                        cumulative.append(float(v))
+                for i, v in enumerate(forecast[:24]):
+                    if len(aggregated) <= i:
+                        aggregated.append(float(v))
                     else:
-                        cumulative[i] += float(v)
+                        aggregated[i] += float(v)
 
         if not attr_data:
             self._attr_available = False
             return
 
-        run = 0.0
-        cum_list: list[float] = []
-        for v in cumulative:
-            run += v
-            cum_list.append(run)
-        attr_data["cumulative"] = cum_list
+        agg_list: list[float | None] = [round(v, 3) for v in aggregated]
+        if len(agg_list) < 24:
+            agg_list.extend([None] * (24 - len(agg_list)))
+        attr_data["aggregated"] = agg_list
 
         self._extra_attrs = attr_data
         self._attr_available = True
