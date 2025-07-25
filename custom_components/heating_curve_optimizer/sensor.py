@@ -210,7 +210,7 @@ class HeatLossSensor(BaseUtilitySensor):
         await super().async_added_to_hass()
 
 
-class SolarGainSensor(BaseUtilitySensor):
+class SolarPanelYieldSensor(BaseUtilitySensor):
     def __init__(
         self,
         hass: HomeAssistant,
@@ -274,7 +274,8 @@ class SolarGainSensor(BaseUtilitySensor):
                         or item.get("watts")
                     )
                     ts = (
-                        item.get("period_end")
+                        item.get("period_start")
+                        or item.get("period_end")
                         or item.get("period")
                         or item.get("time")
                         or item.get("dt")
@@ -761,10 +762,10 @@ async def async_setup_entry(
 
     if solar_sensor and area_m2:
         entities.append(
-            SolarGainSensor(
+            SolarPanelYieldSensor(
                 hass=hass,
-                name="Hourly Solar Gain",
-                unique_id=f"{DOMAIN}_hourly_solar_gain",
+                name="Solar Panel Yield",
+                unique_id=f"{DOMAIN}_solar_panel_yield",
                 solar_sensor=solar_sensor,
                 area_m2=float(area_m2),
                 icon="mdi:weather-sunny",
