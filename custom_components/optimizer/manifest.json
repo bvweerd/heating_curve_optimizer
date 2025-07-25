@@ -1,6 +1,6 @@
 {
   "domain": "optimizer",
-  "name": "Heatpump Curve Optimizer",
+  "name": "Heating Curve Optimizer",
   "codeowners": ["@bvweerd"],
   "config_flow": true,
   "dependencies": [],

@@ -1,4 +1,4 @@
-# 🔥 Heatpump Curve Optimizer
+# 🔥 Heating Curve Optimizer
 
 Deze Home Assistant custom integratie past automatisch en voorspellend de stooklijn-offset van je warmtepomp aan op basis van:
 

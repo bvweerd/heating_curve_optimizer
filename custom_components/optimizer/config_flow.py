@@ -35,7 +35,7 @@ STEP_BASIC = "basic"
 
 
 class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
-    """Handle a config flow for Heatpump Curve Optimizer."""
+    """Handle a config flow for Heating Curve Optimizer."""
 
     VERSION = 1
 
@@ -83,7 +83,7 @@ class DynamicEnergyCalculatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         errors={"base": "no_blocks"},
                     )
                 return self.async_create_entry(
-                    title="Heatpump Curve Optimizer",
+                    title="Heating Curve Optimizer",
                     data={
                         CONF_CONFIGS: self.configs,
                         CONF_PRICE_SENSOR: self.price_settings.get(CONF_PRICE_SENSOR),
