@@ -843,17 +843,18 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
 
     async def _fetch_history(self, sensors: list[str], start, end) -> dict[str, list]:
         """Fetch history data for the given sensors."""  # mypy: ignore-errors
-        from homeassistant.components.recorder import history
+        from homeassistant.components.recorder import history, get_instance
 
         if not sensors:
             return {}
 
         func = cast(Any, history.get_significant_states)
+        recorder = get_instance(self.hass)
 
         try:
             return cast(
                 dict[str, list],
-                await self.hass.async_add_executor_job(
+                await recorder.async_add_executor_job(
                     func,
                     self.hass,
                     start,
@@ -870,7 +871,7 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
             for sensor in sensors:
                 data = cast(
                     dict[str, list],
-                    await self.hass.async_add_executor_job(
+                    await recorder.async_add_executor_job(
                         func,
                         self.hass,
                         start,

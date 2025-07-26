@@ -25,11 +25,14 @@ async def test_fetch_history_multiple_entities(hass):
     with patch(
         "homeassistant.components.recorder.history.get_significant_states",
         return_value={},
-    ) as mock_get, patch.object(
-        hass,
-        "async_add_executor_job",
-        AsyncMock(side_effect=lambda func, *args: func(*args)),
-    ) as mock_exec:
+    ) as mock_get, patch(
+        "homeassistant.components.recorder.get_instance",
+    ) as mock_get_instance:
+        mock_recorder = AsyncMock()
+        mock_recorder.async_add_executor_job.side_effect = (
+            lambda func, *args: func(*args)
+        )
+        mock_get_instance.return_value = mock_recorder
         data = await sensor._fetch_history(["sensor.c1", "sensor.c2"], start, end)
 
     mock_get.assert_called_once()
