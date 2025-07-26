@@ -64,6 +64,7 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
             device=device,
             translation_key=name.lower().replace(" ", "_"),
         )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
         self.hass = hass
         self.latitude = hass.config.latitude
         self.longitude = hass.config.longitude
