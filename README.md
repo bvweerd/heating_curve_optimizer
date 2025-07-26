@@ -233,8 +233,7 @@ bepalen. Deze U-waarde wordt vermenigvuldigd met het temperatuurverschil tussen
 binnen en buiten.
 
 ### `sensor.hourly_net_heat_demand`
-Dit is het verschil tussen het warmteverlies en de zonnewinst. Negatieve waarden
-worden op nul gezet. Deze sensor gebruikt direct de opgegeven Solcast sensoren.
+Dit is het verschil tussen het warmteverlies en de zonnewinst. De waarde kan dus ook negatief zijn wanneer de zonnewinst groter is dan het verlies. Deze sensor gebruikt direct de opgegeven Solcast sensoren.
 Zo zie je hoeveel netto warmte er per uur nodig is om de binnentemperatuur op peil te houden.
 
 
