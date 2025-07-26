@@ -499,7 +499,7 @@ class NetHeatDemandSensor(BaseUtilitySensor):
                     indoor = INDOOR_TEMPERATURE
         q_loss = self.area_m2 * u_value * (indoor - t_outdoor) / 1000.0
         q_solar = solar_total * self.area_m2 * SOLAR_EFFICIENCY / 1000.0
-        q_net = max(q_loss - q_solar, 0.0)
+        q_net = q_loss - q_solar
         self._attr_native_value = round(q_net, 3)
 
         loss_fc = []
@@ -514,7 +514,7 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         for i in range(n):
             lf = loss_fc[i] if i < len(loss_fc) else 0.0
             gf = gain_fc[i] if i < len(gain_fc) else 0.0
-            forecast.append(round(max(lf - gf, 0.0), 3))
+            forecast.append(round(lf - gf, 3))
 
         self._extra_attrs = {"forecast": forecast}
 
