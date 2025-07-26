@@ -20,9 +20,6 @@ CONF_GLASS_EAST_M2 = "glass_east_m2"
 CONF_GLASS_WEST_M2 = "glass_west_m2"
 CONF_GLASS_SOUTH_M2 = "glass_south_m2"
 CONF_GLASS_U_VALUE = "glass_u_value"
-# One or more Solcast sensors. The sensors should expose a ``detailed forecast``
-# attribute with the expected PV production for the coming hours.
-CONF_SOLAR_FORECAST = "solar_forecasts"
 CONF_POWER_CONSUMPTION = "power_consumption"
 CONF_INDOOR_TEMPERATURE_SENSOR = "indoor_temperature_sensor"
 CONF_SUPPLY_TEMPERATURE_SENSOR = "supply_temperature_sensor"
@@ -44,9 +41,6 @@ U_VALUE_MAP = {
 
 # Binnentemperatuur in °C voor warmteverliesberekening
 INDOOR_TEMPERATURE = 21.0
-
-# Efficiëntiefactor voor zoninstraling
-SOLAR_EFFICIENCY = 0.15
 
 # Default COP at a supply temperature of 35 °C
 DEFAULT_COP_AT_35 = 4.2

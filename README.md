@@ -3,7 +3,7 @@
 Deze Home Assistant custom integratie past automatisch en voorspellend de stooklijn-offset van je warmtepomp aan op basis van:
 
 - **Dynamische stroomprijzen** (via Nordpool)
-- **Zonneproductie-verwachting** (via Solcast)
+- **Zoninstraling-verwachting** (automatisch opgehaald)
 - **Warmteverlies van de woning** (oppervlak, energielabel)
 - **Buitentemperatuur en -voorspelling**
 - **Actueel verbruik van de warmtepomp (via DSMR)**
@@ -24,13 +24,6 @@ Het doel is om de **aanvoertemperatuur slim te verhogen of verlagen**, afhankeli
 ---
 
 ## ⚙️ Vereiste sensoren
-
-### 🟠 Solcast
-- `sensor.solcast_pv_forecast_forecast_today`
-  - Verwachte opbrengst van vandaag in kWh
-- `sensor.solcast_pv_forecast_forecast_tomorrow`
-  - Verwachte opbrengst van morgen in kWh
-  - Wordt gebruikt om verwachte zonnewinst per m² te schatten
 
 ### 🟠 Nordpool
 - `sensor.nordpool_kwh_nl_eur_0_10`
@@ -75,7 +68,6 @@ heating_curve_optimizer:
 | `area_m2`            | YAML                       | Oppervlakte woning in m²                             |
 | `energy_label`       | YAML                       | Wordt omgezet naar U-waarde per m² per Kelvin       |
 | `outdoor_temperature`| sensor                     | Actuele buitentemperatuur                           |
-| `solar_forecast`     | Solcast (1 of meer) | Totale dagopbrengst → verdeeld over forecast-horizon |
 | `price_forecast`     | Nordpool                   | Prijs per uur over horizon                           |
 | `power_consumption`  | DSMR of vermogenssensor    | Actuele warmtepompverbruik (optioneel)              |
 | `supply_temperature` | sensor                     | Aanvoertemperatuur warmtepomp                       |
@@ -127,7 +119,7 @@ Q_{verlies} = A \cdot U \cdot (T_{binnen} - T_{buiten})
 Q_{zon} = \text{zoninstraling} \cdot A \cdot \eta
 \]
 
-- Geschatte opbrengst per uur op basis van Solcast-data
+- Geschatte opbrengst per uur op basis van weersvoorspelling
 - Efficiëntiefactor \( \eta \approx 0.15 \)
 
 ### Netto warmtevraag
@@ -213,7 +205,6 @@ Gebruik een kaarttype zoals **entities**, **sensor graph**, of **custom:apexchar
 ## 📞 Ondersteuning
 
 - DSMR P1 sensor: [DSMR Slimme Meter integratie](https://www.home-assistant.io/integrations/dsmr/)
-- Solcast PV Forecast: [Solcast integratie](https://github.com/solcast/solcast-ha)
 - Nordpool: [nordpool integratie](https://github.com/custom-components/nordpool)
 
 ---
@@ -233,7 +224,7 @@ bepalen. Deze U-waarde wordt vermenigvuldigd met het temperatuurverschil tussen
 binnen en buiten.
 
 ### `sensor.hourly_net_heat_demand`
-Dit is het verschil tussen het warmteverlies en de zonnewinst. De waarde kan dus ook negatief zijn wanneer de zonnewinst groter is dan het verlies. Deze sensor gebruikt direct de opgegeven Solcast sensoren.
+Dit is het verschil tussen het warmteverlies en de zonnewinst. De waarde kan dus ook negatief zijn wanneer de zonnewinst groter is dan het verlies. Deze sensor gebruikt de berekende zoninstraling.
 Zo zie je hoeveel netto warmte er per uur nodig is om de binnentemperatuur op peil te houden.
 
 
