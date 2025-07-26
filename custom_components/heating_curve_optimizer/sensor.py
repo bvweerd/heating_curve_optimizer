@@ -31,10 +31,8 @@ from .const import (
     CONF_K_FACTOR,
     CONF_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
-    CONF_SOLAR_FORECAST,
     CONF_CONFIGS,
     INDOOR_TEMPERATURE,
-    SOLAR_EFFICIENCY,
     DEFAULT_COP_AT_35,
     DEFAULT_K_FACTOR,
     U_VALUE_MAP,
@@ -422,7 +420,6 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         hass: HomeAssistant,
         name: str,
         unique_id: str,
-        solar_sensor: list[str],
         area_m2: float,
         energy_label: str,
         indoor_sensor: str | None,
@@ -444,7 +441,6 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         )
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self.hass = hass
-        self.solar_sensors = solar_sensor
         self.area_m2 = area_m2
         self.energy_label = energy_label
         self.indoor_sensor = indoor_sensor
@@ -480,14 +476,12 @@ class NetHeatDemandSensor(BaseUtilitySensor):
             t_outdoor = float(data.get("current_weather", {}).get("temperature", 0))
 
         solar_total = 0.0
-        for sensor in self.solar_sensors:
-            state = self.hass.states.get(sensor)
-            if state is None or state.state in ("unknown", "unavailable"):
-                continue
+        if self.window_gain_sensor:
+            state = self.window_gain_sensor
             try:
-                solar_total += float(state.state)
-            except ValueError:
-                continue
+                solar_total = float(state.native_value or 0.0)
+            except (ValueError, TypeError):
+                solar_total = 0.0
 
         self._attr_available = True
         u_value = U_VALUE_MAP.get(self.energy_label.upper(), 1.0)
@@ -500,7 +494,7 @@ class NetHeatDemandSensor(BaseUtilitySensor):
                 except ValueError:
                     indoor = INDOOR_TEMPERATURE
         q_loss = self.area_m2 * u_value * (indoor - t_outdoor) / 1000.0
-        q_solar = solar_total * self.area_m2 * SOLAR_EFFICIENCY / 1000.0
+        q_solar = solar_total
         q_net = q_loss - q_solar
         self._attr_native_value = round(q_net, 3)
 
@@ -525,9 +519,13 @@ class NetHeatDemandSensor(BaseUtilitySensor):
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
-        for sensor in self.solar_sensors:
+        if self.window_gain_sensor:
             self.async_on_remove(
-                async_track_state_change_event(self.hass, sensor, self._handle_change)
+                async_track_state_change_event(
+                    self.hass,
+                    self.window_gain_sensor.entity_id,
+                    self._handle_change,
+                )
             )
 
     async def _handle_change(self, event):
@@ -973,9 +971,6 @@ async def async_setup_entry(
 
     area_m2 = entry.data.get(CONF_AREA_M2)
     energy_label = entry.data.get(CONF_ENERGY_LABEL)
-    solar_sensor = entry.data.get(CONF_SOLAR_FORECAST)
-    if isinstance(solar_sensor, str):
-        solar_sensor = [solar_sensor]
     indoor_sensor = entry.data.get(CONF_INDOOR_TEMPERATURE_SENSOR)
     supply_temp_sensor = entry.data.get(CONF_SUPPLY_TEMPERATURE_SENSOR)
     k_factor = float(entry.data.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
@@ -1067,12 +1062,11 @@ async def async_setup_entry(
         )
 
     net_heat_sensor = None
-    if solar_sensor and area_m2 and energy_label:
+    if area_m2 and energy_label:
         net_heat_sensor = NetHeatDemandSensor(
             hass=hass,
             name="Hourly Net Heat Demand",
             unique_id=f"{DOMAIN}_hourly_net_heat_demand",
-            solar_sensor=solar_sensor,
             area_m2=float(area_m2),
             energy_label=energy_label,
             indoor_sensor=indoor_sensor,
