@@ -6,6 +6,7 @@ import logging
 import math
 
 import aiohttp
+from pulp import LpMinimize, LpProblem, LpVariable, lpSum, value
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -44,6 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 
 UTILITY_ENTITIES: list[BaseUtilitySensor] = []
 PARALLEL_UPDATES = 1
+HORIZON_HOURS = 6
 
 
 class OutdoorTemperatureSensor(BaseUtilitySensor):
@@ -655,6 +657,159 @@ class QuadraticCopSensor(BaseUtilitySensor):
         self._attr_native_value = round(cop, 3)
 
 
+def _optimize_offsets(
+    demand: list[float],
+    prices: list[float],
+    *,
+    base_temp: float = 35.0,
+    k_factor: float = DEFAULT_K_FACTOR,
+) -> list[int]:
+    """Return optimal offsets for the given demand and prices."""
+    horizon = min(len(demand), len(prices))
+    if horizon == 0:
+        return []
+    model = LpProblem("HeatingCurveOptimization", LpMinimize)
+    offsets = LpVariable.dicts("offset", range(horizon), -4, 4, cat="Integer")
+    deltas = LpVariable.dicts("delta", range(1, horizon), 0, 8, cat="Integer")
+
+    costs = []
+    for t in range(horizon):
+        t_supply = base_temp + offsets[t]
+        delta_t = t_supply - 35
+        cop = 4.2 - k_factor * delta_t
+        q = demand[t]
+        costs.append((q / cop) * prices[t])
+
+    model += lpSum(costs)
+
+    for t in range(horizon):
+        model += (base_temp + offsets[t]) >= 28
+        model += (base_temp + offsets[t]) <= 45
+
+    for t in range(1, horizon):
+        model += offsets[t] - offsets[t - 1] <= deltas[t]
+        model += offsets[t - 1] - offsets[t] <= deltas[t]
+        model += deltas[t] <= 1
+
+    model.solve()
+    return [int(value(offsets[t])) for t in range(horizon)]
+
+
+class HeatingCurveOffsetSensor(BaseUtilitySensor):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        net_heat_sensor: str,
+        price_sensor: str,
+        device: DeviceInfo,
+        *,
+        k_factor: float = DEFAULT_K_FACTOR,
+    ):
+        super().__init__(
+            name=name,
+            unique_id=unique_id,
+            unit="°C",
+            device_class="temperature",
+            icon="mdi:chart-line",
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self.hass = hass
+        self.net_heat_sensor = net_heat_sensor
+        self.price_sensor = price_sensor
+        self.k_factor = k_factor
+        self._extra_attrs: dict[str, list[int]] = {}
+
+    @property
+    def extra_state_attributes(self) -> dict[str, list[int]]:
+        return self._extra_attrs
+
+    def _extract_prices(self, state) -> list[float]:
+        from homeassistant.util import dt as dt_util
+
+        now = dt_util.utcnow()
+        hour = now.hour
+        raw_today = state.attributes.get("raw_today", [])
+        raw_tomorrow = state.attributes.get("raw_tomorrow", [])
+
+        prices: list[float] = []
+        idx = hour
+        for _ in range(HORIZON_HOURS):
+            if idx < len(raw_today):
+                entry = raw_today[idx]
+                val = entry.get("value") if isinstance(entry, dict) else entry
+                prices.append(float(val))
+                idx += 1
+                continue
+            t_idx = idx - len(raw_today)
+            if t_idx < len(raw_tomorrow):
+                entry = raw_tomorrow[t_idx]
+                val = entry.get("value") if isinstance(entry, dict) else entry
+                prices.append(float(val))
+                idx += 1
+                continue
+            break
+
+        if len(prices) < HORIZON_HOURS:
+            try:
+                cur = float(state.state)
+            except (ValueError, TypeError):
+                cur = 0.0
+            prices.extend([cur] * (HORIZON_HOURS - len(prices)))
+        return prices
+
+    def _extract_demand(self, state) -> list[float]:
+        forecast = state.attributes.get("forecast", [])
+        demand = [float(v) for v in forecast[:HORIZON_HOURS]]
+        if len(demand) < HORIZON_HOURS:
+            demand.extend([0.0] * (HORIZON_HOURS - len(demand)))
+        return demand
+
+    async def async_update(self):
+        net_state = self.hass.states.get(self.net_heat_sensor)
+        price_state = self.hass.states.get(self.price_sensor)
+
+        if (
+            net_state is None
+            or price_state is None
+            or net_state.state in ("unknown", "unavailable")
+            or price_state.state in ("unknown", "unavailable")
+        ):
+            self._attr_available = False
+            return
+
+        demand = self._extract_demand(net_state)
+        prices = self._extract_prices(price_state)
+
+        offsets = _optimize_offsets(
+            demand,
+            prices,
+            base_temp=35.0,
+            k_factor=self.k_factor,
+        )
+
+        if offsets:
+            self._attr_native_value = offsets[0]
+        else:
+            self._attr_native_value = 0
+        self._extra_attrs = {"forecast": offsets}
+        self._attr_available = True
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        for ent in (self.net_heat_sensor, self.price_sensor):
+            self.async_on_remove(
+                async_track_state_change_event(self.hass, ent, self._handle_change)
+            )
+
+    async def _handle_change(self, event):
+        await self.async_update()
+        self.async_write_ha_state()
+
+
 class EnergyConsumptionForecastSensor(BaseUtilitySensor):
     def __init__(
         self,
@@ -911,22 +1066,22 @@ async def async_setup_entry(
             )
         )
 
+    net_heat_sensor = None
     if solar_sensor and area_m2 and energy_label:
-        entities.append(
-            NetHeatDemandSensor(
-                hass=hass,
-                name="Hourly Net Heat Demand",
-                unique_id=f"{DOMAIN}_hourly_net_heat_demand",
-                solar_sensor=solar_sensor,
-                area_m2=float(area_m2),
-                energy_label=energy_label,
-                indoor_sensor=indoor_sensor,
-                icon="mdi:fire",
-                device=device_info,
-                heat_loss_sensor=heat_loss_sensor,
-                window_gain_sensor=window_gain_sensor,
-            )
+        net_heat_sensor = NetHeatDemandSensor(
+            hass=hass,
+            name="Hourly Net Heat Demand",
+            unique_id=f"{DOMAIN}_hourly_net_heat_demand",
+            solar_sensor=solar_sensor,
+            area_m2=float(area_m2),
+            energy_label=energy_label,
+            indoor_sensor=indoor_sensor,
+            icon="mdi:fire",
+            device=device_info,
+            heat_loss_sensor=heat_loss_sensor,
+            window_gain_sensor=window_gain_sensor,
         )
+        entities.append(net_heat_sensor)
 
     if supply_temp_sensor:
         entities.append(
@@ -939,6 +1094,19 @@ async def async_setup_entry(
                 k_factor=k_factor,
                 base_cop=DEFAULT_COP_AT_35,
                 device=device_info,
+            )
+        )
+
+    if net_heat_sensor and price_sensor:
+        entities.append(
+            HeatingCurveOffsetSensor(
+                hass=hass,
+                name="Heating Curve Offset",
+                unique_id=f"{DOMAIN}_heating_curve_offset",
+                net_heat_sensor=net_heat_sensor.entity_id,
+                price_sensor=price_sensor,
+                device=device_info,
+                k_factor=k_factor,
             )
         )
 
