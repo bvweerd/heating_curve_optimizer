@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, cast
 from functools import partial
-
 import logging
 import math
+from typing import Any, cast
 
 import aiohttp
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
@@ -15,26 +14,27 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
-    DOMAIN,
-    SOURCE_TYPE_CONSUMPTION,
-    SOURCE_TYPE_PRODUCTION,
-    CONF_SOURCE_TYPE,
-    CONF_SOURCES,
     CONF_AREA_M2,
+    CONF_CONFIGS,
     CONF_ENERGY_LABEL,
     CONF_GLASS_EAST_M2,
     CONF_GLASS_SOUTH_M2,
     CONF_GLASS_U_VALUE,
     CONF_GLASS_WEST_M2,
     CONF_INDOOR_TEMPERATURE_SENSOR,
-    CONF_SUPPLY_TEMPERATURE_SENSOR,
     CONF_K_FACTOR,
+    CONF_POWER_CONSUMPTION,
     CONF_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
-    CONF_CONFIGS,
-    INDOOR_TEMPERATURE,
+    CONF_SOURCE_TYPE,
+    CONF_SOURCES,
+    CONF_SUPPLY_TEMPERATURE_SENSOR,
     DEFAULT_COP_AT_35,
     DEFAULT_K_FACTOR,
+    DOMAIN,
+    INDOOR_TEMPERATURE,
+    SOURCE_TYPE_CONSUMPTION,
+    SOURCE_TYPE_PRODUCTION,
     U_VALUE_MAP,
 )
 from .entity import BaseUtilitySensor
@@ -604,7 +604,7 @@ class NetPowerConsumptionSensor(BaseUtilitySensor):
 
 
 class QuadraticCopSensor(BaseUtilitySensor):
-    """COP sensor using a linear k-factor model."""
+    """COP sensor using an empirical formula."""
 
     def __init__(
         self,
@@ -646,14 +646,69 @@ class QuadraticCopSensor(BaseUtilitySensor):
             return
         try:
             s_temp = float(s_state.state)
-            float(o_state.state)
+            o_temp = float(o_state.state)
         except ValueError:
             self._attr_available = False
             return
-        delta = s_temp - 35
-        cop = self.base_cop - self.k_factor * delta
+        cop = 3.80 + 0.08 * o_temp - 0.02 * (s_temp - 35)
         self._attr_available = True
         self._attr_native_value = round(cop, 3)
+
+
+class HeatPumpThermalPowerSensor(BaseUtilitySensor):
+    """Calculate current thermal output of the heat pump."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        power_sensor: str,
+        supply_sensor: str,
+        outdoor_sensor: str,
+        device: DeviceInfo,
+    ):
+        super().__init__(
+            name=name,
+            unique_id=unique_id,
+            unit="kW",
+            device_class=None,
+            icon="mdi:fire",
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self.hass = hass
+        self.power_sensor = power_sensor
+        self.supply_sensor = supply_sensor
+        self.outdoor_sensor = outdoor_sensor
+
+    async def async_update(self):
+        p_state = self.hass.states.get(self.power_sensor)
+        s_state = self.hass.states.get(self.supply_sensor)
+        o_state = self.hass.states.get(self.outdoor_sensor)
+        if (
+            p_state is None
+            or s_state is None
+            or o_state is None
+            or p_state.state in ("unknown", "unavailable")
+            or s_state.state in ("unknown", "unavailable")
+            or o_state.state in ("unknown", "unavailable")
+        ):
+            self._attr_available = False
+            return
+        try:
+            power = float(p_state.state)
+            s_temp = float(s_state.state)
+            o_temp = float(o_state.state)
+        except ValueError:
+            self._attr_available = False
+            return
+        cop = 3.80 + 0.08 * o_temp - 0.02 * (s_temp - 35)
+        thermal_power = power * cop / 1000.0
+        self._attr_available = True
+        self._attr_native_value = round(thermal_power, 3)
 
 
 def _optimize_offsets(
@@ -874,7 +929,7 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
 
     async def _fetch_history(self, sensors: list[str], start, end) -> dict[str, list]:
         """Fetch history data for the given sensors."""  # mypy: ignore-errors
-        from homeassistant.components.recorder import history, get_instance
+        from homeassistant.components.recorder import get_instance, history
 
         if not sensors:
             return {}
@@ -949,6 +1004,7 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
 
     async def _compute_value(self) -> None:
         from datetime import timedelta
+
         from homeassistant.util import dt as dt_util
 
         end = dt_util.utcnow()
@@ -1007,6 +1063,7 @@ async def async_setup_entry(
     energy_label = entry.data.get(CONF_ENERGY_LABEL)
     indoor_sensor = entry.data.get(CONF_INDOOR_TEMPERATURE_SENSOR)
     supply_temp_sensor = entry.data.get(CONF_SUPPLY_TEMPERATURE_SENSOR)
+    power_sensor = entry.data.get(CONF_POWER_CONSUMPTION)
     k_factor = float(entry.data.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
     glass_east = float(entry.data.get(CONF_GLASS_EAST_M2, 0))
     glass_west = float(entry.data.get(CONF_GLASS_WEST_M2, 0))
@@ -1124,6 +1181,18 @@ async def async_setup_entry(
                 device=device_info,
             )
         )
+        if power_sensor:
+            entities.append(
+                HeatPumpThermalPowerSensor(
+                    hass=hass,
+                    name="Heat Pump Thermal Power",
+                    unique_id=f"{entry.entry_id}_thermal_power",
+                    power_sensor=power_sensor,
+                    supply_sensor=supply_temp_sensor,
+                    outdoor_sensor="sensor.outdoor_temperature",
+                    device=device_info,
+                )
+            )
 
     if net_heat_sensor and price_sensor:
         entities.append(

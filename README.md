@@ -134,14 +134,13 @@ Q_{netto} = Q_{verlies} - Q_{zon}
 1. **Fallback-model** (als geen werkelijk verbruik beschikbaar):
 
 \[
-COP(T_a) = a - k \cdot (T_a - 35)
+COP \approx 3.80 + 0.08 T_{out} - 0.02 (T_{sup} - 35)
 \]
 
 waarbij:
 
-- \(a\): gemeten COP bij \(T_a=35\,\degree C\) (typisch 4–4,5)
-- \(k\): afname in COP per graad (ongeveer 0,10–0,12)
-- \(T_a\): gewenste aanvoertemperatuur in \(^\circ C\)
+- \(T_{out}\): buitentemperatuur in \(^\circ C\)
+- \(T_{sup}\): aanvoertemperatuur van de warmtepomp in \(^\circ C\)
 
 2. **Werkelijk** (als warmtepompvermogen bekend):
 
@@ -164,13 +163,11 @@ De offset wordt gekozen die over de hele horizon de **laagste totale kostprijs**
 2. **Toegestane offsets bepalen**: voor een basissupply van 35&nbsp;°C worden offsets
    van **-4 tot +4&nbsp;°C** overwogen, zolang de resulterende aanvoertemperatuur
    tussen 28&nbsp;°C en 45&nbsp;°C ligt.
-3. **COP-afgeleide**: de COP voor een offset wordt benaderd met
+3. **COP-afgeleide**: de COP wordt benaderd met
 
    \[
-   COP(\Delta T) = COP_{35} - k \cdot \Delta T
+   COP \approx 3.80 + 0.08 T_{out} - 0.02 (T_{sup} - 35)
    \]
-
-   waarbij `COP_{35}` de COP is bij 35&nbsp;°C en `k` de ingestelde k-factor.
 4. **Dynamische programmering**: per uur berekent het algoritme de kosten voor
    elke offset en houdt daarbij alleen overgangen bij waarbij het verschil met het
    vorige uur maximaal één graad is (om abrupte sprongen te voorkomen). Zo wordt
