@@ -1107,7 +1107,7 @@ async def async_setup_entry(
                 hass=hass,
                 name="Heating Curve Offset",
                 unique_id=f"{entry.entry_id}_heating_curve_offset",
-                net_heat_sensor=net_heat_sensor.entity_id,
+                net_heat_sensor=net_heat_sensor,
                 price_sensor=price_sensor,
                 device=device_info,
                 k_factor=k_factor,
