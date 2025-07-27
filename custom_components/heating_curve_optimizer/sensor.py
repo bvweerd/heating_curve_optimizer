@@ -680,17 +680,15 @@ def _optimize_offsets(
     dp: list[dict[int, tuple[float, int | None]]] = [{} for _ in range(horizon)]
 
     for off in allowed_offsets:
-        cost = demand[0] * prices[0] * (
-            reciprocal_base_cop + cop_derivative * off
-        )
+        cost = demand[0] * prices[0] * (reciprocal_base_cop + cop_derivative * off)
         dp[0][off] = (cost, None)
 
     for t in range(1, horizon):
         for off in allowed_offsets:
             best_cost = math.inf
             best_prev: int | None = None
-            step_cost = demand[t] * prices[t] * (
-                reciprocal_base_cop + cop_derivative * off
+            step_cost = (
+                demand[t] * prices[t] * (reciprocal_base_cop + cop_derivative * off)
             )
             for prev_off, (prev_cost, _) in dp[t - 1].items():
                 if abs(off - prev_off) <= 1:
@@ -825,7 +823,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             self._attr_native_value = offsets[0]
         else:
             self._attr_native_value = 0
-        self._extra_attrs = {"forecast": offsets}
+        self._extra_attrs = {"future_offsets": offsets}
         self._attr_available = True
 
     async def async_added_to_hass(self):
