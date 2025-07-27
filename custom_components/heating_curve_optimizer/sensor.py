@@ -671,13 +671,16 @@ def _optimize_offsets(
     offsets = LpVariable.dicts("offset", range(horizon), -4, 4, cat="Integer")
     deltas = LpVariable.dicts("delta", range(1, horizon), 0, 8, cat="Integer")
 
+    base_cop = DEFAULT_COP_AT_35 - k_factor * (base_temp - 35)
+    reciprocal_base_cop = 1 / base_cop
+    cop_derivative = k_factor / (base_cop**2)
+
     costs = []
     for t in range(horizon):
-        t_supply = base_temp + offsets[t]
-        delta_t = t_supply - 35
-        cop = 4.2 - k_factor * delta_t
         q = demand[t]
-        costs.append((q / cop) * prices[t])
+        offset = offsets[t]
+        cost = q * prices[t] * (reciprocal_base_cop + cop_derivative * offset)
+        costs.append(cost)
 
     model += lpSum(costs)
 
