@@ -7,7 +7,7 @@ import math
 
 import aiohttp
 from pulp import LpMinimize, LpProblem, LpVariable, lpSum, value
-from homeassistant.components.sensor import SensorStateClass
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
@@ -700,7 +700,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         hass: HomeAssistant,
         name: str,
         unique_id: str,
-        net_heat_sensor: str,
+        net_heat_sensor: str | SensorEntity,
         price_sensor: str,
         device: DeviceInfo,
         *,
@@ -768,8 +768,13 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         return demand
 
     async def async_update(self):
-        net_state = self.hass.states.get(self.net_heat_sensor)
+        ent = (
+            self.net_heat_sensor.entity_id
+            if hasattr(self.net_heat_sensor, "entity_id")
+            else self.net_heat_sensor
+        )
         price_state = self.hass.states.get(self.price_sensor)
+        net_state = self.hass.states.get(ent) if ent else None
 
         if (
             net_state is None
@@ -799,10 +804,13 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
+        if not isinstance(self.net_heat_sensor, str):
+            self.net_heat_sensor = self.net_heat_sensor.entity_id
         for ent in (self.net_heat_sensor, self.price_sensor):
-            self.async_on_remove(
-                async_track_state_change_event(self.hass, ent, self._handle_change)
-            )
+            if ent:
+                self.async_on_remove(
+                    async_track_state_change_event(self.hass, ent, self._handle_change)
+                )
 
     async def _handle_change(self, event):
         await self.async_update()
