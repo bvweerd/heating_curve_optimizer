@@ -82,6 +82,7 @@ heating_curve_optimizer:
 - Huidige geadviseerde offset (bijv. +1.5 °C)
 - Attributes:
   - `future_offsets`: lijst met voorspelde offsets komende uren
+  - `prices`: gebruikte uurprijzen voor de berekening
   - `indoor_temperature_forecast`: voorspelde binnentemperatuur
   - (toekomstig) `predicted_savings`: verwachte energiekostenbesparing
 

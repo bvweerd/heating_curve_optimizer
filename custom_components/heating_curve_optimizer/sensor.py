@@ -823,7 +823,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             self._attr_native_value = offsets[0]
         else:
             self._attr_native_value = 0
-        self._extra_attrs = {"future_offsets": offsets}
+        self._extra_attrs = {"future_offsets": offsets, "prices": prices}
         self._attr_available = True
 
     async def async_added_to_hass(self):
