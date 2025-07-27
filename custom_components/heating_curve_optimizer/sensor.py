@@ -957,7 +957,7 @@ async def async_setup_entry(
     outdoor_sensor_entity = OutdoorTemperatureSensor(
         hass=hass,
         name="Outdoor Temperature",
-        unique_id=f"{DOMAIN}_outdoor_temperature",
+        unique_id=f"{entry.entry_id}_outdoor_temperature",
         device=device_info,
     )
     entities.append(outdoor_sensor_entity)
@@ -987,7 +987,7 @@ async def async_setup_entry(
             CurrentElectricityPriceSensor(
                 hass=hass,
                 name="Current Consumption Price",
-                unique_id=f"{DOMAIN}_current_consumption_price",
+                unique_id=f"{entry.entry_id}_current_consumption_price",
                 price_sensor=price_sensor,
                 source_type=SOURCE_TYPE_CONSUMPTION,
                 price_settings=price_settings,
@@ -999,7 +999,7 @@ async def async_setup_entry(
             CurrentElectricityPriceSensor(
                 hass=hass,
                 name="Current Production Price",
-                unique_id=f"{DOMAIN}_current_production_price",
+                unique_id=f"{entry.entry_id}_current_production_price",
                 price_sensor=price_sensor,
                 source_type=SOURCE_TYPE_PRODUCTION,
                 price_settings=price_settings,
@@ -1015,7 +1015,7 @@ async def async_setup_entry(
         heat_loss_sensor = HeatLossSensor(
             hass=hass,
             name="Hourly Heat Loss",
-            unique_id=f"{DOMAIN}_hourly_heat_loss",
+            unique_id=f"{entry.entry_id}_hourly_heat_loss",
             area_m2=float(area_m2),
             energy_label=energy_label,
             indoor_sensor=indoor_sensor,
@@ -1029,7 +1029,7 @@ async def async_setup_entry(
         window_gain_sensor = WindowSolarGainSensor(
             hass=hass,
             name="Window Solar Gain",
-            unique_id=f"{DOMAIN}_window_solar_gain",
+            unique_id=f"{entry.entry_id}_window_solar_gain",
             east_m2=glass_east,
             west_m2=glass_west,
             south_m2=glass_south,
@@ -1044,7 +1044,7 @@ async def async_setup_entry(
             EnergyConsumptionForecastSensor(
                 hass=hass,
                 name="Expected Energy Consumption",
-                unique_id=f"{DOMAIN}_expected_energy_consumption",
+                unique_id=f"{entry.entry_id}_expected_energy_consumption",
                 consumption_sensors=consumption_sources,
                 production_sensors=production_sources,
                 icon="mdi:flash-clock",
@@ -1055,7 +1055,7 @@ async def async_setup_entry(
             NetPowerConsumptionSensor(
                 hass=hass,
                 name="Current Net Consumption",
-                unique_id=f"{DOMAIN}_current_net_consumption",
+                unique_id=f"{entry.entry_id}_current_net_consumption",
                 consumption_sensors=consumption_sources,
                 production_sensors=production_sources,
                 icon="mdi:flash",
@@ -1068,7 +1068,7 @@ async def async_setup_entry(
         net_heat_sensor = NetHeatDemandSensor(
             hass=hass,
             name="Hourly Net Heat Demand",
-            unique_id=f"{DOMAIN}_hourly_net_heat_demand",
+            unique_id=f"{entry.entry_id}_hourly_net_heat_demand",
             area_m2=float(area_m2),
             energy_label=energy_label,
             indoor_sensor=indoor_sensor,
@@ -1084,7 +1084,7 @@ async def async_setup_entry(
             QuadraticCopSensor(
                 hass=hass,
                 name="Heat Pump COP",
-                unique_id=f"{DOMAIN}_cop",
+                unique_id=f"{entry.entry_id}_cop",
                 supply_sensor=supply_temp_sensor,
                 outdoor_sensor="sensor.outdoor_temperature",
                 k_factor=k_factor,
@@ -1098,7 +1098,7 @@ async def async_setup_entry(
             HeatingCurveOffsetSensor(
                 hass=hass,
                 name="Heating Curve Offset",
-                unique_id=f"{DOMAIN}_heating_curve_offset",
+                unique_id=f"{entry.entry_id}_heating_curve_offset",
                 net_heat_sensor=net_heat_sensor.entity_id,
                 price_sensor=price_sensor,
                 device=device_info,
