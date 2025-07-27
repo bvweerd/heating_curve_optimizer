@@ -9,7 +9,7 @@
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/bvweerd/heating_curve_optimizer/issues",
   "quality_scale": "silver",
-  "requirements": ["aiohttp", "pulp"],
+  "requirements": ["aiohttp"],
   "ssdp": [],
   "version": "0.0.1",
   "zeroconf": []
