@@ -694,7 +694,11 @@ def _optimize_offsets(
         model += offsets[t - 1] - offsets[t] <= deltas[t]
         model += deltas[t] <= 1
 
-    model.solve()
+    try:
+        model.solve()
+    except FileNotFoundError as err:
+        _LOGGER.error("Optimization solver unavailable: %s", err)
+        return [0 for _ in range(horizon)]
     return [int(value(offsets[t])) for t in range(horizon)]
 
 
