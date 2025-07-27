@@ -7,7 +7,6 @@ import logging
 import math
 
 import aiohttp
-from pulp import LpMinimize, LpProblem, LpVariable, lpSum, value
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -668,38 +667,54 @@ def _optimize_offsets(
     horizon = min(len(demand), len(prices))
     if horizon == 0:
         return []
-    model = LpProblem("HeatingCurveOptimization", LpMinimize)
-    offsets = LpVariable.dicts("offset", range(horizon), -4, 4, cat="Integer")
-    deltas = LpVariable.dicts("delta", range(1, horizon), 0, 8, cat="Integer")
 
     base_cop = DEFAULT_COP_AT_35 - k_factor * (base_temp - 35)
     reciprocal_base_cop = 1 / base_cop
     cop_derivative = k_factor / (base_cop**2)
 
-    costs = []
-    for t in range(horizon):
-        q = demand[t]
-        offset = offsets[t]
-        cost = q * prices[t] * (reciprocal_base_cop + cop_derivative * offset)
-        costs.append(cost)
+    allowed_offsets = [o for o in range(-4, 5) if 28 <= base_temp + o <= 45]
+    if not allowed_offsets:
+        return [0 for _ in range(horizon)]
 
-    model += lpSum(costs)
+    # dynamic programming table storing (cost, previous_offset)
+    dp: list[dict[int, tuple[float, int | None]]] = [{} for _ in range(horizon)]
 
-    for t in range(horizon):
-        model += (base_temp + offsets[t]) >= 28
-        model += (base_temp + offsets[t]) <= 45
+    for off in allowed_offsets:
+        cost = demand[0] * prices[0] * (
+            reciprocal_base_cop + cop_derivative * off
+        )
+        dp[0][off] = (cost, None)
 
     for t in range(1, horizon):
-        model += offsets[t] - offsets[t - 1] <= deltas[t]
-        model += offsets[t - 1] - offsets[t] <= deltas[t]
-        model += deltas[t] <= 1
+        for off in allowed_offsets:
+            best_cost = math.inf
+            best_prev: int | None = None
+            step_cost = demand[t] * prices[t] * (
+                reciprocal_base_cop + cop_derivative * off
+            )
+            for prev_off, (prev_cost, _) in dp[t - 1].items():
+                if abs(off - prev_off) <= 1:
+                    total = prev_cost + step_cost
+                    if total < best_cost:
+                        best_cost = total
+                        best_prev = prev_off
+            if best_prev is not None:
+                dp[t][off] = (best_cost, best_prev)
 
-    try:
-        model.solve()
-    except FileNotFoundError as err:
-        _LOGGER.error("Optimization solver unavailable: %s", err)
+    if not dp[horizon - 1]:
         return [0 for _ in range(horizon)]
-    return [int(value(offsets[t])) for t in range(horizon)]
+
+    # reconstruct path from best final offset
+    last_off = min(dp[horizon - 1], key=lambda o: dp[horizon - 1][o][0])
+    result = [0] * horizon
+    result[-1] = last_off
+    for t in range(horizon - 1, 0, -1):
+        _, prev_off = dp[t][last_off]
+        assert prev_off is not None
+        result[t - 1] = prev_off
+        last_off = prev_off
+
+    return result
 
 
 class HeatingCurveOffsetSensor(BaseUtilitySensor):
