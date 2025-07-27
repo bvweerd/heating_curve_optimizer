@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, cast
+from functools import partial
 
 import logging
 import math
@@ -791,11 +792,14 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         demand = self._extract_demand(net_state)
         prices = self._extract_prices(price_state)
 
-        offsets = _optimize_offsets(
+        offsets = await self.hass.async_add_executor_job(
+            partial(
+                _optimize_offsets,
+                base_temp=35.0,
+                k_factor=self.k_factor,
+            ),
             demand,
             prices,
-            base_temp=35.0,
-            k_factor=self.k_factor,
         )
 
         if offsets:
