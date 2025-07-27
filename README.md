@@ -156,6 +156,33 @@ Kosten = \frac{Q_{netto}}{COP} \cdot \text{prijs}(t)
 
 De offset wordt gekozen die over de hele horizon de **laagste totale kostprijs** oplevert, binnen comfortgrenzen.
 
+### Optimalisatie-algoritme
+
+1. **Vraag- en prijsreeksen verzamelen**: het algoritme ontvangt voor elke komende
+   uur de geschatte `netto warmtevraag` en de voorspelde stroomprijs.
+2. **Toegestane offsets bepalen**: voor een basissupply van 35&nbsp;°C worden offsets
+   van **-4 tot +4&nbsp;°C** overwogen, zolang de resulterende aanvoertemperatuur
+   tussen 28&nbsp;°C en 45&nbsp;°C ligt.
+3. **COP-afgeleide**: de COP voor een offset wordt benaderd met
+
+   \[
+   COP(\Delta T) = COP_{35} - k \cdot \Delta T
+   \]
+
+   waarbij `COP_{35}` de COP is bij 35&nbsp;°C en `k` de ingestelde k-factor.
+4. **Dynamische programmering**: per uur berekent het algoritme de kosten voor
+   elke offset en houdt daarbij alleen overgangen bij waarbij het verschil met het
+   vorige uur maximaal één graad is (om abrupte sprongen te voorkomen). Zo wordt
+   voor elk uur en elke offset de goedkoopste combinatie opgebouwd.
+5. **Terugredeneren**: na het vullen van de matrix (de interne dynamische-
+   programmeertabel) wordt vanuit het laatste uur teruggewerkt om het pad met de
+   laagste totale kosten te reconstrueren. Het eerste element van dit pad is de
+   offset die in het huidige uur moet worden toegepast.
+
+Deze aanpak zorgt ervoor dat het systeem de toekomstige prijzen kan benutten om
+nu al te verwarmen wanneer dat voordeliger is, of juist te wachten wanneer de
+prijs daalt, zonder comfortgrenzen te overschrijden.
+
 ---
 
 ## 💡 Voorbeeldgebruik
