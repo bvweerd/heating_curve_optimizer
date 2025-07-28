@@ -50,6 +50,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def _update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle options update by reloading the config entry."""
+    _LOGGER.debug("Reloading config entry %s", entry.entry_id)
     await hass.config_entries.async_reload(entry.entry_id)
 
 
