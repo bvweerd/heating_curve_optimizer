@@ -155,15 +155,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ]
         )
 
-    async def _get_temperature_sensors(self) -> list[str]:
-        return sorted(
-            [
-                state.entity_id
-                for state in self.hass.states.async_all("sensor")
-                if state.attributes.get("device_class") == "temperature"
-            ]
-        )
-
     async def async_step_basic_options(self, user_input=None):
         if user_input is not None:
             self.area_m2 = float(user_input[CONF_AREA_M2])
@@ -443,15 +434,6 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             ]
         )
 
-    async def _get_temperature_sensors(self) -> list[str]:
-        return sorted(
-            [
-                state.entity_id
-                for state in self.hass.states.async_all("sensor")
-                if state.attributes.get("device_class") == "temperature"
-            ]
-        )
-
     async def async_step_init(self, user_input=None):
         return await self.async_step_user()
 
@@ -536,7 +518,7 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             return await self.async_step_user()
 
         power_sensors = await self._get_power_sensors()
-        temp_sensors = await self._get_temperature_sensors()
+        temp_sensors = await HeatingCurveOptimizerConfigFlow._get_temperature_sensors(self)
 
         schema = vol.Schema(
             {
