@@ -7,8 +7,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN, PLATFORMS
-from .services import async_register_services, async_unregister_services
-from .sensor import UTILITY_ENTITIES
 
 import logging
 
@@ -21,9 +19,6 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the base integration (no YAML)."""
     hass.data.setdefault(DOMAIN, {})
-    if not hass.data[DOMAIN].get("services_registered"):
-        await async_register_services(hass)
-        hass.data[DOMAIN]["services_registered"] = True
     _LOGGER.info("Initialized Heating Curve Optimizer")
     return True
 
@@ -31,10 +26,6 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up a config entry by forwarding to sensor & number platforms."""
     _LOGGER.info("Setting up entry %s", entry.entry_id)
-
-    if not hass.data[DOMAIN].get("services_registered"):
-        await async_register_services(hass)
-        hass.data[DOMAIN]["services_registered"] = True
 
     # Store entry data
     hass.data[DOMAIN][entry.entry_id] = entry.data
@@ -59,19 +50,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.info("Unloading entry %s", entry.entry_id)
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        entity_map = hass.data[DOMAIN].pop("entities", {})
-        if entity_map:
-            UTILITY_ENTITIES[:] = [
-                ent for ent in UTILITY_ENTITIES if ent not in entity_map.values()
-            ]
-        hass.data[DOMAIN].pop(entry.entry_id)
+        hass.data[DOMAIN].pop("entities", None)
+        hass.data[DOMAIN].pop(entry.entry_id, None)
         _LOGGER.debug("Successfully unloaded entry %s", entry.entry_id)
-        remaining = [
-            k for k in hass.data[DOMAIN] if k not in ("services_registered", "entities")
-        ]
-        if not remaining and hass.data[DOMAIN].get("services_registered"):
-            await async_unregister_services(hass)
-            hass.data[DOMAIN]["services_registered"] = False
+        if not hass.data[DOMAIN]:
+            hass.data.pop(DOMAIN)
     else:
         _LOGGER.warning("Failed to unload entry %s", entry.entry_id)
     return unload_ok
