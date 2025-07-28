@@ -8,7 +8,6 @@ This Home Assistant integration calculates the optimal heating curve offset for 
 - Creates sensors for electricity prices, consumption and production.
 - Predicts standby energy usage and current net power.
 - Optimizes the heating curve offset using a dynamic programming algorithm.
-- Provides a service to reset all helper sensors.
 
 ## Configuration
 Configuration is done entirely through the UI. The following options can be provided:
@@ -36,9 +35,6 @@ Configuration is done entirely through the UI. The following options can be prov
 | `sensor.heating_curve_offset` | Optimal offset for the next six hours. |
 
 The `sensor.heating_curve_offset` attributes include future offsets and the price list used for the calculation.
-
-## Service
-`heating_curve_optimizer.reset` – reset all helper sensors to zero.
 
 ## Automation Example
 ```yaml

@@ -40,8 +40,6 @@ from .const import (
 from .entity import BaseUtilitySensor
 
 _LOGGER = logging.getLogger(__name__)
-
-UTILITY_ENTITIES: list[BaseUtilitySensor] = []
 PARALLEL_UPDATES = 1
 HORIZON_HOURS = 6
 
@@ -1173,8 +1171,6 @@ async def async_setup_entry(
             )
         )
 
-        UTILITY_ENTITIES.extend(entities)
-
     heat_loss_sensor = None
     if area_m2 and energy_label:
         heat_loss_sensor = HeatLossSensor(
@@ -1284,8 +1280,6 @@ async def async_setup_entry(
         )
 
     if entities:
-        UTILITY_ENTITIES.extend(ent for ent in entities if ent not in UTILITY_ENTITIES)
-
-    async_add_entities(entities, True)
+        async_add_entities(entities, True)
 
     hass.data[DOMAIN]["entities"] = {ent.entity_id: ent for ent in entities}
