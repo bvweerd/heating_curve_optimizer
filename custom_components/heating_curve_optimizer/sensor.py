@@ -718,7 +718,14 @@ def _optimize_offsets(
     base_temp: float = 35.0,
     k_factor: float = DEFAULT_K_FACTOR,
 ) -> list[int]:
-    """Return optimal offsets for the given demand and prices."""
+    """Return cost optimized offsets for the given demand and prices.
+
+    The ``demand`` list contains the net heat demand per hour.  The
+    algorithm uses the total energy over the complete horizon and
+    distributes that energy over the hours with a dynamic-programming
+    approach.  Offsets are restricted to ``\-4`` .. ``+4`` and may only
+    change by one degree per step.
+    """
     horizon = min(len(demand), len(prices))
     if horizon == 0:
         return []
@@ -863,6 +870,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
 
         demand = self._extract_demand(net_state)
         prices = self._extract_prices(price_state)
+        total_energy = sum(demand)
 
         offsets = await self.hass.async_add_executor_job(
             partial(
@@ -878,7 +886,11 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             self._attr_native_value = offsets[0]
         else:
             self._attr_native_value = 0
-        self._extra_attrs = {"future_offsets": offsets, "prices": prices}
+        self._extra_attrs = {
+            "future_offsets": offsets,
+            "prices": prices,
+            "total_energy": round(total_energy, 3),
+        }
         self._attr_available = True
 
     async def async_added_to_hass(self):

@@ -19,6 +19,7 @@ Het doel is om de **aanvoertemperatuur slim te verhogen of verlagen**, afhankeli
 - Berekent netto warmtevraag (verlies - zoninstraling)
 - Voert COP-berekening uit (geschat of werkelijk)
 - Optimaliseert de stooklijn-offset op basis van verwachte kosten
+- Verdeelt de totale warmtevraag over de horizon voor minimale kosten
 - Publiceert offset in een sensor met toekomstvoorspelling als attributes
 
 ---
@@ -170,8 +171,10 @@ De offset wordt gekozen die over de hele horizon de **laagste totale kostprijs**
    \]
 4. **Dynamische programmering**: per uur berekent het algoritme de kosten voor
    elke offset en houdt daarbij alleen overgangen bij waarbij het verschil met het
-   vorige uur maximaal één graad is (om abrupte sprongen te voorkomen). Zo wordt
-   voor elk uur en elke offset de goedkoopste combinatie opgebouwd.
+   vorige uur maximaal één graad is (om abrupte sprongen te voorkomen). Daarbij
+   wordt de totale warmtevraag over de horizon verdeeld zodat de
+   resulterende kosten minimaal zijn. Zo wordt voor elk uur en elke offset de
+   goedkoopste combinatie opgebouwd.
 5. **Terugredeneren**: na het vullen van de matrix (de interne dynamische-
    programmeertabel) wordt vanuit het laatste uur teruggewerkt om het pad met de
    laagste totale kosten te reconstrueren. Het eerste element van dit pad is de
