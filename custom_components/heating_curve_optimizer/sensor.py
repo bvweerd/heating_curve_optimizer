@@ -76,6 +76,8 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
     async def _fetch_weather(self) -> tuple[float, list[float]]:
         from datetime import datetime
 
+        _LOGGER.debug("Fetching weather for %.4f, %.4f", self.latitude, self.longitude)
+
         url = (
             "https://api.open-meteo.com/v1/forecast"
             f"?latitude={self.latitude}&longitude={self.longitude}"
@@ -105,6 +107,7 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
                 break
 
         temps = [float(v) for v in values[start_idx : start_idx + 24]]
+        _LOGGER.debug("Weather data current=%s forecast=%s", current, temps)
         return current, temps
 
     async def async_update(self):
@@ -228,6 +231,12 @@ class HeatLossSensor(BaseUtilitySensor):
         """Return current temperature and the next 24h forecast."""
         from datetime import datetime
 
+        _LOGGER.debug(
+            "Fetching heat loss weather for %.4f, %.4f",
+            self.latitude,
+            self.longitude,
+        )
+
         url = (
             "https://api.open-meteo.com/v1/forecast"
             f"?latitude={self.latitude}&longitude={self.longitude}"
@@ -257,6 +266,7 @@ class HeatLossSensor(BaseUtilitySensor):
                 break
 
         temps = [float(v) for v in values[start_idx : start_idx + 24]]
+        _LOGGER.debug("Heat loss weather current=%s forecast=%s", current, temps)
         return current, temps
 
     @property
@@ -291,6 +301,13 @@ class HeatLossSensor(BaseUtilitySensor):
                 except ValueError:
                     indoor = INDOOR_TEMPERATURE
         q_loss = self.area_m2 * u_value * (indoor - current) / 1000.0
+        _LOGGER.debug(
+            "Heat loss calculation area=%.2f u=%.2f indoor=%.2f outdoor=%.2f",
+            self.area_m2,
+            u_value,
+            indoor,
+            current,
+        )
         self._attr_native_value = round(q_loss, 3)
         forecast_values = [
             round(self.area_m2 * u_value * (indoor - t) / 1000.0, 3) for t in forecast
@@ -341,6 +358,12 @@ class WindowSolarGainSensor(BaseUtilitySensor):
     async def _fetch_radiation(self) -> list[float]:
         from datetime import datetime
 
+        _LOGGER.debug(
+            "Fetching radiation for %.4f, %.4f",
+            self.latitude,
+            self.longitude,
+        )
+
         url = (
             "https://api.open-meteo.com/v1/forecast"
             f"?latitude={self.latitude}&longitude={self.longitude}"
@@ -367,7 +390,9 @@ class WindowSolarGainSensor(BaseUtilitySensor):
                 start_idx = i
                 break
 
-        return [float(v) for v in values[start_idx : start_idx + 24]]
+        values_list = [float(v) for v in values[start_idx : start_idx + 24]]
+        _LOGGER.debug("Radiation forecast=%s", values_list)
+        return values_list
 
     def _orientation_factor(self, azimuth: float, orientation: float) -> float:
         diff = abs(azimuth - orientation)
@@ -381,6 +406,7 @@ class WindowSolarGainSensor(BaseUtilitySensor):
 
     async def _compute_value(self) -> None:
         rad = await self._fetch_radiation()
+        _LOGGER.debug("Solar gain raw radiation=%s", rad)
         sun = self.hass.states.get("sun.sun")
         az = float(sun.attributes.get("azimuth", 0)) if sun else 0.0
         elev = float(sun.attributes.get("elevation", 0)) if sun else 0.0
@@ -400,6 +426,7 @@ class WindowSolarGainSensor(BaseUtilitySensor):
         else:
             current = 0.0
             forecast = []
+        _LOGGER.debug("Solar gain current=%s forecast=%s", current, forecast)
         self._attr_available = True
         self._attr_native_value = round(current, 3)
         self._extra_attrs = {"forecast": forecast}
@@ -497,6 +524,7 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         q_loss = self.area_m2 * u_value * (indoor - t_outdoor) / 1000.0
         q_solar = solar_total
         q_net = q_loss - q_solar
+        _LOGGER.debug("Net heat demand loss=%s solar=%s net=%s", q_loss, q_solar, q_net)
         self._attr_native_value = round(q_net, 3)
 
         loss_fc = []
@@ -586,7 +614,14 @@ class NetPowerConsumptionSensor(BaseUtilitySensor):
                 continue
 
         self._attr_available = True
-        self._attr_native_value = round(consumption - production, 3)
+        net = consumption - production
+        _LOGGER.debug(
+            "Power consumption total=%s production=%s net=%s",
+            consumption,
+            production,
+            net,
+        )
+        self._attr_native_value = round(net, 3)
 
     async def async_update(self):
         self._compute_value()
@@ -651,6 +686,9 @@ class QuadraticCopSensor(BaseUtilitySensor):
             self._attr_available = False
             return
         cop = 3.80 + 0.08 * o_temp - 0.02 * (s_temp - 35)
+        _LOGGER.debug(
+            "Calculated COP with supply=%s outdoor=%s -> %s", s_temp, o_temp, cop
+        )
         self._attr_available = True
         self._attr_native_value = round(cop, 3)
 
@@ -707,6 +745,12 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
             return
         cop = 3.80 + 0.08 * o_temp - 0.02 * (s_temp - 35)
         thermal_power = power * cop / 1000.0
+        _LOGGER.debug(
+            "Thermal power calc power=%s cop=%s -> %s",
+            power,
+            cop,
+            thermal_power,
+        )
         self._attr_available = True
         self._attr_native_value = round(thermal_power, 3)
 
@@ -718,7 +762,7 @@ def _optimize_offsets(
     base_temp: float = 35.0,
     k_factor: float = DEFAULT_K_FACTOR,
 ) -> list[int]:
-    """Return cost optimized offsets for the given demand and prices.
+    r"""Return cost optimized offsets for the given demand and prices.
 
     The ``demand`` list contains the net heat demand per hour.  The
     algorithm uses the total energy over the complete horizon and
@@ -726,6 +770,13 @@ def _optimize_offsets(
     approach.  Offsets are restricted to ``\-4`` .. ``+4`` and may only
     change by one degree per step.
     """
+    _LOGGER.debug(
+        "Optimizing offsets demand=%s prices=%s base=%s k=%s",
+        demand,
+        prices,
+        base_temp,
+        k_factor,
+    )
     horizon = min(len(demand), len(prices))
     if horizon == 0:
         return []
@@ -773,6 +824,8 @@ def _optimize_offsets(
         assert prev_off is not None
         result[t - 1] = prev_off
         last_off = prev_off
+
+    _LOGGER.debug("Optimized offsets result=%s", result)
 
     return result
 
@@ -871,6 +924,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         demand = self._extract_demand(net_state)
         prices = self._extract_prices(price_state)
         total_energy = sum(demand)
+        _LOGGER.debug("Offset sensor demand=%s prices=%s", demand, prices)
 
         offsets = await self.hass.async_add_executor_job(
             partial(
@@ -881,6 +935,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             demand,
             prices,
         )
+        _LOGGER.debug("Calculated offsets=%s", offsets)
 
         if offsets:
             self._attr_native_value = offsets[0]
@@ -945,6 +1000,13 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
 
         if not sensors:
             return {}
+
+        _LOGGER.debug(
+            "Fetching history for sensors=%s from=%s to=%s",
+            sensors,
+            start,
+            end,
+        )
 
         func = cast(Any, history.get_significant_states)
         recorder = get_instance(self.hass)
@@ -1029,6 +1091,7 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
         prod_avg = self._hourly_averages(prod_hist)
 
         net = [cons_avg[i] - prod_avg[i] for i in range(24)]
+        _LOGGER.debug("Energy consumption forecast=%s", net)
 
         self._attr_native_value = round(net[end.hour], 3)
         self._extra_attrs = {"standby_forecast": [round(v, 3) for v in net]}
