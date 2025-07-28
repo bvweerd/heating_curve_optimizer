@@ -5,7 +5,7 @@ import logging
 import math
 from typing import Any, cast
 
-import aiohttp
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -64,7 +64,7 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
         self.hass = hass
         self.latitude = hass.config.latitude
         self.longitude = hass.config.longitude
-        self.session = aiohttp.ClientSession()
+        self.session = async_get_clientsession(hass)
         self._extra_attrs: dict[str, list[float]] = {}
 
     @property
@@ -119,7 +119,6 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
 
     async def async_will_remove_from_hass(self):
         await super().async_will_remove_from_hass()
-        await self.session.close()
 
 
 class CurrentElectricityPriceSensor(BaseUtilitySensor):
@@ -172,7 +171,7 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
 
     async def async_will_remove_from_hass(self):
         await super().async_will_remove_from_hass()
-        await self.session.close()
+        
         self.async_on_remove(
             async_track_state_change_event(
                 self.hass,
@@ -223,7 +222,7 @@ class HeatLossSensor(BaseUtilitySensor):
         self.outdoor_sensor = outdoor_sensor
         self.latitude = hass.config.latitude
         self.longitude = hass.config.longitude
-        self.session = aiohttp.ClientSession()
+        self.session = async_get_clientsession(hass)
 
     async def _fetch_weather(self) -> tuple[float, list[float]]:
         """Return current temperature and the next 24h forecast."""
@@ -350,7 +349,7 @@ class WindowSolarGainSensor(BaseUtilitySensor):
         self.u_value = u_value
         self.latitude = hass.config.latitude
         self.longitude = hass.config.longitude
-        self.session = aiohttp.ClientSession()
+        self.session = async_get_clientsession(hass)
         self._extra_attrs: dict[str, list[float]] = {}
 
     async def _fetch_radiation(self) -> list[float]:
@@ -437,7 +436,7 @@ class WindowSolarGainSensor(BaseUtilitySensor):
 
     async def async_will_remove_from_hass(self):
         await super().async_will_remove_from_hass()
-        await self.session.close()
+        
 
 
 class NetHeatDemandSensor(BaseUtilitySensor):
@@ -472,7 +471,7 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         self.indoor_sensor = indoor_sensor
         self.latitude = hass.config.latitude
         self.longitude = hass.config.longitude
-        self.session = aiohttp.ClientSession()
+        self.session = async_get_clientsession(hass)
         self.heat_loss_sensor = heat_loss_sensor
         self.window_gain_sensor = window_gain_sensor
         self.outdoor_sensor = outdoor_sensor
@@ -561,7 +560,7 @@ class NetHeatDemandSensor(BaseUtilitySensor):
 
     async def async_will_remove_from_hass(self):
         await super().async_will_remove_from_hass()
-        await self.session.close()
+
 
 
 class NetPowerConsumptionSensor(BaseUtilitySensor):
