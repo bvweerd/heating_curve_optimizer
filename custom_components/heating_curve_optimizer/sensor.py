@@ -852,6 +852,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             device=device,
             translation_key=name.lower().replace(" ", "_"),
         )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
         self.hass = hass
         self.net_heat_sensor = net_heat_sensor
         self.price_sensor = price_sensor

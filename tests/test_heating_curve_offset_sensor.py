@@ -5,6 +5,7 @@ from custom_components.heating_curve_optimizer.sensor import (
     HeatingCurveOffsetSensor,
     NetHeatDemandSensor,
 )
+from homeassistant.components.sensor import SensorStateClass
 
 from unittest.mock import patch
 
@@ -66,4 +67,19 @@ async def test_offset_sensor_sets_future_offsets_attribute(hass):
     assert sensor.native_value == 1
     assert sensor.extra_state_attributes["future_offsets"] == [1, 2, 3, 4, 5, 6]
     assert sensor.extra_state_attributes["prices"] == [0.0] * 6
+    await sensor.async_will_remove_from_hass()
+
+
+@pytest.mark.asyncio
+async def test_offset_sensor_has_measurement_state_class(hass):
+    sensor = HeatingCurveOffsetSensor(
+        hass=hass,
+        name="Heating Curve Offset",
+        unique_id="offset3",
+        net_heat_sensor="sensor.net_heat",
+        price_sensor="sensor.price",
+        device=DeviceInfo(identifiers={("test", "3")}),
+    )
+
+    assert sensor.state_class == SensorStateClass.MEASUREMENT
     await sensor.async_will_remove_from_hass()
