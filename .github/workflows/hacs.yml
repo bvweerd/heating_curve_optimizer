@@ -1,11 +1,11 @@
 name: HACS
 
 on:
-  push:
-    branches:
-      - main
-  release:
-    types: [published]
+#  push:
+#    branches:
+#      - main
+#  release:
+#    types: [published]
   schedule:
     - cron: "0 0 * * *"
 

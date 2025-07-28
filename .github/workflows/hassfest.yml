@@ -3,13 +3,13 @@ name: Hassfest
 on:
   schedule:
     - cron: "0 0 * * *"
-  push:
-    branches:
-      - main
-      - dev
-  pull_request:
-    branches:
-      - dev
+#  push:
+#    branches:
+#      - main
+#      - dev
+#  pull_request:
+#    branches:
+#      - dev
 
 permissions:
   contents: read
