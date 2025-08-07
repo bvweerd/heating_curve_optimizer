@@ -2,6 +2,8 @@
 
 This Home Assistant integration calculates the optimal heating curve offset for the next few hours. All values are exposed as sensors for use in automations.
 
+WARNING: Work In Progress!!
+
 ## Overview
 - Retrieves weather and solar radiation data from *open-meteo.com*.
 - Estimates hourly heat loss and net heat demand for your home.
