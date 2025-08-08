@@ -710,7 +710,7 @@ class QuadraticCopSensor(BaseUtilitySensor):
         except ValueError:
             self._attr_available = False
             return
-        cop = 3.80 + 0.08 * o_temp - 0.02 * (s_temp - 35)
+        cop = self.base_cop + 0.08 * o_temp - self.k_factor * (s_temp - 35)
         _LOGGER.debug(
             "Calculated COP with supply=%s outdoor=%s -> %s", s_temp, o_temp, cop
         )
@@ -730,6 +730,8 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
         supply_sensor: str,
         outdoor_sensor: str,
         device: DeviceInfo,
+        k_factor: float = DEFAULT_K_FACTOR,
+        base_cop: float = DEFAULT_COP_AT_35,
     ):
         super().__init__(
             name=name,
@@ -746,6 +748,8 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
         self.power_sensor = power_sensor
         self.supply_sensor = supply_sensor
         self.outdoor_sensor = outdoor_sensor
+        self.k_factor = k_factor
+        self.base_cop = base_cop
 
     async def async_update(self):
         p_state = self.hass.states.get(self.power_sensor)
@@ -768,7 +772,7 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
         except ValueError:
             self._attr_available = False
             return
-        cop = 3.80 + 0.08 * o_temp - 0.02 * (s_temp - 35)
+        cop = self.base_cop + 0.08 * o_temp - self.k_factor * (s_temp - 35)
         thermal_power = power * cop / 1000.0
         _LOGGER.debug(
             "Thermal power calc power=%s cop=%s -> %s",
@@ -1290,6 +1294,8 @@ async def async_setup_entry(
                     supply_sensor=supply_temp_sensor,
                     outdoor_sensor="sensor.outdoor_temperature",
                     device=device_info,
+                    k_factor=k_factor,
+                    base_cop=DEFAULT_COP_AT_35,
                 )
             )
 

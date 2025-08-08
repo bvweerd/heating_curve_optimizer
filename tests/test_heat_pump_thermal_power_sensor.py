@@ -19,7 +19,7 @@ async def test_heat_pump_thermal_power_sensor_computes_value(hass):
         device=DeviceInfo(identifiers={("test", "1")}),
     )
     await sensor.async_update()
-    assert sensor.native_value == pytest.approx(4.2, rel=1e-3)
+    assert sensor.native_value == pytest.approx(4.6, rel=1e-3)
     assert sensor.available is True
     await sensor.async_will_remove_from_hass()
 
