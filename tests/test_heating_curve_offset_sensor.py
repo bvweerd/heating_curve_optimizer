@@ -12,16 +12,20 @@ from unittest.mock import patch
 
 @pytest.mark.asyncio
 async def test_offset_sensor_handles_sensor_instance(hass):
-    net = NetHeatDemandSensor(
-        hass=hass,
-        name="Hourly Net Heat Demand",
-        unique_id="test_net",
-        area_m2=10.0,
-        energy_label="A",
-        indoor_sensor=None,
-        icon="mdi:test",
-        device=DeviceInfo(identifiers={("test", "1")}),
-    )
+    with patch(
+        "custom_components.heating_curve_optimizer.sensor.async_get_clientsession",
+        return_value=None,
+    ):
+        net = NetHeatDemandSensor(
+            hass=hass,
+            name="Hourly Net Heat Demand",
+            unique_id="test_net",
+            area_m2=10.0,
+            energy_label="A",
+            indoor_sensor=None,
+            icon="mdi:test",
+            device=DeviceInfo(identifiers={("test", "1")}),
+        )
 
     hass.states.async_set("sensor.price", "0.0")
 
