@@ -87,7 +87,13 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
             async with self.session.get(
                 url, timeout=aiohttp.ClientTimeout(total=10)
             ) as resp:
-                data = await resp.json()
+                resp.raise_for_status()
+                try:
+                    data = await resp.json()
+                except (aiohttp.ContentTypeError, ValueError) as err:
+                    _LOGGER.error("Error parsing weather data: %s", err)
+                    self._attr_available = False
+                    return 0.0, []
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
             _LOGGER.error("Error fetching weather data: %s", err)
             self._attr_available = False
@@ -254,7 +260,13 @@ class HeatLossSensor(BaseUtilitySensor):
             async with self.session.get(
                 url, timeout=aiohttp.ClientTimeout(total=10)
             ) as resp:
-                data = await resp.json()
+                resp.raise_for_status()
+                try:
+                    data = await resp.json()
+                except (aiohttp.ContentTypeError, ValueError) as err:
+                    _LOGGER.error("Error parsing heat loss weather data: %s", err)
+                    self._attr_available = False
+                    return 0.0, []
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
             _LOGGER.error("Error fetching heat loss weather data: %s", err)
             self._attr_available = False
@@ -391,7 +403,13 @@ class WindowSolarGainSensor(BaseUtilitySensor):
             async with self.session.get(
                 url, timeout=aiohttp.ClientTimeout(total=10)
             ) as resp:
-                data = await resp.json()
+                resp.raise_for_status()
+                try:
+                    data = await resp.json()
+                except (aiohttp.ContentTypeError, ValueError) as err:
+                    _LOGGER.error("Error parsing radiation data: %s", err)
+                    self._attr_available = False
+                    return []
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
             _LOGGER.error("Error fetching radiation data: %s", err)
             self._attr_available = False
@@ -526,8 +544,21 @@ class NetHeatDemandSensor(BaseUtilitySensor):
                 f"?latitude={self.latitude}&longitude={self.longitude}"
                 "&current_weather=true&hourly=temperature_2m&timezone=UTC"
             )
-            async with self.session.get(url) as resp:
-                data = await resp.json()
+            try:
+                async with self.session.get(
+                    url, timeout=aiohttp.ClientTimeout(total=10)
+                ) as resp:
+                    resp.raise_for_status()
+                    try:
+                        data = await resp.json()
+                    except (aiohttp.ContentTypeError, ValueError) as err:
+                        _LOGGER.error("Error parsing weather data: %s", err)
+                        self._attr_available = False
+                        return
+            except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+                _LOGGER.error("Error fetching weather data: %s", err)
+                self._attr_available = False
+                return
             t_outdoor = float(data.get("current_weather", {}).get("temperature", 0))
 
         solar_total = 0.0
