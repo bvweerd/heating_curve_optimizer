@@ -4,7 +4,8 @@
 DOMAIN = "heating_curve_optimizer"
 DOMAIN_ABBREVIATION = "HCO"
 
-PLATFORMS = ["sensor"]
+# Supported platforms for this integration
+PLATFORMS = ["sensor", "number"]
 
 # Configuration keys
 CONF_SOURCE_TYPE = "source_type"
