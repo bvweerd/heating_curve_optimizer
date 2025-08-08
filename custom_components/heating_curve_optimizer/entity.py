@@ -14,9 +14,6 @@ import logging
 
 _LOGGER = logging.getLogger(__name__)
 
-# Seconds to wait before creating an unavailable issue
-UNAVAILABLE_GRACE_SECONDS = 60
-
 
 class BaseUtilitySensor(SensorEntity, RestoreEntity):
     def __init__(
