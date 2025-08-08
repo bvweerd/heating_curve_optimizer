@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 from functools import partial
 import logging
 import math
 from typing import Any, cast
 
+import aiohttp
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
@@ -81,8 +83,16 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
             f"?latitude={self.latitude}&longitude={self.longitude}"
             "&hourly=temperature_2m&current_weather=true&timezone=UTC"
         )
-        async with self.session.get(url) as resp:
-            data = await resp.json()
+        try:
+            async with self.session.get(
+                url, timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                data = await resp.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            _LOGGER.error("Error fetching weather data: %s", err)
+            self._attr_available = False
+            return 0.0, []
+        self._attr_available = True
 
         current = float(data.get("current_weather", {}).get("temperature", 0))
 
@@ -110,7 +120,8 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
 
     async def async_update(self):
         current, forecast = await self._fetch_weather()
-        self._attr_available = True
+        if not self._attr_available:
+            return
         self._attr_native_value = round(current, 2)
         self._extra_attrs = {"forecast": [round(v, 2) for v in forecast]}
 
@@ -171,7 +182,7 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
 
     async def async_will_remove_from_hass(self):
         await super().async_will_remove_from_hass()
-        
+
         self.async_on_remove(
             async_track_state_change_event(
                 self.hass,
@@ -239,8 +250,16 @@ class HeatLossSensor(BaseUtilitySensor):
             f"?latitude={self.latitude}&longitude={self.longitude}"
             "&hourly=temperature_2m&current_weather=true&timezone=UTC"
         )
-        async with self.session.get(url) as resp:
-            data = await resp.json()
+        try:
+            async with self.session.get(
+                url, timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                data = await resp.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            _LOGGER.error("Error fetching heat loss weather data: %s", err)
+            self._attr_available = False
+            return 0.0, []
+        self._attr_available = True
 
         current = float(data.get("current_weather", {}).get("temperature", 0))
 
@@ -287,6 +306,8 @@ class HeatLossSensor(BaseUtilitySensor):
                 ]
         if current is None:
             current, forecast = await self._fetch_weather()
+            if not self._attr_available:
+                return
         self._attr_available = True
         u_value = U_VALUE_MAP.get(self.energy_label.upper(), 1.0)
         indoor = INDOOR_TEMPERATURE
@@ -366,8 +387,16 @@ class WindowSolarGainSensor(BaseUtilitySensor):
             f"?latitude={self.latitude}&longitude={self.longitude}"
             "&hourly=shortwave_radiation&timezone=UTC"
         )
-        async with self.session.get(url) as resp:
-            data = await resp.json()
+        try:
+            async with self.session.get(
+                url, timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                data = await resp.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            _LOGGER.error("Error fetching radiation data: %s", err)
+            self._attr_available = False
+            return []
+        self._attr_available = True
 
         hourly = data.get("hourly", {})
         times = hourly.get("time", [])
@@ -403,6 +432,8 @@ class WindowSolarGainSensor(BaseUtilitySensor):
 
     async def _compute_value(self) -> None:
         rad = await self._fetch_radiation()
+        if not self._attr_available:
+            return
         _LOGGER.debug("Solar gain raw radiation=%s", rad)
         sun = self.hass.states.get("sun.sun")
         az = float(sun.attributes.get("azimuth", 0)) if sun else 0.0
@@ -436,7 +467,6 @@ class WindowSolarGainSensor(BaseUtilitySensor):
 
     async def async_will_remove_from_hass(self):
         await super().async_will_remove_from_hass()
-        
 
 
 class NetHeatDemandSensor(BaseUtilitySensor):
@@ -560,7 +590,6 @@ class NetHeatDemandSensor(BaseUtilitySensor):
 
     async def async_will_remove_from_hass(self):
         await super().async_will_remove_from_hass()
-
 
 
 class NetPowerConsumptionSensor(BaseUtilitySensor):
