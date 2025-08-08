@@ -23,6 +23,8 @@ from .const import (
     CONF_K_FACTOR,
     CONF_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
+    CONF_MARKUP,
+    CONF_FEED_IN_BONUS,
     DEFAULT_K_FACTOR,
     CONF_SOURCE_TYPE,
     CONF_SOURCES,
@@ -90,6 +92,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data={
                         CONF_CONFIGS: self.configs,
                         CONF_PRICE_SENSOR: self.price_settings.get(CONF_PRICE_SENSOR),
+                        CONF_PRICE_SETTINGS: self.price_settings,
                         CONF_AREA_M2: self.area_m2,
                         CONF_ENERGY_LABEL: self.energy_label,
                         CONF_GLASS_EAST_M2: self.glass_east_m2,
@@ -368,6 +371,14 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     }
                 }
             ),
+            vol.Optional(
+                CONF_MARKUP,
+                default=self.price_settings.get(CONF_MARKUP, 0.0),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_FEED_IN_BONUS,
+                default=self.price_settings.get(CONF_FEED_IN_BONUS, 0.0),
+            ): vol.Coerce(float),
         }
 
         return self.async_show_form(
@@ -462,6 +473,7 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                     data={
                         CONF_CONFIGS: self.configs,
                         CONF_PRICE_SENSOR: self.price_settings.get(CONF_PRICE_SENSOR),
+                        CONF_PRICE_SETTINGS: self.price_settings,
                         CONF_AREA_M2: self.area_m2,
                         CONF_ENERGY_LABEL: self.energy_label,
                         CONF_GLASS_EAST_M2: self.glass_east_m2,
@@ -654,6 +666,14 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                     }
                 }
             ),
+            vol.Optional(
+                CONF_MARKUP,
+                default=self.price_settings.get(CONF_MARKUP, 0.0),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_FEED_IN_BONUS,
+                default=self.price_settings.get(CONF_FEED_IN_BONUS, 0.0),
+            ): vol.Coerce(float),
         }
 
         return self.async_show_form(

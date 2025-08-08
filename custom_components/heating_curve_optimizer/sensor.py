@@ -174,8 +174,10 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
             _LOGGER.warning("Price sensor %s has invalid state", self.price_sensor)
             return
         self._attr_available = True
-
-        self._attr_native_value = round(base_price, 8)
+        markup = float(self.price_settings.get("markup", 0) or 0)
+        feed_in_bonus = float(self.price_settings.get("feed_in_bonus", 0) or 0)
+        adjusted_price = base_price + markup - feed_in_bonus
+        self._attr_native_value = round(adjusted_price, 8)
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()

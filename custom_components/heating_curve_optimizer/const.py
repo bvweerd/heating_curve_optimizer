@@ -11,6 +11,8 @@ CONF_SOURCE_TYPE = "source_type"
 CONF_SOURCES = "sources"
 CONF_PRICE_SENSOR = "price_sensor"
 CONF_PRICE_SETTINGS = "price_settings"
+CONF_MARKUP = "markup"
+CONF_FEED_IN_BONUS = "feed_in_bonus"
 
 # New configuration keys for the heating curve optimizer
 CONF_AREA_M2 = "area_m2"
