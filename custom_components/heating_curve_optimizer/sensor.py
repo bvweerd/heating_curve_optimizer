@@ -1003,6 +1003,7 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
         production_sensors: list[str],
         icon: str,
         device: DeviceInfo,
+        heatpump_sensor: str | None = None,
     ):
         super().__init__(
             name=name,
@@ -1018,6 +1019,7 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
         self.hass = hass
         self.consumption_sensors = consumption_sensors
         self.production_sensors = production_sensors
+        self.heatpump_sensor = heatpump_sensor
         self._extra_attrs: dict[str, list[float]] = {}
 
     @property
@@ -1119,9 +1121,14 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
 
         cons_avg = self._hourly_averages(cons_hist)
         prod_avg = self._hourly_averages(prod_hist)
+        hp_avg = [0.0] * 24
+        if self.heatpump_sensor:
+            hp_hist = await self._fetch_history([self.heatpump_sensor], start, end)
+            hp_avg = self._hourly_averages(hp_hist)
 
-        net = [cons_avg[i] - prod_avg[i] for i in range(24)]
-        _LOGGER.debug("Energy consumption forecast=%s", net)
+        cons_adj = [max(cons_avg[i] - hp_avg[i], 0.0) for i in range(24)]
+        net = [cons_adj[i] - prod_avg[i] for i in range(24)]
+        _LOGGER.debug("Energy consumption forecast excluding heat pump=%s", net)
 
         self._attr_native_value = round(net[end.hour], 3)
         self._extra_attrs = {"standby_forecast": [round(v, 3) for v in net]}
@@ -1239,6 +1246,7 @@ async def async_setup_entry(
                 unique_id=f"{entry.entry_id}_expected_energy_consumption",
                 consumption_sensors=consumption_sources,
                 production_sensors=production_sources,
+                heatpump_sensor=power_sensor,
                 icon="mdi:flash-clock",
                 device=device_info,
             )
