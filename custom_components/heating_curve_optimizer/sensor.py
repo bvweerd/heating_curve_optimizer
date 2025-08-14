@@ -784,6 +784,124 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
         self._attr_native_value = round(thermal_power, 3)
 
 
+class DiagnosticsSensor(BaseUtilitySensor):
+    """Expose forecast arrays for debugging purposes."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        *,
+        heat_loss_sensor: HeatLossSensor | None = None,
+        window_gain_sensor: WindowSolarGainSensor | None = None,
+        price_sensor: str | None = None,
+        cop_sensor: str | SensorEntity | None = None,
+        device: DeviceInfo,
+    ) -> None:
+        super().__init__(
+            name=name,
+            unique_id=unique_id,
+            unit="",
+            device_class=None,
+            icon="mdi:information-outline",
+            visible=False,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self.hass = hass
+        self.heat_loss_sensor = heat_loss_sensor
+        self.window_gain_sensor = window_gain_sensor
+        self.price_sensor = price_sensor
+        self.cop_sensor = cop_sensor
+        self._extra_attrs: dict[str, list[float]] = {}
+
+    @property
+    def extra_state_attributes(self) -> dict[str, list[float]]:
+        return self._extra_attrs
+
+    def _extract_prices(self, state) -> list[float]:
+        from homeassistant.util import dt as dt_util
+
+        now = dt_util.utcnow()
+        hour = now.hour
+        raw_today = state.attributes.get("raw_today", [])
+        raw_tomorrow = state.attributes.get("raw_tomorrow", [])
+
+        prices: list[float] = []
+        idx = hour
+        for _ in range(HORIZON_HOURS):
+            if idx < len(raw_today):
+                entry = raw_today[idx]
+                val = entry.get("value") if isinstance(entry, dict) else entry
+                prices.append(float(val))
+                idx += 1
+                continue
+            t_idx = idx - len(raw_today)
+            if t_idx < len(raw_tomorrow):
+                entry = raw_tomorrow[t_idx]
+                val = entry.get("value") if isinstance(entry, dict) else entry
+                prices.append(float(val))
+                idx += 1
+                continue
+            break
+
+        if len(prices) < HORIZON_HOURS:
+            try:
+                cur = float(state.state)
+            except (ValueError, TypeError):
+                cur = 0.0
+            prices.extend([cur] * (HORIZON_HOURS - len(prices)))
+        return prices
+
+    async def async_update(self):
+        attrs: dict[str, list[float]] = {}
+
+        if self.heat_loss_sensor is not None:
+            ent = (
+                self.heat_loss_sensor.entity_id
+                if hasattr(self.heat_loss_sensor, "entity_id")
+                else self.heat_loss_sensor
+            )
+            state = self.hass.states.get(ent)
+            if state:
+                forecast = state.attributes.get("forecast", [])
+                attrs["forecast_heat_loss"] = [float(v) for v in forecast]
+
+        if self.window_gain_sensor is not None:
+            ent = (
+                self.window_gain_sensor.entity_id
+                if hasattr(self.window_gain_sensor, "entity_id")
+                else self.window_gain_sensor
+            )
+            state = self.hass.states.get(ent)
+            if state:
+                forecast = state.attributes.get("forecast", [])
+                attrs["forecast_window_gain"] = [float(v) for v in forecast]
+
+        if self.price_sensor:
+            state = self.hass.states.get(self.price_sensor)
+            if state:
+                attrs["forecast_prices"] = [
+                    float(v) for v in self._extract_prices(state)
+                ]
+
+        if self.cop_sensor:
+            ent = (
+                self.cop_sensor.entity_id
+                if hasattr(self.cop_sensor, "entity_id")
+                else self.cop_sensor
+            )
+            state = self.hass.states.get(ent)
+            if state:
+                forecast = state.attributes.get("forecast", [])
+                if forecast:
+                    attrs["forecast_cop"] = [float(v) for v in forecast]
+
+        self._extra_attrs = attrs
+        self._attr_available = True
+
+
 def _optimize_offsets(
     demand: list[float],
     prices: list[float],
@@ -1279,19 +1397,19 @@ async def async_setup_entry(
         )
         entities.append(net_heat_sensor)
 
+    cop_sensor_entity = None
     if supply_temp_sensor:
-        entities.append(
-            QuadraticCopSensor(
-                hass=hass,
-                name="Heat Pump COP",
-                unique_id=f"{entry.entry_id}_cop",
-                supply_sensor=supply_temp_sensor,
-                outdoor_sensor="sensor.outdoor_temperature",
-                k_factor=k_factor,
-                base_cop=DEFAULT_COP_AT_35,
-                device=device_info,
-            )
+        cop_sensor_entity = QuadraticCopSensor(
+            hass=hass,
+            name="Heat Pump COP",
+            unique_id=f"{entry.entry_id}_cop",
+            supply_sensor=supply_temp_sensor,
+            outdoor_sensor="sensor.outdoor_temperature",
+            k_factor=k_factor,
+            base_cop=DEFAULT_COP_AT_35,
+            device=device_info,
         )
+        entities.append(cop_sensor_entity)
         if power_sensor:
             entities.append(
                 HeatPumpThermalPowerSensor(
@@ -1306,6 +1424,20 @@ async def async_setup_entry(
                     base_cop=DEFAULT_COP_AT_35,
                 )
             )
+
+    if heat_loss_sensor or window_gain_sensor or price_sensor or cop_sensor_entity:
+        entities.append(
+            DiagnosticsSensor(
+                hass=hass,
+                name="Optimizer Diagnostics",
+                unique_id=f"{entry.entry_id}_diagnostics",
+                heat_loss_sensor=heat_loss_sensor,
+                window_gain_sensor=window_gain_sensor,
+                price_sensor=price_sensor,
+                cop_sensor=cop_sensor_entity,
+                device=device_info,
+            )
+        )
 
     if net_heat_sensor and price_sensor:
         entities.append(
