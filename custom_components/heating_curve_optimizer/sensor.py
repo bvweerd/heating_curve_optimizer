@@ -790,25 +790,31 @@ def _optimize_offsets(
     *,
     base_temp: float = 35.0,
     k_factor: float = DEFAULT_K_FACTOR,
-) -> list[int]:
+    buffer: float = 0.0,
+) -> tuple[list[int], list[float]]:
     r"""Return cost optimized offsets for the given demand and prices.
 
     The ``demand`` list contains the net heat demand per hour.  The
     algorithm uses the total energy over the complete horizon and
     distributes that energy over the hours with a dynamic-programming
     approach.  Offsets are restricted to ``\-4`` .. ``+4`` and may only
-    change by one degree per step.
+    change by one degree per step.  The optional ``buffer`` parameter
+    represents the current heat surplus (positive) or deficit (negative)
+    and the returned buffer evolution shows how this value changes with
+    the chosen offsets.  After ``HORIZON_HOURS`` the buffer will be close
+    to zero.
     """
     _LOGGER.debug(
-        "Optimizing offsets demand=%s prices=%s base=%s k=%s",
+        "Optimizing offsets demand=%s prices=%s base=%s k=%s buffer=%s",
         demand,
         prices,
         base_temp,
         k_factor,
+        buffer,
     )
     horizon = min(len(demand), len(prices))
     if horizon == 0:
-        return []
+        return [], []
 
     base_cop = DEFAULT_COP_AT_35 - k_factor * (base_temp - 35)
     reciprocal_base_cop = 1 / base_cop
@@ -816,47 +822,78 @@ def _optimize_offsets(
 
     allowed_offsets = [o for o in range(-4, 5) if 28 <= base_temp + o <= 45]
     if not allowed_offsets:
-        return [0 for _ in range(horizon)]
+        return [0 for _ in range(horizon)], [buffer for _ in range(horizon)]
 
-    # dynamic programming table storing (cost, previous_offset)
-    dp: list[dict[int, tuple[float, int | None]]] = [{} for _ in range(horizon)]
+    target_sum = -int(round(buffer))
+
+    # dynamic programming table storing (cost, prev_offset, prev_sum)
+    dp: list[dict[int, dict[int, tuple[float, int | None, int | None]]]] = [
+        {} for _ in range(horizon)
+    ]
 
     for off in allowed_offsets:
         cost = demand[0] * prices[0] * (reciprocal_base_cop + cop_derivative * off)
-        dp[0][off] = (cost, None)
+        dp[0][off] = {off: (cost, None, None)}
 
     for t in range(1, horizon):
         for off in allowed_offsets:
-            best_cost = math.inf
-            best_prev: int | None = None
             step_cost = (
                 demand[t] * prices[t] * (reciprocal_base_cop + cop_derivative * off)
             )
-            for prev_off, (prev_cost, _) in dp[t - 1].items():
+            for prev_off, sums in dp[t - 1].items():
                 if abs(off - prev_off) <= 1:
-                    total = prev_cost + step_cost
-                    if total < best_cost:
-                        best_cost = total
-                        best_prev = prev_off
-            if best_prev is not None:
-                dp[t][off] = (best_cost, best_prev)
+                    for prev_sum, (prev_cost, _, _) in sums.items():
+                        new_sum = prev_sum + off
+                        total = prev_cost + step_cost
+                        dp[t].setdefault(off, {})
+                        cur = dp[t][off].get(new_sum)
+                        if cur is None or total < cur[0]:
+                            dp[t][off][new_sum] = (total, prev_off, prev_sum)
 
     if not dp[horizon - 1]:
-        return [0 for _ in range(horizon)]
+        return [0 for _ in range(horizon)], [buffer for _ in range(horizon)]
 
-    # reconstruct path from best final offset
-    last_off = min(dp[horizon - 1], key=lambda o: dp[horizon - 1][o][0])
+    best_off: int | None = None
+    best_sum: int | None = None
+    best_cost = math.inf
+    for off, sums in dp[horizon - 1].items():
+        for sum_off, (cost, _, _) in sums.items():
+            if sum_off == target_sum and cost < best_cost:
+                best_cost = cost
+                best_off = off
+                best_sum = sum_off
+    if best_off is None:
+        for off, sums in dp[horizon - 1].items():
+            for sum_off, (cost, _, _) in sums.items():
+                if cost < best_cost:
+                    best_cost = cost
+                    best_off = off
+                    best_sum = sum_off
+
+    assert best_off is not None and best_sum is not None
+
     result = [0] * horizon
+    last_off = best_off
+    last_sum = best_sum
     result[-1] = last_off
     for t in range(horizon - 1, 0, -1):
-        _, prev_off = dp[t][last_off]
-        assert prev_off is not None
+        _, prev_off, prev_sum = dp[t][last_off][last_sum]
+        assert prev_off is not None and prev_sum is not None
         result[t - 1] = prev_off
         last_off = prev_off
+        last_sum = prev_sum
 
-    _LOGGER.debug("Optimized offsets result=%s", result)
+    buffer_evolution: list[float] = []
+    cur = buffer
+    for off in result:
+        cur += off
+        buffer_evolution.append(cur)
 
-    return result
+    _LOGGER.debug(
+        "Optimized offsets result=%s buffer_evolution=%s", result, buffer_evolution
+    )
+
+    return result, buffer_evolution
 
 
 class HeatingCurveOffsetSensor(BaseUtilitySensor):
@@ -886,10 +923,10 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         self.net_heat_sensor = net_heat_sensor
         self.price_sensor = price_sensor
         self.k_factor = k_factor
-        self._extra_attrs: dict[str, list[int]] = {}
+        self._extra_attrs: dict[str, list[int] | list[float] | float] = {}
 
     @property
-    def extra_state_attributes(self) -> dict[str, list[int]]:
+    def extra_state_attributes(self) -> dict[str, list[int] | list[float] | float]:
         return self._extra_attrs
 
     def _extract_prices(self, state) -> list[float]:
@@ -956,16 +993,19 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         total_energy = sum(demand)
         _LOGGER.debug("Offset sensor demand=%s prices=%s", demand, prices)
 
-        offsets = await self.hass.async_add_executor_job(
+        offsets, buffer_evolution = await self.hass.async_add_executor_job(
             partial(
                 _optimize_offsets,
                 base_temp=35.0,
                 k_factor=self.k_factor,
+                buffer=0.0,
             ),
             demand,
             prices,
         )
-        _LOGGER.debug("Calculated offsets=%s", offsets)
+        _LOGGER.debug(
+            "Calculated offsets=%s buffer_evolution=%s", offsets, buffer_evolution
+        )
 
         if offsets:
             self._attr_native_value = offsets[0]
@@ -974,6 +1014,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         self._extra_attrs = {
             "future_offsets": offsets,
             "prices": prices,
+            "buffer_evolution": buffer_evolution,
             "total_energy": round(total_energy, 3),
         }
         self._attr_available = True
