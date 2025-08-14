@@ -1,6 +1,7 @@
 import pytest
 from homeassistant.helpers.device_registry import DeviceInfo
 
+from custom_components.heating_curve_optimizer import sensor
 from custom_components.heating_curve_optimizer.sensor import (
     HeatingCurveOffsetSensor,
     NetHeatDemandSensor,
@@ -64,13 +65,21 @@ async def test_offset_sensor_sets_future_offsets_attribute(hass):
 
     with patch(
         "custom_components.heating_curve_optimizer.sensor._optimize_offsets",
-        return_value=[1, 2, 3, 4, 5, 6],
+        return_value=([1, 2, 3, 4, 5, 6], [0, 1, 3, 6, 10, 15]),
     ):
         await sensor.async_update()
 
     assert sensor.native_value == 1
     assert sensor.extra_state_attributes["future_offsets"] == [1, 2, 3, 4, 5, 6]
     assert sensor.extra_state_attributes["prices"] == [0.0] * 6
+    assert sensor.extra_state_attributes["buffer_evolution"] == [
+        0,
+        1,
+        3,
+        6,
+        10,
+        15,
+    ]
     await sensor.async_will_remove_from_hass()
 
 
@@ -87,3 +96,14 @@ async def test_offset_sensor_has_measurement_state_class(hass):
 
     assert sensor.state_class == SensorStateClass.MEASUREMENT
     await sensor.async_will_remove_from_hass()
+
+
+def test_optimize_offsets_balances_buffer():
+    demand = [1.0] * 6
+    prices = [1.0] * 6
+    offsets, evolution = sensor._optimize_offsets(demand, prices, buffer=2)
+    assert len(offsets) == 6
+    # final buffer should be zero
+    assert evolution[-1] == 0
+    # ensure step changes are at most 1
+    assert all(abs(offsets[i] - offsets[i - 1]) <= 1 for i in range(1, 6))
