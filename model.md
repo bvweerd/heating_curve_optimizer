@@ -1,3 +1,5 @@
+```mermaid
+
 flowchart LR
   %% === Nodes ===
   outdoor_temp(["Outdoor temperature"]):::sensor
