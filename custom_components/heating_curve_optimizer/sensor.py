@@ -787,6 +787,7 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
 def _optimize_offsets(
     demand: list[float],
     prices: list[float],
+    average_price: float,
     *,
     base_temp: float = 35.0,
     k_factor: float = DEFAULT_K_FACTOR,
@@ -821,17 +822,17 @@ def _optimize_offsets(
     # dynamic programming table storing (cost, previous_offset)
     dp: list[dict[int, tuple[float, int | None]]] = [{} for _ in range(horizon)]
 
+    first_price = prices[0] / average_price if average_price else prices[0]
     for off in allowed_offsets:
-        cost = demand[0] * prices[0] * (reciprocal_base_cop + cop_derivative * off)
+        cost = demand[0] * first_price * (reciprocal_base_cop + cop_derivative * off)
         dp[0][off] = (cost, None)
 
     for t in range(1, horizon):
         for off in allowed_offsets:
             best_cost = math.inf
             best_prev: int | None = None
-            step_cost = (
-                demand[t] * prices[t] * (reciprocal_base_cop + cop_derivative * off)
-            )
+            price = prices[t] / average_price if average_price else prices[t]
+            step_cost = demand[t] * price * (reciprocal_base_cop + cop_derivative * off)
             for prev_off, (prev_cost, _) in dp[t - 1].items():
                 if abs(off - prev_off) <= 1:
                     total = prev_cost + step_cost
@@ -887,6 +888,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         self.price_sensor = price_sensor
         self.k_factor = k_factor
         self._extra_attrs: dict[str, list[int]] = {}
+        self.average_price = 0.0
 
     @property
     def extra_state_attributes(self) -> dict[str, list[int]]:
@@ -924,6 +926,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             except (ValueError, TypeError):
                 cur = 0.0
             prices.extend([cur] * (HORIZON_HOURS - len(prices)))
+        self.average_price = sum(prices) / len(prices) if prices else 0.0
         return prices
 
     def _extract_demand(self, state) -> list[float]:
@@ -964,6 +967,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             ),
             demand,
             prices,
+            self.average_price,
         )
         _LOGGER.debug("Calculated offsets=%s", offsets)
 

@@ -50,7 +50,7 @@ async def test_offset_sensor_sets_future_offsets_attribute(hass):
     hass.states.async_set(
         "sensor.price",
         "0.0",
-        {"raw_today": [0.0] * 24, "raw_tomorrow": []},
+        {"raw_today": [1.0] * 24, "raw_tomorrow": []},
     )
 
     sensor = HeatingCurveOffsetSensor(
@@ -65,12 +65,16 @@ async def test_offset_sensor_sets_future_offsets_attribute(hass):
     with patch(
         "custom_components.heating_curve_optimizer.sensor._optimize_offsets",
         return_value=[1, 2, 3, 4, 5, 6],
-    ):
+    ) as mock_opt:
         await sensor.async_update()
 
+    mock_opt.assert_called_once()
+    args, kwargs = mock_opt.call_args
+    assert args[2] == 1.0
+    assert sensor.average_price == 1.0
     assert sensor.native_value == 1
     assert sensor.extra_state_attributes["future_offsets"] == [1, 2, 3, 4, 5, 6]
-    assert sensor.extra_state_attributes["prices"] == [0.0] * 6
+    assert sensor.extra_state_attributes["prices"] == [1.0] * 6
     await sensor.async_will_remove_from_hass()
 
 
