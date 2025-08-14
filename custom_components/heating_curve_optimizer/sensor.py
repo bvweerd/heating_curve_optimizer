@@ -1163,6 +1163,7 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
         icon: str,
         device: DeviceInfo,
         heatpump_sensor: str | None = None,
+        pv_sensor: str | None = None,
     ):
         super().__init__(
             name=name,
@@ -1179,11 +1180,62 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
         self.consumption_sensors = consumption_sensors
         self.production_sensors = production_sensors
         self.heatpump_sensor = heatpump_sensor
+        self.pv_sensor = pv_sensor
+        self.session = async_get_clientsession(hass)
         self._extra_attrs: dict[str, list[float]] = {}
 
     @property
     def extra_state_attributes(self) -> dict[str, list[float]]:
         return self._extra_attrs
+
+    async def _fetch_pv_forecast(self) -> list[float]:
+        if not self.pv_sensor:
+            return [0.0] * 24
+
+        state = self.hass.states.get(self.pv_sensor)
+        if state is None or state.state in ("unknown", "unavailable"):
+            return [0.0] * 24
+        try:
+            coeff = float(state.state)
+        except ValueError:
+            _LOGGER.warning("PV sensor %s has invalid state", self.pv_sensor)
+            return [0.0] * 24
+
+        from datetime import datetime
+
+        url = (
+            "https://api.open-meteo.com/v1/forecast"
+            f"?latitude={self.hass.config.latitude}&longitude={self.hass.config.longitude}"
+            "&hourly=shortwave_radiation&timezone=UTC"
+        )
+        try:
+            async with self.session.get(
+                url, timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                data = await resp.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            _LOGGER.error("Error fetching PV forecast data: %s", err)
+            return [0.0] * 24
+
+        hourly = data.get("hourly", {})
+        times = hourly.get("time", [])
+        radiation = hourly.get("shortwave_radiation", [])
+        if not times or not radiation:
+            return [0.0] * 24
+
+        now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+        start_idx = 0
+        for i, ts in enumerate(times):
+            try:
+                t = datetime.fromisoformat(ts)
+            except ValueError:
+                continue
+            if t >= now:
+                start_idx = i
+                break
+
+        rad = [float(v) for v in radiation[start_idx : start_idx + 24]]
+        return [r / 1000 * coeff for r in rad]
 
     async def _fetch_history(self, sensors: list[str], start, end) -> dict[str, list]:
         """Fetch history data for the given sensors."""  # mypy: ignore-errors
@@ -1286,11 +1338,22 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
             hp_avg = self._hourly_averages(hp_hist)
 
         cons_adj = [max(cons_avg[i] - hp_avg[i], 0.0) for i in range(24)]
-        net = [cons_adj[i] - prod_avg[i] for i in range(24)]
-        _LOGGER.debug("Energy consumption forecast excluding heat pump=%s", net)
+        gross = [cons_adj[i] - prod_avg[i] for i in range(24)]
+        pv_forecast = await self._fetch_pv_forecast()
+        net = [gross[i] - pv_forecast[i] for i in range(24)]
+        _LOGGER.debug(
+            "Energy consumption forecast gross=%s net=%s pv=%s",
+            gross,
+            net,
+            pv_forecast,
+        )
 
         self._attr_native_value = round(net[end.hour], 3)
-        self._extra_attrs = {"standby_forecast": [round(v, 3) for v in net]}
+        self._extra_attrs = {
+            "standby_forecast_gross": [round(v, 3) for v in gross],
+            "standby_forecast_net": [round(v, 3) for v in net],
+            "pv_forecast": [round(v, 3) for v in pv_forecast],
+        }
         self._attr_available = True
 
     async def async_update(self):
