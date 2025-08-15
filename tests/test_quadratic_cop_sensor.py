@@ -37,3 +37,24 @@ async def test_quadratic_cop_sensor_handles_unavailable(hass):
     await sensor.async_update()
     assert sensor.available is False
     await sensor.async_will_remove_from_hass()
+
+
+@pytest.mark.asyncio
+async def test_quadratic_cop_sensor_custom_params(hass):
+    hass.states.async_set("sensor.supply", "40")
+    hass.states.async_set("sensor.outdoor", "10")
+    sensor = QuadraticCopSensor(
+        hass=hass,
+        name="COP",
+        unique_id="cop3",
+        supply_sensor="sensor.supply",
+        outdoor_sensor="sensor.outdoor",
+        device=DeviceInfo(identifiers={("test", "3")}),
+        k_factor=0.1,
+        base_cop=5.0,
+        outdoor_coeff=0.05,
+    )
+    await sensor.async_update()
+    assert sensor.native_value == 5.0
+    assert sensor.available is True
+    await sensor.async_will_remove_from_hass()

@@ -21,9 +21,13 @@ from .const import (
     CONF_POWER_CONSUMPTION,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
     CONF_K_FACTOR,
+    CONF_BASE_COP,
+    CONF_OUTDOOR_TEMP_COEFF,
     CONF_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
+    DEFAULT_COP_AT_35,
     DEFAULT_K_FACTOR,
+    DEFAULT_OUTDOOR_TEMP_COEFF,
     CONF_SOURCE_TYPE,
     CONF_SOURCES,
     DOMAIN,
@@ -59,6 +63,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.indoor_temperature_sensor: str | None = None
         self.supply_temperature_sensor: str | None = None
         self.k_factor: float | None = None
+        self.base_cop: float | None = None
+        self.outdoor_temp_coeff: float | None = None
 
     async def async_step_user(
         self, user_input: dict[str, str] | None = None
@@ -100,6 +106,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                         CONF_SUPPLY_TEMPERATURE_SENSOR: self.supply_temperature_sensor,
                         CONF_K_FACTOR: self.k_factor,
+                        CONF_BASE_COP: self.base_cop,
+                        CONF_OUTDOOR_TEMP_COEFF: self.outdoor_temp_coeff,
                     },
                 )
             self.source_type = choice
@@ -171,6 +179,12 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_SUPPLY_TEMPERATURE_SENSOR
             )
             self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
+            self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
+            self.outdoor_temp_coeff = float(
+                user_input.get(
+                    CONF_OUTDOOR_TEMP_COEFF, DEFAULT_OUTDOOR_TEMP_COEFF
+                )
+            )
             return await self.async_step_user()
 
         power_sensors = await self._get_power_sensors()
@@ -225,6 +239,13 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(
                     CONF_K_FACTOR, default=self.k_factor or DEFAULT_K_FACTOR
                 ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_BASE_COP, default=self.base_cop or DEFAULT_COP_AT_35
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_OUTDOOR_TEMP_COEFF,
+                    default=self.outdoor_temp_coeff or DEFAULT_OUTDOOR_TEMP_COEFF,
+                ): vol.Coerce(float),
             }
         )
 
@@ -246,6 +267,12 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_SUPPLY_TEMPERATURE_SENSOR
             )
             self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
+            self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
+            self.outdoor_temp_coeff = float(
+                user_input.get(
+                    CONF_OUTDOOR_TEMP_COEFF, DEFAULT_OUTDOOR_TEMP_COEFF
+                )
+            )
             return await self.async_step_user()
 
         power_sensors = await self._get_power_sensors()
@@ -299,6 +326,13 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ),
                 vol.Optional(
                     CONF_K_FACTOR, default=self.k_factor or DEFAULT_K_FACTOR
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_BASE_COP, default=self.base_cop or DEFAULT_COP_AT_35
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_OUTDOOR_TEMP_COEFF,
+                    default=self.outdoor_temp_coeff or DEFAULT_OUTDOOR_TEMP_COEFF,
                 ): vol.Coerce(float),
             }
         )
@@ -406,6 +440,10 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             CONF_SUPPLY_TEMPERATURE_SENSOR
         )
         self.k_factor = config_entry.data.get(CONF_K_FACTOR)
+        self.base_cop = config_entry.data.get(CONF_BASE_COP, DEFAULT_COP_AT_35)
+        self.outdoor_temp_coeff = config_entry.data.get(
+            CONF_OUTDOOR_TEMP_COEFF, DEFAULT_OUTDOOR_TEMP_COEFF
+        )
         self.price_settings = copy.deepcopy(
             config_entry.options.get(
                 CONF_PRICE_SETTINGS,
@@ -472,6 +510,8 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                         CONF_SUPPLY_TEMPERATURE_SENSOR: self.supply_temperature_sensor,
                         CONF_K_FACTOR: self.k_factor,
+                        CONF_BASE_COP: self.base_cop,
+                        CONF_OUTDOOR_TEMP_COEFF: self.outdoor_temp_coeff,
                     },
                 )
             self.source_type = choice
@@ -515,6 +555,12 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                 CONF_SUPPLY_TEMPERATURE_SENSOR
             )
             self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
+            self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
+            self.outdoor_temp_coeff = float(
+                user_input.get(
+                    CONF_OUTDOOR_TEMP_COEFF, DEFAULT_OUTDOOR_TEMP_COEFF
+                )
+            )
             return await self.async_step_user()
 
         power_sensors = await self._get_power_sensors()
@@ -583,6 +629,13 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_K_FACTOR, default=self.k_factor or DEFAULT_K_FACTOR
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_BASE_COP, default=self.base_cop or DEFAULT_COP_AT_35
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_OUTDOOR_TEMP_COEFF,
+                    default=self.outdoor_temp_coeff or DEFAULT_OUTDOOR_TEMP_COEFF,
                 ): vol.Coerce(float),
             }
         )

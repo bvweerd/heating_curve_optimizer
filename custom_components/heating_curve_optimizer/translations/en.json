@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "basic": {
+        "data": {
+          "base_cop": "Base COP at 35°C supply and 0°C outdoor",
+          "outdoor_temp_coefficient": "Outdoor temperature coefficient"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "heat_pump_cop": {
+        "name": "Heat Pump COP",
+        "state": {
+          "default": "COP = base_cop + outdoor_temp_coefficient × T_outdoor − k_factor × (T_supply − 35)"
+        }
+      }
+    }
+  }
+}
