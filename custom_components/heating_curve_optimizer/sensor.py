@@ -1373,6 +1373,107 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
         await self._compute_value()
 
 
+class EnergyPriceLevelSensor(BaseUtilitySensor):
+    """Compare forecasted consumption with multiple price levels."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        price_sensor: str,
+        forecast_sensor: str,
+        price_levels: dict[str, float],
+        icon: str,
+        device: DeviceInfo,
+    ):
+        super().__init__(
+            name=name,
+            unique_id=unique_id,
+            unit="kWh",
+            device_class=None,
+            icon=icon,
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self.hass = hass
+        self.price_sensor = price_sensor
+        self.forecast_sensor = forecast_sensor
+        self.price_levels = price_levels
+        self._extra_attrs: dict[str, float] = {}
+
+    @property
+    def extra_state_attributes(self) -> dict[str, float]:
+        return self._extra_attrs
+
+    def _get_price_forecast(self, state) -> list[float]:
+        prices: list[float] = []
+        attr_forecast = state.attributes.get("forecast")
+        if isinstance(attr_forecast, list) and attr_forecast:
+            prices = [float(p) for p in attr_forecast]
+        else:
+            today = state.attributes.get("today")
+            tomorrow = state.attributes.get("tomorrow", [])
+            if isinstance(today, list):
+                combined = today + (tomorrow if isinstance(tomorrow, list) else [])
+                prices = [float(p) for p in combined]
+        if not prices:
+            try:
+                price = float(state.state)
+            except (ValueError, TypeError):
+                return []
+            prices = [price] * 24
+        return prices
+
+    async def async_update(self):
+        price_state = self.hass.states.get(self.price_sensor)
+        forecast_state = self.hass.states.get(self.forecast_sensor)
+        if (
+            price_state is None
+            or forecast_state is None
+            or price_state.state in ("unknown", "unavailable")
+            or forecast_state.state in ("unknown", "unavailable")
+        ):
+            self._attr_available = False
+            return
+
+        energy = forecast_state.attributes.get("standby_forecast_net")
+        try:
+            energy_forecast = [float(v) for v in energy or []]
+        except (TypeError, ValueError):
+            energy_forecast = []
+        if not energy_forecast:
+            self._attr_available = False
+            return
+
+        price_forecast = self._get_price_forecast(price_state)
+        if not price_forecast:
+            self._attr_available = False
+            return
+
+        horizon = min(len(price_forecast), len(energy_forecast))
+        sorted_levels = sorted(self.price_levels.items(), key=lambda x: x[1])
+        attrs: dict[str, float] = {}
+        for level, threshold in sorted_levels:
+            total = sum(
+                energy_forecast[i] for i in range(horizon) if price_forecast[i] <= threshold
+            )
+            attrs[level] = round(total, 3)
+
+        current_price = price_forecast[0]
+        state_val = 0.0
+        for level, threshold in sorted_levels:
+            if current_price <= threshold:
+                state_val = attrs[level]
+                break
+
+        self._extra_attrs = attrs
+        self._attr_native_value = round(state_val, 3)
+        self._attr_available = True
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -1418,19 +1519,19 @@ async def async_setup_entry(
     glass_u = float(entry.data.get(CONF_GLASS_U_VALUE, 1.2))
 
     price_sensor = entry.data.get(CONF_PRICE_SENSOR)
+    consumption_price_entity = None
     if price_sensor:
-        entities.append(
-            CurrentElectricityPriceSensor(
-                hass=hass,
-                name="Current Consumption Price",
-                unique_id=f"{entry.entry_id}_current_consumption_price",
-                price_sensor=price_sensor,
-                source_type=SOURCE_TYPE_CONSUMPTION,
-                price_settings=price_settings,
-                icon="mdi:transmission-tower-import",
-                device=price_device_info,
-            )
+        consumption_price_entity = CurrentElectricityPriceSensor(
+            hass=hass,
+            name="Current Consumption Price",
+            unique_id=f"{entry.entry_id}_current_consumption_price",
+            price_sensor=price_sensor,
+            source_type=SOURCE_TYPE_CONSUMPTION,
+            price_settings=price_settings,
+            icon="mdi:transmission-tower-import",
+            device=price_device_info,
         )
+        entities.append(consumption_price_entity)
         entities.append(
             CurrentElectricityPriceSensor(
                 hass=hass,
@@ -1473,19 +1574,19 @@ async def async_setup_entry(
         )
         entities.append(window_gain_sensor)
 
+    forecast_entity = None
     if consumption_sources or production_sources:
-        entities.append(
-            EnergyConsumptionForecastSensor(
-                hass=hass,
-                name="Expected Energy Consumption",
-                unique_id=f"{entry.entry_id}_expected_energy_consumption",
-                consumption_sensors=consumption_sources,
-                production_sensors=production_sources,
-                heatpump_sensor=power_sensor,
-                icon="mdi:flash-clock",
-                device=device_info,
-            )
+        forecast_entity = EnergyConsumptionForecastSensor(
+            hass=hass,
+            name="Expected Energy Consumption",
+            unique_id=f"{entry.entry_id}_expected_energy_consumption",
+            consumption_sensors=consumption_sources,
+            production_sensors=production_sources,
+            heatpump_sensor=power_sensor,
+            icon="mdi:flash-clock",
+            device=device_info,
         )
+        entities.append(forecast_entity)
         entities.append(
             NetPowerConsumptionSensor(
                 hass=hass,
@@ -1497,6 +1598,24 @@ async def async_setup_entry(
                 device=device_info,
             )
         )
+
+    if price_sensor and forecast_entity and consumption_price_entity:
+        price_levels = {
+            k: float(v) for k, v in price_settings.items() if k != CONF_PRICE_SENSOR
+        }
+        if price_levels:
+            entities.append(
+                EnergyPriceLevelSensor(
+                    hass=hass,
+                    name="Available Energy by Price",
+                    unique_id=f"{entry.entry_id}_available_energy_by_price",
+                    price_sensor=f"sensor.{consumption_price_entity.translation_key}",
+                    forecast_sensor=f"sensor.{forecast_entity.translation_key}",
+                    price_levels=price_levels,
+                    icon="mdi:scale-balance",
+                    device=device_info,
+                )
+            )
 
     net_heat_sensor = None
     if area_m2 and energy_label:
