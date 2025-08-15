@@ -1,0 +1,16 @@
+{
+  "config": {
+    "step": {
+      "basic": {
+        "data": {
+          "energy_label": "Energielabel"
+        }
+      },
+      "user": {
+        "data": {
+          "energy_label": "Energielabel"
+        }
+      }
+    }
+  }
+}
