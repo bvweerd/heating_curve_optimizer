@@ -8,26 +8,24 @@ from custom_components.heating_curve_optimizer.sensor import (
 )
 from homeassistant.components.sensor import SensorStateClass
 
-from unittest.mock import patch
 from datetime import datetime
+from unittest.mock import patch
 
 
 @pytest.mark.asyncio
 async def test_offset_sensor_handles_sensor_instance(hass):
-    with patch(
-        "custom_components.heating_curve_optimizer.sensor.async_get_clientsession",
-        return_value=None,
-    ):
-        net = NetHeatLossSensor(
-            hass=hass,
-            name="Hourly Net Heat Loss",
-            unique_id="test_net",
-            area_m2=10.0,
-            energy_label="A",
-            indoor_sensor=None,
-            icon="mdi:test",
-            device=DeviceInfo(identifiers={("test", "1")}),
-        )
+    hass.states.async_set("sensor.outdoor", "5")
+    net = NetHeatLossSensor(
+        hass=hass,
+        name="Hourly Net Heat Loss",
+        unique_id="test_net",
+        area_m2=10.0,
+        energy_label="A",
+        indoor_sensor=None,
+        icon="mdi:test",
+        device=DeviceInfo(identifiers={("test", "1")}),
+        outdoor_sensor="sensor.outdoor",
+    )
 
     hass.states.async_set("sensor.price", "0.0")
 

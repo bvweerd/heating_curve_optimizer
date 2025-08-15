@@ -25,7 +25,7 @@ Configuration is done entirely through the UI. The following options can be prov
 ## Sensors
 | Sensor | Description |
 |-------|-------------|
-| `sensor.outdoor_temperature` | Outdoor temperature with a 24h forecast. |
+| `sensor.outdoor_temperature` | Outdoor temperature with a 24h forecast used by other sensors. |
 | `sensor.current_consumption_price` | Current electricity price for consumption. |
 | `sensor.current_production_price` | Current electricity price for production. |
 | `sensor.hourly_heat_loss` | Estimated heat loss in kW per hour. |
