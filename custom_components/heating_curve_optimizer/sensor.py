@@ -662,9 +662,7 @@ class NetHeatLossSensor(BaseUtilitySensor):
         q_loss = self.area_m2 * u_value * (indoor - t_outdoor) / 1000.0
         q_solar = solar_total
         q_net = q_loss - q_solar
-        _LOGGER.debug(
-            "Net heat loss: loss=%s solar=%s net=%s", q_loss, q_solar, q_net
-        )
+        _LOGGER.debug("Net heat loss: loss=%s solar=%s net=%s", q_loss, q_solar, q_net)
         self._attr_native_value = round(q_net, 3)
 
         loss_fc = []
@@ -990,7 +988,9 @@ class CopEfficiencyDeltaSensor(BaseUtilitySensor):
             self.outdoor_sensor = self.outdoor_sensor.entity_id
         for ent in (self.cop_sensor, self.offset_entity, self.outdoor_sensor):
             self.async_on_remove(
-                async_track_state_change_event(self.hass, cast(str, ent), self._handle_change)
+                async_track_state_change_event(
+                    self.hass, cast(str, ent), self._handle_change
+                )
             )
 
     async def _handle_change(self, event):  # pragma: no cover - simple callback
@@ -1098,7 +1098,9 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
             self.outdoor_sensor,
         ):
             self.async_on_remove(
-                async_track_state_change_event(self.hass, cast(str, ent), self._handle_change)
+                async_track_state_change_event(
+                    self.hass, cast(str, ent), self._handle_change
+                )
             )
 
     async def _handle_change(self, event):  # pragma: no cover - simple callback
