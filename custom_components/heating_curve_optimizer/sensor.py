@@ -2041,7 +2041,6 @@ async def async_setup_entry(
                 k_factor=k_factor,
                 planning_window=planning_window,
                 time_base=time_base,
-
             )
         )
 
