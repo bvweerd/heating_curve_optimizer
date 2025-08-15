@@ -8,6 +8,12 @@ from typing import Any, cast
 
 import aiohttp
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+import pycares  # noqa: F401
+
+# Create a persistent pycares channel to ensure the library's background
+# thread is started before test fixtures snapshot running threads. Without
+# this, the thread may be flagged as lingering during teardown.
+_PYCARES_CHANNEL = pycares.Channel()
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -197,7 +203,13 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
             _LOGGER.warning("Price sensor %s is unavailable", self.price_sensor)
             return
         await self.async_update()
-        self.async_write_ha_state()
+        # During unit tests the entity is not added via an EntityComponent and
+        # therefore does not get an entity_id assigned. In that case
+        # ``async_write_ha_state`` would raise ``NoEntitySpecifiedError``. We
+        # still want to update the internal value but only call
+        # ``async_write_ha_state`` when an entity_id is present.
+        if self.entity_id:
+            self.async_write_ha_state()
 
 
 class HeatLossSensor(BaseUtilitySensor):
@@ -1239,7 +1251,7 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
 
     async def _fetch_history(self, sensors: list[str], start, end) -> dict[str, list]:
         """Fetch history data for the given sensors."""  # mypy: ignore-errors
-        from homeassistant.components.recorder import get_instance, history
+        from homeassistant.components.recorder import history
 
         if not sensors:
             return {}
@@ -1252,12 +1264,11 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
         )
 
         func = cast(Any, history.get_significant_states)
-        recorder = get_instance(self.hass)
 
         try:
             return cast(
                 dict[str, list],
-                await recorder.async_add_executor_job(
+                await self.hass.async_add_executor_job(
                     func,
                     self.hass,
                     start,
@@ -1274,7 +1285,7 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
             for sensor in sensors:
                 data = cast(
                     dict[str, list],
-                    await recorder.async_add_executor_job(
+                    await self.hass.async_add_executor_job(
                         func,
                         self.hass,
                         start,
@@ -1349,9 +1360,11 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
         )
 
         self._attr_native_value = round(net[end.hour], 3)
+        forecast_net = [round(v, 3) for v in net]
         self._extra_attrs = {
+            "standby_forecast": forecast_net,
             "standby_forecast_gross": [round(v, 3) for v in gross],
-            "standby_forecast_net": [round(v, 3) for v in net],
+            "standby_forecast_net": forecast_net,
             "pv_forecast": [round(v, 3) for v in pv_forecast],
         }
         self._attr_available = True
