@@ -34,6 +34,8 @@ CONF_OUTDOOR_TEMPERATURE_SENSOR = "outdoor_temperature_sensor"
 CONF_K_FACTOR = "k_factor"
 CONF_BASE_COP = "base_cop"
 CONF_OUTDOOR_TEMP_COEFFICIENT = "outdoor_temp_coefficient"
+CONF_HEAT_CURVE_MIN_OUTDOOR = "heat_curve_min_outdoor"
+CONF_HEAT_CURVE_MAX_OUTDOOR = "heat_curve_max_outdoor"
 
 # Allowed energy labels
 ENERGY_LABELS = ["A+++", "A++", "A+", "A", "B", "C", "D", "E", "F", "G"]

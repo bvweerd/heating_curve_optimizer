@@ -1007,13 +1007,19 @@ class CalculatedSupplyTemperatureSensor(BaseUtilitySensor):
         try:
             min_temp = float(self.hass.data[DOMAIN]["heat_curve_min"])
             max_temp = float(self.hass.data[DOMAIN]["heat_curve_max"])
+            outdoor_min = float(self.hass.data[DOMAIN]["heat_curve_min_outdoor"])
+            outdoor_max = float(self.hass.data[DOMAIN]["heat_curve_max_outdoor"])
         except (KeyError, TypeError, ValueError):
             self._attr_available = False
             return
 
-        t_out = max(-15.0, min(20.0, outdoor))
-        ratio = (20.0 - t_out) / 35.0
-        base = min_temp + (max_temp - min_temp) * ratio
+        base = _calculate_supply_temperature(
+            outdoor,
+            water_min=min_temp,
+            water_max=max_temp,
+            outdoor_min=outdoor_min,
+            outdoor_max=outdoor_max,
+        )
         target = base + offset
 
         _LOGGER.debug(

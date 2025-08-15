@@ -7,7 +7,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import (
+    DOMAIN,
+    CONF_HEAT_CURVE_MIN_OUTDOOR,
+    CONF_HEAT_CURVE_MAX_OUTDOOR,
+)
 
 
 class HeatingCurveOffsetNumber(NumberEntity, RestoreEntity):
@@ -80,7 +84,7 @@ class HeatCurveMinNumber(NumberEntity, RestoreEntity):
             try:
                 self._attr_native_value = float(last_state.state)
             except ValueError:
-                self._attr_native_value = self._attr_native_min_value
+                pass
         self.hass.data.setdefault(DOMAIN, {})["heat_curve_min"] = (
             self._attr_native_value
         )
@@ -128,7 +132,7 @@ class HeatCurveMaxNumber(NumberEntity, RestoreEntity):
             try:
                 self._attr_native_value = float(last_state.state)
             except ValueError:
-                self._attr_native_value = self._attr_native_max_value
+                pass
         self.hass.data.setdefault(DOMAIN, {})["heat_curve_max"] = (
             self._attr_native_value
         )
@@ -176,7 +180,7 @@ class HeatCurveMinOutdoorNumber(NumberEntity, RestoreEntity):
             try:
                 self._attr_native_value = float(last_state.state)
             except ValueError:
-                self._attr_native_value = self._attr_native_min_value
+                pass
         self.hass.data.setdefault(DOMAIN, {})["heat_curve_min_outdoor"] = (
             self._attr_native_value
         )
@@ -224,7 +228,7 @@ class HeatCurveMaxOutdoorNumber(NumberEntity, RestoreEntity):
             try:
                 self._attr_native_value = float(last_state.state)
             except ValueError:
-                self._attr_native_value = self._attr_native_max_value
+                pass
         self.hass.data.setdefault(DOMAIN, {})["heat_curve_max_outdoor"] = (
             self._attr_native_value
         )
@@ -261,17 +265,27 @@ async def async_setup_entry(
         native_min=35.0,
         native_max=60.0,
     )
+    min_outdoor = float(entry.data.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0))
+    max_outdoor = float(entry.data.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0))
     curve_min_outdoor = HeatCurveMinOutdoorNumber(
         unique_id=f"{entry.entry_id}_heating_curve_min_outdoor",
         device=device_info,
         native_min=-20.0,
         native_max=5.0,
     )
+    curve_min_outdoor._attr_native_value = max(
+        curve_min_outdoor._attr_native_min_value,
+        min(curve_min_outdoor._attr_native_max_value, min_outdoor),
+    )
     curve_max_outdoor = HeatCurveMaxOutdoorNumber(
         unique_id=f"{entry.entry_id}_heating_curve_max_outdoor",
         device=device_info,
         native_min=5.0,
         native_max=20.0,
+    )
+    curve_max_outdoor._attr_native_value = max(
+        curve_max_outdoor._attr_native_min_value,
+        min(curve_max_outdoor._attr_native_max_value, max_outdoor),
     )
 
     async_add_entities(
