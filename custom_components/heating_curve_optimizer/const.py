@@ -25,6 +25,8 @@ CONF_POWER_CONSUMPTION = "power_consumption"
 CONF_INDOOR_TEMPERATURE_SENSOR = "indoor_temperature_sensor"
 CONF_SUPPLY_TEMPERATURE_SENSOR = "supply_temperature_sensor"
 CONF_K_FACTOR = "k_factor"
+CONF_BASE_COP = "base_cop"
+CONF_OUTDOOR_TEMP_COEFF = "outdoor_temp_coefficient"
 
 # Allowed energy labels
 ENERGY_LABELS = ["A", "B", "C", "D", "E", "F", "G"]
@@ -45,6 +47,9 @@ INDOOR_TEMPERATURE = 21.0
 
 # Default COP at a supply temperature of 35 °C
 DEFAULT_COP_AT_35 = 4.2
+
+# Default increase in COP per °C outdoor temperature increase
+DEFAULT_OUTDOOR_TEMP_COEFF = 0.08
 
 # Default decline in COP per °C supply temperature increase
 DEFAULT_K_FACTOR = 0.11

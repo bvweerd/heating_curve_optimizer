@@ -20,6 +20,8 @@ Configuration is done entirely through the UI. The following options can be prov
 - A price sensor for electricity rates.
 - Optional multiple consumption and production sources.
 - The `k_factor` describing how the COP declines as the supply temperature rises.
+- The `base_cop` at 35 °C supply and 0 °C outdoor temperature.
+- The `outdoor_temp_coefficient` describing how the COP improves with outdoor temperature.
 
 ## Sensors
 | Sensor | Description |
@@ -32,7 +34,7 @@ Configuration is done entirely through the UI. The following options can be prov
 | `sensor.hourly_net_heat_demand` | Net heat demand after subtracting solar gain. |
 | `sensor.expected_energy_consumption` | Average standby power usage per hour. |
 | `sensor.current_net_consumption` | Current net power (consumption minus production). |
-| `sensor.heat_pump_cop` | COP derived from outdoor and supply temperature. |
+| `sensor.heat_pump_cop` | COP calculated as `base_cop + outdoor_temp_coefficient × outdoor_temp − k_factor × (supply_temp − 35)`. |
 | `sensor.heat_pump_thermal_power` | Current thermal output of the heat pump. |
 | `sensor.heating_curve_offset` | Optimal offset for the next six hours. |
 
