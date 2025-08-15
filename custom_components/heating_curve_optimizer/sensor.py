@@ -936,6 +936,221 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
         self._attr_native_value = round(thermal_power, 3)
 
 
+# New sensor classes start here
+
+
+class CopEfficiencyDeltaSensor(BaseUtilitySensor):
+    """Predict COP deltas for future offsets."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        *,
+        cop_sensor: str | SensorEntity,
+        offset_entity: str | SensorEntity,
+        outdoor_sensor: str | SensorEntity,
+        device: DeviceInfo,
+        k_factor: float = DEFAULT_K_FACTOR,
+        base_cop: float = DEFAULT_COP_AT_35,
+        outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+    ) -> None:
+        super().__init__(
+            name=name,
+            unique_id=unique_id,
+            unit="",
+            device_class=None,
+            icon="mdi:alpha-c-circle",
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self.hass = hass
+        self.cop_sensor = cop_sensor
+        self.offset_entity = offset_entity
+        self.outdoor_sensor = outdoor_sensor
+        self.k_factor = k_factor
+        self.base_cop = base_cop
+        self.outdoor_temp_coefficient = outdoor_temp_coefficient
+        self._extra_attrs: dict[str, list[float] | float] = {}
+
+    @property
+    def extra_state_attributes(self) -> dict[str, list[float] | float]:
+        return self._extra_attrs
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        if isinstance(self.cop_sensor, SensorEntity):
+            self.cop_sensor = self.cop_sensor.entity_id
+        if isinstance(self.offset_entity, SensorEntity):
+            self.offset_entity = self.offset_entity.entity_id
+        if isinstance(self.outdoor_sensor, SensorEntity):
+            self.outdoor_sensor = self.outdoor_sensor.entity_id
+        for ent in (self.cop_sensor, self.offset_entity, self.outdoor_sensor):
+            self.async_on_remove(
+                async_track_state_change_event(self.hass, cast(str, ent), self._handle_change)
+            )
+
+    async def _handle_change(self, event):  # pragma: no cover - simple callback
+        await self.async_update()
+        self.async_write_ha_state()
+
+    async def async_update(self):
+        cop_state = self.hass.states.get(cast(str, self.cop_sensor))
+        offset_state = self.hass.states.get(cast(str, self.offset_entity))
+        outdoor_state = self.hass.states.get(cast(str, self.outdoor_sensor))
+        if (
+            cop_state is None
+            or offset_state is None
+            or outdoor_state is None
+            or cop_state.state in ("unknown", "unavailable")
+            or outdoor_state.state in ("unknown", "unavailable")
+        ):
+            self._attr_available = False
+            return
+        try:
+            reference_cop = float(cop_state.state)
+            outdoor_temp = float(outdoor_state.state)
+        except ValueError:
+            self._attr_available = False
+            return
+
+        supply_temps = offset_state.attributes.get("future_supply_temperatures")
+        if not supply_temps:
+            self._attr_available = False
+            return
+
+        predicted_cops = [
+            self.base_cop
+            + self.outdoor_temp_coefficient * outdoor_temp
+            - self.k_factor * (float(s_temp) - 35)
+            for s_temp in supply_temps
+        ]
+        cop_deltas = [round(c - reference_cop, 3) for c in predicted_cops]
+        self._extra_attrs = {
+            "future_cop": [round(c, 3) for c in predicted_cops],
+            "cop_deltas": cop_deltas,
+            "reference_cop": round(reference_cop, 3),
+        }
+        self._attr_native_value = cop_deltas[0] if cop_deltas else 0.0
+        self._attr_available = True
+
+
+class HeatGenerationDeltaSensor(BaseUtilitySensor):
+    """Predict heat generation deltas based on future COPs."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        *,
+        thermal_power_sensor: str | SensorEntity,
+        cop_sensor: str | SensorEntity,
+        offset_entity: str | SensorEntity,
+        outdoor_sensor: str | SensorEntity,
+        device: DeviceInfo,
+        k_factor: float = DEFAULT_K_FACTOR,
+        base_cop: float = DEFAULT_COP_AT_35,
+        outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+    ) -> None:
+        super().__init__(
+            name=name,
+            unique_id=unique_id,
+            unit="kW",
+            device_class=None,
+            icon="mdi:fire",
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self.hass = hass
+        self.thermal_power_sensor = thermal_power_sensor
+        self.cop_sensor = cop_sensor
+        self.offset_entity = offset_entity
+        self.outdoor_sensor = outdoor_sensor
+        self.k_factor = k_factor
+        self.base_cop = base_cop
+        self.outdoor_temp_coefficient = outdoor_temp_coefficient
+        self._extra_attrs: dict[str, list[float] | float] = {}
+
+    @property
+    def extra_state_attributes(self) -> dict[str, list[float] | float]:
+        return self._extra_attrs
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        if isinstance(self.thermal_power_sensor, SensorEntity):
+            self.thermal_power_sensor = self.thermal_power_sensor.entity_id
+        if isinstance(self.cop_sensor, SensorEntity):
+            self.cop_sensor = self.cop_sensor.entity_id
+        if isinstance(self.offset_entity, SensorEntity):
+            self.offset_entity = self.offset_entity.entity_id
+        if isinstance(self.outdoor_sensor, SensorEntity):
+            self.outdoor_sensor = self.outdoor_sensor.entity_id
+        for ent in (
+            self.thermal_power_sensor,
+            self.cop_sensor,
+            self.offset_entity,
+            self.outdoor_sensor,
+        ):
+            self.async_on_remove(
+                async_track_state_change_event(self.hass, cast(str, ent), self._handle_change)
+            )
+
+    async def _handle_change(self, event):  # pragma: no cover - simple callback
+        await self.async_update()
+        self.async_write_ha_state()
+
+    async def async_update(self):
+        power_state = self.hass.states.get(cast(str, self.thermal_power_sensor))
+        cop_state = self.hass.states.get(cast(str, self.cop_sensor))
+        offset_state = self.hass.states.get(cast(str, self.offset_entity))
+        outdoor_state = self.hass.states.get(cast(str, self.outdoor_sensor))
+        if (
+            power_state is None
+            or cop_state is None
+            or offset_state is None
+            or outdoor_state is None
+            or power_state.state in ("unknown", "unavailable")
+            or cop_state.state in ("unknown", "unavailable")
+            or outdoor_state.state in ("unknown", "unavailable")
+        ):
+            self._attr_available = False
+            return
+        try:
+            reference_heat = float(power_state.state)
+            reference_cop = float(cop_state.state)
+            outdoor_temp = float(outdoor_state.state)
+        except ValueError:
+            self._attr_available = False
+            return
+
+        supply_temps = offset_state.attributes.get("future_supply_temperatures")
+        if not supply_temps or reference_cop == 0:
+            self._attr_available = False
+            return
+
+        predicted_cops = [
+            self.base_cop
+            + self.outdoor_temp_coefficient * outdoor_temp
+            - self.k_factor * (float(s_temp) - 35)
+            for s_temp in supply_temps
+        ]
+        predicted_heat = [reference_heat * (c / reference_cop) for c in predicted_cops]
+        heat_deltas = [round(h - reference_heat, 3) for h in predicted_heat]
+        self._extra_attrs = {
+            "future_heat_generation": [round(h, 3) for h in predicted_heat],
+            "heat_deltas": heat_deltas,
+            "reference_heat_generation": round(reference_heat, 3),
+        }
+        self._attr_native_value = heat_deltas[0] if heat_deltas else 0.0
+        self._attr_available = True
+
+
 class CalculatedSupplyTemperatureSensor(BaseUtilitySensor):
     """Calculate target supply temperature based on the heating curve."""
 
@@ -1990,6 +2205,7 @@ async def async_setup_entry(
         entities.append(net_heat_sensor)
 
     cop_sensor_entity = None
+    thermal_power_sensor_entity = None
     if supply_temp_sensor:
         cop_sensor_entity = QuadraticCopSensor(
             hass=hass,
@@ -2004,20 +2220,18 @@ async def async_setup_entry(
         )
         entities.append(cop_sensor_entity)
         if power_sensor:
-            entities.append(
-                HeatPumpThermalPowerSensor(
-                    hass=hass,
-                    name="Heat Pump Thermal Power",
-                    unique_id=f"{entry.entry_id}_thermal_power",
-                    power_sensor=power_sensor,
-                    supply_sensor=supply_temp_sensor,
-                    outdoor_sensor=outdoor_temp_sensor
-                    or outdoor_sensor_entity.entity_id,
-                    device=device_info,
-                    k_factor=k_factor,
-                    base_cop=base_cop,
-                )
+            thermal_power_sensor_entity = HeatPumpThermalPowerSensor(
+                hass=hass,
+                name="Heat Pump Thermal Power",
+                unique_id=f"{entry.entry_id}_thermal_power",
+                power_sensor=power_sensor,
+                supply_sensor=supply_temp_sensor,
+                outdoor_sensor=outdoor_temp_sensor or outdoor_sensor_entity.entity_id,
+                device=device_info,
+                k_factor=k_factor,
+                base_cop=base_cop,
             )
+            entities.append(thermal_power_sensor_entity)
 
     if heat_loss_sensor or window_gain_sensor or price_sensor or cop_sensor_entity:
         entities.append(
@@ -2047,6 +2261,38 @@ async def async_setup_entry(
             k_factor=k_factor,
         )
         entities.append(heating_curve_offset_sensor)
+
+    if cop_sensor_entity and heating_curve_offset_sensor:
+        entities.append(
+            CopEfficiencyDeltaSensor(
+                hass=hass,
+                name="COP Delta",
+                unique_id=f"{entry.entry_id}_cop_delta",
+                cop_sensor=cop_sensor_entity,
+                offset_entity=heating_curve_offset_sensor,
+                outdoor_sensor=outdoor_temp_sensor or outdoor_sensor_entity,
+                device=device_info,
+                k_factor=k_factor,
+                base_cop=base_cop,
+                outdoor_temp_coefficient=outdoor_temp_coefficient,
+            )
+        )
+        if thermal_power_sensor_entity is not None:
+            entities.append(
+                HeatGenerationDeltaSensor(
+                    hass=hass,
+                    name="Heat Generation Delta",
+                    unique_id=f"{entry.entry_id}_heat_generation_delta",
+                    thermal_power_sensor=thermal_power_sensor_entity,
+                    cop_sensor=cop_sensor_entity,
+                    offset_entity=heating_curve_offset_sensor,
+                    outdoor_sensor=outdoor_temp_sensor or outdoor_sensor_entity,
+                    device=device_info,
+                    k_factor=k_factor,
+                    base_cop=base_cop,
+                    outdoor_temp_coefficient=outdoor_temp_coefficient,
+                )
+            )
 
     if heating_curve_offset_sensor is not None:
         entities.append(
