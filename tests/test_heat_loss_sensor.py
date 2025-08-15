@@ -15,7 +15,7 @@ async def test_heat_loss_sensor_uses_outdoor_sensor(hass):
         energy_label="A",
         indoor_sensor=None,
         icon="mdi:test",
-        device=DeviceInfo(identifiers={("test", "1")} ),
+        device=DeviceInfo(identifiers={("test", "1")}),
         outdoor_sensor="sensor.outdoor",
     )
     await sensor.async_update()
