@@ -728,9 +728,7 @@ class QuadraticCopSensor(BaseUtilitySensor):
             self._attr_available = False
             return
         cop = (
-            self.base_cop
-            + self.outdoor_coeff * o_temp
-            - self.k_factor * (s_temp - 35)
+            self.base_cop + self.outdoor_coeff * o_temp - self.k_factor * (s_temp - 35)
         )
         _LOGGER.debug(
             "Calculated COP with supply=%s outdoor=%s -> %s", s_temp, o_temp, cop
@@ -796,9 +794,7 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
             self._attr_available = False
             return
         cop = (
-            self.base_cop
-            + self.outdoor_coeff * o_temp
-            - self.k_factor * (s_temp - 35)
+            self.base_cop + self.outdoor_coeff * o_temp - self.k_factor * (s_temp - 35)
         )
         thermal_power = power * cop / 1000.0
         _LOGGER.debug(

@@ -181,9 +181,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
             self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
             self.outdoor_temp_coeff = float(
-                user_input.get(
-                    CONF_OUTDOOR_TEMP_COEFF, DEFAULT_OUTDOOR_TEMP_COEFF
-                )
+                user_input.get(CONF_OUTDOOR_TEMP_COEFF, DEFAULT_OUTDOOR_TEMP_COEFF)
             )
             return await self.async_step_user()
 
@@ -269,9 +267,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
             self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
             self.outdoor_temp_coeff = float(
-                user_input.get(
-                    CONF_OUTDOOR_TEMP_COEFF, DEFAULT_OUTDOOR_TEMP_COEFF
-                )
+                user_input.get(CONF_OUTDOOR_TEMP_COEFF, DEFAULT_OUTDOOR_TEMP_COEFF)
             )
             return await self.async_step_user()
 
@@ -557,9 +553,7 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
             self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
             self.outdoor_temp_coeff = float(
-                user_input.get(
-                    CONF_OUTDOOR_TEMP_COEFF, DEFAULT_OUTDOOR_TEMP_COEFF
-                )
+                user_input.get(CONF_OUTDOOR_TEMP_COEFF, DEFAULT_OUTDOOR_TEMP_COEFF)
             )
             return await self.async_step_user()
 
