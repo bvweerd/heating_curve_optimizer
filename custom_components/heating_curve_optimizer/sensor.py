@@ -580,7 +580,7 @@ class WindowSolarGainSensor(BaseUtilitySensor):
         await super().async_will_remove_from_hass()
 
 
-class NetHeatDemandSensor(BaseUtilitySensor):
+class NetHeatLossSensor(BaseUtilitySensor):
     def __init__(
         self,
         hass: HomeAssistant,
@@ -662,7 +662,9 @@ class NetHeatDemandSensor(BaseUtilitySensor):
         q_loss = self.area_m2 * u_value * (indoor - t_outdoor) / 1000.0
         q_solar = solar_total
         q_net = q_loss - q_solar
-        _LOGGER.debug("Net heat demand loss=%s solar=%s net=%s", q_loss, q_solar, q_net)
+        _LOGGER.debug(
+            "Net heat loss: loss=%s solar=%s net=%s", q_loss, q_solar, q_net
+        )
         self._attr_native_value = round(q_net, 3)
 
         loss_fc = []
@@ -701,6 +703,9 @@ class NetHeatDemandSensor(BaseUtilitySensor):
 
     async def async_will_remove_from_hass(self):
         await super().async_will_remove_from_hass()
+
+
+NetHeatDemandSensor = NetHeatLossSensor
 
 
 class NetPowerConsumptionSensor(BaseUtilitySensor):
@@ -1969,10 +1974,10 @@ async def async_setup_entry(
 
     net_heat_sensor = None
     if area_m2 and energy_label:
-        net_heat_sensor = NetHeatDemandSensor(
+        net_heat_sensor = NetHeatLossSensor(
             hass=hass,
-            name="Hourly Net Heat Demand",
-            unique_id=f"{entry.entry_id}_hourly_net_heat_demand",
+            name="Hourly Net Heat Loss",
+            unique_id=f"{entry.entry_id}_hourly_net_heat_loss",
             area_m2=float(area_m2),
             energy_label=energy_label,
             indoor_sensor=indoor_sensor,

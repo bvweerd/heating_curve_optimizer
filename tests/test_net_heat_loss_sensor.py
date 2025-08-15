@@ -3,11 +3,11 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from homeassistant.helpers.device_registry import DeviceInfo
 
-from custom_components.heating_curve_optimizer.sensor import NetHeatDemandSensor
+from custom_components.heating_curve_optimizer.sensor import NetHeatLossSensor
 
 
 @pytest.mark.asyncio
-async def test_net_heat_demand_sensor_combines_sources(hass):
+async def test_net_heat_loss_sensor_combines_sources(hass):
     hass.states.async_set("sensor.outdoor", "10")
     heat_loss = SimpleNamespace(extra_state_attributes={"forecast": [0.1, 0.2]})
     window_gain = SimpleNamespace(
@@ -18,7 +18,7 @@ async def test_net_heat_demand_sensor_combines_sources(hass):
         "custom_components.heating_curve_optimizer.sensor.async_get_clientsession",
         return_value=None,
     ):
-        sensor = NetHeatDemandSensor(
+        sensor = NetHeatLossSensor(
             hass=hass,
             name="Net Heat",
             unique_id="nh1",
