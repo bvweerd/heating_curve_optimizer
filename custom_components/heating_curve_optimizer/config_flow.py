@@ -26,6 +26,7 @@ from .const import (
     CONF_K_FACTOR,
     CONF_BASE_COP,
     CONF_OUTDOOR_TEMP_COEFFICIENT,
+    CONF_COP_COMPENSATION_FACTOR,
     CONF_HEAT_CURVE_MIN_OUTDOOR,
     CONF_HEAT_CURVE_MAX_OUTDOOR,
     CONF_PRICE_SENSOR,
@@ -33,6 +34,7 @@ from .const import (
     DEFAULT_K_FACTOR,
     DEFAULT_COP_AT_35,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+    DEFAULT_COP_COMPENSATION_FACTOR,
     DEFAULT_PLANNING_WINDOW,
     DEFAULT_TIME_BASE,
     CONF_SOURCE_TYPE,
@@ -73,6 +75,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.k_factor: float | None = None
         self.base_cop: float = DEFAULT_COP_AT_35
         self.outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT
+        self.cop_compensation_factor: float = DEFAULT_COP_COMPENSATION_FACTOR
         self.planning_window: int = DEFAULT_PLANNING_WINDOW
         self.time_base: int = DEFAULT_TIME_BASE
         self.heat_curve_min_outdoor: float = -20.0
@@ -121,6 +124,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_K_FACTOR: self.k_factor,
                         CONF_BASE_COP: self.base_cop,
                         CONF_OUTDOOR_TEMP_COEFFICIENT: self.outdoor_temp_coefficient,
+                        CONF_COP_COMPENSATION_FACTOR: self.cop_compensation_factor,
                         CONF_PLANNING_WINDOW: self.planning_window,
                         CONF_TIME_BASE: self.time_base,
                         CONF_HEAT_CURVE_MIN_OUTDOOR: self.heat_curve_min_outdoor,
@@ -205,134 +209,9 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
                 )
             )
-            self.planning_window = int(
-                user_input.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
-            )
-            self.time_base = int(user_input.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
-            self.heat_curve_min_outdoor = float(
-                user_input.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
-            )
-            self.heat_curve_max_outdoor = float(
-                user_input.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
-            )
-            return await self.async_step_user()
-
-        power_sensors = await self._get_power_sensors()
-        temp_sensors = await self._get_temperature_sensors()
-
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_AREA_M2): vol.Coerce(float),
-                vol.Required(CONF_ENERGY_LABEL): selector(
-                    {
-                        "select": {
-                            "options": ENERGY_LABELS,
-                            "mode": "dropdown",
-                            "custom_value": False,
-                        }
-                    }
-                ),
-                vol.Optional(CONF_GLASS_EAST_M2, default=0.0): vol.Coerce(float),
-                vol.Optional(CONF_GLASS_WEST_M2, default=0.0): vol.Coerce(float),
-                vol.Optional(CONF_GLASS_SOUTH_M2, default=0.0): vol.Coerce(float),
-                vol.Optional(CONF_GLASS_U_VALUE, default=1.2): vol.Coerce(float),
-                vol.Optional(CONF_INDOOR_TEMPERATURE_SENSOR): selector(
-                    {
-                        "select": {
-                            "options": temp_sensors,
-                            "multiple": False,
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
-                vol.Optional(CONF_POWER_CONSUMPTION): selector(
-                    {
-                        "select": {
-                            "options": power_sensors,
-                            "multiple": False,
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
-                vol.Optional(
-                    CONF_OUTDOOR_TEMPERATURE_SENSOR,
-                    default=self.outdoor_temperature_sensor,
-                ): selector(
-                    {
-                        "select": {
-                            "options": temp_sensors,
-                            "multiple": False,
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
-                vol.Optional(
-                    CONF_SUPPLY_TEMPERATURE_SENSOR,
-                    default=self.supply_temperature_sensor,
-                ): selector(
-                    {
-                        "select": {
-                            "options": temp_sensors,
-                            "multiple": False,
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
-                vol.Optional(
-                    CONF_K_FACTOR, default=self.k_factor or DEFAULT_K_FACTOR
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_BASE_COP, default=self.base_cop or DEFAULT_COP_AT_35
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_OUTDOOR_TEMP_COEFFICIENT,
-                    default=self.outdoor_temp_coefficient
-                    or DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_PLANNING_WINDOW,
-                    default=self.planning_window or DEFAULT_PLANNING_WINDOW,
-                ): vol.Coerce(int),
-                vol.Optional(
-                    CONF_TIME_BASE,
-                    default=self.time_base or DEFAULT_TIME_BASE,
-                ): vol.Coerce(int),
-                vol.Optional(
-                    CONF_HEAT_CURVE_MIN_OUTDOOR,
-                    default=self.heat_curve_min_outdoor,
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_HEAT_CURVE_MAX_OUTDOOR,
-                    default=self.heat_curve_max_outdoor,
-                ): vol.Coerce(float),
-            }
-        )
-
-        return self.async_show_form(step_id=STEP_BASIC, data_schema=schema)
-
-    async def async_step_basic(self, user_input=None):
-        if user_input is not None:
-            self.area_m2 = float(user_input[CONF_AREA_M2])
-            self.energy_label = user_input[CONF_ENERGY_LABEL]
-            self.glass_east_m2 = float(user_input.get(CONF_GLASS_EAST_M2, 0))
-            self.glass_west_m2 = float(user_input.get(CONF_GLASS_WEST_M2, 0))
-            self.glass_south_m2 = float(user_input.get(CONF_GLASS_SOUTH_M2, 0))
-            self.glass_u_value = float(user_input.get(CONF_GLASS_U_VALUE, 1.2))
-            self.indoor_temperature_sensor = user_input.get(
-                CONF_INDOOR_TEMPERATURE_SENSOR
-            )
-            self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
-            self.supply_temperature_sensor = user_input.get(
-                CONF_SUPPLY_TEMPERATURE_SENSOR
-            )
-            self.outdoor_temperature_sensor = user_input.get(
-                CONF_OUTDOOR_TEMPERATURE_SENSOR
-            )
-            self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
-            self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
-            self.outdoor_temp_coefficient = float(
+            self.cop_compensation_factor = float(
                 user_input.get(
-                    CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
+                    CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR
                 )
             )
             self.planning_window = int(
@@ -418,6 +297,151 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_OUTDOOR_TEMP_COEFFICIENT,
                     default=self.outdoor_temp_coefficient
                     or DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_COP_COMPENSATION_FACTOR,
+                    default=self.cop_compensation_factor
+                    or DEFAULT_COP_COMPENSATION_FACTOR,
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_PLANNING_WINDOW,
+                    default=self.planning_window or DEFAULT_PLANNING_WINDOW,
+                ): vol.Coerce(int),
+                vol.Optional(
+                    CONF_TIME_BASE,
+                    default=self.time_base or DEFAULT_TIME_BASE,
+                ): vol.Coerce(int),
+                vol.Optional(
+                    CONF_HEAT_CURVE_MIN_OUTDOOR,
+                    default=self.heat_curve_min_outdoor,
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_HEAT_CURVE_MAX_OUTDOOR,
+                    default=self.heat_curve_max_outdoor,
+                ): vol.Coerce(float),
+            }
+        )
+
+        return self.async_show_form(step_id=STEP_BASIC, data_schema=schema)
+
+    async def async_step_basic(self, user_input=None):
+        if user_input is not None:
+            self.area_m2 = float(user_input[CONF_AREA_M2])
+            self.energy_label = user_input[CONF_ENERGY_LABEL]
+            self.glass_east_m2 = float(user_input.get(CONF_GLASS_EAST_M2, 0))
+            self.glass_west_m2 = float(user_input.get(CONF_GLASS_WEST_M2, 0))
+            self.glass_south_m2 = float(user_input.get(CONF_GLASS_SOUTH_M2, 0))
+            self.glass_u_value = float(user_input.get(CONF_GLASS_U_VALUE, 1.2))
+            self.indoor_temperature_sensor = user_input.get(
+                CONF_INDOOR_TEMPERATURE_SENSOR
+            )
+            self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
+            self.supply_temperature_sensor = user_input.get(
+                CONF_SUPPLY_TEMPERATURE_SENSOR
+            )
+            self.outdoor_temperature_sensor = user_input.get(
+                CONF_OUTDOOR_TEMPERATURE_SENSOR
+            )
+            self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
+            self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
+            self.outdoor_temp_coefficient = float(
+                user_input.get(
+                    CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
+                )
+            )
+            self.cop_compensation_factor = float(
+                user_input.get(
+                    CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR
+                )
+            )
+            self.planning_window = int(
+                user_input.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
+            )
+            self.time_base = int(user_input.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
+            self.heat_curve_min_outdoor = float(
+                user_input.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
+            )
+            self.heat_curve_max_outdoor = float(
+                user_input.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
+            )
+            return await self.async_step_user()
+
+        power_sensors = await self._get_power_sensors()
+        temp_sensors = await self._get_temperature_sensors()
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_AREA_M2): vol.Coerce(float),
+                vol.Required(CONF_ENERGY_LABEL): selector(
+                    {
+                        "select": {
+                            "options": ENERGY_LABELS,
+                            "mode": "dropdown",
+                            "custom_value": False,
+                        }
+                    }
+                ),
+                vol.Optional(CONF_GLASS_EAST_M2, default=0.0): vol.Coerce(float),
+                vol.Optional(CONF_GLASS_WEST_M2, default=0.0): vol.Coerce(float),
+                vol.Optional(CONF_GLASS_SOUTH_M2, default=0.0): vol.Coerce(float),
+                vol.Optional(CONF_GLASS_U_VALUE, default=1.2): vol.Coerce(float),
+                vol.Optional(CONF_INDOOR_TEMPERATURE_SENSOR): selector(
+                    {
+                        "select": {
+                            "options": temp_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Optional(CONF_POWER_CONSUMPTION): selector(
+                    {
+                        "select": {
+                            "options": power_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Optional(
+                    CONF_OUTDOOR_TEMPERATURE_SENSOR,
+                    default=self.outdoor_temperature_sensor,
+                ): selector(
+                    {
+                        "select": {
+                            "options": temp_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Optional(
+                    CONF_SUPPLY_TEMPERATURE_SENSOR,
+                    default=self.supply_temperature_sensor,
+                ): selector(
+                    {
+                        "select": {
+                            "options": temp_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Optional(
+                    CONF_K_FACTOR, default=self.k_factor or DEFAULT_K_FACTOR
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_BASE_COP, default=self.base_cop or DEFAULT_COP_AT_35
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_OUTDOOR_TEMP_COEFFICIENT,
+                    default=self.outdoor_temp_coefficient
+                    or DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_COP_COMPENSATION_FACTOR,
+                    default=self.cop_compensation_factor
+                    or DEFAULT_COP_COMPENSATION_FACTOR,
                 ): vol.Coerce(float),
                 vol.Optional(
                     CONF_PLANNING_WINDOW,
@@ -548,6 +572,9 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
         self.outdoor_temp_coefficient = config_entry.data.get(
             CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
         )
+        self.cop_compensation_factor = config_entry.data.get(
+            CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR
+        )
         self.planning_window = config_entry.data.get(
             CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW
         )
@@ -621,6 +648,7 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_K_FACTOR: self.k_factor,
                         CONF_BASE_COP: self.base_cop,
                         CONF_OUTDOOR_TEMP_COEFFICIENT: self.outdoor_temp_coefficient,
+                        CONF_COP_COMPENSATION_FACTOR: self.cop_compensation_factor,
                         CONF_PLANNING_WINDOW: self.planning_window,
                         CONF_TIME_BASE: self.time_base,
                     },
@@ -673,6 +701,11 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             self.outdoor_temp_coefficient = float(
                 user_input.get(
                     CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
+                )
+            )
+            self.cop_compensation_factor = float(
+                user_input.get(
+                    CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR
                 )
             )
             return await self.async_step_user()
@@ -763,6 +796,11 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                     CONF_OUTDOOR_TEMP_COEFFICIENT,
                     default=self.outdoor_temp_coefficient
                     or DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_COP_COMPENSATION_FACTOR,
+                    default=self.cop_compensation_factor
+                    or DEFAULT_COP_COMPENSATION_FACTOR,
                 ): vol.Coerce(float),
             }
         )

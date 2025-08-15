@@ -71,7 +71,8 @@ async def test_quadratic_cop_sensor_uses_config_values(hass):
         k_factor=0.2,
         base_cop=5.0,
         outdoor_temp_coefficient=0.05,
+        cop_compensation_factor=0.9,
     )
     await sensor.async_update()
-    assert sensor.native_value == 4.5
+    assert sensor.native_value == 4.05
     await sensor.async_will_remove_from_hass()

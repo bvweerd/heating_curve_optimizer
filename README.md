@@ -20,6 +20,7 @@ Configuration is done entirely through the UI. The following options can be prov
 - A price sensor for electricity rates.
 - Optional multiple consumption and production sources.
 - The `k_factor` describing how the COP declines as the supply temperature rises.
+- A `cop_compensation_factor` to adjust the theoretical COP to your system.
 
 ## Sensors
 | Sensor | Description |
@@ -41,10 +42,10 @@ The `sensor.heating_curve_offset` attributes include future offsets and the pric
 The COP sensor uses the formula:
 
 ```
-COP = C₀ + α · T_outdoor − k · (T_supply − 35)
+COP = (C₀ + α · T_outdoor − k · (T_supply − 35)) × f
 ```
 
-where `C₀` is the base COP at 35 °C and `α` is the outdoor temperature coefficient.
+where `C₀` is the base COP at 35 °C, `α` is the outdoor temperature coefficient and `f` is the compensation factor.
 
 ## Automation Example
 ```yaml

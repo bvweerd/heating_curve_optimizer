@@ -5,14 +5,16 @@
         "data": {
           "energy_label": "Energy label",
           "base_cop": "Base COP at 35°C",
-          "outdoor_temp_coefficient": "Outdoor temperature coefficient"
+          "outdoor_temp_coefficient": "Outdoor temperature coefficient",
+          "cop_compensation_factor": "COP compensation factor"
         }
       },
       "user": {
         "data": {
           "energy_label": "Energy label",
           "base_cop": "Base COP at 35°C",
-          "outdoor_temp_coefficient": "Outdoor temperature coefficient"
+          "outdoor_temp_coefficient": "Outdoor temperature coefficient",
+          "cop_compensation_factor": "COP compensation factor"
         }
       }
     }
@@ -22,7 +24,7 @@
     "sensor": {
       "heat_pump_cop": {
         "state": {
-          "formula": "COP = base_cop + outdoor_temp_coefficient × T_outdoor − k_factor × (T_supply − 35)"
+          "formula": "COP = (base_cop + outdoor_temp_coefficient × T_outdoor − k_factor × (T_supply − 35)) × cop_compensation_factor"
         }
       }
     }
