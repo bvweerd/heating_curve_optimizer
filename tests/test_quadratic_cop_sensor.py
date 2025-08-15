@@ -1,7 +1,5 @@
 import pytest
 from homeassistant.helpers.device_registry import DeviceInfo
-import pytest
-from homeassistant.helpers.device_registry import DeviceInfo
 from unittest.mock import AsyncMock, patch
 
 from custom_components.heating_curve_optimizer.sensor import QuadraticCopSensor

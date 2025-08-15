@@ -274,9 +274,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ): vol.Coerce(float),
                 vol.Optional(
                     CONF_OUTDOOR_TEMP_COEFFICIENT,
-                    default=
-                        self.outdoor_temp_coefficient
-                        or DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+                    default=self.outdoor_temp_coefficient
+                    or DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
                 ): vol.Coerce(float),
                 vol.Optional(
                     CONF_PLANNING_WINDOW,
@@ -391,9 +390,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ): vol.Coerce(float),
                 vol.Optional(
                     CONF_OUTDOOR_TEMP_COEFFICIENT,
-                    default=
-                        self.outdoor_temp_coefficient
-                        or DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+                    default=self.outdoor_temp_coefficient
+                    or DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
                 ): vol.Coerce(float),
                 vol.Optional(
                     CONF_PLANNING_WINDOW,
@@ -729,9 +727,8 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                 ): vol.Coerce(float),
                 vol.Optional(
                     CONF_OUTDOOR_TEMP_COEFFICIENT,
-                    default=
-                        self.outdoor_temp_coefficient
-                        or DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+                    default=self.outdoor_temp_coefficient
+                    or DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
                 ): vol.Coerce(float),
             }
         )
