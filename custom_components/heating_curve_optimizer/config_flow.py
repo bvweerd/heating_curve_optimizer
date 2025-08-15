@@ -26,6 +26,8 @@ from .const import (
     CONF_K_FACTOR,
     CONF_BASE_COP,
     CONF_OUTDOOR_TEMP_COEFFICIENT,
+    CONF_HEAT_CURVE_MIN_OUTDOOR,
+    CONF_HEAT_CURVE_MAX_OUTDOOR,
     CONF_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
     DEFAULT_K_FACTOR,
@@ -73,6 +75,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT
         self.planning_window: int = DEFAULT_PLANNING_WINDOW
         self.time_base: int = DEFAULT_TIME_BASE
+        self.heat_curve_min_outdoor: float = -20.0
+        self.heat_curve_max_outdoor: float = 15.0
 
     async def async_step_user(
         self, user_input: dict[str, str] | None = None
@@ -119,6 +123,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_OUTDOOR_TEMP_COEFFICIENT: self.outdoor_temp_coefficient,
                         CONF_PLANNING_WINDOW: self.planning_window,
                         CONF_TIME_BASE: self.time_base,
+                        CONF_HEAT_CURVE_MIN_OUTDOOR: self.heat_curve_min_outdoor,
+                        CONF_HEAT_CURVE_MAX_OUTDOOR: self.heat_curve_max_outdoor,
                     },
                 )
             self.source_type = choice
@@ -203,6 +209,12 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 user_input.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
             )
             self.time_base = int(user_input.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
+            self.heat_curve_min_outdoor = float(
+                user_input.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
+            )
+            self.heat_curve_max_outdoor = float(
+                user_input.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
+            )
             return await self.async_step_user()
 
         power_sensors = await self._get_power_sensors()
@@ -285,6 +297,14 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_TIME_BASE,
                     default=self.time_base or DEFAULT_TIME_BASE,
                 ): vol.Coerce(int),
+                vol.Optional(
+                    CONF_HEAT_CURVE_MIN_OUTDOOR,
+                    default=self.heat_curve_min_outdoor,
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_HEAT_CURVE_MAX_OUTDOOR,
+                    default=self.heat_curve_max_outdoor,
+                ): vol.Coerce(float),
             }
         )
 
@@ -319,6 +339,12 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 user_input.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
             )
             self.time_base = int(user_input.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
+            self.heat_curve_min_outdoor = float(
+                user_input.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
+            )
+            self.heat_curve_max_outdoor = float(
+                user_input.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
+            )
             return await self.async_step_user()
 
         power_sensors = await self._get_power_sensors()
@@ -401,6 +427,14 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_TIME_BASE,
                     default=self.time_base or DEFAULT_TIME_BASE,
                 ): vol.Coerce(int),
+                vol.Optional(
+                    CONF_HEAT_CURVE_MIN_OUTDOOR,
+                    default=self.heat_curve_min_outdoor,
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_HEAT_CURVE_MAX_OUTDOOR,
+                    default=self.heat_curve_max_outdoor,
+                ): vol.Coerce(float),
             }
         )
 
