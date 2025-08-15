@@ -74,7 +74,9 @@ class _ErrorResponse:
 
 
 class _ErrorSession:
-    def __init__(self, get_exc: Exception | None = None, json_exc: Exception | None = None):
+    def __init__(
+        self, get_exc: Exception | None = None, json_exc: Exception | None = None
+    ):
         self._get_exc = get_exc
         self._json_exc = json_exc
 

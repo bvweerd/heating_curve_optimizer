@@ -31,7 +31,10 @@ class HeatingCurveOffsetNumber(NumberEntity, RestoreEntity):
     async def async_added_to_hass(self) -> None:  # pragma: no cover - simple restore
         await super().async_added_to_hass()
         last_state = await self.async_get_last_state()
-        if last_state is not None and last_state.state not in ("unknown", "unavailable"):
+        if last_state is not None and last_state.state not in (
+            "unknown",
+            "unavailable",
+        ):
             try:
                 self._attr_native_value = float(last_state.state)
             except ValueError:
@@ -70,16 +73,23 @@ class HeatCurveMinNumber(NumberEntity, RestoreEntity):
     async def async_added_to_hass(self) -> None:  # pragma: no cover - simple restore
         await super().async_added_to_hass()
         last_state = await self.async_get_last_state()
-        if last_state is not None and last_state.state not in ("unknown", "unavailable"):
+        if last_state is not None and last_state.state not in (
+            "unknown",
+            "unavailable",
+        ):
             try:
                 self._attr_native_value = float(last_state.state)
             except ValueError:
                 self._attr_native_value = self._attr_native_min_value
-        self.hass.data.setdefault(DOMAIN, {})["heat_curve_min"] = self._attr_native_value
+        self.hass.data.setdefault(DOMAIN, {})["heat_curve_min"] = (
+            self._attr_native_value
+        )
 
     async def async_set_native_value(self, value: float) -> None:
         self._attr_native_value = float(value)
-        self.hass.data.setdefault(DOMAIN, {})["heat_curve_min"] = self._attr_native_value
+        self.hass.data.setdefault(DOMAIN, {})["heat_curve_min"] = (
+            self._attr_native_value
+        )
         self.async_write_ha_state()
 
 
@@ -111,16 +121,23 @@ class HeatCurveMaxNumber(NumberEntity, RestoreEntity):
     async def async_added_to_hass(self) -> None:  # pragma: no cover - simple restore
         await super().async_added_to_hass()
         last_state = await self.async_get_last_state()
-        if last_state is not None and last_state.state not in ("unknown", "unavailable"):
+        if last_state is not None and last_state.state not in (
+            "unknown",
+            "unavailable",
+        ):
             try:
                 self._attr_native_value = float(last_state.state)
             except ValueError:
                 self._attr_native_value = self._attr_native_max_value
-        self.hass.data.setdefault(DOMAIN, {})["heat_curve_max"] = self._attr_native_value
+        self.hass.data.setdefault(DOMAIN, {})["heat_curve_max"] = (
+            self._attr_native_value
+        )
 
     async def async_set_native_value(self, value: float) -> None:
         self._attr_native_value = float(value)
-        self.hass.data.setdefault(DOMAIN, {})["heat_curve_max"] = self._attr_native_value
+        self.hass.data.setdefault(DOMAIN, {})["heat_curve_max"] = (
+            self._attr_native_value
+        )
         self.async_write_ha_state()
 
 

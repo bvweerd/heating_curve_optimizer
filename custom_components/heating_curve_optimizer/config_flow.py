@@ -518,7 +518,9 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             return await self.async_step_user()
 
         power_sensors = await self._get_power_sensors()
-        temp_sensors = await HeatingCurveOptimizerConfigFlow._get_temperature_sensors(self)
+        temp_sensors = await HeatingCurveOptimizerConfigFlow._get_temperature_sensors(
+            self
+        )
 
         schema = vol.Schema(
             {
