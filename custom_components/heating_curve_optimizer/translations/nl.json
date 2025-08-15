@@ -3,12 +3,26 @@
     "step": {
       "basic": {
         "data": {
-          "energy_label": "Energielabel"
+          "energy_label": "Energielabel",
+          "base_cop": "Basale COP bij 35°C",
+          "outdoor_temp_coefficient": "Buitentemperatuur-coëfficiënt"
         }
       },
       "user": {
         "data": {
-          "energy_label": "Energielabel"
+          "energy_label": "Energielabel",
+          "base_cop": "Basale COP bij 35°C",
+          "outdoor_temp_coefficient": "Buitentemperatuur-coëfficiënt"
+        }
+      }
+    }
+  }
+,
+  "entity": {
+    "sensor": {
+      "heat_pump_cop": {
+        "state": {
+          "formula": "COP = basale_COP + buitentemperatuur-coëfficiënt × T_buiten − k_factor × (T_aanvoer − 35)"
         }
       }
     }

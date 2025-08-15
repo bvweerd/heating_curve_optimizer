@@ -3,12 +3,26 @@
     "step": {
       "basic": {
         "data": {
-          "energy_label": "Energy label"
+          "energy_label": "Energy label",
+          "base_cop": "Base COP at 35°C",
+          "outdoor_temp_coefficient": "Outdoor temperature coefficient"
         }
       },
       "user": {
         "data": {
-          "energy_label": "Energy label"
+          "energy_label": "Energy label",
+          "base_cop": "Base COP at 35°C",
+          "outdoor_temp_coefficient": "Outdoor temperature coefficient"
+        }
+      }
+    }
+  }
+,
+  "entity": {
+    "sensor": {
+      "heat_pump_cop": {
+        "state": {
+          "formula": "COP = base_cop + outdoor_temp_coefficient × T_outdoor − k_factor × (T_supply − 35)"
         }
       }
     }

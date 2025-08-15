@@ -38,6 +38,14 @@ Configuration is done entirely through the UI. The following options can be prov
 
 The `sensor.heating_curve_offset` attributes include future offsets and the price list used for the calculation.
 
+The COP sensor uses the formula:
+
+```
+COP = C₀ + α · T_outdoor − k · (T_supply − 35)
+```
+
+where `C₀` is the base COP at 35 °C and `α` is the outdoor temperature coefficient.
+
 ## Automation Example
 ```yaml
 - alias: "Update heating curve"
