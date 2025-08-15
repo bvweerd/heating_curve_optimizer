@@ -4,7 +4,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from custom_components.heating_curve_optimizer import sensor
 from custom_components.heating_curve_optimizer.sensor import (
     HeatingCurveOffsetSensor,
-    NetHeatDemandSensor,
+    NetHeatLossSensor,
 )
 from homeassistant.components.sensor import SensorStateClass
 
@@ -18,9 +18,9 @@ async def test_offset_sensor_handles_sensor_instance(hass):
         "custom_components.heating_curve_optimizer.sensor.async_get_clientsession",
         return_value=None,
     ):
-        net = NetHeatDemandSensor(
+        net = NetHeatLossSensor(
             hass=hass,
-            name="Hourly Net Heat Demand",
+            name="Hourly Net Heat Loss",
             unique_id="test_net",
             area_m2=10.0,
             energy_label="A",
