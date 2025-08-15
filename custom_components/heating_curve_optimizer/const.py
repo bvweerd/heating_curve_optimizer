@@ -28,10 +28,13 @@ CONF_OUTDOOR_TEMPERATURE_SENSOR = "outdoor_temperature_sensor"
 CONF_K_FACTOR = "k_factor"
 
 # Allowed energy labels
-ENERGY_LABELS = ["A", "B", "C", "D", "E", "F", "G"]
+ENERGY_LABELS = ["A+++", "A++", "A+", "A", "B", "C", "D", "E", "F", "G"]
 
 # Mapping energielabel -> U-waarde (W/m²K)
 U_VALUE_MAP = {
+    "A+++": 0.2,
+    "A++": 0.3,
+    "A+": 0.4,
     "A": 0.6,
     "B": 0.8,
     "C": 1.0,

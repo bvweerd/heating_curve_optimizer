@@ -14,7 +14,7 @@ WARNING: Work In Progress!!
 ## Configuration
 Configuration is done entirely through the UI. The following options can be provided:
 - Home area in square meters (`area_m2`).
-- Energy label from A to G (`energy_label`).
+- Energy label from A+++ to G (`energy_label`).
 - Window areas facing east, west and south and the glass U‑value.
 - Optional indoor temperature, power consumption and supply temperature sensors.
 - A price sensor for electricity rates.
