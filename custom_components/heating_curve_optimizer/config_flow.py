@@ -18,6 +18,7 @@ from .const import (
     CONF_GLASS_U_VALUE,
     CONF_GLASS_WEST_M2,
     CONF_INDOOR_TEMPERATURE_SENSOR,
+    CONF_EXTERNAL_FORECAST_SENSOR,
     CONF_PLANNING_WINDOW,
     CONF_TIME_BASE,
     CONF_OUTDOOR_TEMPERATURE_SENSOR,
@@ -68,6 +69,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.indoor_temperature_sensor: str | None = None
         self.supply_temperature_sensor: str | None = None
         self.outdoor_temperature_sensor: str | None = None
+        self.external_forecast_sensor: str | None = None
         self.k_factor: float | None = None
         self.base_cop: float = DEFAULT_COP_AT_35
         self.outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT
@@ -114,6 +116,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_OUTDOOR_TEMPERATURE_SENSOR: self.outdoor_temperature_sensor,
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                         CONF_SUPPLY_TEMPERATURE_SENSOR: self.supply_temperature_sensor,
+                        CONF_EXTERNAL_FORECAST_SENSOR: self.external_forecast_sensor,
                         CONF_K_FACTOR: self.k_factor,
                         CONF_BASE_COP: self.base_cop,
                         CONF_OUTDOOR_TEMP_COEFFICIENT: self.outdoor_temp_coefficient,
@@ -174,6 +177,15 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ]
         )
 
+    async def _get_forecast_sensors(self) -> list[str]:
+        return sorted(
+            [
+                state.entity_id
+                for state in self.hass.states.async_all("sensor")
+                if "forecast" in state.attributes
+            ]
+        )
+
     async def async_step_basic_options(self, user_input=None):
         if user_input is not None:
             self.area_m2 = float(user_input[CONF_AREA_M2])
@@ -192,6 +204,9 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.outdoor_temperature_sensor = user_input.get(
                 CONF_OUTDOOR_TEMPERATURE_SENSOR
             )
+            self.external_forecast_sensor = user_input.get(
+                CONF_EXTERNAL_FORECAST_SENSOR
+            )
             self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
             self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
             self.outdoor_temp_coefficient = float(
@@ -207,6 +222,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         power_sensors = await self._get_power_sensors()
         temp_sensors = await self._get_temperature_sensors()
+        forecast_sensors = await self._get_forecast_sensors()
 
         schema = vol.Schema(
             {
@@ -266,6 +282,15 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         }
                     }
                 ),
+                vol.Optional(CONF_EXTERNAL_FORECAST_SENSOR): selector(
+                    {
+                        "select": {
+                            "options": forecast_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
                 vol.Optional(
                     CONF_K_FACTOR, default=self.k_factor or DEFAULT_K_FACTOR
                 ): vol.Coerce(float),
@@ -307,6 +332,9 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             self.outdoor_temperature_sensor = user_input.get(
                 CONF_OUTDOOR_TEMPERATURE_SENSOR
+            )
+            self.external_forecast_sensor = user_input.get(
+                CONF_EXTERNAL_FORECAST_SENSOR
             )
             self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
             self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
@@ -509,6 +537,9 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
         self.outdoor_temperature_sensor = config_entry.data.get(
             CONF_OUTDOOR_TEMPERATURE_SENSOR
         )
+        self.external_forecast_sensor = config_entry.data.get(
+            CONF_EXTERNAL_FORECAST_SENSOR
+        )
         self.k_factor = config_entry.data.get(CONF_K_FACTOR)
         self.base_cop = config_entry.data.get(CONF_BASE_COP, DEFAULT_COP_AT_35)
         self.outdoor_temp_coefficient = config_entry.data.get(
@@ -584,6 +615,7 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_OUTDOOR_TEMPERATURE_SENSOR: self.outdoor_temperature_sensor,
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                         CONF_SUPPLY_TEMPERATURE_SENSOR: self.supply_temperature_sensor,
+                        CONF_EXTERNAL_FORECAST_SENSOR: self.external_forecast_sensor,
                         CONF_K_FACTOR: self.k_factor,
                         CONF_BASE_COP: self.base_cop,
                         CONF_OUTDOOR_TEMP_COEFFICIENT: self.outdoor_temp_coefficient,
@@ -647,6 +679,7 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
         temp_sensors = await HeatingCurveOptimizerConfigFlow._get_temperature_sensors(
             self
         )
+        forecast_sensors = await self._get_forecast_sensors()
 
         schema = vol.Schema(
             {
@@ -714,6 +747,18 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                     {
                         "select": {
                             "options": temp_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Optional(
+                    CONF_EXTERNAL_FORECAST_SENSOR,
+                    default=self.external_forecast_sensor,
+                ): selector(
+                    {
+                        "select": {
+                            "options": forecast_sensors,
                             "multiple": False,
                             "mode": "dropdown",
                         }

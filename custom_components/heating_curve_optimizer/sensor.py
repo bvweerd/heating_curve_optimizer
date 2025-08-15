@@ -26,6 +26,7 @@ from .const import (
     CONF_GLASS_WEST_M2,
     CONF_INDOOR_TEMPERATURE_SENSOR,
     CONF_OUTDOOR_TEMPERATURE_SENSOR,
+    CONF_EXTERNAL_FORECAST_SENSOR,
     CONF_K_FACTOR,
     CONF_BASE_COP,
     CONF_OUTDOOR_TEMP_COEFFICIENT,
@@ -233,6 +234,79 @@ class SunIntensityPredictionSensor(BaseUtilitySensor):
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
+
+    async def async_will_remove_from_hass(self):
+        await super().async_will_remove_from_hass()
+
+
+class ExternalForecastSensor(BaseUtilitySensor):
+    """Sensor that exposes forecast data from another entity."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        source_entity: str,
+        device: DeviceInfo,
+        icon: str = "mdi:chart-line",
+    ):
+        super().__init__(
+            name=name,
+            unique_id=unique_id,
+            unit="",
+            device_class=None,
+            icon=icon,
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self.hass = hass
+        self.source_entity = source_entity
+        self._extra_attrs: dict[str, Any] = {}
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        if not self._attr_available:
+            return {}
+        return self._extra_attrs
+
+    async def async_update(self):
+        state = self.hass.states.get(self.source_entity)
+        if state is None or state.state in ("unknown", "unavailable"):
+            self._attr_available = False
+            return
+        self._attr_available = True
+        try:
+            self._attr_native_value = float(state.state)
+        except (ValueError, TypeError):
+            self._attr_native_value = state.state
+        attrs: dict[str, Any] = {}
+        for key, value in state.attributes.items():
+            if key == "forecast" and isinstance(value, list):
+                cast_list: list[float] = []
+                for item in value:
+                    try:
+                        cast_list.append(float(item))
+                    except (ValueError, TypeError):
+                        continue
+                attrs[key] = cast_list
+            else:
+                attrs[key] = value
+        self._extra_attrs = attrs
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass, self.source_entity, self._handle_change
+            )
+        )
+
+    async def _handle_change(self, event):
+        await self.async_update()
+        if self.entity_id:
+            self.async_write_ha_state()
 
     async def async_will_remove_from_hass(self):
         await super().async_will_remove_from_hass()
@@ -1828,6 +1902,18 @@ async def async_setup_entry(
         device=device_info,
     )
     entities.append(sun_intensity_sensor)
+
+    external_forecast_entity_id = entry.data.get(CONF_EXTERNAL_FORECAST_SENSOR)
+    if external_forecast_entity_id:
+        entities.append(
+            ExternalForecastSensor(
+                hass=hass,
+                name="External Forecast",
+                unique_id=f"{entry.entry_id}_external_forecast",
+                source_entity=external_forecast_entity_id,
+                device=device_info,
+            )
+        )
 
     entities.append(
         CalculatedSupplyTemperatureSensor(
