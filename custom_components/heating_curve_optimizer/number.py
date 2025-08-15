@@ -141,6 +141,102 @@ class HeatCurveMaxNumber(NumberEntity, RestoreEntity):
         self.async_write_ha_state()
 
 
+class HeatCurveMinOutdoorNumber(NumberEntity, RestoreEntity):
+    """Number entity for the minimum outdoor temperature of the heating curve."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Outdoor Temperature Min"
+    _attr_translation_key = "heat_curve_min_outdoor"
+    _attr_native_unit_of_measurement = "°C"
+    _attr_native_step = 1.0
+    _attr_icon = "mdi:weather-snowy"
+
+    def __init__(
+        self,
+        unique_id: str,
+        device: DeviceInfo,
+        *,
+        native_min: float,
+        native_max: float,
+    ) -> None:
+        self._attr_unique_id = unique_id
+        self._attr_device_info = device
+        self._attr_native_min_value = native_min
+        self._attr_native_max_value = native_max
+        self._attr_native_value = native_min
+        self._attr_available = True
+
+    async def async_added_to_hass(self) -> None:  # pragma: no cover - simple restore
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in (
+            "unknown",
+            "unavailable",
+        ):
+            try:
+                self._attr_native_value = float(last_state.state)
+            except ValueError:
+                self._attr_native_value = self._attr_native_min_value
+        self.hass.data.setdefault(DOMAIN, {})["heat_curve_min_outdoor"] = (
+            self._attr_native_value
+        )
+
+    async def async_set_native_value(self, value: float) -> None:
+        self._attr_native_value = float(value)
+        self.hass.data.setdefault(DOMAIN, {})["heat_curve_min_outdoor"] = (
+            self._attr_native_value
+        )
+        self.async_write_ha_state()
+
+
+class HeatCurveMaxOutdoorNumber(NumberEntity, RestoreEntity):
+    """Number entity for the maximum outdoor temperature of the heating curve."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Outdoor Temperature Max"
+    _attr_translation_key = "heat_curve_max_outdoor"
+    _attr_native_unit_of_measurement = "°C"
+    _attr_native_step = 1.0
+    _attr_icon = "mdi:weather-sunny"
+
+    def __init__(
+        self,
+        unique_id: str,
+        device: DeviceInfo,
+        *,
+        native_min: float,
+        native_max: float,
+    ) -> None:
+        self._attr_unique_id = unique_id
+        self._attr_device_info = device
+        self._attr_native_min_value = native_min
+        self._attr_native_max_value = native_max
+        self._attr_native_value = native_max
+        self._attr_available = True
+
+    async def async_added_to_hass(self) -> None:  # pragma: no cover - simple restore
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in (
+            "unknown",
+            "unavailable",
+        ):
+            try:
+                self._attr_native_value = float(last_state.state)
+            except ValueError:
+                self._attr_native_value = self._attr_native_max_value
+        self.hass.data.setdefault(DOMAIN, {})["heat_curve_max_outdoor"] = (
+            self._attr_native_value
+        )
+
+    async def async_set_native_value(self, value: float) -> None:
+        self._attr_native_value = float(value)
+        self.hass.data.setdefault(DOMAIN, {})["heat_curve_max_outdoor"] = (
+            self._attr_native_value
+        )
+        self.async_write_ha_state()
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -165,17 +261,35 @@ async def async_setup_entry(
         native_min=35.0,
         native_max=60.0,
     )
+    curve_min_outdoor = HeatCurveMinOutdoorNumber(
+        unique_id=f"{entry.entry_id}_heating_curve_min_outdoor",
+        device=device_info,
+        native_min=-20.0,
+        native_max=5.0,
+    )
+    curve_max_outdoor = HeatCurveMaxOutdoorNumber(
+        unique_id=f"{entry.entry_id}_heating_curve_max_outdoor",
+        device=device_info,
+        native_min=5.0,
+        native_max=20.0,
+    )
 
-    async_add_entities([offset, curve_min, curve_max])
+    async_add_entities(
+        [offset, curve_min, curve_max, curve_min_outdoor, curve_max_outdoor]
+    )
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN].setdefault("entities", {})[offset.entity_id] = offset
     hass.data[DOMAIN]["heat_curve_min"] = curve_min.native_value
     hass.data[DOMAIN]["heat_curve_max"] = curve_max.native_value
+    hass.data[DOMAIN]["heat_curve_min_outdoor"] = curve_min_outdoor.native_value
+    hass.data[DOMAIN]["heat_curve_max_outdoor"] = curve_max_outdoor.native_value
 
 
 __all__ = [
     "HeatingCurveOffsetNumber",
     "HeatCurveMinNumber",
     "HeatCurveMaxNumber",
+    "HeatCurveMinOutdoorNumber",
+    "HeatCurveMaxOutdoorNumber",
 ]
