@@ -31,6 +31,8 @@ from .const import (
     CONF_GLASS_WEST_M2,
     CONF_INDOOR_TEMPERATURE_SENSOR,
     CONF_K_FACTOR,
+    CONF_BASE_COP,
+    CONF_OUTDOOR_TEMP_COEFF,
     CONF_POWER_CONSUMPTION,
     CONF_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
@@ -38,6 +40,7 @@ from .const import (
     CONF_SOURCES,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
     DEFAULT_COP_AT_35,
+    DEFAULT_OUTDOOR_TEMP_COEFF,
     DEFAULT_K_FACTOR,
     DOMAIN,
     INDOOR_TEMPERATURE,
@@ -688,6 +691,7 @@ class QuadraticCopSensor(BaseUtilitySensor):
         device: DeviceInfo,
         k_factor: float = DEFAULT_K_FACTOR,
         base_cop: float = DEFAULT_COP_AT_35,
+        outdoor_coeff: float = DEFAULT_OUTDOOR_TEMP_COEFF,
     ):
         super().__init__(
             name=name,
@@ -704,6 +708,7 @@ class QuadraticCopSensor(BaseUtilitySensor):
         self.outdoor_sensor = outdoor_sensor
         self.k_factor = k_factor
         self.base_cop = base_cop
+        self.outdoor_coeff = outdoor_coeff
 
     async def async_update(self):
         s_state = self.hass.states.get(self.supply_sensor)
@@ -722,7 +727,11 @@ class QuadraticCopSensor(BaseUtilitySensor):
         except ValueError:
             self._attr_available = False
             return
-        cop = self.base_cop + 0.08 * o_temp - self.k_factor * (s_temp - 35)
+        cop = (
+            self.base_cop
+            + self.outdoor_coeff * o_temp
+            - self.k_factor * (s_temp - 35)
+        )
         _LOGGER.debug(
             "Calculated COP with supply=%s outdoor=%s -> %s", s_temp, o_temp, cop
         )
@@ -744,6 +753,7 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
         device: DeviceInfo,
         k_factor: float = DEFAULT_K_FACTOR,
         base_cop: float = DEFAULT_COP_AT_35,
+        outdoor_coeff: float = DEFAULT_OUTDOOR_TEMP_COEFF,
     ):
         super().__init__(
             name=name,
@@ -762,6 +772,7 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
         self.outdoor_sensor = outdoor_sensor
         self.k_factor = k_factor
         self.base_cop = base_cop
+        self.outdoor_coeff = outdoor_coeff
 
     async def async_update(self):
         p_state = self.hass.states.get(self.power_sensor)
@@ -784,7 +795,11 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
         except ValueError:
             self._attr_available = False
             return
-        cop = self.base_cop + 0.08 * o_temp - self.k_factor * (s_temp - 35)
+        cop = (
+            self.base_cop
+            + self.outdoor_coeff * o_temp
+            - self.k_factor * (s_temp - 35)
+        )
         thermal_power = power * cop / 1000.0
         _LOGGER.debug(
             "Thermal power calc power=%s cop=%s -> %s",
@@ -1412,6 +1427,10 @@ async def async_setup_entry(
     supply_temp_sensor = entry.data.get(CONF_SUPPLY_TEMPERATURE_SENSOR)
     power_sensor = entry.data.get(CONF_POWER_CONSUMPTION)
     k_factor = float(entry.data.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
+    base_cop = float(entry.data.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
+    outdoor_coeff = float(
+        entry.data.get(CONF_OUTDOOR_TEMP_COEFF, DEFAULT_OUTDOOR_TEMP_COEFF)
+    )
     glass_east = float(entry.data.get(CONF_GLASS_EAST_M2, 0))
     glass_west = float(entry.data.get(CONF_GLASS_WEST_M2, 0))
     glass_south = float(entry.data.get(CONF_GLASS_SOUTH_M2, 0))
@@ -1523,7 +1542,8 @@ async def async_setup_entry(
             supply_sensor=supply_temp_sensor,
             outdoor_sensor="sensor.outdoor_temperature",
             k_factor=k_factor,
-            base_cop=DEFAULT_COP_AT_35,
+            base_cop=base_cop,
+            outdoor_coeff=outdoor_coeff,
             device=device_info,
         )
         entities.append(cop_sensor_entity)
@@ -1538,7 +1558,8 @@ async def async_setup_entry(
                     outdoor_sensor="sensor.outdoor_temperature",
                     device=device_info,
                     k_factor=k_factor,
-                    base_cop=DEFAULT_COP_AT_35,
+                    base_cop=base_cop,
+                    outdoor_coeff=outdoor_coeff,
                 )
             )
 
