@@ -2609,7 +2609,6 @@ async def async_setup_entry(
             power_history_sensors=consumption_history_sensors,
             heatpump_history_sensor=heat_pump_history_sensor_entity,
             solar_history_sensor=production_history_sensor,
-
         )
         entities.append(heating_curve_offset_sensor)
 
