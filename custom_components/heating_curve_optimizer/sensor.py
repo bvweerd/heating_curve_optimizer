@@ -865,6 +865,88 @@ class QuadraticCopSensor(BaseUtilitySensor):
         self._attr_native_value = round(cop, 3)
 
 
+class HeatPumpPowerHistorySensor(BaseUtilitySensor):
+    """Store power sensor readings with timestamps."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        power_sensor: str,
+        device: DeviceInfo,
+    ) -> None:
+        super().__init__(
+            name=name,
+            unique_id=unique_id,
+            unit="W",
+            device_class=None,
+            icon="mdi:chart-timeline-variant",
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self.hass = hass
+        self.power_sensor = power_sensor
+        self._history: list[dict[str, Any]] = []
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {"history": self._history}
+
+    def _record(self, power: float) -> None:
+        from homeassistant.util import dt as dt_util
+
+        self._history.append(
+            {"time": dt_util.utcnow().isoformat(), "power": round(power, 3)}
+        )
+        if len(self._history) > 100:
+            self._history = self._history[-100:]
+
+    async def async_update(self) -> None:
+        state = self.hass.states.get(self.power_sensor)
+        if state is None or state.state in ("unknown", "unavailable"):
+            self._attr_available = False
+            return
+        try:
+            power = float(state.state)
+        except ValueError:
+            self._attr_available = False
+            return
+        self._attr_available = True
+        self._attr_native_value = round(power, 3)
+        self._record(power)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        await self.async_update()
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass, self.power_sensor, self._handle_change
+            )
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        await super().async_will_remove_from_hass()
+
+    async def _handle_change(self, event) -> None:
+        new_state = event.data.get("new_state")
+        if new_state is None or new_state.state in ("unknown", "unavailable"):
+            self._attr_available = False
+            return
+        try:
+            power = float(new_state.state)
+        except ValueError:
+            self._attr_available = False
+            return
+        self._attr_available = True
+        self._attr_native_value = round(power, 3)
+        self._record(power)
+        if self.entity_id:
+            self.async_write_ha_state()
+
+
 class HeatPumpThermalPowerSensor(BaseUtilitySensor):
     """Calculate current thermal output of the heat pump."""
 
@@ -1866,6 +1948,17 @@ async def async_setup_entry(
     glass_u = float(entry.data.get(CONF_GLASS_U_VALUE, 1.2))
     planning_window = int(entry.data.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW))
     time_base = int(entry.data.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
+
+    if power_sensor:
+        entities.append(
+            HeatPumpPowerHistorySensor(
+                hass=hass,
+                name="Heat Pump Power History",
+                unique_id=f"{entry.entry_id}_power_history",
+                power_sensor=power_sensor,
+                device=device_info,
+            )
+        )
 
     price_sensor = entry.data.get(CONF_PRICE_SENSOR)
     consumption_price_entity = None
