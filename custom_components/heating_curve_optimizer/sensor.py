@@ -1872,6 +1872,79 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         self.async_write_ha_state()
 
 
+class HeatBufferSensor(BaseUtilitySensor):
+    """Expose the heat buffer evolution from the heating curve optimization."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        offset_entity: str | SensorEntity,
+        device: DeviceInfo,
+    ) -> None:
+        super().__init__(
+            name=name,
+            unique_id=unique_id,
+            unit="°C",
+            device_class="temperature",
+            icon="mdi:database",
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_").replace(".", "_"),
+        )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self.hass = hass
+        self.offset_entity = offset_entity
+        self._extra_attrs: dict[str, list[float] | dict[str, float]] = {}
+
+    @property
+    def extra_state_attributes(self) -> dict[str, list[float] | dict[str, float]]:
+        return self._extra_attrs
+
+    async def async_update(self) -> None:
+        ent = (
+            self.offset_entity.entity_id
+            if hasattr(self.offset_entity, "entity_id")
+            else self.offset_entity
+        )
+        state = self.hass.states.get(ent) if ent else None
+        if (
+            state is None
+            or state.state in ("unknown", "unavailable")
+            or "buffer_evolution" not in state.attributes
+        ):
+            self._attr_available = False
+            return
+
+        evolution = [float(v) for v in state.attributes.get("buffer_evolution", [])]
+        if not evolution:
+            self._attr_available = False
+            return
+
+        self._attr_native_value = evolution[0]
+        self._extra_attrs = {
+            "buffer_evolution": evolution,
+            "buffer_by_step": {str(i): v for i, v in enumerate(evolution)},
+        }
+        self._attr_available = True
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        if not isinstance(self.offset_entity, str):
+            self.offset_entity = self.offset_entity.entity_id
+        if self.offset_entity:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass, self.offset_entity, self._handle_change
+                )
+            )
+
+    async def _handle_change(self, event):
+        await self.async_update()
+        self.async_write_ha_state()
+
+
 class EnergyConsumptionForecastSensor(BaseUtilitySensor):
     def __init__(
         self,
@@ -2486,6 +2559,15 @@ async def async_setup_entry(
             )
 
     if heating_curve_offset_sensor is not None:
+        entities.append(
+            HeatBufferSensor(
+                hass=hass,
+                name="Heat Buffer",
+                unique_id=f"{entry.entry_id}_heat_buffer",
+                offset_entity=heating_curve_offset_sensor,
+                device=device_info,
+            )
+        )
         entities.append(
             OptimizedSupplyTemperatureSensor(
                 hass=hass,
