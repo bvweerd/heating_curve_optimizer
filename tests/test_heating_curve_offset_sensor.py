@@ -53,6 +53,7 @@ async def test_offset_sensor_sets_future_offsets_attribute(hass):
         "0.0",
         {"raw_today": [0.0] * 24, "raw_tomorrow": []},
     )
+    hass.states.async_set("sensor.outdoor_temperature", "0")
 
     sensor = HeatingCurveOffsetSensor(
         hass=hass,
@@ -80,6 +81,7 @@ async def test_offset_sensor_sets_future_offsets_attribute(hass):
         10,
         15,
     ]
+    assert "future_supply_temperatures" in sensor.extra_state_attributes
     await sensor.async_will_remove_from_hass()
 
 

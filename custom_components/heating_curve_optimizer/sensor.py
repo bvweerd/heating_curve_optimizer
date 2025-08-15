@@ -9,11 +9,6 @@ from typing import Any, cast
 import aiohttp
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import pycares  # noqa: F401
-
-# Create a persistent pycares channel to ensure the library's background
-# thread is started before test fixtures snapshot running threads. Without
-# this, the thread may be flagged as lingering during teardown.
-_PYCARES_CHANNEL = pycares.Channel()
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -30,6 +25,7 @@ from .const import (
     CONF_GLASS_U_VALUE,
     CONF_GLASS_WEST_M2,
     CONF_INDOOR_TEMPERATURE_SENSOR,
+    CONF_OUTDOOR_TEMPERATURE_SENSOR,
     CONF_K_FACTOR,
     CONF_POWER_CONSUMPTION,
     CONF_PRICE_SENSOR,
@@ -46,6 +42,11 @@ from .const import (
     U_VALUE_MAP,
 )
 from .entity import BaseUtilitySensor
+
+# Create a persistent pycares channel to ensure the library's background
+# thread is started before test fixtures snapshot running threads. Without
+# this, the thread may be flagged as lingering during teardown.
+_PYCARES_CHANNEL = pycares.Channel()
 
 _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 1
@@ -777,8 +778,8 @@ class QuadraticCopSensor(BaseUtilitySensor):
         name: str,
         unique_id: str,
         supply_sensor: str,
-        outdoor_sensor: str,
         device: DeviceInfo,
+        outdoor_sensor: str | None = None,
         k_factor: float = DEFAULT_K_FACTOR,
         base_cop: float = DEFAULT_COP_AT_35,
     ):
@@ -797,24 +798,53 @@ class QuadraticCopSensor(BaseUtilitySensor):
         self.outdoor_sensor = outdoor_sensor
         self.k_factor = k_factor
         self.base_cop = base_cop
+        self.latitude = hass.config.latitude
+        self.longitude = hass.config.longitude
+        self.session = async_get_clientsession(hass)
+
+    async def _fetch_outdoor_temp(self) -> float | None:
+        """Fetch current outdoor temperature from Open-Meteo."""
+        url = (
+            "https://api.open-meteo.com/v1/forecast"
+            f"?latitude={self.latitude}&longitude={self.longitude}"
+            "&current_weather=true&timezone=UTC"
+        )
+        try:
+            async with self.session.get(
+                url, timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                data = await resp.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            _LOGGER.error("Error fetching outdoor temperature: %s", err)
+            self._attr_available = False
+            return None
+        self._attr_available = True
+        return float(data.get("current_weather", {}).get("temperature", 0))
 
     async def async_update(self):
         s_state = self.hass.states.get(self.supply_sensor)
-        o_state = self.hass.states.get(self.outdoor_sensor)
-        if (
-            s_state is None
-            or o_state is None
-            or s_state.state in ("unknown", "unavailable")
-            or o_state.state in ("unknown", "unavailable")
-        ):
+        if s_state is None or s_state.state in ("unknown", "unavailable"):
             self._attr_available = False
             return
         try:
             s_temp = float(s_state.state)
-            o_temp = float(o_state.state)
         except ValueError:
             self._attr_available = False
             return
+
+        o_temp = None
+        if self.outdoor_sensor:
+            o_state = self.hass.states.get(self.outdoor_sensor)
+            if o_state and o_state.state not in ("unknown", "unavailable"):
+                try:
+                    o_temp = float(o_state.state)
+                except ValueError:
+                    o_temp = None
+        if o_temp is None:
+            o_temp = await self._fetch_outdoor_temp()
+            if o_temp is None:
+                return
+
         cop = self.base_cop + 0.08 * o_temp - self.k_factor * (s_temp - 35)
         _LOGGER.debug(
             "Calculated COP with supply=%s outdoor=%s -> %s", s_temp, o_temp, cop
@@ -887,6 +917,110 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
         )
         self._attr_available = True
         self._attr_native_value = round(thermal_power, 3)
+
+
+class CalculatedSupplyTemperatureSensor(BaseUtilitySensor):
+    """Calculate target supply temperature based on the heating curve."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        *,
+        outdoor_sensor: str | SensorEntity,
+        offset_entity: str | SensorEntity,
+        device: DeviceInfo,
+    ) -> None:
+        super().__init__(
+            name=name,
+            unique_id=unique_id,
+            unit="°C",
+            device_class="temperature",
+            icon="mdi:thermometer",
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self.hass = hass
+        self.outdoor_sensor = outdoor_sensor
+        self.offset_entity = offset_entity
+
+    async def async_added_to_hass(self) -> None:  # pragma: no cover - simple track
+        await super().async_added_to_hass()
+        if isinstance(self.outdoor_sensor, SensorEntity):
+            self.outdoor_sensor = self.outdoor_sensor.entity_id
+        if isinstance(self.offset_entity, SensorEntity):
+            self.offset_entity = self.offset_entity.entity_id
+        entities = [
+            cast(str, self.outdoor_sensor),
+            cast(str, self.offset_entity),
+            "number.heating_curve_min",
+            "number.heating_curve_max",
+        ]
+        for ent in entities:
+            self.async_on_remove(
+                async_track_state_change_event(self.hass, ent, self._handle_change)
+            )
+
+    async def _handle_change(self, event):  # pragma: no cover - simple callback
+        await self.async_update()
+        if self.entity_id:
+            self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        out_state = self.hass.states.get(cast(str, self.outdoor_sensor))
+        off_state = self.hass.states.get(cast(str, self.offset_entity))
+
+        if out_state is None or out_state.state in ("unknown", "unavailable"):
+            self._attr_available = False
+            return
+        try:
+            outdoor = float(out_state.state)
+        except ValueError:
+            self._attr_available = False
+            return
+
+        offset = 0.0
+        if off_state is not None and off_state.state not in (
+            "unknown",
+            "unavailable",
+        ):
+            try:
+                offset = float(off_state.state)
+            except ValueError:
+                offset = 0.0
+
+        try:
+            min_temp = float(self.hass.data[DOMAIN]["heat_curve_min"])
+            max_temp = float(self.hass.data[DOMAIN]["heat_curve_max"])
+        except (KeyError, TypeError, ValueError):
+            self._attr_available = False
+            return
+
+        t_out = max(-15.0, min(20.0, outdoor))
+        ratio = (20.0 - t_out) / 35.0
+        base = min_temp + (max_temp - min_temp) * ratio
+        target = base + offset
+
+        _LOGGER.debug(
+            "Calculated supply temp outdoor=%s min=%s max=%s offset=%s -> %s",
+            outdoor,
+            min_temp,
+            max_temp,
+            offset,
+            target,
+        )
+        self._attr_available = True
+        self._attr_native_value = round(target, 3)
+
+
+class OptimizedSupplyTemperatureSensor(CalculatedSupplyTemperatureSensor):
+    """Supply temperature using the optimized heating curve offset."""
+
+    # Inherits behaviour from ``CalculatedSupplyTemperatureSensor``.
+    pass
 
 
 class DiagnosticsSensor(BaseUtilitySensor):
@@ -1007,6 +1141,23 @@ class DiagnosticsSensor(BaseUtilitySensor):
         self._attr_available = True
 
 
+def _calculate_supply_temperature(
+    outdoor_temp: float,
+    *,
+    water_min: float,
+    water_max: float,
+    outdoor_min: float,
+    outdoor_max: float,
+) -> float:
+    """Return supply temperature for a given outdoor temperature."""
+    if outdoor_temp <= outdoor_min:
+        return water_max
+    if outdoor_temp >= outdoor_max:
+        return water_min
+    ratio = (outdoor_temp - outdoor_min) / (outdoor_max - outdoor_min)
+    return water_max + (water_min - water_max) * ratio
+
+
 def _optimize_offsets(
     demand: list[float],
     prices: list[float],
@@ -1014,6 +1165,8 @@ def _optimize_offsets(
     base_temp: float = 35.0,
     k_factor: float = DEFAULT_K_FACTOR,
     buffer: float = 0.0,
+    water_min: float = 28.0,
+    water_max: float = 45.0,
 ) -> tuple[list[int], list[float]]:
     r"""Return cost optimized offsets for the given demand and prices.
 
@@ -1043,7 +1196,9 @@ def _optimize_offsets(
     reciprocal_base_cop = 1 / base_cop
     cop_derivative = k_factor / (base_cop**2)
 
-    allowed_offsets = [o for o in range(-4, 5) if 28 <= base_temp + o <= 45]
+    allowed_offsets = [
+        o for o in range(-4, 5) if water_min <= base_temp + o <= water_max
+    ]
     if not allowed_offsets:
         return [0 for _ in range(horizon)], [buffer for _ in range(horizon)]
 
@@ -1216,12 +1371,38 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         total_energy = sum(demand)
         _LOGGER.debug("Offset sensor demand=%s prices=%s", demand, prices)
 
+        data = self.hass.data.get(DOMAIN, {})
+        water_min = float(data.get("heat_curve_min", 28.0))
+        water_max = float(data.get("heat_curve_max", 45.0))
+        outdoor_min = float(data.get("heat_curve_min_outdoor", -20.0))
+        outdoor_max = float(data.get("heat_curve_max_outdoor", 15.0))
+
+        o_state = self.hass.states.get("sensor.outdoor_temperature")
+        if o_state is None or o_state.state in ("unknown", "unavailable"):
+            self._attr_available = False
+            return
+        try:
+            outdoor_temp = float(o_state.state)
+        except ValueError:
+            self._attr_available = False
+            return
+
+        base_temp = _calculate_supply_temperature(
+            outdoor_temp,
+            water_min=water_min,
+            water_max=water_max,
+            outdoor_min=outdoor_min,
+            outdoor_max=outdoor_max,
+        )
+
         offsets, buffer_evolution = await self.hass.async_add_executor_job(
             partial(
                 _optimize_offsets,
-                base_temp=35.0,
+                base_temp=base_temp,
                 k_factor=self.k_factor,
                 buffer=0.0,
+                water_min=water_min,
+                water_max=water_max,
             ),
             demand,
             prices,
@@ -1234,11 +1415,20 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             self._attr_native_value = offsets[0]
         else:
             self._attr_native_value = 0
+        supply_temps = [
+            round(
+                max(min(base_temp + off, water_max), water_min),
+                1,
+            )
+            for off in offsets
+        ]
         self._extra_attrs = {
             "future_offsets": offsets,
             "prices": prices,
             "buffer_evolution": buffer_evolution,
             "total_energy": round(total_energy, 3),
+            "future_supply_temperatures": supply_temps,
+            "base_supply_temperature": round(base_temp, 1),
         }
         self._attr_available = True
 
@@ -1466,6 +1656,109 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
         await self._compute_value()
 
 
+class EnergyPriceLevelSensor(BaseUtilitySensor):
+    """Compare forecasted consumption with multiple price levels."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        price_sensor: str,
+        forecast_sensor: str,
+        price_levels: dict[str, float],
+        icon: str,
+        device: DeviceInfo,
+    ):
+        super().__init__(
+            name=name,
+            unique_id=unique_id,
+            unit="kWh",
+            device_class=None,
+            icon=icon,
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self.hass = hass
+        self.price_sensor = price_sensor
+        self.forecast_sensor = forecast_sensor
+        self.price_levels = price_levels
+        self._extra_attrs: dict[str, float] = {}
+
+    @property
+    def extra_state_attributes(self) -> dict[str, float]:
+        return self._extra_attrs
+
+    def _get_price_forecast(self, state) -> list[float]:
+        prices: list[float] = []
+        attr_forecast = state.attributes.get("forecast")
+        if isinstance(attr_forecast, list) and attr_forecast:
+            prices = [float(p) for p in attr_forecast]
+        else:
+            today = state.attributes.get("today")
+            tomorrow = state.attributes.get("tomorrow", [])
+            if isinstance(today, list):
+                combined = today + (tomorrow if isinstance(tomorrow, list) else [])
+                prices = [float(p) for p in combined]
+        if not prices:
+            try:
+                price = float(state.state)
+            except (ValueError, TypeError):
+                return []
+            prices = [price] * 24
+        return prices
+
+    async def async_update(self):
+        price_state = self.hass.states.get(self.price_sensor)
+        forecast_state = self.hass.states.get(self.forecast_sensor)
+        if (
+            price_state is None
+            or forecast_state is None
+            or price_state.state in ("unknown", "unavailable")
+            or forecast_state.state in ("unknown", "unavailable")
+        ):
+            self._attr_available = False
+            return
+
+        energy = forecast_state.attributes.get("standby_forecast_net")
+        try:
+            energy_forecast = [float(v) for v in energy or []]
+        except (TypeError, ValueError):
+            energy_forecast = []
+        if not energy_forecast:
+            self._attr_available = False
+            return
+
+        price_forecast = self._get_price_forecast(price_state)
+        if not price_forecast:
+            self._attr_available = False
+            return
+
+        horizon = min(len(price_forecast), len(energy_forecast))
+        sorted_levels = sorted(self.price_levels.items(), key=lambda x: x[1])
+        attrs: dict[str, float] = {}
+        for level, threshold in sorted_levels:
+            total = sum(
+                energy_forecast[i]
+                for i in range(horizon)
+                if price_forecast[i] <= threshold
+            )
+            attrs[level] = round(total, 3)
+
+        current_price = price_forecast[0]
+        state_val = 0.0
+        for level, threshold in sorted_levels:
+            if current_price <= threshold:
+                state_val = attrs[level]
+                break
+
+        self._extra_attrs = attrs
+        self._attr_native_value = round(state_val, 3)
+        self._attr_available = True
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -1498,6 +1791,17 @@ async def async_setup_entry(
     )
     entities.append(sun_intensity_sensor)
 
+    entities.append(
+        CalculatedSupplyTemperatureSensor(
+            hass=hass,
+            name="Calculated Supply Temperature",
+            unique_id=f"{entry.entry_id}_calculated_supply_temperature",
+            outdoor_sensor=outdoor_sensor_entity,
+            offset_entity="number.heating_curve_offset",
+            device=device_info,
+        )
+    )
+
     configs = entry.options.get(CONF_CONFIGS, entry.data.get(CONF_CONFIGS, []))
     consumption_sources: list[str] = []
     production_sources: list[str] = []
@@ -1511,6 +1815,7 @@ async def async_setup_entry(
     energy_label = entry.data.get(CONF_ENERGY_LABEL)
     indoor_sensor = entry.data.get(CONF_INDOOR_TEMPERATURE_SENSOR)
     supply_temp_sensor = entry.data.get(CONF_SUPPLY_TEMPERATURE_SENSOR)
+    outdoor_temp_sensor = entry.data.get(CONF_OUTDOOR_TEMPERATURE_SENSOR)
     power_sensor = entry.data.get(CONF_POWER_CONSUMPTION)
     k_factor = float(entry.data.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
     glass_east = float(entry.data.get(CONF_GLASS_EAST_M2, 0))
@@ -1519,19 +1824,19 @@ async def async_setup_entry(
     glass_u = float(entry.data.get(CONF_GLASS_U_VALUE, 1.2))
 
     price_sensor = entry.data.get(CONF_PRICE_SENSOR)
+    consumption_price_entity = None
     if price_sensor:
-        entities.append(
-            CurrentElectricityPriceSensor(
-                hass=hass,
-                name="Current Consumption Price",
-                unique_id=f"{entry.entry_id}_current_consumption_price",
-                price_sensor=price_sensor,
-                source_type=SOURCE_TYPE_CONSUMPTION,
-                price_settings=price_settings,
-                icon="mdi:transmission-tower-import",
-                device=price_device_info,
-            )
+        consumption_price_entity = CurrentElectricityPriceSensor(
+            hass=hass,
+            name="Current Consumption Price",
+            unique_id=f"{entry.entry_id}_current_consumption_price",
+            price_sensor=price_sensor,
+            source_type=SOURCE_TYPE_CONSUMPTION,
+            price_settings=price_settings,
+            icon="mdi:transmission-tower-import",
+            device=price_device_info,
         )
+        entities.append(consumption_price_entity)
         entities.append(
             CurrentElectricityPriceSensor(
                 hass=hass,
@@ -1556,6 +1861,7 @@ async def async_setup_entry(
             indoor_sensor=indoor_sensor,
             icon="mdi:home-thermometer",
             device=device_info,
+            outdoor_sensor=outdoor_temp_sensor,
         )
         entities.append(heat_loss_sensor)
 
@@ -1574,19 +1880,19 @@ async def async_setup_entry(
         )
         entities.append(window_gain_sensor)
 
+    forecast_entity = None
     if consumption_sources or production_sources:
-        entities.append(
-            EnergyConsumptionForecastSensor(
-                hass=hass,
-                name="Expected Energy Consumption",
-                unique_id=f"{entry.entry_id}_expected_energy_consumption",
-                consumption_sensors=consumption_sources,
-                production_sensors=production_sources,
-                heatpump_sensor=power_sensor,
-                icon="mdi:flash-clock",
-                device=device_info,
-            )
+        forecast_entity = EnergyConsumptionForecastSensor(
+            hass=hass,
+            name="Expected Energy Consumption",
+            unique_id=f"{entry.entry_id}_expected_energy_consumption",
+            consumption_sensors=consumption_sources,
+            production_sensors=production_sources,
+            heatpump_sensor=power_sensor,
+            icon="mdi:flash-clock",
+            device=device_info,
         )
+        entities.append(forecast_entity)
         entities.append(
             NetPowerConsumptionSensor(
                 hass=hass,
@@ -1598,6 +1904,24 @@ async def async_setup_entry(
                 device=device_info,
             )
         )
+
+    if price_sensor and forecast_entity and consumption_price_entity:
+        price_levels = {
+            k: float(v) for k, v in price_settings.items() if k != CONF_PRICE_SENSOR
+        }
+        if price_levels:
+            entities.append(
+                EnergyPriceLevelSensor(
+                    hass=hass,
+                    name="Available Energy by Price",
+                    unique_id=f"{entry.entry_id}_available_energy_by_price",
+                    price_sensor=f"sensor.{consumption_price_entity.translation_key}",
+                    forecast_sensor=f"sensor.{forecast_entity.translation_key}",
+                    price_levels=price_levels,
+                    icon="mdi:scale-balance",
+                    device=device_info,
+                )
+            )
 
     net_heat_sensor = None
     if area_m2 and energy_label:
@@ -1612,6 +1936,7 @@ async def async_setup_entry(
             device=device_info,
             heat_loss_sensor=heat_loss_sensor,
             window_gain_sensor=window_gain_sensor,
+            outdoor_sensor=outdoor_temp_sensor,
         )
         entities.append(net_heat_sensor)
 
@@ -1622,7 +1947,7 @@ async def async_setup_entry(
             name="Heat Pump COP",
             unique_id=f"{entry.entry_id}_cop",
             supply_sensor=supply_temp_sensor,
-            outdoor_sensor="sensor.outdoor_temperature",
+            outdoor_sensor=outdoor_temp_sensor,
             k_factor=k_factor,
             base_cop=DEFAULT_COP_AT_35,
             device=device_info,
@@ -1636,7 +1961,8 @@ async def async_setup_entry(
                     unique_id=f"{entry.entry_id}_thermal_power",
                     power_sensor=power_sensor,
                     supply_sensor=supply_temp_sensor,
-                    outdoor_sensor="sensor.outdoor_temperature",
+                    outdoor_sensor=outdoor_temp_sensor
+                    or outdoor_sensor_entity.entity_id,
                     device=device_info,
                     k_factor=k_factor,
                     base_cop=DEFAULT_COP_AT_35,
@@ -1657,16 +1983,28 @@ async def async_setup_entry(
             )
         )
 
+    heating_curve_offset_sensor = None
     if net_heat_sensor and price_sensor:
+        heating_curve_offset_sensor = HeatingCurveOffsetSensor(
+            hass=hass,
+            name="Heating Curve Offset",
+            unique_id=f"{entry.entry_id}_heating_curve_offset",
+            net_heat_sensor=net_heat_sensor,
+            price_sensor=price_sensor,
+            device=device_info,
+            k_factor=k_factor,
+        )
+        entities.append(heating_curve_offset_sensor)
+
+    if heating_curve_offset_sensor is not None:
         entities.append(
-            HeatingCurveOffsetSensor(
+            OptimizedSupplyTemperatureSensor(
                 hass=hass,
-                name="Heating Curve Offset",
-                unique_id=f"{entry.entry_id}_heating_curve_offset",
-                net_heat_sensor=net_heat_sensor,
-                price_sensor=price_sensor,
+                name="Optimized Supply Temperature",
+                unique_id=f"{entry.entry_id}_optimized_supply_temperature",
+                outdoor_sensor=outdoor_sensor_entity,
+                offset_entity=heating_curve_offset_sensor,
                 device=device_info,
-                k_factor=k_factor,
             )
         )
 
