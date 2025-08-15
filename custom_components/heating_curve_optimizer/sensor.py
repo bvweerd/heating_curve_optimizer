@@ -1704,6 +1704,9 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         k_factor: float = DEFAULT_K_FACTOR,
         planning_window: int = DEFAULT_PLANNING_WINDOW,
         time_base: int = DEFAULT_TIME_BASE,
+        power_history_sensors: list[SensorEntity] | None = None,
+        heatpump_history_sensor: SensorEntity | None = None,
+        solar_history_sensor: SensorEntity | None = None,
     ):
         super().__init__(
             name=name,
@@ -1723,6 +1726,9 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         self.planning_window = planning_window
         self.time_base = time_base
         self.steps = max(1, int(planning_window * 60 // time_base))
+        self.power_history_sensors = power_history_sensors or []
+        self.heatpump_history_sensor = heatpump_history_sensor
+        self.solar_history_sensor = solar_history_sensor
         self._extra_attrs: dict[str, list[int] | list[float] | float] = {}
 
     @property
@@ -1773,6 +1779,37 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
                 demand.append(0.0)
         return demand
 
+    def _get_history(self, sensor: SensorEntity | None) -> list:
+        if sensor is None:
+            return []
+        try:
+            return sensor.extra_state_attributes.get("history", [])
+        except AttributeError:
+            return []
+
+    def _compute_history_baseline(self) -> float:
+        def _avg(vals: list[float]) -> float:
+            return sum(vals) / len(vals) / 1000.0
+
+        baseline = 0.0
+        for sensor in self.power_history_sensors:
+            hist = self._get_history(sensor)
+            if hist:
+                baseline += _avg([float(v) for v in hist])
+
+        if self.heatpump_history_sensor:
+            hist = self._get_history(self.heatpump_history_sensor)
+            if hist:
+                vals = [float(v.get("power", v)) for v in hist]
+                baseline += _avg(vals)
+
+        if self.solar_history_sensor:
+            hist = self._get_history(self.solar_history_sensor)
+            if hist:
+                baseline -= _avg([float(v) for v in hist])
+
+        return baseline
+
     async def async_update(self):
         ent = (
             self.net_heat_sensor.entity_id
@@ -1792,9 +1829,14 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             return
 
         demand = self._extract_demand(net_state)
+        baseline = self._compute_history_baseline()
+        if baseline:
+            demand = [d + baseline for d in demand]
         prices = self._extract_prices(price_state)
         total_energy = sum(demand)
-        _LOGGER.debug("Offset sensor demand=%s prices=%s", demand, prices)
+        _LOGGER.debug(
+            "Offset sensor demand=%s prices=%s baseline=%s", demand, prices, baseline
+        )
 
         data = self.hass.data.get(DOMAIN, {})
         water_min = float(data.get("heat_curve_min", 28.0))
@@ -2236,18 +2278,33 @@ async def async_setup_entry(
         elif cfg.get(CONF_SOURCE_TYPE) == SOURCE_TYPE_PRODUCTION:
             production_sources.extend(cfg.get(CONF_SOURCES, []))
 
-    for src in consumption_sources + production_sources:
+    consumption_history_sensors: list[PowerHistorySensor] = []
+    production_history_sensor: PowerHistorySensor | None = None
+    for src in consumption_sources:
         slug = src.replace(".", "_")
-        entities.append(
-            PowerHistorySensor(
-                hass=hass,
-                name=f"{src} History",
-                unique_id=f"{entry.entry_id}_power_history_{slug}",
-                source_entity=src,
-                icon="mdi:history",
-                device=device_info,
-            )
+        sensor = PowerHistorySensor(
+            hass=hass,
+            name=f"{src} History",
+            unique_id=f"{entry.entry_id}_power_history_{slug}",
+            source_entity=src,
+            icon="mdi:history",
+            device=device_info,
         )
+        entities.append(sensor)
+        consumption_history_sensors.append(sensor)
+    for src in production_sources:
+        slug = src.replace(".", "_")
+        sensor = PowerHistorySensor(
+            hass=hass,
+            name=f"{src} History",
+            unique_id=f"{entry.entry_id}_power_history_{slug}",
+            source_entity=src,
+            icon="mdi:history",
+            device=device_info,
+        )
+        entities.append(sensor)
+        if production_history_sensor is None:
+            production_history_sensor = sensor
 
     area_m2 = entry.data.get(CONF_AREA_M2)
     energy_label = entry.data.get(CONF_ENERGY_LABEL)
@@ -2267,16 +2324,16 @@ async def async_setup_entry(
     planning_window = int(entry.data.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW))
     time_base = int(entry.data.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
 
+    heat_pump_history_sensor_entity: HeatPumpPowerHistorySensor | None = None
     if power_sensor:
-        entities.append(
-            HeatPumpPowerHistorySensor(
-                hass=hass,
-                name="Heat Pump Power History",
-                unique_id=f"{entry.entry_id}_power_history",
-                power_sensor=power_sensor,
-                device=device_info,
-            )
+        heat_pump_history_sensor_entity = HeatPumpPowerHistorySensor(
+            hass=hass,
+            name="Heat Pump Power History",
+            unique_id=f"{entry.entry_id}_power_history",
+            power_sensor=power_sensor,
+            device=device_info,
         )
+        entities.append(heat_pump_history_sensor_entity)
 
     price_sensor = entry.data.get(CONF_PRICE_SENSOR)
     consumption_price_entity = None
@@ -2450,6 +2507,9 @@ async def async_setup_entry(
             price_sensor=price_sensor,
             device=device_info,
             k_factor=k_factor,
+            power_history_sensors=consumption_history_sensors,
+            heatpump_history_sensor=heat_pump_history_sensor_entity,
+            solar_history_sensor=production_history_sensor,
         )
         entities.append(heating_curve_offset_sensor)
 
