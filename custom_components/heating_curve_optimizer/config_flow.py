@@ -18,6 +18,7 @@ from .const import (
     CONF_GLASS_U_VALUE,
     CONF_GLASS_WEST_M2,
     CONF_INDOOR_TEMPERATURE_SENSOR,
+    CONF_OUTDOOR_TEMPERATURE_SENSOR,
     CONF_POWER_CONSUMPTION,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
     CONF_K_FACTOR,
@@ -58,6 +59,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.power_consumption: str | None = None
         self.indoor_temperature_sensor: str | None = None
         self.supply_temperature_sensor: str | None = None
+        self.outdoor_temperature_sensor: str | None = None
         self.k_factor: float | None = None
 
     async def async_step_user(
@@ -97,6 +99,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_GLASS_SOUTH_M2: self.glass_south_m2,
                         CONF_GLASS_U_VALUE: self.glass_u_value,
                         CONF_INDOOR_TEMPERATURE_SENSOR: self.indoor_temperature_sensor,
+                        CONF_OUTDOOR_TEMPERATURE_SENSOR: self.outdoor_temperature_sensor,
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                         CONF_SUPPLY_TEMPERATURE_SENSOR: self.supply_temperature_sensor,
                         CONF_K_FACTOR: self.k_factor,
@@ -170,6 +173,9 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.supply_temperature_sensor = user_input.get(
                 CONF_SUPPLY_TEMPERATURE_SENSOR
             )
+            self.outdoor_temperature_sensor = user_input.get(
+                CONF_OUTDOOR_TEMPERATURE_SENSOR
+            )
             self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
             return await self.async_step_user()
 
@@ -205,6 +211,18 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     {
                         "select": {
                             "options": power_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Optional(
+                    CONF_OUTDOOR_TEMPERATURE_SENSOR,
+                    default=self.outdoor_temperature_sensor,
+                ): selector(
+                    {
+                        "select": {
+                            "options": temp_sensors,
                             "multiple": False,
                             "mode": "dropdown",
                         }
@@ -245,6 +263,9 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.supply_temperature_sensor = user_input.get(
                 CONF_SUPPLY_TEMPERATURE_SENSOR
             )
+            self.outdoor_temperature_sensor = user_input.get(
+                CONF_OUTDOOR_TEMPERATURE_SENSOR
+            )
             self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
             return await self.async_step_user()
 
@@ -280,6 +301,18 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     {
                         "select": {
                             "options": power_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Optional(
+                    CONF_OUTDOOR_TEMPERATURE_SENSOR,
+                    default=self.outdoor_temperature_sensor,
+                ): selector(
+                    {
+                        "select": {
+                            "options": temp_sensors,
                             "multiple": False,
                             "mode": "dropdown",
                         }
@@ -405,6 +438,9 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
         self.supply_temperature_sensor = config_entry.data.get(
             CONF_SUPPLY_TEMPERATURE_SENSOR
         )
+        self.outdoor_temperature_sensor = config_entry.data.get(
+            CONF_OUTDOOR_TEMPERATURE_SENSOR
+        )
         self.k_factor = config_entry.data.get(CONF_K_FACTOR)
         self.price_settings = copy.deepcopy(
             config_entry.options.get(
@@ -469,6 +505,7 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_GLASS_SOUTH_M2: self.glass_south_m2,
                         CONF_GLASS_U_VALUE: self.glass_u_value,
                         CONF_INDOOR_TEMPERATURE_SENSOR: self.indoor_temperature_sensor,
+                        CONF_OUTDOOR_TEMPERATURE_SENSOR: self.outdoor_temperature_sensor,
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                         CONF_SUPPLY_TEMPERATURE_SENSOR: self.supply_temperature_sensor,
                         CONF_K_FACTOR: self.k_factor,
@@ -513,6 +550,9 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
             self.supply_temperature_sensor = user_input.get(
                 CONF_SUPPLY_TEMPERATURE_SENSOR
+            )
+            self.outdoor_temperature_sensor = user_input.get(
+                CONF_OUTDOOR_TEMPERATURE_SENSOR
             )
             self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
             return await self.async_step_user()
@@ -564,6 +604,18 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                     {
                         "select": {
                             "options": power_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Optional(
+                    CONF_OUTDOOR_TEMPERATURE_SENSOR,
+                    default=self.outdoor_temperature_sensor,
+                ): selector(
+                    {
+                        "select": {
+                            "options": temp_sensors,
                             "multiple": False,
                             "mode": "dropdown",
                         }
