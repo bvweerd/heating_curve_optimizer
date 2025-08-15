@@ -20,7 +20,7 @@ async def test_net_heat_loss_sensor_combines_sources(hass):
     ):
         sensor = NetHeatLossSensor(
             hass=hass,
-            name="Net Heat",
+            name="Net Heat Loss",
             unique_id="nh1",
             area_m2=10.0,
             energy_label="A",
