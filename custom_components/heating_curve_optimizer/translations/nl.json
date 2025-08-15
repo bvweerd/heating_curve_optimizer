@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "basic": {
+        "data": {
+          "base_cop": "Basale COP bij 35°C aanvoer en 0°C buiten",
+          "outdoor_temp_coefficient": "Buitentemperatuurcoëfficiënt"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "heat_pump_cop": {
+        "name": "Warmtepomp COP",
+        "state": {
+          "default": "COP = basale COP + buitentemperatuurcoëfficiënt × T_buiten − k-factor × (T_aanvoer − 35)"
+        }
+      }
+    }
+  }
+}
