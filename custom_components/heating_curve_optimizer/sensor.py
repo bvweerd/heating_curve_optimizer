@@ -141,7 +141,9 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
 class SunIntensityPredictionSensor(BaseUtilitySensor):
     """Sensor providing current and forecasted sun intensity."""
 
-    def __init__(self, hass: HomeAssistant, name: str, unique_id: str, device: DeviceInfo):
+    def __init__(
+        self, hass: HomeAssistant, name: str, unique_id: str, device: DeviceInfo
+    ):
         super().__init__(
             name=name,
             unique_id=unique_id,
