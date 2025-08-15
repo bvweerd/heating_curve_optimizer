@@ -9,6 +9,7 @@ from custom_components.heating_curve_optimizer.sensor import (
 from homeassistant.components.sensor import SensorStateClass
 
 from unittest.mock import patch
+from datetime import datetime
 
 
 @pytest.mark.asyncio
@@ -109,3 +110,36 @@ def test_optimize_offsets_balances_buffer():
     assert evolution[-1] == 0
     # ensure step changes are at most 1
     assert all(abs(offsets[i] - offsets[i - 1]) <= 1 for i in range(1, 6))
+
+
+@pytest.mark.asyncio
+async def test_offset_sensor_respects_time_base(hass):
+    hass.states.async_set("sensor.net_heat", "1", {"forecast": [0.0] * 24})
+    hass.states.async_set(
+        "sensor.price",
+        "0.0",
+        {"raw_today": [0.0] * 24, "raw_tomorrow": []},
+    )
+
+    with patch(
+        "custom_components.heating_curve_optimizer.sensor._optimize_offsets",
+        return_value=([0, 0, 0, 0], [0, 0, 0, 0]),
+    ), patch(
+        "homeassistant.util.dt.utcnow",
+        return_value=datetime(2020, 1, 1, 0, 0, 0),
+    ):
+        sensor = HeatingCurveOffsetSensor(
+            hass=hass,
+            name="Heating Curve Offset",
+            unique_id="offset_timebase",
+            net_heat_sensor="sensor.net_heat",
+            price_sensor="sensor.price",
+            device=DeviceInfo(identifiers={("test", "4")}),
+            planning_window=2,
+            time_base=30,
+        )
+
+        await sensor.async_update()
+
+    assert len(sensor.extra_state_attributes["future_offsets"]) == 4
+    assert len(sensor.extra_state_attributes["prices"]) == 4

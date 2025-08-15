@@ -18,6 +18,8 @@ from .const import (
     CONF_GLASS_U_VALUE,
     CONF_GLASS_WEST_M2,
     CONF_INDOOR_TEMPERATURE_SENSOR,
+    CONF_PLANNING_WINDOW,
+    CONF_TIME_BASE,
     CONF_OUTDOOR_TEMPERATURE_SENSOR,
     CONF_POWER_CONSUMPTION,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
@@ -25,6 +27,8 @@ from .const import (
     CONF_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
     DEFAULT_K_FACTOR,
+    DEFAULT_PLANNING_WINDOW,
+    DEFAULT_TIME_BASE,
     CONF_SOURCE_TYPE,
     CONF_SOURCES,
     DOMAIN,
@@ -61,6 +65,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.supply_temperature_sensor: str | None = None
         self.outdoor_temperature_sensor: str | None = None
         self.k_factor: float | None = None
+        self.planning_window: int = DEFAULT_PLANNING_WINDOW
+        self.time_base: int = DEFAULT_TIME_BASE
 
     async def async_step_user(
         self, user_input: dict[str, str] | None = None
@@ -103,6 +109,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                         CONF_SUPPLY_TEMPERATURE_SENSOR: self.supply_temperature_sensor,
                         CONF_K_FACTOR: self.k_factor,
+                        CONF_PLANNING_WINDOW: self.planning_window,
+                        CONF_TIME_BASE: self.time_base,
                     },
                 )
             self.source_type = choice
@@ -177,6 +185,10 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_OUTDOOR_TEMPERATURE_SENSOR
             )
             self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
+            self.planning_window = int(
+                user_input.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
+            )
+            self.time_base = int(user_input.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
             return await self.async_step_user()
 
         power_sensors = await self._get_power_sensors()
@@ -243,6 +255,14 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(
                     CONF_K_FACTOR, default=self.k_factor or DEFAULT_K_FACTOR
                 ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_PLANNING_WINDOW,
+                    default=self.planning_window or DEFAULT_PLANNING_WINDOW,
+                ): vol.Coerce(int),
+                vol.Optional(
+                    CONF_TIME_BASE,
+                    default=self.time_base or DEFAULT_TIME_BASE,
+                ): vol.Coerce(int),
             }
         )
 
@@ -267,6 +287,10 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_OUTDOOR_TEMPERATURE_SENSOR
             )
             self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
+            self.planning_window = int(
+                user_input.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
+            )
+            self.time_base = int(user_input.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
             return await self.async_step_user()
 
         power_sensors = await self._get_power_sensors()
@@ -333,6 +357,14 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(
                     CONF_K_FACTOR, default=self.k_factor or DEFAULT_K_FACTOR
                 ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_PLANNING_WINDOW,
+                    default=self.planning_window or DEFAULT_PLANNING_WINDOW,
+                ): vol.Coerce(int),
+                vol.Optional(
+                    CONF_TIME_BASE,
+                    default=self.time_base or DEFAULT_TIME_BASE,
+                ): vol.Coerce(int),
             }
         )
 
@@ -442,6 +474,10 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             CONF_OUTDOOR_TEMPERATURE_SENSOR
         )
         self.k_factor = config_entry.data.get(CONF_K_FACTOR)
+        self.planning_window = config_entry.data.get(
+            CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW
+        )
+        self.time_base = config_entry.data.get(CONF_TIME_BASE, DEFAULT_TIME_BASE)
         self.price_settings = copy.deepcopy(
             config_entry.options.get(
                 CONF_PRICE_SETTINGS,
@@ -509,6 +545,8 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                         CONF_SUPPLY_TEMPERATURE_SENSOR: self.supply_temperature_sensor,
                         CONF_K_FACTOR: self.k_factor,
+                        CONF_PLANNING_WINDOW: self.planning_window,
+                        CONF_TIME_BASE: self.time_base,
                     },
                 )
             self.source_type = choice

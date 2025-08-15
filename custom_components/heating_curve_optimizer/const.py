@@ -16,6 +16,12 @@ CONF_PRICE_SETTINGS = "price_settings"
 # New configuration keys for the heating curve optimizer
 CONF_AREA_M2 = "area_m2"
 CONF_ENERGY_LABEL = "energy_label"
+# Planning window and time base configuration
+CONF_PLANNING_WINDOW = "planning_window"
+CONF_TIME_BASE = "time_base"
+# Default values
+DEFAULT_PLANNING_WINDOW = 6  # hours
+DEFAULT_TIME_BASE = 60  # minutes per step
 # Glass related configuration
 CONF_GLASS_EAST_M2 = "glass_east_m2"
 CONF_GLASS_WEST_M2 = "glass_west_m2"
