@@ -27,6 +27,8 @@ from .const import (
     CONF_INDOOR_TEMPERATURE_SENSOR,
     CONF_OUTDOOR_TEMPERATURE_SENSOR,
     CONF_K_FACTOR,
+    CONF_BASE_COP,
+    CONF_OUTDOOR_TEMP_COEFFICIENT,
     CONF_POWER_CONSUMPTION,
     CONF_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
@@ -37,6 +39,7 @@ from .const import (
     CONF_SUPPLY_TEMPERATURE_SENSOR,
     DEFAULT_COP_AT_35,
     DEFAULT_K_FACTOR,
+    DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_PLANNING_WINDOW,
     DEFAULT_TIME_BASE,
     DOMAIN,
@@ -785,6 +788,7 @@ class QuadraticCopSensor(BaseUtilitySensor):
         outdoor_sensor: str | None = None,
         k_factor: float = DEFAULT_K_FACTOR,
         base_cop: float = DEFAULT_COP_AT_35,
+        outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     ):
         super().__init__(
             name=name,
@@ -801,6 +805,7 @@ class QuadraticCopSensor(BaseUtilitySensor):
         self.outdoor_sensor = outdoor_sensor
         self.k_factor = k_factor
         self.base_cop = base_cop
+        self.outdoor_temp_coefficient = outdoor_temp_coefficient
         self.latitude = hass.config.latitude
         self.longitude = hass.config.longitude
         self.session = async_get_clientsession(hass)
@@ -848,7 +853,11 @@ class QuadraticCopSensor(BaseUtilitySensor):
             if o_temp is None:
                 return
 
-        cop = self.base_cop + 0.08 * o_temp - self.k_factor * (s_temp - 35)
+        cop = (
+            self.base_cop
+            + self.outdoor_temp_coefficient * o_temp
+            - self.k_factor * (s_temp - 35)
+        )
         _LOGGER.debug(
             "Calculated COP with supply=%s outdoor=%s -> %s", s_temp, o_temp, cop
         )
@@ -1847,6 +1856,10 @@ async def async_setup_entry(
     outdoor_temp_sensor = entry.data.get(CONF_OUTDOOR_TEMPERATURE_SENSOR)
     power_sensor = entry.data.get(CONF_POWER_CONSUMPTION)
     k_factor = float(entry.data.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
+    base_cop = float(entry.data.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
+    outdoor_temp_coefficient = float(
+        entry.data.get(CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT)
+    )
     glass_east = float(entry.data.get(CONF_GLASS_EAST_M2, 0))
     glass_west = float(entry.data.get(CONF_GLASS_WEST_M2, 0))
     glass_south = float(entry.data.get(CONF_GLASS_SOUTH_M2, 0))
@@ -1980,7 +1993,8 @@ async def async_setup_entry(
             supply_sensor=supply_temp_sensor,
             outdoor_sensor=outdoor_temp_sensor,
             k_factor=k_factor,
-            base_cop=DEFAULT_COP_AT_35,
+            base_cop=base_cop,
+            outdoor_temp_coefficient=outdoor_temp_coefficient,
             device=device_info,
         )
         entities.append(cop_sensor_entity)
@@ -1996,7 +2010,7 @@ async def async_setup_entry(
                     or outdoor_sensor_entity.entity_id,
                     device=device_info,
                     k_factor=k_factor,
-                    base_cop=DEFAULT_COP_AT_35,
+                    base_cop=base_cop,
                 )
             )
 

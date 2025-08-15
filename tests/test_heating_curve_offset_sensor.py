@@ -120,6 +120,7 @@ async def test_offset_sensor_respects_time_base(hass):
         "0.0",
         {"raw_today": [0.0] * 24, "raw_tomorrow": []},
     )
+    hass.states.async_set("sensor.outdoor_temperature", "0")
 
     with patch(
         "custom_components.heating_curve_optimizer.sensor._optimize_offsets",

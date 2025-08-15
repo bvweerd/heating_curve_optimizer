@@ -24,9 +24,13 @@ from .const import (
     CONF_POWER_CONSUMPTION,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
     CONF_K_FACTOR,
+    CONF_BASE_COP,
+    CONF_OUTDOOR_TEMP_COEFFICIENT,
     CONF_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
     DEFAULT_K_FACTOR,
+    DEFAULT_COP_AT_35,
+    DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_PLANNING_WINDOW,
     DEFAULT_TIME_BASE,
     CONF_SOURCE_TYPE,
@@ -65,6 +69,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.supply_temperature_sensor: str | None = None
         self.outdoor_temperature_sensor: str | None = None
         self.k_factor: float | None = None
+        self.base_cop: float = DEFAULT_COP_AT_35
+        self.outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT
         self.planning_window: int = DEFAULT_PLANNING_WINDOW
         self.time_base: int = DEFAULT_TIME_BASE
 
@@ -109,6 +115,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                         CONF_SUPPLY_TEMPERATURE_SENSOR: self.supply_temperature_sensor,
                         CONF_K_FACTOR: self.k_factor,
+                        CONF_BASE_COP: self.base_cop,
+                        CONF_OUTDOOR_TEMP_COEFFICIENT: self.outdoor_temp_coefficient,
                         CONF_PLANNING_WINDOW: self.planning_window,
                         CONF_TIME_BASE: self.time_base,
                     },
@@ -185,6 +193,12 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_OUTDOOR_TEMPERATURE_SENSOR
             )
             self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
+            self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
+            self.outdoor_temp_coefficient = float(
+                user_input.get(
+                    CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
+                )
+            )
             self.planning_window = int(
                 user_input.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
             )
@@ -256,6 +270,15 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_K_FACTOR, default=self.k_factor or DEFAULT_K_FACTOR
                 ): vol.Coerce(float),
                 vol.Optional(
+                    CONF_BASE_COP, default=self.base_cop or DEFAULT_COP_AT_35
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_OUTDOOR_TEMP_COEFFICIENT,
+                    default=
+                        self.outdoor_temp_coefficient
+                        or DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+                ): vol.Coerce(float),
+                vol.Optional(
                     CONF_PLANNING_WINDOW,
                     default=self.planning_window or DEFAULT_PLANNING_WINDOW,
                 ): vol.Coerce(int),
@@ -287,6 +310,12 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_OUTDOOR_TEMPERATURE_SENSOR
             )
             self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
+            self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
+            self.outdoor_temp_coefficient = float(
+                user_input.get(
+                    CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
+                )
+            )
             self.planning_window = int(
                 user_input.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
             )
@@ -356,6 +385,15 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ),
                 vol.Optional(
                     CONF_K_FACTOR, default=self.k_factor or DEFAULT_K_FACTOR
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_BASE_COP, default=self.base_cop or DEFAULT_COP_AT_35
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_OUTDOOR_TEMP_COEFFICIENT,
+                    default=
+                        self.outdoor_temp_coefficient
+                        or DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
                 ): vol.Coerce(float),
                 vol.Optional(
                     CONF_PLANNING_WINDOW,
@@ -474,6 +512,10 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             CONF_OUTDOOR_TEMPERATURE_SENSOR
         )
         self.k_factor = config_entry.data.get(CONF_K_FACTOR)
+        self.base_cop = config_entry.data.get(CONF_BASE_COP, DEFAULT_COP_AT_35)
+        self.outdoor_temp_coefficient = config_entry.data.get(
+            CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
+        )
         self.planning_window = config_entry.data.get(
             CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW
         )
@@ -545,6 +587,8 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                         CONF_SUPPLY_TEMPERATURE_SENSOR: self.supply_temperature_sensor,
                         CONF_K_FACTOR: self.k_factor,
+                        CONF_BASE_COP: self.base_cop,
+                        CONF_OUTDOOR_TEMP_COEFFICIENT: self.outdoor_temp_coefficient,
                         CONF_PLANNING_WINDOW: self.planning_window,
                         CONF_TIME_BASE: self.time_base,
                     },
@@ -593,6 +637,12 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                 CONF_OUTDOOR_TEMPERATURE_SENSOR
             )
             self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
+            self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
+            self.outdoor_temp_coefficient = float(
+                user_input.get(
+                    CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
+                )
+            )
             return await self.async_step_user()
 
         power_sensors = await self._get_power_sensors()
@@ -673,6 +723,15 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_K_FACTOR, default=self.k_factor or DEFAULT_K_FACTOR
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_BASE_COP, default=self.base_cop or DEFAULT_COP_AT_35
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_OUTDOOR_TEMP_COEFFICIENT,
+                    default=
+                        self.outdoor_temp_coefficient
+                        or DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
                 ): vol.Coerce(float),
             }
         )
