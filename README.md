@@ -30,12 +30,14 @@ Configuration is done entirely through the UI. The following options can be prov
 | `sensor.current_production_price` | Current electricity price for production. |
 | `sensor.hourly_heat_loss` | Estimated heat loss in kW per hour. |
 | `sensor.window_solar_gain` | Expected solar gain through windows in kW. |
-| `sensor.hourly_net_heat_loss` | Net heat loss after subtracting solar gain. |
+| `sensor.hourly_net_heat_loss` | Net Heat Loss after subtracting solar gain. |
 | `sensor.expected_energy_consumption` | Average standby power usage per hour. |
 | `sensor.current_net_consumption` | Current net power (consumption minus production). |
 | `sensor.heat_pump_cop` | COP derived from outdoor and supply temperature. |
 | `sensor.heat_pump_thermal_power` | Current thermal output of the heat pump. |
 | `sensor.heating_curve_offset` | Optimal offset for the next six hours. |
+
+![Net Heat Loss Sensor](heat%20curve%20optimizer.png)
 
 The `sensor.heating_curve_offset` attributes include future offsets and the price list used for the calculation.
 

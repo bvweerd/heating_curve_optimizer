@@ -26,6 +26,7 @@ async def test_net_heat_loss_sensor_combines_sources(hass):
         window_gain_sensor=window_gain,
         outdoor_sensor="sensor.outdoor",
     )
+
     await sensor.async_update()
     assert sensor.native_value == pytest.approx(0.066, rel=1e-3)
     assert sensor.extra_state_attributes["forecast"] == [0.05, 0.15]

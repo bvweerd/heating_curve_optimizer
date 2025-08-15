@@ -89,8 +89,6 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
         return self._extra_attrs
 
     async def _fetch_weather(self) -> tuple[float, list[float]]:
-        from datetime import datetime
-
         _LOGGER.debug("Fetching weather for %.4f, %.4f", self.latitude, self.longitude)
 
         url = (
@@ -139,99 +137,6 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
             return
         self._attr_native_value = round(current, 2)
         self._extra_attrs = {"forecast": [round(v, 2) for v in forecast]}
-
-    async def async_added_to_hass(self):
-        await super().async_added_to_hass()
-
-    async def async_will_remove_from_hass(self):
-        await super().async_will_remove_from_hass()
-
-
-class SunIntensityPredictionSensor(BaseUtilitySensor):
-    """Sensor providing current and forecasted sun intensity."""
-
-    def __init__(
-        self, hass: HomeAssistant, name: str, unique_id: str, device: DeviceInfo
-    ):
-        super().__init__(
-            name=name,
-            unique_id=unique_id,
-            unit="W/m²",
-            device_class=None,
-            icon="mdi:white-balance-sunny",
-            visible=True,
-            device=device,
-            translation_key=name.lower().replace(" ", "_").replace(".", "_"),
-        )
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self.hass = hass
-        self.latitude = hass.config.latitude
-        self.longitude = hass.config.longitude
-        self.session = async_get_clientsession(hass)
-        self._extra_attrs: dict[str, list[float]] = {}
-        self._history: list[float] = []
-
-    @property
-    def extra_state_attributes(self) -> dict[str, list[float]]:
-        if not self._attr_available:
-            return {}
-        attrs = dict(self._extra_attrs)
-        attrs["history"] = self._history
-        return attrs
-
-    async def _fetch_radiation(self) -> list[float]:
-        from datetime import datetime
-
-        _LOGGER.debug(
-            "Fetching sun intensity for %.4f, %.4f", self.latitude, self.longitude
-        )
-
-        url = (
-            "https://api.open-meteo.com/v1/forecast"
-            f"?latitude={self.latitude}&longitude={self.longitude}"
-            "&hourly=shortwave_radiation&timezone=UTC"
-        )
-        try:
-            async with self.session.get(
-                url, timeout=aiohttp.ClientTimeout(total=10)
-            ) as resp:
-                data = await resp.json()
-        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-            _LOGGER.error("Error fetching sun intensity data: %s", err)
-            self._attr_available = False
-            return []
-        self._attr_available = True
-
-        hourly = data.get("hourly", {})
-        times = hourly.get("time", [])
-        values = hourly.get("shortwave_radiation", [])
-
-        if not times or not values:
-            return []
-
-        now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
-        start_idx = 0
-        for i, ts in enumerate(times):
-            try:
-                t = datetime.fromisoformat(ts)
-            except ValueError:
-                continue
-            if t >= now:
-                start_idx = i
-                break
-
-        return [float(v) for v in values[start_idx : start_idx + 24]]
-
-    async def async_update(self):
-        rad = await self._fetch_radiation()
-        if not self._attr_available:
-            return
-        current = rad[0] if rad else 0.0
-        self._attr_native_value = round(current, 2)
-        self._extra_attrs = {"forecast": [round(v, 2) for v in rad]}
-        self._history.append(self._attr_native_value)
-        if len(self._history) > 24:
-            self._history = self._history[-24:]
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
@@ -430,10 +335,9 @@ class WindowSolarGainSensor(BaseUtilitySensor):
         self.longitude = hass.config.longitude
         self.session = async_get_clientsession(hass)
         self._extra_attrs: dict[str, list[float]] = {}
+        self._radiation_history: list[float] = []
 
     async def _fetch_radiation(self) -> list[float]:
-        from datetime import datetime
-
         _LOGGER.debug(
             "Fetching radiation for %.4f, %.4f",
             self.latitude,
@@ -503,6 +407,7 @@ class WindowSolarGainSensor(BaseUtilitySensor):
             + self._orientation_factor(az, 270) * self.west
             + self._orientation_factor(az, 180) * self.south
         ) / (total_area or 1)
+        rad_forecast = [round(v, 2) for v in rad]
         if rad:
             current = rad[0] * fac * orient_factors * total_area / self.u_value / 1000.0
             forecast = [
@@ -512,10 +417,18 @@ class WindowSolarGainSensor(BaseUtilitySensor):
         else:
             current = 0.0
             forecast = []
+
+        self._radiation_history.append(rad[0] if rad else 0.0)
+        if len(self._radiation_history) > 24:
+            self._radiation_history = self._radiation_history[-24:]
         _LOGGER.debug("Solar gain current=%s forecast=%s", current, forecast)
         self._attr_available = True
         self._attr_native_value = round(current, 3)
-        self._extra_attrs = {"forecast": forecast}
+        self._extra_attrs = {
+            "forecast": forecast,
+            "radiation_forecast": rad_forecast,
+            "radiation_history": [round(v, 2) for v in self._radiation_history],
+        }
 
     async def async_update(self):
         await self._compute_value()
@@ -641,9 +554,6 @@ class NetHeatLossSensor(BaseUtilitySensor):
         await super().async_will_remove_from_hass()
 
 
-NetHeatDemandSensor = NetHeatLossSensor
-
-
 class NetPowerConsumptionSensor(BaseUtilitySensor):
     def __init__(
         self,
@@ -716,82 +626,6 @@ class NetPowerConsumptionSensor(BaseUtilitySensor):
         self.async_write_ha_state()
 
 
-class PowerHistorySensor(BaseUtilitySensor):
-    """Sensor recording the last 24 hours of a power source."""
-
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        name: str,
-        unique_id: str,
-        source_entity: str,
-        icon: str,
-        device: DeviceInfo,
-    ):
-        super().__init__(
-            name=name,
-            unique_id=unique_id,
-            unit="W",
-            device_class=None,
-            icon=icon,
-            visible=False,
-            device=device,
-            translation_key=name.lower().replace(" ", "_").replace(".", "_"),
-        )
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self.hass = hass
-        self.source_entity = source_entity
-        self._history: list[tuple[datetime, float]] = []
-
-    @property
-    def extra_state_attributes(self) -> dict[str, list[float]]:
-        now = datetime.utcnow()
-        cutoff = now - timedelta(hours=24)
-        self._history = [(ts, val) for ts, val in self._history if ts >= cutoff]
-        return {"history": [val for _, val in self._history]}
-
-    async def async_update(self):
-        state = self.hass.states.get(self.source_entity)
-        if state is None or state.state in ("unknown", "unavailable"):
-            self._attr_available = False
-            return
-        try:
-            self._attr_native_value = float(state.state)
-        except ValueError:
-            self._attr_available = False
-            return
-        self._attr_available = True
-
-    async def async_added_to_hass(self):
-        await super().async_added_to_hass()
-        self.async_on_remove(
-            async_track_state_change_event(
-                self.hass, self.source_entity, self._handle_change
-            )
-        )
-        state = self.hass.states.get(self.source_entity)
-        if state and state.state not in ("unknown", "unavailable"):
-            await self._process_state(state)
-
-    async def _handle_change(self, event):
-        state = event.data.get("new_state")
-        if state is not None:
-            await self._process_state(state)
-
-    async def _process_state(self, state):
-        try:
-            val = float(state.state)
-        except (ValueError, TypeError):
-            return
-        now = datetime.utcnow()
-        self._history.append((now, val))
-        cutoff = now - timedelta(hours=24)
-        self._history = [(ts, v) for ts, v in self._history if ts >= cutoff]
-        self._attr_native_value = val
-        if self.entity_id:
-            self.async_write_ha_state()
-
-
 class QuadraticCopSensor(BaseUtilitySensor):
     """COP sensor using an empirical formula."""
 
@@ -862,88 +696,6 @@ class QuadraticCopSensor(BaseUtilitySensor):
         await super().async_added_to_hass()
         if isinstance(self.outdoor_sensor, SensorEntity):
             self.outdoor_sensor = self.outdoor_sensor.entity_id
-
-
-class HeatPumpPowerHistorySensor(BaseUtilitySensor):
-    """Store power sensor readings with timestamps."""
-
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        name: str,
-        unique_id: str,
-        power_sensor: str,
-        device: DeviceInfo,
-    ) -> None:
-        super().__init__(
-            name=name,
-            unique_id=unique_id,
-            unit="W",
-            device_class=None,
-            icon="mdi:chart-timeline-variant",
-            visible=True,
-            device=device,
-            translation_key=name.lower().replace(" ", "_"),
-        )
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self.hass = hass
-        self.power_sensor = power_sensor
-        self._history: list[dict[str, Any]] = []
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        return {"history": self._history}
-
-    def _record(self, power: float) -> None:
-        from homeassistant.util import dt as dt_util
-
-        self._history.append(
-            {"time": dt_util.utcnow().isoformat(), "power": round(power, 3)}
-        )
-        if len(self._history) > 100:
-            self._history = self._history[-100:]
-
-    async def async_update(self) -> None:
-        state = self.hass.states.get(self.power_sensor)
-        if state is None or state.state in ("unknown", "unavailable"):
-            self._attr_available = False
-            return
-        try:
-            power = float(state.state)
-        except ValueError:
-            self._attr_available = False
-            return
-        self._attr_available = True
-        self._attr_native_value = round(power, 3)
-        self._record(power)
-
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-        await self.async_update()
-        self.async_on_remove(
-            async_track_state_change_event(
-                self.hass, self.power_sensor, self._handle_change
-            )
-        )
-
-    async def async_will_remove_from_hass(self) -> None:
-        await super().async_will_remove_from_hass()
-
-    async def _handle_change(self, event) -> None:
-        new_state = event.data.get("new_state")
-        if new_state is None or new_state.state in ("unknown", "unavailable"):
-            self._attr_available = False
-            return
-        try:
-            power = float(new_state.state)
-        except ValueError:
-            self._attr_available = False
-            return
-        self._attr_available = True
-        self._attr_native_value = round(power, 3)
-        self._record(power)
-        if self.entity_id:
-            self.async_write_ha_state()
 
 
 class HeatPumpThermalPowerSensor(BaseUtilitySensor):
@@ -1631,16 +1383,16 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         name: str,
         unique_id: str,
         net_heat_sensor: str | SensorEntity,
-        price_sensor: str,
+        price_sensor: str | SensorEntity,
         device: DeviceInfo,
         *,
         k_factor: float = DEFAULT_K_FACTOR,
         cop_compensation_factor: float = 1.0,
         planning_window: int = DEFAULT_PLANNING_WINDOW,
         time_base: int = DEFAULT_TIME_BASE,
-        power_history_sensors: list[SensorEntity] | None = None,
-        heatpump_history_sensor: SensorEntity | None = None,
-        solar_history_sensor: SensorEntity | None = None,
+        consumption_sensors: list[str] | None = None,
+        heatpump_sensor: str | None = None,
+        production_sensors: list[str] | None = None,
     ):
         super().__init__(
             name=name,
@@ -1661,9 +1413,9 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         self.planning_window = planning_window
         self.time_base = time_base
         self.steps = max(1, int(planning_window * 60 // time_base))
-        self.power_history_sensors = power_history_sensors or []
-        self.heatpump_history_sensor = heatpump_history_sensor
-        self.solar_history_sensor = solar_history_sensor
+        self.consumption_sensors = consumption_sensors or []
+        self.heatpump_sensor = heatpump_sensor
+        self.production_sensors = production_sensors or []
         self._extra_attrs: dict[str, list[int] | list[float] | float] = {}
 
     @property
@@ -1714,35 +1466,49 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
                 demand.append(0.0)
         return demand
 
-    def _get_history(self, sensor: SensorEntity | None) -> list:
-        if sensor is None:
-            return []
+    async def _compute_history_baseline(self) -> float:
         try:
-            return sensor.extra_state_attributes.get("history", [])
-        except AttributeError:
-            return []
+            from homeassistant.components.recorder import get_instance
+            from homeassistant.components.recorder.statistics import (
+                statistics_during_period,
+            )
+            from homeassistant.util import dt as dt_util
+        except Exception:
+            return 0.0
 
-    def _compute_history_baseline(self) -> float:
-        def _avg(vals: list[float]) -> float:
-            return sum(vals) / len(vals) / 1000.0
+        start = dt_util.utcnow() - timedelta(hours=24)
+        try:
+            instance = get_instance(self.hass)
+        except Exception:
+            return 0.0
+
+        def _mean(entity_id: str) -> float:
+            stats = statistics_during_period(
+                self.hass,
+                start,
+                None,
+                {entity_id},
+                "hour",
+                None,
+                {"mean"},
+            )
+            rows = stats.get(entity_id)
+            if not rows:
+                return 0.0
+            means = [row.mean for row in rows if getattr(row, "mean", None) is not None]
+            if not means:
+                return 0.0
+            return sum(means) / len(means) / 1000.0
 
         baseline = 0.0
-        for sensor in self.power_history_sensors:
-            hist = self._get_history(sensor)
-            if hist:
-                baseline += _avg([float(v) for v in hist])
-
-        if self.heatpump_history_sensor:
-            hist = self._get_history(self.heatpump_history_sensor)
-            if hist:
-                vals = [float(v.get("power", v)) for v in hist]
-                baseline += _avg(vals)
-
-        if self.solar_history_sensor:
-            hist = self._get_history(self.solar_history_sensor)
-            if hist:
-                baseline -= _avg([float(v) for v in hist])
-
+        for ent in self.consumption_sensors:
+            baseline += await instance.async_add_executor_job(_mean, ent)
+        if self.heatpump_sensor:
+            baseline += await instance.async_add_executor_job(
+                _mean, self.heatpump_sensor
+            )
+        for ent in self.production_sensors:
+            baseline -= await instance.async_add_executor_job(_mean, ent)
         return baseline
 
     async def async_update(self):
@@ -1764,7 +1530,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             return
 
         demand = self._extract_demand(net_state)
-        baseline = self._compute_history_baseline()
+        baseline = await self._compute_history_baseline()
         if baseline:
             demand = [d + baseline for d in demand]
         prices = self._extract_prices(price_state)
@@ -1839,6 +1605,8 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         await super().async_added_to_hass()
         if not isinstance(self.net_heat_sensor, str):
             self.net_heat_sensor = self.net_heat_sensor.entity_id
+        if not isinstance(self.price_sensor, str):
+            self.price_sensor = self.price_sensor.entity_id
         for ent in (self.net_heat_sensor, self.price_sensor):
             if ent:
                 self.async_on_remove(
@@ -1971,8 +1739,6 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
         except ValueError:
             _LOGGER.warning("PV sensor %s has invalid state", self.pv_sensor)
             return [0.0] * 24
-
-        from datetime import datetime
 
         url = (
             "https://api.open-meteo.com/v1/forecast"
@@ -2259,14 +2025,6 @@ async def async_setup_entry(
     )
     entities.append(outdoor_sensor_entity)
 
-    sun_intensity_sensor = SunIntensityPredictionSensor(
-        hass=hass,
-        name="Sun Intensity Prediction",
-        unique_id=f"{entry.entry_id}_sun_intensity_prediction",
-        device=device_info,
-    )
-    entities.append(sun_intensity_sensor)
-
     entities.append(
         CalculatedSupplyTemperatureSensor(
             hass=hass,
@@ -2286,34 +2044,6 @@ async def async_setup_entry(
             consumption_sources.extend(cfg.get(CONF_SOURCES, []))
         elif cfg.get(CONF_SOURCE_TYPE) == SOURCE_TYPE_PRODUCTION:
             production_sources.extend(cfg.get(CONF_SOURCES, []))
-
-    consumption_history_sensors: list[PowerHistorySensor] = []
-    production_history_sensor: PowerHistorySensor | None = None
-    for src in consumption_sources:
-        slug = src.replace(".", "_")
-        sensor = PowerHistorySensor(
-            hass=hass,
-            name=f"{src} History",
-            unique_id=f"{entry.entry_id}_power_history_{slug}",
-            source_entity=src,
-            icon="mdi:history",
-            device=device_info,
-        )
-        entities.append(sensor)
-        consumption_history_sensors.append(sensor)
-    for src in production_sources:
-        slug = src.replace(".", "_")
-        sensor = PowerHistorySensor(
-            hass=hass,
-            name=f"{src} History",
-            unique_id=f"{entry.entry_id}_power_history_{slug}",
-            source_entity=src,
-            icon="mdi:history",
-            device=device_info,
-        )
-        entities.append(sensor)
-        if production_history_sensor is None:
-            production_history_sensor = sensor
 
     area_m2 = entry.data.get(CONF_AREA_M2)
     energy_label = entry.data.get(CONF_ENERGY_LABEL)
@@ -2335,17 +2065,6 @@ async def async_setup_entry(
     glass_u = float(entry.data.get(CONF_GLASS_U_VALUE, 1.2))
     planning_window = int(entry.data.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW))
     time_base = int(entry.data.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
-
-    heat_pump_history_sensor_entity: HeatPumpPowerHistorySensor | None = None
-    if power_sensor:
-        heat_pump_history_sensor_entity = HeatPumpPowerHistorySensor(
-            hass=hass,
-            name="Heat Pump Power History",
-            unique_id=f"{entry.entry_id}_power_history",
-            power_sensor=power_sensor,
-            device=device_info,
-        )
-        entities.append(heat_pump_history_sensor_entity)
 
     price_sensor = entry.data.get(CONF_PRICE_SENSOR)
     consumption_price_entity = None
@@ -2521,9 +2240,9 @@ async def async_setup_entry(
             device=device_info,
             k_factor=k_factor,
             cop_compensation_factor=cop_compensation_factor,
-            power_history_sensors=consumption_history_sensors,
-            heatpump_history_sensor=heat_pump_history_sensor_entity,
-            solar_history_sensor=production_history_sensor,
+            consumption_sensors=consumption_sources,
+            heatpump_sensor=power_sensor,
+            production_sensors=production_sources,
         )
         entities.append(heating_curve_offset_sensor)
 
