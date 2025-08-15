@@ -146,97 +146,6 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
         await super().async_will_remove_from_hass()
 
 
-class SunIntensityPredictionSensor(BaseUtilitySensor):
-    """Sensor providing current and forecasted sun intensity."""
-
-    def __init__(
-        self, hass: HomeAssistant, name: str, unique_id: str, device: DeviceInfo
-    ):
-        super().__init__(
-            name=name,
-            unique_id=unique_id,
-            unit="W/m²",
-            device_class=None,
-            icon="mdi:white-balance-sunny",
-            visible=True,
-            device=device,
-            translation_key=name.lower().replace(" ", "_").replace(".", "_"),
-        )
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self.hass = hass
-        self.latitude = hass.config.latitude
-        self.longitude = hass.config.longitude
-        self.session = async_get_clientsession(hass)
-        self._extra_attrs: dict[str, list[float]] = {}
-        self._history: list[float] = []
-
-    @property
-    def extra_state_attributes(self) -> dict[str, list[float]]:
-        if not self._attr_available:
-            return {}
-        attrs = dict(self._extra_attrs)
-        attrs["history"] = self._history
-        return attrs
-
-    async def _fetch_radiation(self) -> list[float]:
-        _LOGGER.debug(
-            "Fetching sun intensity for %.4f, %.4f", self.latitude, self.longitude
-        )
-
-        url = (
-            "https://api.open-meteo.com/v1/forecast"
-            f"?latitude={self.latitude}&longitude={self.longitude}"
-            "&hourly=shortwave_radiation&timezone=UTC"
-        )
-        try:
-            async with self.session.get(
-                url, timeout=aiohttp.ClientTimeout(total=10)
-            ) as resp:
-                data = await resp.json()
-        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-            _LOGGER.error("Error fetching sun intensity data: %s", err)
-            self._attr_available = False
-            return []
-        self._attr_available = True
-
-        hourly = data.get("hourly", {})
-        times = hourly.get("time", [])
-        values = hourly.get("shortwave_radiation", [])
-
-        if not times or not values:
-            return []
-
-        now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
-        start_idx = 0
-        for i, ts in enumerate(times):
-            try:
-                t = datetime.fromisoformat(ts)
-            except ValueError:
-                continue
-            if t >= now:
-                start_idx = i
-                break
-
-        return [float(v) for v in values[start_idx : start_idx + 24]]
-
-    async def async_update(self):
-        rad = await self._fetch_radiation()
-        if not self._attr_available:
-            return
-        current = rad[0] if rad else 0.0
-        self._attr_native_value = round(current, 2)
-        self._extra_attrs = {"forecast": [round(v, 2) for v in rad]}
-        self._history.append(self._attr_native_value)
-        if len(self._history) > 24:
-            self._history = self._history[-24:]
-
-    async def async_added_to_hass(self):
-        await super().async_added_to_hass()
-
-    async def async_will_remove_from_hass(self):
-        await super().async_will_remove_from_hass()
-
-
 class CurrentElectricityPriceSensor(BaseUtilitySensor):
     def __init__(
         self,
@@ -481,6 +390,7 @@ class WindowSolarGainSensor(BaseUtilitySensor):
         self.longitude = hass.config.longitude
         self.session = async_get_clientsession(hass)
         self._extra_attrs: dict[str, list[float]] = {}
+        self._radiation_history: list[float] = []
 
     async def _fetch_radiation(self) -> list[float]:
         _LOGGER.debug(
@@ -552,6 +462,7 @@ class WindowSolarGainSensor(BaseUtilitySensor):
             + self._orientation_factor(az, 270) * self.west
             + self._orientation_factor(az, 180) * self.south
         ) / (total_area or 1)
+        rad_forecast = [round(v, 2) for v in rad]
         if rad:
             current = rad[0] * fac * orient_factors * total_area / self.u_value / 1000.0
             forecast = [
@@ -561,10 +472,18 @@ class WindowSolarGainSensor(BaseUtilitySensor):
         else:
             current = 0.0
             forecast = []
+
+        self._radiation_history.append(rad[0] if rad else 0.0)
+        if len(self._radiation_history) > 24:
+            self._radiation_history = self._radiation_history[-24:]
         _LOGGER.debug("Solar gain current=%s forecast=%s", current, forecast)
         self._attr_available = True
         self._attr_native_value = round(current, 3)
-        self._extra_attrs = {"forecast": forecast}
+        self._extra_attrs = {
+            "forecast": forecast,
+            "radiation_forecast": rad_forecast,
+            "radiation_history": [round(v, 2) for v in self._radiation_history],
+        }
 
     async def async_update(self):
         await self._compute_value()
@@ -2192,14 +2111,6 @@ async def async_setup_entry(
         device=device_info,
     )
     entities.append(outdoor_sensor_entity)
-
-    sun_intensity_sensor = SunIntensityPredictionSensor(
-        hass=hass,
-        name="Sun Intensity Prediction",
-        unique_id=f"{entry.entry_id}_sun_intensity_prediction",
-        device=device_info,
-    )
-    entities.append(sun_intensity_sensor)
 
     entities.append(
         CalculatedSupplyTemperatureSensor(
