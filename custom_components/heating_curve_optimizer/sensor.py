@@ -5,6 +5,7 @@ from functools import partial
 import logging
 import math
 from typing import Any, cast
+from datetime import datetime, timedelta
 
 import aiohttp
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -73,7 +74,7 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
             icon="mdi:thermometer",
             visible=True,
             device=device,
-            translation_key=name.lower().replace(" ", "_"),
+            translation_key=name.lower().replace(" ", "_").replace(".", "_"),
         )
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self.hass = hass
@@ -159,7 +160,7 @@ class SunIntensityPredictionSensor(BaseUtilitySensor):
             icon="mdi:white-balance-sunny",
             visible=True,
             device=device,
-            translation_key=name.lower().replace(" ", "_"),
+            translation_key=name.lower().replace(" ", "_").replace(".", "_"),
         )
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self.hass = hass
@@ -776,6 +777,82 @@ class NetPowerConsumptionSensor(BaseUtilitySensor):
     async def _handle_change(self, event):
         self._compute_value()
         self.async_write_ha_state()
+
+
+class PowerHistorySensor(BaseUtilitySensor):
+    """Sensor recording the last 24 hours of a power source."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        source_entity: str,
+        icon: str,
+        device: DeviceInfo,
+    ):
+        super().__init__(
+            name=name,
+            unique_id=unique_id,
+            unit="W",
+            device_class=None,
+            icon=icon,
+            visible=False,
+            device=device,
+            translation_key=name.lower().replace(" ", "_").replace(".", "_"),
+        )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self.hass = hass
+        self.source_entity = source_entity
+        self._history: list[tuple[datetime, float]] = []
+
+    @property
+    def extra_state_attributes(self) -> dict[str, list[float]]:
+        now = datetime.utcnow()
+        cutoff = now - timedelta(hours=24)
+        self._history = [(ts, val) for ts, val in self._history if ts >= cutoff]
+        return {"history": [val for _, val in self._history]}
+
+    async def async_update(self):
+        state = self.hass.states.get(self.source_entity)
+        if state is None or state.state in ("unknown", "unavailable"):
+            self._attr_available = False
+            return
+        try:
+            self._attr_native_value = float(state.state)
+        except ValueError:
+            self._attr_available = False
+            return
+        self._attr_available = True
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass, self.source_entity, self._handle_change
+            )
+        )
+        state = self.hass.states.get(self.source_entity)
+        if state and state.state not in ("unknown", "unavailable"):
+            await self._process_state(state)
+
+    async def _handle_change(self, event):
+        state = event.data.get("new_state")
+        if state is not None:
+            await self._process_state(state)
+
+    async def _process_state(self, state):
+        try:
+            val = float(state.state)
+        except (ValueError, TypeError):
+            return
+        now = datetime.utcnow()
+        self._history.append((now, val))
+        cutoff = now - timedelta(hours=24)
+        self._history = [(ts, v) for ts, v in self._history if ts >= cutoff]
+        self._attr_native_value = val
+        if self.entity_id:
+            self.async_write_ha_state()
 
 
 class QuadraticCopSensor(BaseUtilitySensor):
@@ -2070,6 +2147,19 @@ async def async_setup_entry(
             consumption_sources.extend(cfg.get(CONF_SOURCES, []))
         elif cfg.get(CONF_SOURCE_TYPE) == SOURCE_TYPE_PRODUCTION:
             production_sources.extend(cfg.get(CONF_SOURCES, []))
+
+    for src in consumption_sources + production_sources:
+        slug = src.replace(".", "_")
+        entities.append(
+            PowerHistorySensor(
+                hass=hass,
+                name=f"{src} History",
+                unique_id=f"{entry.entry_id}_power_history_{slug}",
+                source_entity=src,
+                icon="mdi:history",
+                device=device_info,
+            )
+        )
 
     area_m2 = entry.data.get(CONF_AREA_M2)
     energy_label = entry.data.get(CONF_ENERGY_LABEL)
