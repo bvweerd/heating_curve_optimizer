@@ -9,11 +9,6 @@ from typing import Any, cast
 import aiohttp
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import pycares  # noqa: F401
-
-# Create a persistent pycares channel to ensure the library's background
-# thread is started before test fixtures snapshot running threads. Without
-# this, the thread may be flagged as lingering during teardown.
-_PYCARES_CHANNEL = pycares.Channel()
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -34,11 +29,15 @@ from .const import (
     CONF_POWER_CONSUMPTION,
     CONF_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
+    CONF_PLANNING_WINDOW,
+    CONF_TIME_BASE,
     CONF_SOURCE_TYPE,
     CONF_SOURCES,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
     DEFAULT_COP_AT_35,
     DEFAULT_K_FACTOR,
+    DEFAULT_PLANNING_WINDOW,
+    DEFAULT_TIME_BASE,
     DOMAIN,
     INDOOR_TEMPERATURE,
     SOURCE_TYPE_CONSUMPTION,
@@ -47,9 +46,13 @@ from .const import (
 )
 from .entity import BaseUtilitySensor
 
+# Create a persistent pycares channel to ensure the library's background
+# thread is started before test fixtures snapshot running threads. Without
+# this, the thread may be flagged as lingering during teardown.
+_PYCARES_CHANNEL = pycares.Channel()
+
 _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 1
-HORIZON_HOURS = 6
 
 
 class OutdoorTemperatureSensor(BaseUtilitySensor):
@@ -810,6 +813,8 @@ class DiagnosticsSensor(BaseUtilitySensor):
         price_sensor: str | None = None,
         cop_sensor: str | SensorEntity | None = None,
         device: DeviceInfo,
+        planning_window: int = DEFAULT_PLANNING_WINDOW,
+        time_base: int = DEFAULT_TIME_BASE,
     ) -> None:
         super().__init__(
             name=name,
@@ -826,11 +831,24 @@ class DiagnosticsSensor(BaseUtilitySensor):
         self.window_gain_sensor = window_gain_sensor
         self.price_sensor = price_sensor
         self.cop_sensor = cop_sensor
+        self.planning_window = planning_window
+        self.time_base = time_base
+        self.steps = max(1, int(planning_window * 60 // time_base))
         self._extra_attrs: dict[str, list[float]] = {}
 
     @property
     def extra_state_attributes(self) -> dict[str, list[float]]:
         return self._extra_attrs
+
+    def _resample(self, data: list[float]) -> list[float]:
+        result: list[float] = []
+        for step in range(self.steps):
+            hour_idx = int(step * self.time_base / 60)
+            if hour_idx < len(data):
+                result.append(float(data[hour_idx]))
+            else:
+                result.append(0.0)
+        return result
 
     def _extract_prices(self, state) -> list[float]:
         from homeassistant.util import dt as dt_util
@@ -841,29 +859,28 @@ class DiagnosticsSensor(BaseUtilitySensor):
         raw_tomorrow = state.attributes.get("raw_tomorrow", [])
 
         prices: list[float] = []
-        idx = hour
-        for _ in range(HORIZON_HOURS):
+        for step in range(self.steps):
+            hour_offset = int(step * self.time_base / 60)
+            idx = hour + hour_offset
             if idx < len(raw_today):
                 entry = raw_today[idx]
                 val = entry.get("value") if isinstance(entry, dict) else entry
                 prices.append(float(val))
-                idx += 1
                 continue
             t_idx = idx - len(raw_today)
             if t_idx < len(raw_tomorrow):
                 entry = raw_tomorrow[t_idx]
                 val = entry.get("value") if isinstance(entry, dict) else entry
                 prices.append(float(val))
-                idx += 1
                 continue
             break
 
-        if len(prices) < HORIZON_HOURS:
+        if len(prices) < self.steps:
             try:
                 cur = float(state.state)
             except (ValueError, TypeError):
                 cur = 0.0
-            prices.extend([cur] * (HORIZON_HOURS - len(prices)))
+            prices.extend([cur] * (self.steps - len(prices)))
         return prices
 
     async def async_update(self):
@@ -878,7 +895,9 @@ class DiagnosticsSensor(BaseUtilitySensor):
             state = self.hass.states.get(ent)
             if state:
                 forecast = state.attributes.get("forecast", [])
-                attrs["forecast_heat_loss"] = [float(v) for v in forecast]
+                attrs["forecast_heat_loss"] = self._resample(
+                    [float(v) for v in forecast]
+                )
 
         if self.window_gain_sensor is not None:
             ent = (
@@ -889,7 +908,9 @@ class DiagnosticsSensor(BaseUtilitySensor):
             state = self.hass.states.get(ent)
             if state:
                 forecast = state.attributes.get("forecast", [])
-                attrs["forecast_window_gain"] = [float(v) for v in forecast]
+                attrs["forecast_window_gain"] = self._resample(
+                    [float(v) for v in forecast]
+                )
 
         if self.price_sensor:
             state = self.hass.states.get(self.price_sensor)
@@ -931,7 +952,7 @@ def _optimize_offsets(
     change by one degree per step.  The optional ``buffer`` parameter
     represents the current heat surplus (positive) or deficit (negative)
     and the returned buffer evolution shows how this value changes with
-    the chosen offsets.  After ``HORIZON_HOURS`` the buffer will be close
+    the chosen offsets.  After the planning window the buffer will be close
     to zero.
     """
     _LOGGER.debug(
@@ -1037,6 +1058,8 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         device: DeviceInfo,
         *,
         k_factor: float = DEFAULT_K_FACTOR,
+        planning_window: int = DEFAULT_PLANNING_WINDOW,
+        time_base: int = DEFAULT_TIME_BASE,
     ):
         super().__init__(
             name=name,
@@ -1053,6 +1076,9 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         self.net_heat_sensor = net_heat_sensor
         self.price_sensor = price_sensor
         self.k_factor = k_factor
+        self.planning_window = planning_window
+        self.time_base = time_base
+        self.steps = max(1, int(planning_window * 60 // time_base))
         self._extra_attrs: dict[str, list[int] | list[float] | float] = {}
 
     @property
@@ -1068,36 +1094,39 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         raw_tomorrow = state.attributes.get("raw_tomorrow", [])
 
         prices: list[float] = []
-        idx = hour
-        for _ in range(HORIZON_HOURS):
+        for step in range(self.steps):
+            hour_offset = int(step * self.time_base / 60)
+            idx = hour + hour_offset
             if idx < len(raw_today):
                 entry = raw_today[idx]
                 val = entry.get("value") if isinstance(entry, dict) else entry
                 prices.append(float(val))
-                idx += 1
                 continue
             t_idx = idx - len(raw_today)
             if t_idx < len(raw_tomorrow):
                 entry = raw_tomorrow[t_idx]
                 val = entry.get("value") if isinstance(entry, dict) else entry
                 prices.append(float(val))
-                idx += 1
                 continue
             break
 
-        if len(prices) < HORIZON_HOURS:
+        if len(prices) < self.steps:
             try:
                 cur = float(state.state)
             except (ValueError, TypeError):
                 cur = 0.0
-            prices.extend([cur] * (HORIZON_HOURS - len(prices)))
+            prices.extend([cur] * (self.steps - len(prices)))
         return prices
 
     def _extract_demand(self, state) -> list[float]:
         forecast = state.attributes.get("forecast", [])
-        demand = [float(v) for v in forecast[:HORIZON_HOURS]]
-        if len(demand) < HORIZON_HOURS:
-            demand.extend([0.0] * (HORIZON_HOURS - len(demand)))
+        demand: list[float] = []
+        for step in range(self.steps):
+            hour_idx = int(step * self.time_base / 60)
+            if hour_idx < len(forecast):
+                demand.append(float(forecast[hour_idx]))
+            else:
+                demand.append(0.0)
         return demand
 
     async def async_update(self):
@@ -1416,6 +1445,8 @@ async def async_setup_entry(
     glass_west = float(entry.data.get(CONF_GLASS_WEST_M2, 0))
     glass_south = float(entry.data.get(CONF_GLASS_SOUTH_M2, 0))
     glass_u = float(entry.data.get(CONF_GLASS_U_VALUE, 1.2))
+    planning_window = int(entry.data.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW))
+    time_base = int(entry.data.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
 
     price_sensor = entry.data.get(CONF_PRICE_SENSOR)
     if price_sensor:
@@ -1553,6 +1584,8 @@ async def async_setup_entry(
                 price_sensor=price_sensor,
                 cop_sensor=cop_sensor_entity,
                 device=device_info,
+                planning_window=planning_window,
+                time_base=time_base,
             )
         )
 
@@ -1566,6 +1599,8 @@ async def async_setup_entry(
                 price_sensor=price_sensor,
                 device=device_info,
                 k_factor=k_factor,
+                planning_window=planning_window,
+                time_base=time_base,
             )
         )
 
