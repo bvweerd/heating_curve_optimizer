@@ -1458,7 +1458,9 @@ class EnergyPriceLevelSensor(BaseUtilitySensor):
         attrs: dict[str, float] = {}
         for level, threshold in sorted_levels:
             total = sum(
-                energy_forecast[i] for i in range(horizon) if price_forecast[i] <= threshold
+                energy_forecast[i]
+                for i in range(horizon)
+                if price_forecast[i] <= threshold
             )
             attrs[level] = round(total, 3)
 
