@@ -68,7 +68,7 @@ class _ErrorResponse:
     async def json(self):
         if self._json_exc:
             raise self._json_exc
-        return {}
+        return {}  # pragma: no cover
 
     async def __aenter__(self):
         return self

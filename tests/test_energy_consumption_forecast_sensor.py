@@ -92,7 +92,7 @@ async def test_sensor_excludes_heatpump_consumption(hass):
             return [1.0] * 24
         if "sensor.hp" in data:
             return [2.0] * 24
-        return [0.0] * 24
+        return [0.0] * 24  # pragma: no cover
 
     with patch("homeassistant.util.dt.utcnow", return_value=dt.datetime(2024, 1, 1)):
         with patch.object(
