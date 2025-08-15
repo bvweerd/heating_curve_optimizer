@@ -29,6 +29,7 @@ from .const import (
     CONF_OUTDOOR_TEMPERATURE_SENSOR,
     CONF_K_FACTOR,
     CONF_BASE_COP,
+    CONF_COP_COMPENSATION_FACTOR,
     CONF_OUTDOOR_TEMP_COEFFICIENT,
     CONF_POWER_CONSUMPTION,
     CONF_PRICE_SENSOR,
@@ -41,6 +42,7 @@ from .const import (
     DEFAULT_COP_AT_35,
     DEFAULT_K_FACTOR,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+    DEFAULT_COP_COMPENSATION_FACTOR,
     DEFAULT_PLANNING_WINDOW,
     DEFAULT_TIME_BASE,
     DOMAIN,
@@ -869,6 +871,7 @@ class QuadraticCopSensor(BaseUtilitySensor):
         k_factor: float = DEFAULT_K_FACTOR,
         base_cop: float = DEFAULT_COP_AT_35,
         outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+        cop_compensation_factor: float = 1.0,
     ):
         super().__init__(
             name=name,
@@ -886,6 +889,7 @@ class QuadraticCopSensor(BaseUtilitySensor):
         self.k_factor = k_factor
         self.base_cop = base_cop
         self.outdoor_temp_coefficient = outdoor_temp_coefficient
+        self.cop_compensation_factor = cop_compensation_factor
         self.latitude = hass.config.latitude
         self.longitude = hass.config.longitude
         self.session = async_get_clientsession(hass)
@@ -937,7 +941,7 @@ class QuadraticCopSensor(BaseUtilitySensor):
             self.base_cop
             + self.outdoor_temp_coefficient * o_temp
             - self.k_factor * (s_temp - 35)
-        )
+        ) * self.cop_compensation_factor
         _LOGGER.debug(
             "Calculated COP with supply=%s outdoor=%s -> %s", s_temp, o_temp, cop
         )
@@ -1112,6 +1116,7 @@ class CopEfficiencyDeltaSensor(BaseUtilitySensor):
         k_factor: float = DEFAULT_K_FACTOR,
         base_cop: float = DEFAULT_COP_AT_35,
         outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+        cop_compensation_factor: float = 1.0,
     ) -> None:
         super().__init__(
             name=name,
@@ -1131,6 +1136,7 @@ class CopEfficiencyDeltaSensor(BaseUtilitySensor):
         self.k_factor = k_factor
         self.base_cop = base_cop
         self.outdoor_temp_coefficient = outdoor_temp_coefficient
+        self.cop_compensation_factor = cop_compensation_factor
         self._extra_attrs: dict[str, list[float] | float] = {}
 
     @property
@@ -1182,9 +1188,12 @@ class CopEfficiencyDeltaSensor(BaseUtilitySensor):
             return
 
         predicted_cops = [
-            self.base_cop
-            + self.outdoor_temp_coefficient * outdoor_temp
-            - self.k_factor * (float(s_temp) - 35)
+            (
+                self.base_cop
+                + self.outdoor_temp_coefficient * outdoor_temp
+                - self.k_factor * (float(s_temp) - 35)
+            )
+            * self.cop_compensation_factor
             for s_temp in supply_temps
         ]
         cop_deltas = [round(c - reference_cop, 3) for c in predicted_cops]
@@ -1214,6 +1223,7 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
         k_factor: float = DEFAULT_K_FACTOR,
         base_cop: float = DEFAULT_COP_AT_35,
         outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+        cop_compensation_factor: float = 1.0,
     ) -> None:
         super().__init__(
             name=name,
@@ -1234,6 +1244,7 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
         self.k_factor = k_factor
         self.base_cop = base_cop
         self.outdoor_temp_coefficient = outdoor_temp_coefficient
+        self.cop_compensation_factor = cop_compensation_factor
         self._extra_attrs: dict[str, list[float] | float] = {}
 
     @property
@@ -1296,9 +1307,12 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
             return
 
         predicted_cops = [
-            self.base_cop
-            + self.outdoor_temp_coefficient * outdoor_temp
-            - self.k_factor * (float(s_temp) - 35)
+            (
+                self.base_cop
+                + self.outdoor_temp_coefficient * outdoor_temp
+                - self.k_factor * (float(s_temp) - 35)
+            )
+            * self.cop_compensation_factor
             for s_temp in supply_temps
         ]
         predicted_heat = [reference_heat * (c / reference_cop) for c in predicted_cops]
@@ -1581,6 +1595,7 @@ def _optimize_offsets(
     *,
     base_temp: float = 35.0,
     k_factor: float = DEFAULT_K_FACTOR,
+    cop_compensation_factor: float = 1.0,
     buffer: float = 0.0,
     water_min: float = 28.0,
     water_max: float = 45.0,
@@ -1598,20 +1613,23 @@ def _optimize_offsets(
     to zero.
     """
     _LOGGER.debug(
-        "Optimizing offsets demand=%s prices=%s base=%s k=%s buffer=%s",
+        "Optimizing offsets demand=%s prices=%s base=%s k=%s comp=%s buffer=%s",
         demand,
         prices,
         base_temp,
         k_factor,
+        cop_compensation_factor,
         buffer,
     )
     horizon = min(len(demand), len(prices))
     if horizon == 0:
         return [], []
 
-    base_cop = DEFAULT_COP_AT_35 - k_factor * (base_temp - 35)
+    base_cop = (
+        DEFAULT_COP_AT_35 - k_factor * (base_temp - 35)
+    ) * cop_compensation_factor
     reciprocal_base_cop = 1 / base_cop
-    cop_derivative = k_factor / (base_cop**2)
+    cop_derivative = (k_factor * cop_compensation_factor) / (base_cop**2)
 
     allowed_offsets = [
         o for o in range(-4, 5) if water_min <= base_temp + o <= water_max
@@ -1702,6 +1720,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         device: DeviceInfo,
         *,
         k_factor: float = DEFAULT_K_FACTOR,
+        cop_compensation_factor: float = 1.0,
         planning_window: int = DEFAULT_PLANNING_WINDOW,
         time_base: int = DEFAULT_TIME_BASE,
     ):
@@ -1720,6 +1739,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         self.net_heat_sensor = net_heat_sensor
         self.price_sensor = price_sensor
         self.k_factor = k_factor
+        self.cop_compensation_factor = cop_compensation_factor
         self.planning_window = planning_window
         self.time_base = time_base
         self.steps = max(1, int(planning_window * 60 // time_base))
@@ -1825,6 +1845,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
                 _optimize_offsets,
                 base_temp=base_temp,
                 k_factor=self.k_factor,
+                cop_compensation_factor=self.cop_compensation_factor,
                 buffer=0.0,
                 water_min=water_min,
                 water_max=water_max,
@@ -2260,6 +2281,9 @@ async def async_setup_entry(
     outdoor_temp_coefficient = float(
         entry.data.get(CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT)
     )
+    cop_compensation_factor = float(
+        entry.data.get(CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR)
+    )
     glass_east = float(entry.data.get(CONF_GLASS_EAST_M2, 0))
     glass_west = float(entry.data.get(CONF_GLASS_WEST_M2, 0))
     glass_south = float(entry.data.get(CONF_GLASS_SOUTH_M2, 0))
@@ -2407,6 +2431,7 @@ async def async_setup_entry(
             k_factor=k_factor,
             base_cop=base_cop,
             outdoor_temp_coefficient=outdoor_temp_coefficient,
+            cop_compensation_factor=cop_compensation_factor,
             device=device_info,
         )
         entities.append(cop_sensor_entity)
@@ -2450,6 +2475,7 @@ async def async_setup_entry(
             price_sensor=price_sensor,
             device=device_info,
             k_factor=k_factor,
+            cop_compensation_factor=cop_compensation_factor,
         )
         entities.append(heating_curve_offset_sensor)
 
@@ -2466,6 +2492,7 @@ async def async_setup_entry(
                 k_factor=k_factor,
                 base_cop=base_cop,
                 outdoor_temp_coefficient=outdoor_temp_coefficient,
+                cop_compensation_factor=cop_compensation_factor,
             )
         )
         if thermal_power_sensor_entity is not None:
@@ -2482,6 +2509,7 @@ async def async_setup_entry(
                     k_factor=k_factor,
                     base_cop=base_cop,
                     outdoor_temp_coefficient=outdoor_temp_coefficient,
+                    cop_compensation_factor=cop_compensation_factor,
                 )
             )
 
