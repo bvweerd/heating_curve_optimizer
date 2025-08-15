@@ -29,7 +29,7 @@ Configuration is done entirely through the UI. The following options can be prov
 | `sensor.current_consumption_price` | Current electricity price for consumption. |
 | `sensor.current_production_price` | Current electricity price for production. |
 | `sensor.hourly_heat_loss` | Estimated heat loss in kW per hour. |
-| `sensor.window_solar_gain` | Expected solar gain through windows in kW. |
+| `sensor.window_solar_gain` | Expected solar gain through windows in kW with solar radiation history and forecast attributes. |
 | `sensor.hourly_net_heat_loss` | Net heat loss after subtracting solar gain. |
 | `sensor.expected_energy_consumption` | Average standby power usage per hour. |
 | `sensor.current_net_consumption` | Current net power (consumption minus production). |
