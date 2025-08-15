@@ -618,9 +618,6 @@ class NetHeatLossSensor(BaseUtilitySensor):
         await super().async_will_remove_from_hass()
 
 
-NetHeatDemandSensor = NetHeatLossSensor
-
-
 class NetPowerConsumptionSensor(BaseUtilitySensor):
     def __init__(
         self,
