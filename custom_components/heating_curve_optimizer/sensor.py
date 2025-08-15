@@ -969,7 +969,9 @@ def _optimize_offsets(
     reciprocal_base_cop = 1 / base_cop
     cop_derivative = k_factor / (base_cop**2)
 
-    allowed_offsets = [o for o in range(-4, 5) if water_min <= base_temp + o <= water_max]
+    allowed_offsets = [
+        o for o in range(-4, 5) if water_min <= base_temp + o <= water_max
+    ]
     if not allowed_offsets:
         return [0 for _ in range(horizon)], [buffer for _ in range(horizon)]
 
