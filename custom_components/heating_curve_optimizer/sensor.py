@@ -914,6 +914,23 @@ class DiagnosticsSensor(BaseUtilitySensor):
         self._attr_available = True
 
 
+def _calculate_supply_temperature(
+    outdoor_temp: float,
+    *,
+    water_min: float,
+    water_max: float,
+    outdoor_min: float,
+    outdoor_max: float,
+) -> float:
+    """Return supply temperature for a given outdoor temperature."""
+    if outdoor_temp <= outdoor_min:
+        return water_max
+    if outdoor_temp >= outdoor_max:
+        return water_min
+    ratio = (outdoor_temp - outdoor_min) / (outdoor_max - outdoor_min)
+    return water_max + (water_min - water_max) * ratio
+
+
 def _optimize_offsets(
     demand: list[float],
     prices: list[float],
@@ -921,6 +938,8 @@ def _optimize_offsets(
     base_temp: float = 35.0,
     k_factor: float = DEFAULT_K_FACTOR,
     buffer: float = 0.0,
+    water_min: float = 28.0,
+    water_max: float = 45.0,
 ) -> tuple[list[int], list[float]]:
     r"""Return cost optimized offsets for the given demand and prices.
 
@@ -950,7 +969,7 @@ def _optimize_offsets(
     reciprocal_base_cop = 1 / base_cop
     cop_derivative = k_factor / (base_cop**2)
 
-    allowed_offsets = [o for o in range(-4, 5) if 28 <= base_temp + o <= 45]
+    allowed_offsets = [o for o in range(-4, 5) if water_min <= base_temp + o <= water_max]
     if not allowed_offsets:
         return [0 for _ in range(horizon)], [buffer for _ in range(horizon)]
 
@@ -1123,12 +1142,38 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         total_energy = sum(demand)
         _LOGGER.debug("Offset sensor demand=%s prices=%s", demand, prices)
 
+        data = self.hass.data.get(DOMAIN, {})
+        water_min = float(data.get("heat_curve_min", 28.0))
+        water_max = float(data.get("heat_curve_max", 45.0))
+        outdoor_min = float(data.get("heat_curve_min_outdoor", -20.0))
+        outdoor_max = float(data.get("heat_curve_max_outdoor", 15.0))
+
+        o_state = self.hass.states.get("sensor.outdoor_temperature")
+        if o_state is None or o_state.state in ("unknown", "unavailable"):
+            self._attr_available = False
+            return
+        try:
+            outdoor_temp = float(o_state.state)
+        except ValueError:
+            self._attr_available = False
+            return
+
+        base_temp = _calculate_supply_temperature(
+            outdoor_temp,
+            water_min=water_min,
+            water_max=water_max,
+            outdoor_min=outdoor_min,
+            outdoor_max=outdoor_max,
+        )
+
         offsets, buffer_evolution = await self.hass.async_add_executor_job(
             partial(
                 _optimize_offsets,
-                base_temp=35.0,
+                base_temp=base_temp,
                 k_factor=self.k_factor,
                 buffer=0.0,
+                water_min=water_min,
+                water_max=water_max,
             ),
             demand,
             prices,
@@ -1141,11 +1186,20 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             self._attr_native_value = offsets[0]
         else:
             self._attr_native_value = 0
+        supply_temps = [
+            round(
+                max(min(base_temp + off, water_max), water_min),
+                1,
+            )
+            for off in offsets
+        ]
         self._extra_attrs = {
             "future_offsets": offsets,
             "prices": prices,
             "buffer_evolution": buffer_evolution,
             "total_energy": round(total_energy, 3),
+            "future_supply_temperatures": supply_temps,
+            "base_supply_temperature": round(base_temp, 1),
         }
         self._attr_available = True
 
