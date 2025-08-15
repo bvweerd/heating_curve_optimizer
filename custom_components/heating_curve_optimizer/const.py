@@ -24,6 +24,7 @@ CONF_GLASS_U_VALUE = "glass_u_value"
 CONF_POWER_CONSUMPTION = "power_consumption"
 CONF_INDOOR_TEMPERATURE_SENSOR = "indoor_temperature_sensor"
 CONF_SUPPLY_TEMPERATURE_SENSOR = "supply_temperature_sensor"
+CONF_OUTDOOR_TEMPERATURE_SENSOR = "outdoor_temperature_sensor"
 CONF_K_FACTOR = "k_factor"
 
 # Allowed energy labels

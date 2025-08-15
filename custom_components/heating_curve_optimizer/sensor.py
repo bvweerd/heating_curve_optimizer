@@ -9,11 +9,6 @@ from typing import Any, cast
 import aiohttp
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import pycares  # noqa: F401
-
-# Create a persistent pycares channel to ensure the library's background
-# thread is started before test fixtures snapshot running threads. Without
-# this, the thread may be flagged as lingering during teardown.
-_PYCARES_CHANNEL = pycares.Channel()
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -30,6 +25,7 @@ from .const import (
     CONF_GLASS_U_VALUE,
     CONF_GLASS_WEST_M2,
     CONF_INDOOR_TEMPERATURE_SENSOR,
+    CONF_OUTDOOR_TEMPERATURE_SENSOR,
     CONF_K_FACTOR,
     CONF_POWER_CONSUMPTION,
     CONF_PRICE_SENSOR,
@@ -46,6 +42,11 @@ from .const import (
     U_VALUE_MAP,
 )
 from .entity import BaseUtilitySensor
+
+# Create a persistent pycares channel to ensure the library's background
+# thread is started before test fixtures snapshot running threads. Without
+# this, the thread may be flagged as lingering during teardown.
+_PYCARES_CHANNEL = pycares.Channel()
 
 _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 1
@@ -684,8 +685,8 @@ class QuadraticCopSensor(BaseUtilitySensor):
         name: str,
         unique_id: str,
         supply_sensor: str,
-        outdoor_sensor: str,
         device: DeviceInfo,
+        outdoor_sensor: str | None = None,
         k_factor: float = DEFAULT_K_FACTOR,
         base_cop: float = DEFAULT_COP_AT_35,
     ):
@@ -704,24 +705,53 @@ class QuadraticCopSensor(BaseUtilitySensor):
         self.outdoor_sensor = outdoor_sensor
         self.k_factor = k_factor
         self.base_cop = base_cop
+        self.latitude = hass.config.latitude
+        self.longitude = hass.config.longitude
+        self.session = async_get_clientsession(hass)
+
+    async def _fetch_outdoor_temp(self) -> float | None:
+        """Fetch current outdoor temperature from Open-Meteo."""
+        url = (
+            "https://api.open-meteo.com/v1/forecast"
+            f"?latitude={self.latitude}&longitude={self.longitude}"
+            "&current_weather=true&timezone=UTC"
+        )
+        try:
+            async with self.session.get(
+                url, timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                data = await resp.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            _LOGGER.error("Error fetching outdoor temperature: %s", err)
+            self._attr_available = False
+            return None
+        self._attr_available = True
+        return float(data.get("current_weather", {}).get("temperature", 0))
 
     async def async_update(self):
         s_state = self.hass.states.get(self.supply_sensor)
-        o_state = self.hass.states.get(self.outdoor_sensor)
-        if (
-            s_state is None
-            or o_state is None
-            or s_state.state in ("unknown", "unavailable")
-            or o_state.state in ("unknown", "unavailable")
-        ):
+        if s_state is None or s_state.state in ("unknown", "unavailable"):
             self._attr_available = False
             return
         try:
             s_temp = float(s_state.state)
-            o_temp = float(o_state.state)
         except ValueError:
             self._attr_available = False
             return
+
+        o_temp = None
+        if self.outdoor_sensor:
+            o_state = self.hass.states.get(self.outdoor_sensor)
+            if o_state and o_state.state not in ("unknown", "unavailable"):
+                try:
+                    o_temp = float(o_state.state)
+                except ValueError:
+                    o_temp = None
+        if o_temp is None:
+            o_temp = await self._fetch_outdoor_temp()
+            if o_temp is None:
+                return
+
         cop = self.base_cop + 0.08 * o_temp - self.k_factor * (s_temp - 35)
         _LOGGER.debug(
             "Calculated COP with supply=%s outdoor=%s -> %s", s_temp, o_temp, cop
@@ -1410,6 +1440,7 @@ async def async_setup_entry(
     energy_label = entry.data.get(CONF_ENERGY_LABEL)
     indoor_sensor = entry.data.get(CONF_INDOOR_TEMPERATURE_SENSOR)
     supply_temp_sensor = entry.data.get(CONF_SUPPLY_TEMPERATURE_SENSOR)
+    outdoor_temp_sensor = entry.data.get(CONF_OUTDOOR_TEMPERATURE_SENSOR)
     power_sensor = entry.data.get(CONF_POWER_CONSUMPTION)
     k_factor = float(entry.data.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
     glass_east = float(entry.data.get(CONF_GLASS_EAST_M2, 0))
@@ -1455,6 +1486,7 @@ async def async_setup_entry(
             indoor_sensor=indoor_sensor,
             icon="mdi:home-thermometer",
             device=device_info,
+            outdoor_sensor=outdoor_temp_sensor,
         )
         entities.append(heat_loss_sensor)
 
@@ -1511,6 +1543,7 @@ async def async_setup_entry(
             device=device_info,
             heat_loss_sensor=heat_loss_sensor,
             window_gain_sensor=window_gain_sensor,
+            outdoor_sensor=outdoor_temp_sensor,
         )
         entities.append(net_heat_sensor)
 
@@ -1521,7 +1554,7 @@ async def async_setup_entry(
             name="Heat Pump COP",
             unique_id=f"{entry.entry_id}_cop",
             supply_sensor=supply_temp_sensor,
-            outdoor_sensor="sensor.outdoor_temperature",
+            outdoor_sensor=outdoor_temp_sensor,
             k_factor=k_factor,
             base_cop=DEFAULT_COP_AT_35,
             device=device_info,
@@ -1535,7 +1568,8 @@ async def async_setup_entry(
                     unique_id=f"{entry.entry_id}_thermal_power",
                     power_sensor=power_sensor,
                     supply_sensor=supply_temp_sensor,
-                    outdoor_sensor="sensor.outdoor_temperature",
+                    outdoor_sensor=outdoor_temp_sensor
+                    or outdoor_sensor_entity.entity_id,
                     device=device_info,
                     k_factor=k_factor,
                     base_cop=DEFAULT_COP_AT_35,
