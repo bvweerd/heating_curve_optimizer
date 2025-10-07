@@ -61,6 +61,86 @@ _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 1
 
 
+def _normalize_price_value(value: Any) -> float | None:
+    """Normalize a raw price value to a float if possible."""
+
+    if isinstance(value, dict):
+        value = value.get("value")
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def extract_price_forecast(state: State) -> list[float]:
+    """Extract an hourly price forecast from a Home Assistant price state."""
+
+    forecast_attr = state.attributes.get("forecast_prices")
+    if isinstance(forecast_attr, (list, tuple)):
+        forecast: list[float] = []
+        for entry in forecast_attr:
+            price = _normalize_price_value(entry)
+            if price is not None:
+                forecast.append(price)
+        if forecast:
+            return forecast
+
+    generic_forecast = state.attributes.get("forecast")
+    if isinstance(generic_forecast, (list, tuple)):
+        forecast = []
+        for entry in generic_forecast:
+            price = _normalize_price_value(entry)
+            if price is not None:
+                forecast.append(price)
+        if forecast:
+            return forecast
+
+    from homeassistant.util import dt as dt_util
+
+    now = dt_util.utcnow()
+    hour = now.hour
+
+    forecast: list[float] = []
+    raw_today = state.attributes.get("raw_today")
+    if isinstance(raw_today, list):
+        for entry in raw_today[hour:]:
+            price = _normalize_price_value(entry)
+            if price is not None:
+                forecast.append(price)
+
+    raw_tomorrow = state.attributes.get("raw_tomorrow")
+    if isinstance(raw_tomorrow, list):
+        for entry in raw_tomorrow:
+            price = _normalize_price_value(entry)
+            if price is not None:
+                forecast.append(price)
+
+    if forecast:
+        return forecast
+
+    combined: list[Any] = []
+    for key in ("today", "tomorrow"):
+        attr = state.attributes.get(key)
+        if isinstance(attr, list):
+            combined.extend(attr)
+
+    for entry in combined:
+        price = _normalize_price_value(entry)
+        if price is not None:
+            forecast.append(price)
+
+    if forecast:
+        return forecast
+
+    try:
+        price = float(state.state)
+    except (TypeError, ValueError):
+        return []
+
+    return [price]
+
+
 class OutdoorTemperatureSensor(BaseUtilitySensor):
     """Sensor with current outdoor temperature and 24h forecast."""
 
@@ -173,22 +253,34 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
         self.price_sensor = price_sensor
         self.source_type = source_type
         self.price_settings = price_settings
+        self._extra_attrs: dict[str, Any] = {}
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._extra_attrs
 
     async def async_update(self):
         state = self.hass.states.get(self.price_sensor)
         if state is None or state.state in ("unknown", "unavailable"):
             self._attr_available = False
+            self._extra_attrs = {}
             _LOGGER.warning("Price sensor %s is unavailable", self.price_sensor)
             return
         try:
             base_price = float(state.state)
         except ValueError:
             self._attr_available = False
+            self._extra_attrs = {}
             _LOGGER.warning("Price sensor %s has invalid state", self.price_sensor)
             return
         self._attr_available = True
 
         self._attr_native_value = round(base_price, 8)
+        attrs: dict[str, Any] = dict(state.attributes)
+        forecast = extract_price_forecast(state)
+        if forecast:
+            attrs["forecast_prices"] = forecast
+        self._extra_attrs = attrs
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
@@ -1418,37 +1510,26 @@ class DiagnosticsSensor(BaseUtilitySensor):
         return result
 
     def _extract_prices(self, state) -> list[float]:
-        from homeassistant.util import dt as dt_util
-
-        now = dt_util.utcnow()
-        hour = now.hour
-        raw_today = state.attributes.get("raw_today", [])
-        raw_tomorrow = state.attributes.get("raw_tomorrow", [])
-
-        prices: list[float] = []
+        prices = extract_price_forecast(state)
+        result: list[float] = []
         for step in range(self.steps):
             hour_offset = int(step * self.time_base / 60)
-            idx = hour + hour_offset
-            if idx < len(raw_today):
-                entry = raw_today[idx]
-                val = entry.get("value") if isinstance(entry, dict) else entry
-                prices.append(float(val))
-                continue
-            t_idx = idx - len(raw_today)
-            if t_idx < len(raw_tomorrow):
-                entry = raw_tomorrow[t_idx]
-                val = entry.get("value") if isinstance(entry, dict) else entry
-                prices.append(float(val))
-                continue
-            break
+            if hour_offset < len(prices):
+                result.append(float(prices[hour_offset]))
+            else:
+                break
 
-        if len(prices) < self.steps:
-            try:
-                cur = float(state.state)
-            except (ValueError, TypeError):
-                cur = 0.0
-            prices.extend([cur] * (self.steps - len(prices)))
-        return prices
+        if len(result) < self.steps:
+            if prices:
+                fallback = float(prices[-1])
+            else:
+                try:
+                    fallback = float(state.state)
+                except (TypeError, ValueError):
+                    fallback = 0.0
+            result.extend([fallback] * (self.steps - len(result)))
+
+        return result
 
     async def async_update(self):
         attrs: dict[str, list[float]] = {}
@@ -1693,37 +1774,26 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         return self._extra_attrs
 
     def _extract_prices(self, state) -> list[float]:
-        from homeassistant.util import dt as dt_util
-
-        now = dt_util.utcnow()
-        hour = now.hour
-        raw_today = state.attributes.get("raw_today", [])
-        raw_tomorrow = state.attributes.get("raw_tomorrow", [])
-
-        prices: list[float] = []
+        prices = extract_price_forecast(state)
+        result: list[float] = []
         for step in range(self.steps):
             hour_offset = int(step * self.time_base / 60)
-            idx = hour + hour_offset
-            if idx < len(raw_today):
-                entry = raw_today[idx]
-                val = entry.get("value") if isinstance(entry, dict) else entry
-                prices.append(float(val))
-                continue
-            t_idx = idx - len(raw_today)
-            if t_idx < len(raw_tomorrow):
-                entry = raw_tomorrow[t_idx]
-                val = entry.get("value") if isinstance(entry, dict) else entry
-                prices.append(float(val))
-                continue
-            break
+            if hour_offset < len(prices):
+                result.append(float(prices[hour_offset]))
+            else:
+                break
 
-        if len(prices) < self.steps:
-            try:
-                cur = float(state.state)
-            except (ValueError, TypeError):
-                cur = 0.0
-            prices.extend([cur] * (self.steps - len(prices)))
-        return prices
+        if len(result) < self.steps:
+            if prices:
+                fallback = float(prices[-1])
+            else:
+                try:
+                    fallback = float(state.state)
+                except (TypeError, ValueError):
+                    fallback = 0.0
+            result.extend([fallback] * (self.steps - len(result)))
+
+        return result
 
     def _extract_demand(self, state) -> list[float]:
         forecast = state.attributes.get("forecast", [])
@@ -2242,22 +2312,11 @@ class EnergyPriceLevelSensor(BaseUtilitySensor):
         return self._extra_attrs
 
     def _get_price_forecast(self, state) -> list[float]:
-        prices: list[float] = []
-        attr_forecast = state.attributes.get("forecast")
-        if isinstance(attr_forecast, list) and attr_forecast:
-            prices = [float(p) for p in attr_forecast]
-        else:
-            today = state.attributes.get("today")
-            tomorrow = state.attributes.get("tomorrow", [])
-            if isinstance(today, list):
-                combined = today + (tomorrow if isinstance(tomorrow, list) else [])
-                prices = [float(p) for p in combined]
+        prices = list(extract_price_forecast(state))
         if not prices:
-            try:
-                price = float(state.state)
-            except (ValueError, TypeError):
-                return []
-            prices = [price] * 24
+            return []
+        if len(prices) < 24:
+            prices.extend([prices[-1]] * (24 - len(prices)))
         return prices
 
     async def async_update(self):
