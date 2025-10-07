@@ -121,9 +121,7 @@ def extract_price_forecast(state: State) -> list[float]:
 
     interval_forecast: list[float] = []
 
-    def _extend_interval_forecast(
-        entries: Any, *, skip_past: bool = False
-    ) -> bool:
+    def _extend_interval_forecast(entries: Any, *, skip_past: bool = False) -> bool:
         if not isinstance(entries, (list, tuple)):
             return False
 
