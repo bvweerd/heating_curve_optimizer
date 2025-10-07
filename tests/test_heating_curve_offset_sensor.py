@@ -75,6 +75,14 @@ async def test_offset_sensor_sets_future_offsets_attribute(hass):
     assert sensor.extra_state_attributes["future_offsets"] == [1, 2, 3, 4, 5, 6]
     assert sensor.extra_state_attributes["prices"] == [0.0] * 6
     assert sensor.extra_state_attributes["buffer_evolution"] == [
+        0.5,
+        1.5,
+        3.0,
+        5.0,
+        7.5,
+        10.5,
+    ]
+    assert sensor.extra_state_attributes["buffer_evolution_offsets"] == [
         0,
         1,
         3,
