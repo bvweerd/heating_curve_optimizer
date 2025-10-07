@@ -2326,7 +2326,11 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
         try:
             return cast(
                 dict[str, list],
-                await (instance.async_add_executor_job if instance else self.hass.async_add_executor_job)(
+                await (
+                    instance.async_add_executor_job
+                    if instance
+                    else self.hass.async_add_executor_job
+                )(
                     func,
                     self.hass,
                     start,
@@ -2343,7 +2347,11 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
             for sensor in sensors:
                 data = cast(
                     dict[str, list],
-                    await (instance.async_add_executor_job if instance else self.hass.async_add_executor_job)(
+                    await (
+                        instance.async_add_executor_job
+                        if instance
+                        else self.hass.async_add_executor_job
+                    )(
                         func,
                         self.hass,
                         start,
