@@ -255,20 +255,36 @@ class HeatLossSensor(BaseUtilitySensor):
         return self._extra_attrs
 
     async def _compute_value(self) -> None:
-        state = self.hass.states.get(cast(str, self.outdoor_sensor))
+        entity_id = (
+            self.outdoor_sensor.entity_id
+            if isinstance(self.outdoor_sensor, SensorEntity)
+            else cast(str, self.outdoor_sensor)
+        )
+        sensor_name = entity_id or str(self.outdoor_sensor)
+
+        if entity_id is None:
+            self._set_unavailable("geen buitensensor gevonden")
+            return
+
+        state = self.hass.states.get(entity_id)
+        if isinstance(self.outdoor_sensor, SensorEntity) and self.outdoor_sensor.entity_id:
+            self.outdoor_sensor = self.outdoor_sensor.entity_id
+            entity_id = cast(str, self.outdoor_sensor)
+            sensor_name = entity_id
+
         if state is None:
-            self._set_unavailable(f"geen buitensensor gevonden ({self.outdoor_sensor})")
+            self._set_unavailable(f"geen buitensensor gevonden ({sensor_name})")
             return
         if state.state in ("unknown", "unavailable"):
             self._set_unavailable(
-                f"buitensensor {self.outdoor_sensor} heeft status '{state.state}'"
+                f"buitensensor {sensor_name} heeft status '{state.state}'"
             )
             return
         try:
             current = float(state.state)
         except ValueError:
             self._set_unavailable(
-                f"waarde van buitensensor {self.outdoor_sensor} is ongeldig"
+                f"waarde van buitensensor {sensor_name} is ongeldig"
             )
             return
         forecast = [
@@ -487,20 +503,36 @@ class NetHeatLossSensor(BaseUtilitySensor):
         return self._extra_attrs
 
     async def _compute_value(self) -> None:
-        state = self.hass.states.get(cast(str, self.outdoor_sensor))
+        entity_id = (
+            self.outdoor_sensor.entity_id
+            if isinstance(self.outdoor_sensor, SensorEntity)
+            else cast(str, self.outdoor_sensor)
+        )
+        sensor_name = entity_id or str(self.outdoor_sensor)
+
+        if entity_id is None:
+            self._set_unavailable("geen buitensensor gevonden")
+            return
+
+        state = self.hass.states.get(entity_id)
+        if isinstance(self.outdoor_sensor, SensorEntity) and self.outdoor_sensor.entity_id:
+            self.outdoor_sensor = self.outdoor_sensor.entity_id
+            entity_id = cast(str, self.outdoor_sensor)
+            sensor_name = entity_id
+
         if state is None:
-            self._set_unavailable(f"geen buitensensor gevonden ({self.outdoor_sensor})")
+            self._set_unavailable(f"geen buitensensor gevonden ({sensor_name})")
             return
         if state.state in ("unknown", "unavailable"):
             self._set_unavailable(
-                f"buitensensor {self.outdoor_sensor} heeft status '{state.state}'"
+                f"buitensensor {sensor_name} heeft status '{state.state}'"
             )
             return
         try:
             t_outdoor = float(state.state)
         except ValueError:
             self._set_unavailable(
-                f"waarde van buitensensor {self.outdoor_sensor} is ongeldig"
+                f"waarde van buitensensor {sensor_name} is ongeldig"
             )
             return
 
@@ -694,20 +726,36 @@ class QuadraticCopSensor(BaseUtilitySensor):
             )
             return
 
-        o_state = self.hass.states.get(cast(str, self.outdoor_sensor))
+        entity_id = (
+            self.outdoor_sensor.entity_id
+            if isinstance(self.outdoor_sensor, SensorEntity)
+            else cast(str, self.outdoor_sensor)
+        )
+        sensor_name = entity_id or str(self.outdoor_sensor)
+
+        if entity_id is None:
+            self._set_unavailable("geen buitensensor gevonden")
+            return
+
+        o_state = self.hass.states.get(entity_id)
+        if isinstance(self.outdoor_sensor, SensorEntity) and self.outdoor_sensor.entity_id:
+            self.outdoor_sensor = self.outdoor_sensor.entity_id
+            entity_id = cast(str, self.outdoor_sensor)
+            sensor_name = entity_id
+
         if o_state is None:
-            self._set_unavailable(f"geen buitensensor gevonden ({self.outdoor_sensor})")
+            self._set_unavailable(f"geen buitensensor gevonden ({sensor_name})")
             return
         if o_state.state in ("unknown", "unavailable"):
             self._set_unavailable(
-                f"buitensensor {self.outdoor_sensor} heeft status '{o_state.state}'"
+                f"buitensensor {sensor_name} heeft status '{o_state.state}'"
             )
             return
         try:
             o_temp = float(o_state.state)
         except ValueError:
             self._set_unavailable(
-                f"waarde van buitensensor {self.outdoor_sensor} is ongeldig"
+                f"waarde van buitensensor {sensor_name} is ongeldig"
             )
             return
 
@@ -738,7 +786,7 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
         unique_id: str,
         power_sensor: str,
         supply_sensor: str,
-        outdoor_sensor: str,
+        outdoor_sensor: str | SensorEntity,
         device: DeviceInfo,
         k_factor: float = DEFAULT_K_FACTOR,
         base_cop: float = DEFAULT_COP_AT_35,
@@ -786,13 +834,29 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
             )
             return
 
-        o_state = self.hass.states.get(self.outdoor_sensor)
+        entity_id = (
+            self.outdoor_sensor.entity_id
+            if isinstance(self.outdoor_sensor, SensorEntity)
+            else cast(str, self.outdoor_sensor)
+        )
+        sensor_name = entity_id or str(self.outdoor_sensor)
+
+        if entity_id is None:
+            self._set_unavailable("geen buitensensor gevonden")
+            return
+
+        o_state = self.hass.states.get(entity_id)
+        if isinstance(self.outdoor_sensor, SensorEntity) and self.outdoor_sensor.entity_id:
+            self.outdoor_sensor = self.outdoor_sensor.entity_id
+            entity_id = cast(str, self.outdoor_sensor)
+            sensor_name = entity_id
+
         if o_state is None:
-            self._set_unavailable(f"geen buitensensor gevonden ({self.outdoor_sensor})")
+            self._set_unavailable(f"geen buitensensor gevonden ({sensor_name})")
             return
         if o_state.state in ("unknown", "unavailable"):
             self._set_unavailable(
-                f"buitensensor {self.outdoor_sensor} heeft status '{o_state.state}'"
+                f"buitensensor {sensor_name} heeft status '{o_state.state}'"
             )
             return
 
@@ -814,7 +878,7 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
             o_temp = float(o_state.state)
         except ValueError:
             self._set_unavailable(
-                f"waarde van buitensensor {self.outdoor_sensor} is ongeldig"
+                f"waarde van buitensensor {sensor_name} is ongeldig"
             )
             return
         cop = self.base_cop + 0.08 * o_temp - self.k_factor * (s_temp - 35)
@@ -827,6 +891,11 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
         )
         self._mark_available()
         self._attr_native_value = round(thermal_power, 3)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if isinstance(self.outdoor_sensor, SensorEntity):
+            self.outdoor_sensor = self.outdoor_sensor.entity_id
 
 
 # New sensor classes start here
@@ -2219,7 +2288,7 @@ async def async_setup_entry(
     energy_label = entry.data.get(CONF_ENERGY_LABEL)
     indoor_sensor = entry.data.get(CONF_INDOOR_TEMPERATURE_SENSOR)
     supply_temp_sensor = entry.data.get(CONF_SUPPLY_TEMPERATURE_SENSOR)
-    outdoor_temp_sensor = outdoor_sensor_entity.entity_id
+    outdoor_temp_sensor: str | SensorEntity = outdoor_sensor_entity
     power_sensor = entry.data.get(CONF_POWER_CONSUMPTION)
     k_factor = float(entry.data.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
     base_cop = float(entry.data.get(CONF_BASE_COP, DEFAULT_COP_AT_35))

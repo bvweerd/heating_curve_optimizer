@@ -1,7 +1,12 @@
 import pytest
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from custom_components.heating_curve_optimizer.sensor import HeatLossSensor
+
+
+class DummyOutdoorSensor(SensorEntity):
+    """Minimal sensor without an assigned entity_id."""
 
 
 @pytest.mark.asyncio
@@ -41,3 +46,20 @@ async def test_heat_loss_sensor_handles_missing_outdoor(hass):
     await sensor.async_update()
     assert sensor.available is False
     await sensor.async_will_remove_from_hass()
+
+
+@pytest.mark.asyncio
+async def test_heat_loss_sensor_supports_sensor_entity_without_id(hass):
+    sensor = HeatLossSensor(
+        hass=hass,
+        name="Heat Loss",
+        unique_id="hl3",
+        area_m2=10.0,
+        energy_label="A",
+        indoor_sensor=None,
+        icon="mdi:test",
+        device=DeviceInfo(identifiers={("test", "3")}),
+        outdoor_sensor=DummyOutdoorSensor(),
+    )
+    await sensor.async_update()
+    assert sensor.available is False
