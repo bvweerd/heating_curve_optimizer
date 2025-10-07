@@ -35,6 +35,8 @@ async def test_window_solar_gain_sensor_computes_gain(hass):
     )
     assert sensor.extra_state_attributes["radiation_forecast"] == [100.0, 50.0]
     assert sensor.extra_state_attributes["radiation_history"] == [100.0]
+    assert sensor.extra_state_attributes["forecast_time_base"] == 60
+    assert sensor.extra_state_attributes["radiation_forecast_time_base"] == 60
     await sensor.async_will_remove_from_hass()
 
 
@@ -62,6 +64,8 @@ async def test_window_solar_gain_sensor_handles_no_data(hass):
     assert sensor.extra_state_attributes["forecast"] == []
     assert sensor.extra_state_attributes["radiation_forecast"] == []
     assert sensor.extra_state_attributes["radiation_history"] == [0.0]
+    assert sensor.extra_state_attributes["forecast_time_base"] == 60
+    assert sensor.extra_state_attributes["radiation_forecast_time_base"] == 60
     await sensor.async_will_remove_from_hass()
 
 

@@ -4,6 +4,7 @@ import asyncio
 from functools import partial
 import logging
 import math
+from collections.abc import Iterable
 from typing import Any, cast
 from datetime import datetime, timedelta
 
@@ -59,6 +60,18 @@ _PYCARES_CHANNEL = pycares.Channel()
 
 _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 1
+
+
+def _coerce_time_base(value: Any) -> int | None:
+    """Return a positive integer time-base in minutes if possible."""
+
+    try:
+        base = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(base) or base <= 0:
+        return None
+    return int(round(base))
 
 
 def _normalize_price_value(value: Any) -> float | None:
@@ -216,7 +229,10 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
         if not self._attr_available:
             return
         self._attr_native_value = round(current, 2)
-        self._extra_attrs = {"forecast": [round(v, 2) for v in forecast]}
+        self._extra_attrs = {
+            "forecast": [round(v, 2) for v in forecast],
+            "forecast_time_base": 60,
+        }
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
@@ -407,7 +423,10 @@ class HeatLossSensor(BaseUtilitySensor):
         forecast_values = [
             round(self.area_m2 * u_value * (indoor - t) / 1000.0, 3) for t in forecast
         ]
-        self._extra_attrs = {"forecast": forecast_values}
+        self._extra_attrs = {
+            "forecast": forecast_values,
+            "forecast_time_base": 60,
+        }
 
     async def async_update(self):
         await self._compute_value()
@@ -544,6 +563,8 @@ class WindowSolarGainSensor(BaseUtilitySensor):
             "forecast": forecast,
             "radiation_forecast": rad_forecast,
             "radiation_history": [round(v, 2) for v in self._radiation_history],
+            "forecast_time_base": 60,
+            "radiation_forecast_time_base": 60,
         }
 
     async def async_update(self):
@@ -654,21 +675,49 @@ class NetHeatLossSensor(BaseUtilitySensor):
         _LOGGER.debug("Net heat loss: loss=%s solar=%s net=%s", q_loss, q_solar, q_net)
         self._attr_native_value = round(q_net, 3)
 
-        loss_fc = []
-        gain_fc = []
+        loss_fc: list[Any] = []
+        gain_fc: list[Any] = []
+        loss_base = None
+        gain_base = None
         if self.heat_loss_sensor:
-            loss_fc = self.heat_loss_sensor.extra_state_attributes.get("forecast", [])
+            hl_attrs = getattr(self.heat_loss_sensor, "extra_state_attributes", {})
+            if isinstance(hl_attrs, dict):
+                loss_fc = hl_attrs.get("forecast", []) or []
+                loss_base = _coerce_time_base(hl_attrs.get("forecast_time_base"))
         if self.window_gain_sensor:
-            gain_fc = self.window_gain_sensor.extra_state_attributes.get("forecast", [])
+            wg_attrs = getattr(self.window_gain_sensor, "extra_state_attributes", {})
+            if isinstance(wg_attrs, dict):
+                gain_fc = wg_attrs.get("forecast", []) or []
+                gain_base = _coerce_time_base(wg_attrs.get("forecast_time_base"))
 
         n = max(len(loss_fc), len(gain_fc))
         forecast = []
         for i in range(n):
-            lf = loss_fc[i] if i < len(loss_fc) else 0.0
-            gf = gain_fc[i] if i < len(gain_fc) else 0.0
+            lf = float(loss_fc[i]) if i < len(loss_fc) else 0.0
+            gf = float(gain_fc[i]) if i < len(gain_fc) else 0.0
             forecast.append(round(lf - gf, 3))
 
-        self._extra_attrs = {"forecast": forecast}
+        forecast_base = loss_base or gain_base or 60
+        base_sources: dict[str, int] = {}
+        if loss_base:
+            base_sources["heat_loss"] = loss_base
+        if gain_base:
+            base_sources["window_gain"] = gain_base
+        if loss_base and gain_base and loss_base != gain_base:
+            _LOGGER.warning(
+                "Time-base mismatch between heat loss (%s min) and window gain (%s min)",
+                loss_base,
+                gain_base,
+            )
+
+        attrs: dict[str, Any] = {
+            "forecast": forecast,
+            "forecast_time_base": forecast_base,
+        }
+        if base_sources:
+            attrs["forecast_time_base_sources"] = base_sources
+
+        self._extra_attrs = attrs
 
     async def async_update(self):
         await self._compute_value()
@@ -1499,12 +1548,13 @@ class DiagnosticsSensor(BaseUtilitySensor):
     def extra_state_attributes(self) -> dict[str, list[float]]:
         return self._extra_attrs
 
-    def _resample(self, data: list[float]) -> list[float]:
+    def _resample(self, data: list[float], source_base: int | None = None) -> list[float]:
         result: list[float] = []
+        base = source_base or 60
         for step in range(self.steps):
-            hour_idx = int(step * self.time_base / 60)
-            if hour_idx < len(data):
-                result.append(float(data[hour_idx]))
+            idx = int(step * self.time_base / base)
+            if idx < len(data):
+                result.append(float(data[idx]))
             else:
                 result.append(0.0)
         return result
@@ -1544,7 +1594,8 @@ class DiagnosticsSensor(BaseUtilitySensor):
             if state:
                 forecast = state.attributes.get("forecast", [])
                 attrs["forecast_heat_loss"] = self._resample(
-                    [float(v) for v in forecast]
+                    [float(v) for v in forecast],
+                    _coerce_time_base(state.attributes.get("forecast_time_base")),
                 )
 
         if self.window_gain_sensor is not None:
@@ -1557,7 +1608,8 @@ class DiagnosticsSensor(BaseUtilitySensor):
             if state:
                 forecast = state.attributes.get("forecast", [])
                 attrs["forecast_window_gain"] = self._resample(
-                    [float(v) for v in forecast]
+                    [float(v) for v in forecast],
+                    _coerce_time_base(state.attributes.get("forecast_time_base")),
                 )
 
         if self.price_sensor:
@@ -1768,43 +1820,73 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         self._outdoor_entity_id: str | None = None
         if isinstance(self._outdoor_sensor, str):
             self._outdoor_entity_id = self._outdoor_sensor
+        self._time_base_issues: set[str] = set()
 
     @property
     def extra_state_attributes(self) -> dict[str, list[int] | list[float] | float]:
         return self._extra_attrs
 
-    def _extract_prices(self, state) -> list[float]:
-        prices = extract_price_forecast(state)
+    def _resample_forecast(
+        self,
+        values: Iterable[Any],
+        source_base: int | None,
+        *,
+        label: str,
+        fill_value: float = 0.0,
+    ) -> list[float]:
+        base = source_base or self.time_base
+        numeric_values: list[float] = []
+        for item in values:
+            try:
+                numeric_values.append(float(item))
+            except (TypeError, ValueError):
+                continue
+
+        if not numeric_values:
+            return [float(fill_value)] * self.steps
+
         result: list[float] = []
         for step in range(self.steps):
-            hour_offset = int(step * self.time_base / 60)
-            if hour_offset < len(prices):
-                result.append(float(prices[hour_offset]))
+            minute_offset = step * self.time_base
+            idx = int(minute_offset / base)
+            if idx < len(numeric_values):
+                result.append(numeric_values[idx])
             else:
-                break
+                result.append(float(fill_value))
 
-        if len(result) < self.steps:
-            if prices:
-                fallback = float(prices[-1])
-            else:
-                try:
-                    fallback = float(state.state)
-                except (TypeError, ValueError):
-                    fallback = 0.0
-            result.extend([fallback] * (self.steps - len(result)))
+        if source_base and base != self.time_base:
+            self._time_base_issues.add(
+                f"{label}: forecast uses {base} min steps (expected {self.time_base})"
+            )
 
         return result
 
+    def _extract_prices(self, state) -> list[float]:
+        prices = extract_price_forecast(state)
+        source_base = _coerce_time_base(state.attributes.get("forecast_time_base"))
+        if prices:
+            fallback = float(prices[-1])
+        else:
+            try:
+                fallback = float(state.state)
+            except (TypeError, ValueError):
+                fallback = 0.0
+        return self._resample_forecast(
+            prices,
+            source_base,
+            label="price",
+            fill_value=fallback,
+        )
+
     def _extract_demand(self, state) -> list[float]:
+        source_base = _coerce_time_base(state.attributes.get("forecast_time_base"))
         forecast = state.attributes.get("forecast", [])
-        demand: list[float] = []
-        for step in range(self.steps):
-            hour_idx = int(step * self.time_base / 60)
-            if hour_idx < len(forecast):
-                demand.append(float(forecast[hour_idx]))
-            else:
-                demand.append(0.0)
-        return demand
+        return self._resample_forecast(
+            forecast,
+            source_base,
+            label="net_heat",
+            fill_value=0.0,
+        )
 
     async def _compute_history_baseline(self) -> float:
         try:
@@ -1859,6 +1941,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         )
         price_state = self.hass.states.get(self.price_sensor)
         net_state = self.hass.states.get(ent) if ent else None
+        self._time_base_issues.clear()
 
         if net_state is None:
             self._set_unavailable(f"geen netto warmtevraag sensor gevonden ({ent})")
@@ -1977,6 +2060,8 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             "future_supply_temperatures": supply_temps,
             "base_supply_temperature": round(base_temp, 1),
             "optimization_status": optimization_reason or "OK",
+            "time_base_minutes": self.time_base,
+            "time_base_issues": sorted(self._time_base_issues),
         }
         self._mark_available()
 

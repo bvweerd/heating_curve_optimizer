@@ -83,6 +83,8 @@ async def test_offset_sensor_sets_future_offsets_attribute(hass):
         15,
     ]
     assert "future_supply_temperatures" in sensor.extra_state_attributes
+    assert sensor.extra_state_attributes["time_base_minutes"] == 60
+    assert sensor.extra_state_attributes["time_base_issues"] == []
     await sensor.async_will_remove_from_hass()
 
 
@@ -144,6 +146,8 @@ async def test_offset_sensor_respects_time_base(hass):
 
     assert len(sensor.extra_state_attributes["future_offsets"]) == 4
     assert len(sensor.extra_state_attributes["prices"]) == 4
+    assert sensor.extra_state_attributes["time_base_minutes"] == 30
+    assert sensor.extra_state_attributes["time_base_issues"] == []
 
 
 @pytest.mark.asyncio
@@ -182,6 +186,39 @@ async def test_offset_sensor_uses_internal_outdoor_sensor(hass):
 
     assert sensor.available is True
     assert sensor.extra_state_attributes["base_supply_temperature"] is not None
+
+
+@pytest.mark.asyncio
+async def test_offset_sensor_flags_time_base_mismatch(hass):
+    hass.states.async_set(
+        "sensor.net_heat",
+        "1",
+        {"forecast": [0.5] * 8, "forecast_time_base": 30},
+    )
+    hass.states.async_set(
+        "sensor.price",
+        "0.0",
+        {"raw_today": [0.1] * 24, "raw_tomorrow": []},
+    )
+    hass.states.async_set("sensor.outdoor_temperature", "5")
+
+    with patch(
+        "custom_components.heating_curve_optimizer.sensor._optimize_offsets",
+        return_value=([0] * 6, [0.0] * 6),
+    ):
+        sensor = HeatingCurveOffsetSensor(
+            hass=hass,
+            name="Heating Curve Offset",
+            unique_id="offset_timebase_mismatch",
+            net_heat_sensor="sensor.net_heat",
+            price_sensor="sensor.price",
+            device=DeviceInfo(identifiers={("test", "tbm")}),
+        )
+
+        await sensor.async_update()
+
+    issues = sensor.extra_state_attributes["time_base_issues"]
+    assert any("net_heat" in issue for issue in issues)
 
 
 @pytest.mark.asyncio
