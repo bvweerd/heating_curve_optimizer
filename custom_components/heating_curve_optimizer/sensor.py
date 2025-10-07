@@ -11,7 +11,11 @@ from datetime import datetime, timedelta
 import aiohttp
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import pycares  # noqa: F401
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers.entity import DeviceInfo
@@ -1776,6 +1780,34 @@ def _optimize_offsets(
     return result, buffer_evolution
 
 
+def _calculate_buffer_energy(
+    offsets: list[int],
+    demand: list[float],
+    *,
+    time_base: int,
+) -> list[float]:
+    """Convert offset evolution to stored thermal energy in kWh."""
+
+    if time_base <= 0:
+        step_hours = 1.0
+    else:
+        step_hours = time_base / 60.0
+
+    energy_evolution: list[float] = []
+    buffer_energy = 0.0
+
+    for idx, offset in enumerate(offsets):
+        if idx < len(demand):
+            heat_demand = max(float(demand[idx]), 0.0)
+        else:
+            heat_demand = 0.0
+
+        buffer_energy += offset * heat_demand * step_hours
+        energy_evolution.append(round(buffer_energy, 3))
+
+    return energy_evolution
+
+
 class HeatingCurveOffsetSensor(BaseUtilitySensor):
     def __init__(
         self,
@@ -2025,7 +2057,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             )
 
         if optimization_reason is None:
-            offsets, buffer_evolution = await self.hass.async_add_executor_job(
+            offsets, buffer_offset_evolution = await self.hass.async_add_executor_job(
                 partial(
                     _optimize_offsets,
                     base_temp=base_temp,
@@ -2039,11 +2071,19 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
                 prices,
             )
             _LOGGER.debug(
-                "Calculated offsets=%s buffer_evolution=%s", offsets, buffer_evolution
+                "Calculated offsets=%s buffer_evolution=%s",
+                offsets,
+                buffer_offset_evolution,
             )
         else:
             offsets = [0 for _ in range(self.steps)]
-            buffer_evolution = [0.0 for _ in range(self.steps)]
+            buffer_offset_evolution = [0.0 for _ in range(self.steps)]
+
+        buffer_energy_evolution = _calculate_buffer_energy(
+            offsets,
+            demand,
+            time_base=self.time_base,
+        )
 
         if offsets:
             self._attr_native_value = offsets[0]
@@ -2059,7 +2099,8 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         self._extra_attrs = {
             "future_offsets": offsets,
             "prices": prices,
-            "buffer_evolution": buffer_evolution,
+            "buffer_evolution": buffer_energy_evolution,
+            "buffer_evolution_offsets": buffer_offset_evolution,
             "total_energy": round(total_energy, 3),
             "future_supply_temperatures": supply_temps,
             "base_supply_temperature": round(base_temp, 1),
@@ -2110,8 +2151,8 @@ class HeatBufferSensor(BaseUtilitySensor):
         super().__init__(
             name=name,
             unique_id=unique_id,
-            unit="°C",
-            device_class="temperature",
+            unit="kWh",
+            device_class=SensorDeviceClass.ENERGY,
             icon="mdi:database",
             visible=True,
             device=device,
