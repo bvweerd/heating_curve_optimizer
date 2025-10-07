@@ -547,6 +547,11 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                 {},
             )
         )
+        if (
+            (price_sensor := _get(CONF_PRICE_SENSOR))
+            and CONF_PRICE_SENSOR not in self.price_settings
+        ):
+            self.price_settings[CONF_PRICE_SENSOR] = price_sensor
         self.source_type: str | None = None
         self.sources: list[str] | None = None
 
