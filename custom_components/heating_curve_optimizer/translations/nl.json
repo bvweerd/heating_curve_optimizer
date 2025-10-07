@@ -21,6 +21,11 @@
   }
 ,
   "entity": {
+    "binary_sensor": {
+      "heat_pump_demand": {
+        "name": "Warmtevraag warmtepomp"
+      }
+    },
     "sensor": {
       "heat_pump_cop": {
         "state": {

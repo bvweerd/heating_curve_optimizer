@@ -97,6 +97,51 @@ async def test_offset_sensor_sets_future_offsets_attribute(hass):
 
 
 @pytest.mark.asyncio
+async def test_offset_sensor_uses_solar_buffer(hass):
+    hass.states.async_set(
+        "sensor.net_heat",
+        "1",
+        {"forecast": [-1.0, 2.0, 1.0]},
+    )
+    hass.states.async_set(
+        "sensor.price",
+        "0.0",
+        {"raw_today": [0.0] * 24, "raw_tomorrow": []},
+    )
+    hass.states.async_set("sensor.outdoor_temperature", "0")
+
+    sensor = HeatingCurveOffsetSensor(
+        hass=hass,
+        name="Heating Curve Offset",
+        unique_id="offset_solar",
+        net_heat_sensor="sensor.net_heat",
+        price_sensor="sensor.price",
+        device=DeviceInfo(identifiers={("test", "solar")}),
+        planning_window=3,
+        time_base=60,
+    )
+
+    with patch(
+        "custom_components.heating_curve_optimizer.sensor._optimize_offsets",
+        return_value=([0, 0, 0], [0.0, 0.0, 0.0]),
+    ) as mocked_optimize:
+        await sensor.async_update()
+
+    assert mocked_optimize.call_args is not None
+    optimized_demand = mocked_optimize.call_args[0][0]
+    assert optimized_demand == [0.0, 1.0, 1.0]
+
+    attrs = sensor.extra_state_attributes
+    assert attrs["raw_net_heat_forecast"][:3] == [-1.0, 2.0, 1.0]
+    assert attrs["net_heat_forecast_after_solar"] == [0.0, 1.0, 1.0]
+    assert attrs["solar_buffer_evolution"] == [1.0, 0.0, 0.0]
+    assert attrs["solar_gain_available_kwh"] == 1.0
+    assert attrs["solar_gain_remaining_kwh"] == 0.0
+
+    await sensor.async_will_remove_from_hass()
+
+
+@pytest.mark.asyncio
 async def test_offset_sensor_has_measurement_state_class(hass):
     sensor = HeatingCurveOffsetSensor(
         hass=hass,
