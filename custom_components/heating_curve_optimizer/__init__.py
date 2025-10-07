@@ -52,6 +52,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         hass.data[DOMAIN].pop("entities", None)
         hass.data[DOMAIN].pop(entry.entry_id, None)
+        runtime = hass.data[DOMAIN].get("runtime")
+        if runtime and entry.entry_id in runtime:
+            runtime.pop(entry.entry_id, None)
+            if not runtime:
+                hass.data[DOMAIN].pop("runtime")
         _LOGGER.debug("Successfully unloaded entry %s", entry.entry_id)
         if not hass.data[DOMAIN]:
             hass.data.pop(DOMAIN)

@@ -597,6 +597,8 @@ class NetHeatLossSensor(BaseUtilitySensor):
         outdoor_sensor: str | SensorEntity,
         heat_loss_sensor: HeatLossSensor | None = None,
         window_gain_sensor: WindowSolarGainSensor | None = None,
+        *,
+        config_entry_id: str | None = None,
     ):
         super().__init__(
             name=name,
@@ -617,6 +619,7 @@ class NetHeatLossSensor(BaseUtilitySensor):
         self.window_gain_sensor = window_gain_sensor
         self.outdoor_sensor = outdoor_sensor
         self._extra_attrs: dict[str, list[float]] = {}
+        self._config_entry_id = config_entry_id
 
     @property
     def extra_state_attributes(self) -> dict[str, list[float]]:
@@ -740,12 +743,35 @@ class NetHeatLossSensor(BaseUtilitySensor):
                     self._handle_change,
                 )
             )
+        if self._config_entry_id:
+            runtime = self.hass.data.setdefault(DOMAIN, {}).setdefault("runtime", {})
+            entry_data = runtime.setdefault(self._config_entry_id, {})
+            entry_data["net_heat_entity"] = self.entity_id
+            entry_data["net_heat_unique_id"] = self.unique_id
+            entry_data.setdefault("net_heat_sensor_object", self)
 
     async def _handle_change(self, event):
         await self._compute_value()
         self.async_write_ha_state()
 
     async def async_will_remove_from_hass(self):
+        if self._config_entry_id:
+            runtime = self.hass.data.get(DOMAIN, {}).get("runtime")
+            if runtime:
+                entry_data = runtime.get(self._config_entry_id)
+                if entry_data:
+                    if entry_data.get("net_heat_entity") == self.entity_id:
+                        entry_data.pop("net_heat_entity", None)
+                    if entry_data.get("net_heat_unique_id") == self.unique_id:
+                        entry_data.pop("net_heat_unique_id", None)
+                    if entry_data.get("net_heat_sensor_object") is self:
+                        entry_data.pop("net_heat_sensor_object", None)
+                    if not entry_data:
+                        runtime.pop(self._config_entry_id, None)
+                if not runtime:
+                    domain_data = self.hass.data.get(DOMAIN)
+                    if domain_data is not None:
+                        domain_data.pop("runtime", None)
         await super().async_will_remove_from_hass()
 
 
@@ -1924,6 +1950,43 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             fill_value=0.0,
         )
 
+    def _apply_solar_buffer(
+        self, demand: list[float]
+    ) -> tuple[list[float], list[float], float, float, float]:
+        """Use negative demand as a solar buffer inside the planning window."""
+
+        if self.time_base <= 0:
+            step_hours = 1.0
+        else:
+            step_hours = self.time_base / 60.0
+
+        buffer_kwh = 0.0
+        total_gain_kwh = 0.0
+        adjusted: list[float] = []
+        evolution: list[float] = []
+
+        for value in demand:
+            try:
+                heat = float(value)
+            except (TypeError, ValueError):
+                heat = 0.0
+            energy = heat * step_hours
+            if energy < 0:
+                gain = -energy
+                total_gain_kwh += gain
+                buffer_kwh += gain
+                adjusted.append(0.0)
+            else:
+                usable = min(buffer_kwh, energy)
+                energy -= usable
+                buffer_kwh -= usable
+                adjusted_value = energy / step_hours if step_hours > 0 else 0.0
+                adjusted.append(adjusted_value)
+            evolution.append(round(buffer_kwh, 3))
+
+        used_gain = total_gain_kwh - buffer_kwh
+        return adjusted, evolution, total_gain_kwh, buffer_kwh, used_gain
+
     async def _compute_history_baseline(self) -> float:
         try:
             from homeassistant.components.recorder import get_instance
@@ -1996,14 +2059,27 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             )
             return
 
-        demand = self._extract_demand(net_state)
+        raw_demand = self._extract_demand(net_state)
         baseline = await self._compute_history_baseline()
         if baseline:
-            demand = [d + baseline for d in demand]
+            baseline_adjusted = [d + baseline for d in raw_demand]
+        else:
+            baseline_adjusted = list(raw_demand)
+        (
+            demand,
+            solar_buffer_evolution,
+            solar_gain_total,
+            solar_buffer_remaining,
+            solar_gain_used,
+        ) = self._apply_solar_buffer(baseline_adjusted)
         prices = self._extract_prices(price_state)
         total_energy = sum(demand)
         _LOGGER.debug(
-            "Offset sensor demand=%s prices=%s baseline=%s", demand, prices, baseline
+            "Offset sensor demand=%s prices=%s baseline=%s solar_buffer=%s",
+            demand,
+            prices,
+            baseline,
+            solar_buffer_evolution,
         )
 
         data = self.hass.data.get(DOMAIN, {})
@@ -2107,6 +2183,15 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             "optimization_status": optimization_reason or "OK",
             "time_base_minutes": self.time_base,
             "time_base_issues": sorted(self._time_base_issues),
+            "raw_net_heat_forecast": [round(v, 3) for v in raw_demand],
+            "baseline_adjusted_net_heat_forecast": [
+                round(v, 3) for v in baseline_adjusted
+            ],
+            "net_heat_forecast_after_solar": [round(v, 3) for v in demand],
+            "solar_buffer_evolution": solar_buffer_evolution,
+            "solar_gain_available_kwh": round(solar_gain_total, 3),
+            "solar_gain_used_kwh": round(solar_gain_used, 3),
+            "solar_gain_remaining_kwh": round(solar_buffer_remaining, 3),
         }
         self._mark_available()
 
@@ -2729,8 +2814,12 @@ async def async_setup_entry(
             heat_loss_sensor=heat_loss_sensor,
             window_gain_sensor=window_gain_sensor,
             outdoor_sensor=outdoor_temp_sensor,
+            config_entry_id=entry.entry_id,
         )
         entities.append(net_heat_sensor)
+        hass.data.setdefault(DOMAIN, {}).setdefault("runtime", {}).setdefault(
+            entry.entry_id, {}
+        )["net_heat_sensor_object"] = net_heat_sensor
 
     cop_sensor_entity = None
     thermal_power_sensor_entity = None
