@@ -518,31 +518,29 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                 CONF_CONFIGS, config_entry.data.get(CONF_CONFIGS, [])
             )
         )
-        self.area_m2 = config_entry.data.get(CONF_AREA_M2)
-        self.energy_label = config_entry.data.get(CONF_ENERGY_LABEL)
-        self.glass_east_m2 = config_entry.data.get(CONF_GLASS_EAST_M2)
-        self.glass_west_m2 = config_entry.data.get(CONF_GLASS_WEST_M2)
-        self.glass_south_m2 = config_entry.data.get(CONF_GLASS_SOUTH_M2)
-        self.glass_u_value = config_entry.data.get(CONF_GLASS_U_VALUE, 1.2)
-        self.indoor_temperature_sensor = config_entry.data.get(
-            CONF_INDOOR_TEMPERATURE_SENSOR
-        )
-        self.power_consumption = config_entry.data.get(CONF_POWER_CONSUMPTION)
-        self.supply_temperature_sensor = config_entry.data.get(
-            CONF_SUPPLY_TEMPERATURE_SENSOR
-        )
-        self.k_factor = config_entry.data.get(CONF_K_FACTOR)
-        self.base_cop = config_entry.data.get(CONF_BASE_COP, DEFAULT_COP_AT_35)
-        self.outdoor_temp_coefficient = config_entry.data.get(
+
+        def _get(key: str, default=None):
+            return config_entry.options.get(key, config_entry.data.get(key, default))
+
+        self.area_m2 = _get(CONF_AREA_M2)
+        self.energy_label = _get(CONF_ENERGY_LABEL)
+        self.glass_east_m2 = _get(CONF_GLASS_EAST_M2)
+        self.glass_west_m2 = _get(CONF_GLASS_WEST_M2)
+        self.glass_south_m2 = _get(CONF_GLASS_SOUTH_M2)
+        self.glass_u_value = _get(CONF_GLASS_U_VALUE, 1.2)
+        self.indoor_temperature_sensor = _get(CONF_INDOOR_TEMPERATURE_SENSOR)
+        self.power_consumption = _get(CONF_POWER_CONSUMPTION)
+        self.supply_temperature_sensor = _get(CONF_SUPPLY_TEMPERATURE_SENSOR)
+        self.k_factor = _get(CONF_K_FACTOR)
+        self.base_cop = _get(CONF_BASE_COP, DEFAULT_COP_AT_35)
+        self.outdoor_temp_coefficient = _get(
             CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
         )
-        self.cop_compensation_factor = config_entry.data.get(
+        self.cop_compensation_factor = _get(
             CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR
         )
-        self.planning_window = config_entry.data.get(
-            CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW
-        )
-        self.time_base = config_entry.data.get(CONF_TIME_BASE, DEFAULT_TIME_BASE)
+        self.planning_window = _get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
+        self.time_base = _get(CONF_TIME_BASE, DEFAULT_TIME_BASE)
         self.price_settings = copy.deepcopy(
             config_entry.options.get(
                 CONF_PRICE_SETTINGS,
