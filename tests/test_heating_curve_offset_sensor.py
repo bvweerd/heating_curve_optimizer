@@ -2,6 +2,7 @@ import pytest
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from custom_components.heating_curve_optimizer import sensor
+from custom_components.heating_curve_optimizer.const import DOMAIN
 from custom_components.heating_curve_optimizer.sensor import (
     HeatingCurveOffsetSensor,
     NetHeatLossSensor,
@@ -47,7 +48,7 @@ async def test_offset_sensor_handles_sensor_instance(hass):
 
 @pytest.mark.asyncio
 async def test_offset_sensor_sets_future_offsets_attribute(hass):
-    hass.states.async_set("sensor.net_heat", "1", {"forecast": [0.0] * 6})
+    hass.states.async_set("sensor.net_heat", "1", {"forecast": [0.5] * 6})
     hass.states.async_set(
         "sensor.price",
         "0.0",
@@ -181,3 +182,68 @@ async def test_offset_sensor_uses_internal_outdoor_sensor(hass):
 
     assert sensor.available is True
     assert sensor.extra_state_attributes["base_supply_temperature"] is not None
+
+
+@pytest.mark.asyncio
+async def test_offset_sensor_reports_no_positive_demand_reason(hass):
+    hass.states.async_set(
+        "sensor.net_heat",
+        "1",
+        {"forecast": [-0.2, -0.1, 0.0, -0.3, 0.0, -0.2]},
+    )
+    hass.states.async_set(
+        "sensor.price",
+        "0.0",
+        {"raw_today": [0.0] * 24, "raw_tomorrow": []},
+    )
+    hass.states.async_set("sensor.outdoor_temperature", "5")
+
+    sensor = HeatingCurveOffsetSensor(
+        hass=hass,
+        name="Heating Curve Offset",
+        unique_id="offset_reason_demand",
+        net_heat_sensor="sensor.net_heat",
+        price_sensor="sensor.price",
+        device=DeviceInfo(identifiers={("test", "reason1")}),
+    )
+
+    await sensor.async_update()
+
+    attrs = sensor.extra_state_attributes
+    assert all(v == 0 for v in attrs["future_offsets"])
+    assert "totale warmtevraag" in attrs["optimization_status"]
+
+
+@pytest.mark.asyncio
+async def test_offset_sensor_reports_no_offset_range_reason(hass):
+    hass.states.async_set(
+        "sensor.net_heat",
+        "1",
+        {"forecast": [0.5] * 6},
+    )
+    hass.states.async_set(
+        "sensor.price",
+        "0.0",
+        {"raw_today": [0.0] * 24, "raw_tomorrow": []},
+    )
+    hass.states.async_set("sensor.outdoor_temperature", "5")
+
+    hass.data.setdefault(DOMAIN, {})["heat_curve_min"] = 30.0
+    hass.data[DOMAIN]["heat_curve_max"] = 30.0
+    hass.data[DOMAIN]["heat_curve_min_outdoor"] = -20.0
+    hass.data[DOMAIN]["heat_curve_max_outdoor"] = 15.0
+
+    sensor = HeatingCurveOffsetSensor(
+        hass=hass,
+        name="Heating Curve Offset",
+        unique_id="offset_reason_range",
+        net_heat_sensor="sensor.net_heat",
+        price_sensor="sensor.price",
+        device=DeviceInfo(identifiers={("test", "reason2")}),
+    )
+
+    await sensor.async_update()
+
+    attrs = sensor.extra_state_attributes
+    assert all(v == 0 for v in attrs["future_offsets"])
+    assert "stooklijn" in attrs["optimization_status"]
