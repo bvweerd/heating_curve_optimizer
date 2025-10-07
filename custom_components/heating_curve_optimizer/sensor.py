@@ -1548,7 +1548,9 @@ class DiagnosticsSensor(BaseUtilitySensor):
     def extra_state_attributes(self) -> dict[str, list[float]]:
         return self._extra_attrs
 
-    def _resample(self, data: list[float], source_base: int | None = None) -> list[float]:
+    def _resample(
+        self, data: list[float], source_base: int | None = None
+    ) -> list[float]:
         result: list[float] = []
         base = source_base or 60
         for step in range(self.steps):
