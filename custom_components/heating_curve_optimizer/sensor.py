@@ -267,7 +267,10 @@ class HeatLossSensor(BaseUtilitySensor):
             return
 
         state = self.hass.states.get(entity_id)
-        if isinstance(self.outdoor_sensor, SensorEntity) and self.outdoor_sensor.entity_id:
+        if (
+            isinstance(self.outdoor_sensor, SensorEntity)
+            and self.outdoor_sensor.entity_id
+        ):
             self.outdoor_sensor = self.outdoor_sensor.entity_id
             entity_id = cast(str, self.outdoor_sensor)
             sensor_name = entity_id
@@ -283,9 +286,7 @@ class HeatLossSensor(BaseUtilitySensor):
         try:
             current = float(state.state)
         except ValueError:
-            self._set_unavailable(
-                f"waarde van buitensensor {sensor_name} is ongeldig"
-            )
+            self._set_unavailable(f"waarde van buitensensor {sensor_name} is ongeldig")
             return
         forecast = [
             float(v)
@@ -515,7 +516,10 @@ class NetHeatLossSensor(BaseUtilitySensor):
             return
 
         state = self.hass.states.get(entity_id)
-        if isinstance(self.outdoor_sensor, SensorEntity) and self.outdoor_sensor.entity_id:
+        if (
+            isinstance(self.outdoor_sensor, SensorEntity)
+            and self.outdoor_sensor.entity_id
+        ):
             self.outdoor_sensor = self.outdoor_sensor.entity_id
             entity_id = cast(str, self.outdoor_sensor)
             sensor_name = entity_id
@@ -531,9 +535,7 @@ class NetHeatLossSensor(BaseUtilitySensor):
         try:
             t_outdoor = float(state.state)
         except ValueError:
-            self._set_unavailable(
-                f"waarde van buitensensor {sensor_name} is ongeldig"
-            )
+            self._set_unavailable(f"waarde van buitensensor {sensor_name} is ongeldig")
             return
 
         solar_total = 0.0
@@ -738,7 +740,10 @@ class QuadraticCopSensor(BaseUtilitySensor):
             return
 
         o_state = self.hass.states.get(entity_id)
-        if isinstance(self.outdoor_sensor, SensorEntity) and self.outdoor_sensor.entity_id:
+        if (
+            isinstance(self.outdoor_sensor, SensorEntity)
+            and self.outdoor_sensor.entity_id
+        ):
             self.outdoor_sensor = self.outdoor_sensor.entity_id
             entity_id = cast(str, self.outdoor_sensor)
             sensor_name = entity_id
@@ -754,9 +759,7 @@ class QuadraticCopSensor(BaseUtilitySensor):
         try:
             o_temp = float(o_state.state)
         except ValueError:
-            self._set_unavailable(
-                f"waarde van buitensensor {sensor_name} is ongeldig"
-            )
+            self._set_unavailable(f"waarde van buitensensor {sensor_name} is ongeldig")
             return
 
         cop = (
@@ -846,7 +849,10 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
             return
 
         o_state = self.hass.states.get(entity_id)
-        if isinstance(self.outdoor_sensor, SensorEntity) and self.outdoor_sensor.entity_id:
+        if (
+            isinstance(self.outdoor_sensor, SensorEntity)
+            and self.outdoor_sensor.entity_id
+        ):
             self.outdoor_sensor = self.outdoor_sensor.entity_id
             entity_id = cast(str, self.outdoor_sensor)
             sensor_name = entity_id
@@ -877,9 +883,7 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
         try:
             o_temp = float(o_state.state)
         except ValueError:
-            self._set_unavailable(
-                f"waarde van buitensensor {sensor_name} is ongeldig"
-            )
+            self._set_unavailable(f"waarde van buitensensor {sensor_name} is ongeldig")
             return
         cop = self.base_cop + 0.08 * o_temp - self.k_factor * (s_temp - 35)
         thermal_power = power * cop / 1000.0
