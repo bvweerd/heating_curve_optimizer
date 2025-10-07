@@ -33,6 +33,8 @@ from .const import (
     CONF_OUTDOOR_TEMP_COEFFICIENT,
     CONF_POWER_CONSUMPTION,
     CONF_PRICE_SENSOR,
+    CONF_CONSUMPTION_PRICE_SENSOR,
+    CONF_PRODUCTION_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
     CONF_PLANNING_WINDOW,
     CONF_TIME_BASE,
@@ -2540,26 +2542,36 @@ async def async_setup_entry(
     planning_window = int(entry.data.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW))
     time_base = int(entry.data.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
 
-    price_sensor = entry.data.get(CONF_PRICE_SENSOR)
+    price_sensor = entry.options.get(CONF_PRICE_SENSOR, entry.data.get(CONF_PRICE_SENSOR))
+    consumption_price_sensor = entry.options.get(
+        CONF_CONSUMPTION_PRICE_SENSOR,
+        entry.data.get(CONF_CONSUMPTION_PRICE_SENSOR, price_sensor),
+    )
+    production_price_sensor = entry.options.get(
+        CONF_PRODUCTION_PRICE_SENSOR,
+        entry.data.get(CONF_PRODUCTION_PRICE_SENSOR, price_sensor),
+    )
+
     consumption_price_entity = None
-    if price_sensor:
+    if consumption_price_sensor:
         consumption_price_entity = CurrentElectricityPriceSensor(
             hass=hass,
             name="Current Consumption Price",
             unique_id=f"{entry.entry_id}_current_consumption_price",
-            price_sensor=price_sensor,
+            price_sensor=consumption_price_sensor,
             source_type=SOURCE_TYPE_CONSUMPTION,
             price_settings=price_settings,
             icon="mdi:transmission-tower-import",
             device=price_device_info,
         )
         entities.append(consumption_price_entity)
+    if production_price_sensor:
         entities.append(
             CurrentElectricityPriceSensor(
                 hass=hass,
                 name="Current Production Price",
                 unique_id=f"{entry.entry_id}_current_production_price",
-                price_sensor=price_sensor,
+                price_sensor=production_price_sensor,
                 source_type=SOURCE_TYPE_PRODUCTION,
                 price_settings=price_settings,
                 icon="mdi:transmission-tower-export",
@@ -2622,9 +2634,16 @@ async def async_setup_entry(
             )
         )
 
-    if price_sensor and forecast_entity and consumption_price_entity:
+    if consumption_price_sensor and forecast_entity and consumption_price_entity:
         price_levels = {
-            k: float(v) for k, v in price_settings.items() if k != CONF_PRICE_SENSOR
+            k: float(v)
+            for k, v in price_settings.items()
+            if k
+            not in (
+                CONF_PRICE_SENSOR,
+                CONF_CONSUMPTION_PRICE_SENSOR,
+                CONF_PRODUCTION_PRICE_SENSOR,
+            )
         }
         if price_levels:
             entities.append(
@@ -2687,7 +2706,14 @@ async def async_setup_entry(
             )
             entities.append(thermal_power_sensor_entity)
 
-    if heat_loss_sensor or window_gain_sensor or price_sensor or cop_sensor_entity:
+    diagnostics_price_sensor = consumption_price_sensor or production_price_sensor
+
+    if (
+        heat_loss_sensor
+        or window_gain_sensor
+        or diagnostics_price_sensor
+        or cop_sensor_entity
+    ):
         entities.append(
             DiagnosticsSensor(
                 hass=hass,
@@ -2695,7 +2721,7 @@ async def async_setup_entry(
                 unique_id=f"{entry.entry_id}_diagnostics",
                 heat_loss_sensor=heat_loss_sensor,
                 window_gain_sensor=window_gain_sensor,
-                price_sensor=price_sensor,
+                price_sensor=diagnostics_price_sensor,
                 cop_sensor=cop_sensor_entity,
                 device=device_info,
                 planning_window=planning_window,
@@ -2704,13 +2730,13 @@ async def async_setup_entry(
         )
 
     heating_curve_offset_sensor = None
-    if net_heat_sensor and price_sensor:
+    if net_heat_sensor and consumption_price_sensor:
         heating_curve_offset_sensor = HeatingCurveOffsetSensor(
             hass=hass,
             name="Heating Curve Offset",
             unique_id=f"{entry.entry_id}_heating_curve_offset",
             net_heat_sensor=net_heat_sensor,
-            price_sensor=price_sensor,
+            price_sensor=consumption_price_sensor,
             device=device_info,
             k_factor=k_factor,
             cop_compensation_factor=cop_compensation_factor,
