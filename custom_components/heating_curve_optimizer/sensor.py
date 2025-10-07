@@ -1922,22 +1922,41 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             outdoor_max=outdoor_max,
         )
 
-        offsets, buffer_evolution = await self.hass.async_add_executor_job(
-            partial(
-                _optimize_offsets,
-                base_temp=base_temp,
-                k_factor=self.k_factor,
-                cop_compensation_factor=self.cop_compensation_factor,
-                buffer=0.0,
-                water_min=water_min,
-                water_max=water_max,
-            ),
-            demand,
-            prices,
-        )
-        _LOGGER.debug(
-            "Calculated offsets=%s buffer_evolution=%s", offsets, buffer_evolution
-        )
+        allowed_offsets = [
+            o for o in range(-4, 5) if water_min <= base_temp + o <= water_max
+        ]
+        optimization_reason: str | None = None
+        if total_energy <= 0:
+            optimization_reason = "Geen optimalisatie: de totale warmtevraag in het venster is niet positief."
+        elif not any(d > 0 for d in demand):
+            optimization_reason = (
+                "Geen optimalisatie: de voorspelde netto warmtevraag is niet positief."
+            )
+        elif len(allowed_offsets) <= 1:
+            optimization_reason = (
+                "Geen optimalisatie: de ingestelde stooklijn laat geen afwijking toe."
+            )
+
+        if optimization_reason is None:
+            offsets, buffer_evolution = await self.hass.async_add_executor_job(
+                partial(
+                    _optimize_offsets,
+                    base_temp=base_temp,
+                    k_factor=self.k_factor,
+                    cop_compensation_factor=self.cop_compensation_factor,
+                    buffer=0.0,
+                    water_min=water_min,
+                    water_max=water_max,
+                ),
+                demand,
+                prices,
+            )
+            _LOGGER.debug(
+                "Calculated offsets=%s buffer_evolution=%s", offsets, buffer_evolution
+            )
+        else:
+            offsets = [0 for _ in range(self.steps)]
+            buffer_evolution = [0.0 for _ in range(self.steps)]
 
         if offsets:
             self._attr_native_value = offsets[0]
@@ -1957,6 +1976,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             "total_energy": round(total_energy, 3),
             "future_supply_temperatures": supply_temps,
             "base_supply_temperature": round(base_temp, 1),
+            "optimization_status": optimization_reason or "OK",
         }
         self._mark_available()
 
