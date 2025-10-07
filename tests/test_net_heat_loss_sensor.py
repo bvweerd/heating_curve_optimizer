@@ -30,4 +30,5 @@ async def test_net_heat_loss_sensor_combines_sources(hass):
     await sensor.async_update()
     assert sensor.native_value == pytest.approx(0.066, rel=1e-3)
     assert sensor.extra_state_attributes["forecast"] == [0.05, 0.15]
+    assert sensor.extra_state_attributes["forecast_time_base"] == 60
     await sensor.async_will_remove_from_hass()

@@ -26,6 +26,7 @@ async def test_heat_loss_sensor_uses_outdoor_sensor(hass):
     await sensor.async_update()
     assert sensor.native_value == 0.096
     assert sensor.extra_state_attributes["forecast"] == [0.102, 0.09]
+    assert sensor.extra_state_attributes["forecast_time_base"] == 60
     await sensor.async_will_remove_from_hass()
 
 
