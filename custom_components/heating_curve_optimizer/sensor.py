@@ -2304,7 +2304,7 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
 
     async def _fetch_history(self, sensors: list[str], start, end) -> dict[str, list]:
         """Fetch history data for the given sensors."""  # mypy: ignore-errors
-        from homeassistant.components.recorder import history
+        from homeassistant.components.recorder import get_instance, history
 
         if not sensors:
             return {}
@@ -2319,9 +2319,14 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
         func = cast(Any, history.get_significant_states)
 
         try:
+            instance = get_instance(self.hass)
+        except Exception:  # pragma: no cover - defensive, instance should exist
+            instance = None
+
+        try:
             return cast(
                 dict[str, list],
-                await self.hass.async_add_executor_job(
+                await (instance.async_add_executor_job if instance else self.hass.async_add_executor_job)(
                     func,
                     self.hass,
                     start,
@@ -2338,7 +2343,7 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
             for sensor in sensors:
                 data = cast(
                     dict[str, list],
-                    await self.hass.async_add_executor_job(
+                    await (instance.async_add_executor_job if instance else self.hass.async_add_executor_job)(
                         func,
                         self.hass,
                         start,
