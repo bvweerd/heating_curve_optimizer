@@ -108,12 +108,16 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         data_schema=self._schema_user(),
                         errors={"base": "no_blocks"},
                     )
-                consumption_price_sensor = self.consumption_price_sensor or self.price_settings.get(
-                    CONF_CONSUMPTION_PRICE_SENSOR
-                ) or self.price_settings.get(CONF_PRICE_SENSOR)
-                production_price_sensor = self.production_price_sensor or self.price_settings.get(
-                    CONF_PRODUCTION_PRICE_SENSOR
-                ) or consumption_price_sensor
+                consumption_price_sensor = (
+                    self.consumption_price_sensor
+                    or self.price_settings.get(CONF_CONSUMPTION_PRICE_SENSOR)
+                    or self.price_settings.get(CONF_PRICE_SENSOR)
+                )
+                production_price_sensor = (
+                    self.production_price_sensor
+                    or self.price_settings.get(CONF_PRODUCTION_PRICE_SENSOR)
+                    or consumption_price_sensor
+                )
                 return self.async_create_entry(
                     title="Heating Curve Optimizer",
                     data={
@@ -496,13 +500,19 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if state.attributes.get("device_class") == "monetary"
             or state.attributes.get("unit_of_measurement") == "€/kWh"
         ]
-        current_consumption_sensor = self.consumption_price_sensor or self.price_settings.get(
-            CONF_CONSUMPTION_PRICE_SENSOR,
-            self.price_settings.get(CONF_PRICE_SENSOR, ""),
+        current_consumption_sensor = (
+            self.consumption_price_sensor
+            or self.price_settings.get(
+                CONF_CONSUMPTION_PRICE_SENSOR,
+                self.price_settings.get(CONF_PRICE_SENSOR, ""),
+            )
         )
-        current_production_sensor = self.production_price_sensor or self.price_settings.get(
-            CONF_PRODUCTION_PRICE_SENSOR,
-            current_consumption_sensor,
+        current_production_sensor = (
+            self.production_price_sensor
+            or self.price_settings.get(
+                CONF_PRODUCTION_PRICE_SENSOR,
+                current_consumption_sensor,
+            )
         )
 
         schema_fields: dict[Any, Any] = {
@@ -649,12 +659,16 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         data_schema=self._schema_user(),
                         errors={"base": "no_blocks"},
                     )
-                consumption_price_sensor = self.consumption_price_sensor or self.price_settings.get(
-                    CONF_CONSUMPTION_PRICE_SENSOR
-                ) or self.price_settings.get(CONF_PRICE_SENSOR)
-                production_price_sensor = self.production_price_sensor or self.price_settings.get(
-                    CONF_PRODUCTION_PRICE_SENSOR
-                ) or consumption_price_sensor
+                consumption_price_sensor = (
+                    self.consumption_price_sensor
+                    or self.price_settings.get(CONF_CONSUMPTION_PRICE_SENSOR)
+                    or self.price_settings.get(CONF_PRICE_SENSOR)
+                )
+                production_price_sensor = (
+                    self.production_price_sensor
+                    or self.price_settings.get(CONF_PRODUCTION_PRICE_SENSOR)
+                    or consumption_price_sensor
+                )
                 return self.async_create_entry(
                     title="",
                     data={
@@ -875,13 +889,19 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             if state.attributes.get("device_class") == "monetary"
             or state.attributes.get("unit_of_measurement") == "€/kWh"
         ]
-        current_consumption_sensor = self.consumption_price_sensor or self.price_settings.get(
-            CONF_CONSUMPTION_PRICE_SENSOR,
-            self.price_settings.get(CONF_PRICE_SENSOR, ""),
+        current_consumption_sensor = (
+            self.consumption_price_sensor
+            or self.price_settings.get(
+                CONF_CONSUMPTION_PRICE_SENSOR,
+                self.price_settings.get(CONF_PRICE_SENSOR, ""),
+            )
         )
-        current_production_sensor = self.production_price_sensor or self.price_settings.get(
-            CONF_PRODUCTION_PRICE_SENSOR,
-            current_consumption_sensor,
+        current_production_sensor = (
+            self.production_price_sensor
+            or self.price_settings.get(
+                CONF_PRODUCTION_PRICE_SENSOR,
+                current_consumption_sensor,
+            )
         )
 
         schema_fields = {

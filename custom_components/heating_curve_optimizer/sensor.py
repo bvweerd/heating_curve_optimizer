@@ -2542,7 +2542,9 @@ async def async_setup_entry(
     planning_window = int(entry.data.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW))
     time_base = int(entry.data.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
 
-    price_sensor = entry.options.get(CONF_PRICE_SENSOR, entry.data.get(CONF_PRICE_SENSOR))
+    price_sensor = entry.options.get(
+        CONF_PRICE_SENSOR, entry.data.get(CONF_PRICE_SENSOR)
+    )
     consumption_price_sensor = entry.options.get(
         CONF_CONSUMPTION_PRICE_SENSOR,
         entry.data.get(CONF_CONSUMPTION_PRICE_SENSOR, price_sensor),
