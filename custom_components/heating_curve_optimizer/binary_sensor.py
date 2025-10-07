@@ -97,4 +97,6 @@ async def async_setup_entry(
         name="Heating Curve Optimizer",
     )
 
-    async_add_entities([HeatDemandBinarySensor(hass, entry.entry_id, device_info)], True)
+    async_add_entities(
+        [HeatDemandBinarySensor(hass, entry.entry_id, device_info)], True
+    )

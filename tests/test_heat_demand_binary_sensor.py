@@ -17,9 +17,9 @@ async def test_heat_demand_binary_sensor_tracks_net_heat(hass):
     await sensor.async_update()
     assert sensor.available is False
 
-    hass.data.setdefault(DOMAIN, {}).setdefault("runtime", {}).setdefault(
-        entry_id, {}
-    )["net_heat_entity"] = "sensor.net_heat"
+    hass.data.setdefault(DOMAIN, {}).setdefault("runtime", {}).setdefault(entry_id, {})[
+        "net_heat_entity"
+    ] = "sensor.net_heat"
 
     hass.states.async_set("sensor.net_heat", "2.5")
     await sensor.async_update()
