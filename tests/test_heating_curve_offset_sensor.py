@@ -5,6 +5,7 @@ from custom_components.heating_curve_optimizer import sensor
 from custom_components.heating_curve_optimizer.sensor import (
     HeatingCurveOffsetSensor,
     NetHeatLossSensor,
+    OutdoorTemperatureSensor,
 )
 from homeassistant.components.sensor import SensorStateClass
 
@@ -142,3 +143,41 @@ async def test_offset_sensor_respects_time_base(hass):
 
     assert len(sensor.extra_state_attributes["future_offsets"]) == 4
     assert len(sensor.extra_state_attributes["prices"]) == 4
+
+
+@pytest.mark.asyncio
+async def test_offset_sensor_uses_internal_outdoor_sensor(hass):
+    hass.states.async_set("sensor.net_heat", "1", {"forecast": [0.0] * 6})
+    hass.states.async_set(
+        "sensor.price",
+        "0.0",
+        {"raw_today": [0.0] * 24, "raw_tomorrow": []},
+    )
+
+    outdoor_sensor = OutdoorTemperatureSensor(
+        hass=hass,
+        name="Outdoor Temperature",
+        unique_id="outdoor_test",
+        device=DeviceInfo(identifiers={("test", "outdoor")}),
+    )
+    outdoor_sensor.entity_id = "sensor.heating_curve_optimizer_outdoor_temperature"
+    hass.states.async_set(outdoor_sensor.entity_id, "3.5")
+
+    with patch(
+        "custom_components.heating_curve_optimizer.sensor._optimize_offsets",
+        return_value=([0] * 6, [0] * 6),
+    ):
+        sensor = HeatingCurveOffsetSensor(
+            hass=hass,
+            name="Heating Curve Offset",
+            unique_id="offset_outdoor",
+            net_heat_sensor="sensor.net_heat",
+            price_sensor="sensor.price",
+            device=DeviceInfo(identifiers={("test", "5")}),
+            outdoor_sensor=outdoor_sensor,
+        )
+
+        await sensor.async_update()
+
+    assert sensor.available is True
+    assert sensor.extra_state_attributes["base_supply_temperature"] is not None
