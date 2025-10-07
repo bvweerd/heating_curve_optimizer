@@ -1836,16 +1836,12 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             self._set_unavailable(f"{entity_id} werd niet gevonden")
             return
         if o_state.state in ("unknown", "unavailable"):
-            self._set_unavailable(
-                f"{entity_id} heeft status '{o_state.state}'"
-            )
+            self._set_unavailable(f"{entity_id} heeft status '{o_state.state}'")
             return
         try:
             outdoor_temp = float(o_state.state)
         except ValueError:
-            self._set_unavailable(
-                f"{entity_id} levert een ongeldige waarde"
-            )
+            self._set_unavailable(f"{entity_id} levert een ongeldige waarde")
             return
 
         base_temp = _calculate_supply_temperature(
