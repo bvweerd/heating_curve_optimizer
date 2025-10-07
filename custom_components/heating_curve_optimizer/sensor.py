@@ -1099,8 +1099,66 @@ class CalculatedSupplyTemperatureSensor(BaseUtilitySensor):
 class OptimizedSupplyTemperatureSensor(CalculatedSupplyTemperatureSensor):
     """Supply temperature using the optimized heating curve offset."""
 
-    # Inherits behaviour from ``CalculatedSupplyTemperatureSensor``.
-    pass
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        *,
+        outdoor_sensor: str | SensorEntity,
+        offset_entity: str | SensorEntity,
+        device: DeviceInfo,
+        k_factor: float = DEFAULT_K_FACTOR,
+        planning_window: int = DEFAULT_PLANNING_WINDOW,
+        time_base: int = DEFAULT_TIME_BASE,
+    ) -> None:
+        super().__init__(
+            hass=hass,
+            name=name,
+            unique_id=unique_id,
+            outdoor_sensor=outdoor_sensor,
+            offset_entity=offset_entity,
+            device=device,
+        )
+        self.k_factor = k_factor
+        self.planning_window = planning_window
+        self.time_base = time_base
+        self.steps = max(1, int(planning_window * 60 // time_base))
+        self._extra_attrs: dict[str, Any] = {}
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._extra_attrs
+
+    async def async_update(self) -> None:
+        await super().async_update()
+        if not self._attr_available:
+            self._extra_attrs = {}
+            return
+
+        offset_entity_id = (
+            self.offset_entity.entity_id
+            if isinstance(self.offset_entity, SensorEntity)
+            else self.offset_entity
+        )
+        offset_state = (
+            self.hass.states.get(cast(str, offset_entity_id))
+            if offset_entity_id
+            else None
+        )
+
+        if not offset_state:
+            self._extra_attrs = {}
+            return
+
+        supply_temps = offset_state.attributes.get("future_supply_temperatures")
+        if isinstance(supply_temps, list) and supply_temps:
+            self._extra_attrs = {
+                "future_supply_temperatures": supply_temps[: self.steps]
+            }
+            return
+
+        self._extra_attrs = {}
 
 
 class DiagnosticsSensor(BaseUtilitySensor):
