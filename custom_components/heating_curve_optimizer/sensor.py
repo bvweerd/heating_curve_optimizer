@@ -1656,6 +1656,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         consumption_sensors: list[str] | None = None,
         heatpump_sensor: str | None = None,
         production_sensors: list[str] | None = None,
+        outdoor_sensor: str | SensorEntity | None = None,
     ):
         super().__init__(
             name=name,
@@ -1680,6 +1681,12 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         self.heatpump_sensor = heatpump_sensor
         self.production_sensors = production_sensors or []
         self._extra_attrs: dict[str, list[int] | list[float] | float] = {}
+        self._outdoor_sensor: str | SensorEntity | None = (
+            outdoor_sensor or "sensor.outdoor_temperature"
+        )
+        self._outdoor_entity_id: str | None = None
+        if isinstance(self._outdoor_sensor, str):
+            self._outdoor_entity_id = self._outdoor_sensor
 
     @property
     def extra_state_attributes(self) -> dict[str, list[int] | list[float] | float]:
@@ -1816,20 +1823,28 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         outdoor_min = float(data.get("heat_curve_min_outdoor", -20.0))
         outdoor_max = float(data.get("heat_curve_max_outdoor", 15.0))
 
-        o_state = self.hass.states.get("sensor.outdoor_temperature")
+        entity_id = self._outdoor_entity_id
+        if entity_id is None and isinstance(self._outdoor_sensor, SensorEntity):
+            entity_id = self._outdoor_sensor.entity_id
+
+        if entity_id is None:
+            self._set_unavailable("geen buitensensor gevonden")
+            return
+
+        o_state = self.hass.states.get(entity_id)
         if o_state is None:
-            self._set_unavailable("sensor.outdoor_temperature werd niet gevonden")
+            self._set_unavailable(f"{entity_id} werd niet gevonden")
             return
         if o_state.state in ("unknown", "unavailable"):
             self._set_unavailable(
-                f"sensor.outdoor_temperature heeft status '{o_state.state}'"
+                f"{entity_id} heeft status '{o_state.state}'"
             )
             return
         try:
             outdoor_temp = float(o_state.state)
         except ValueError:
             self._set_unavailable(
-                "sensor.outdoor_temperature levert een ongeldige waarde"
+                f"{entity_id} levert een ongeldige waarde"
             )
             return
 
@@ -1885,11 +1900,21 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             self.net_heat_sensor = self.net_heat_sensor.entity_id
         if not isinstance(self.price_sensor, str):
             self.price_sensor = self.price_sensor.entity_id
+        if isinstance(self._outdoor_sensor, SensorEntity):
+            self._outdoor_entity_id = self._outdoor_sensor.entity_id
+        elif isinstance(self._outdoor_sensor, str):
+            self._outdoor_entity_id = self._outdoor_sensor
         for ent in (self.net_heat_sensor, self.price_sensor):
             if ent:
                 self.async_on_remove(
                     async_track_state_change_event(self.hass, ent, self._handle_change)
                 )
+        if self._outdoor_entity_id:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass, self._outdoor_entity_id, self._handle_change
+                )
+            )
 
     async def _handle_change(self, event):
         await self.async_update()
@@ -2530,6 +2555,7 @@ async def async_setup_entry(
             consumption_sensors=consumption_sources,
             heatpump_sensor=power_sensor,
             production_sensors=production_sources,
+            outdoor_sensor=outdoor_sensor_entity,
         )
         entities.append(heating_curve_offset_sensor)
 
