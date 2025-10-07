@@ -1927,9 +1927,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         ]
         optimization_reason: str | None = None
         if total_energy <= 0:
-            optimization_reason = (
-                "Geen optimalisatie: de totale warmtevraag in het venster is niet positief."
-            )
+            optimization_reason = "Geen optimalisatie: de totale warmtevraag in het venster is niet positief."
         elif not any(d > 0 for d in demand):
             optimization_reason = (
                 "Geen optimalisatie: de voorspelde netto warmtevraag is niet positief."
