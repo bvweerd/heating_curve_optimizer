@@ -95,7 +95,9 @@ async def async_get_config_entry_diagnostics(
                 else ent_entry.device_class,
                 "state_class": _stringify(getattr(entity, "state_class", None))
                 if entity
-                else ent_entry.capabilities.get("state_class") if ent_entry.capabilities else None,
+                else ent_entry.capabilities.get("state_class")
+                if ent_entry.capabilities
+                else None,
                 "state": _serialize_state(state),
                 "extra_state_attributes": _serialize_mapping(extra_attrs),
             }
