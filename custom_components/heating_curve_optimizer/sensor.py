@@ -118,6 +118,38 @@ def extract_price_forecast(state: State) -> list[float]:
     from homeassistant.util import dt as dt_util
 
     now = dt_util.utcnow()
+
+    interval_forecast: list[float] = []
+
+    def _extend_interval_forecast(
+        entries: Any, *, skip_past: bool = False
+    ) -> bool:
+        if not isinstance(entries, (list, tuple)):
+            return False
+
+        added = False
+        for entry in entries:
+            if skip_past and isinstance(entry, dict):
+                start = entry.get("start") or entry.get("from")
+                if isinstance(start, str):
+                    start_dt = dt_util.parse_datetime(start)
+                    if start_dt is not None:
+                        start_dt = dt_util.as_utc(start_dt)
+                        if start_dt < now:
+                            continue
+
+            price = _normalize_price_value(entry)
+            if price is not None:
+                interval_forecast.append(price)
+                added = True
+        return added
+
+    _extend_interval_forecast(state.attributes.get("net_prices_today"), skip_past=True)
+    _extend_interval_forecast(state.attributes.get("net_prices_tomorrow"))
+
+    if interval_forecast:
+        return interval_forecast
+
     hour = now.hour
 
     forecast: list[float] = []
