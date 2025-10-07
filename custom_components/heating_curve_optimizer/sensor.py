@@ -256,20 +256,29 @@ class HeatLossSensor(BaseUtilitySensor):
 
     async def _compute_value(self) -> None:
         state = self.hass.states.get(cast(str, self.outdoor_sensor))
-        if state is None or state.state in ("unknown", "unavailable"):
-            self._attr_available = False
+        if state is None:
+            self._set_unavailable(
+                f"geen buitensensor gevonden ({self.outdoor_sensor})"
+            )
+            return
+        if state.state in ("unknown", "unavailable"):
+            self._set_unavailable(
+                f"buitensensor {self.outdoor_sensor} heeft status '{state.state}'"
+            )
             return
         try:
             current = float(state.state)
         except ValueError:
-            self._attr_available = False
+            self._set_unavailable(
+                f"waarde van buitensensor {self.outdoor_sensor} is ongeldig"
+            )
             return
         forecast = [
             float(v)
             for v in state.attributes.get("forecast", [])
             if isinstance(v, (int, float, str))
         ]
-        self._attr_available = True
+        self._mark_available()
         u_value = U_VALUE_MAP.get(self.energy_label.upper(), 1.0)
         indoor = INDOOR_TEMPERATURE
         if self.indoor_sensor:
@@ -481,13 +490,22 @@ class NetHeatLossSensor(BaseUtilitySensor):
 
     async def _compute_value(self) -> None:
         state = self.hass.states.get(cast(str, self.outdoor_sensor))
-        if state is None or state.state in ("unknown", "unavailable"):
-            self._attr_available = False
+        if state is None:
+            self._set_unavailable(
+                f"geen buitensensor gevonden ({self.outdoor_sensor})"
+            )
+            return
+        if state.state in ("unknown", "unavailable"):
+            self._set_unavailable(
+                f"buitensensor {self.outdoor_sensor} heeft status '{state.state}'"
+            )
             return
         try:
             t_outdoor = float(state.state)
         except ValueError:
-            self._attr_available = False
+            self._set_unavailable(
+                f"waarde van buitensensor {self.outdoor_sensor} is ongeldig"
+            )
             return
 
         solar_total = 0.0
@@ -498,7 +516,7 @@ class NetHeatLossSensor(BaseUtilitySensor):
             except (ValueError, TypeError):
                 solar_total = 0.0
 
-        self._attr_available = True
+        self._mark_available()
         u_value = U_VALUE_MAP.get(self.energy_label.upper(), 1.0)
         indoor = INDOOR_TEMPERATURE
         if self.indoor_sensor:
@@ -662,23 +680,41 @@ class QuadraticCopSensor(BaseUtilitySensor):
 
     async def async_update(self):
         s_state = self.hass.states.get(self.supply_sensor)
-        if s_state is None or s_state.state in ("unknown", "unavailable"):
-            self._attr_available = False
+        if s_state is None:
+            self._set_unavailable(
+                f"aanvoersensor {self.supply_sensor} werd niet gevonden"
+            )
+            return
+        if s_state.state in ("unknown", "unavailable"):
+            self._set_unavailable(
+                f"aanvoersensor {self.supply_sensor} heeft status '{s_state.state}'"
+            )
             return
         try:
             s_temp = float(s_state.state)
         except ValueError:
-            self._attr_available = False
+            self._set_unavailable(
+                f"waarde van aanvoersensor {self.supply_sensor} is ongeldig"
+            )
             return
 
         o_state = self.hass.states.get(cast(str, self.outdoor_sensor))
-        if o_state is None or o_state.state in ("unknown", "unavailable"):
-            self._attr_available = False
+        if o_state is None:
+            self._set_unavailable(
+                f"geen buitensensor gevonden ({self.outdoor_sensor})"
+            )
+            return
+        if o_state.state in ("unknown", "unavailable"):
+            self._set_unavailable(
+                f"buitensensor {self.outdoor_sensor} heeft status '{o_state.state}'"
+            )
             return
         try:
             o_temp = float(o_state.state)
         except ValueError:
-            self._attr_available = False
+            self._set_unavailable(
+                f"waarde van buitensensor {self.outdoor_sensor} is ongeldig"
+            )
             return
 
         cop = (
@@ -689,7 +725,7 @@ class QuadraticCopSensor(BaseUtilitySensor):
         _LOGGER.debug(
             "Calculated COP with supply=%s outdoor=%s -> %s", s_temp, o_temp, cop
         )
-        self._attr_available = True
+        self._mark_available()
         self._attr_native_value = round(cop, 3)
 
     async def async_added_to_hass(self) -> None:
@@ -733,24 +769,61 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
 
     async def async_update(self):
         p_state = self.hass.states.get(self.power_sensor)
-        s_state = self.hass.states.get(self.supply_sensor)
-        o_state = self.hass.states.get(self.outdoor_sensor)
-        if (
-            p_state is None
-            or s_state is None
-            or o_state is None
-            or p_state.state in ("unknown", "unavailable")
-            or s_state.state in ("unknown", "unavailable")
-            or o_state.state in ("unknown", "unavailable")
-        ):
-            self._attr_available = False
+        if p_state is None:
+            self._set_unavailable(
+                f"vermogenssensor {self.power_sensor} werd niet gevonden"
+            )
             return
+        if p_state.state in ("unknown", "unavailable"):
+            self._set_unavailable(
+                f"vermogenssensor {self.power_sensor} heeft status '{p_state.state}'"
+            )
+            return
+
+        s_state = self.hass.states.get(self.supply_sensor)
+        if s_state is None:
+            self._set_unavailable(
+                f"aanvoersensor {self.supply_sensor} werd niet gevonden"
+            )
+            return
+        if s_state.state in ("unknown", "unavailable"):
+            self._set_unavailable(
+                f"aanvoersensor {self.supply_sensor} heeft status '{s_state.state}'"
+            )
+            return
+
+        o_state = self.hass.states.get(self.outdoor_sensor)
+        if o_state is None:
+            self._set_unavailable(
+                f"geen buitensensor gevonden ({self.outdoor_sensor})"
+            )
+            return
+        if o_state.state in ("unknown", "unavailable"):
+            self._set_unavailable(
+                f"buitensensor {self.outdoor_sensor} heeft status '{o_state.state}'"
+            )
+            return
+
         try:
             power = float(p_state.state)
+        except ValueError:
+            self._set_unavailable(
+                f"waarde van vermogenssensor {self.power_sensor} is ongeldig"
+            )
+            return
+        try:
             s_temp = float(s_state.state)
+        except ValueError:
+            self._set_unavailable(
+                f"waarde van aanvoersensor {self.supply_sensor} is ongeldig"
+            )
+            return
+        try:
             o_temp = float(o_state.state)
         except ValueError:
-            self._attr_available = False
+            self._set_unavailable(
+                f"waarde van buitensensor {self.outdoor_sensor} is ongeldig"
+            )
             return
         cop = self.base_cop + 0.08 * o_temp - self.k_factor * (s_temp - 35)
         thermal_power = power * cop / 1000.0
@@ -760,7 +833,7 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
             cop,
             thermal_power,
         )
-        self._attr_available = True
+        self._mark_available()
         self._attr_native_value = round(thermal_power, 3)
 
 
@@ -1601,13 +1674,25 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         price_state = self.hass.states.get(self.price_sensor)
         net_state = self.hass.states.get(ent) if ent else None
 
-        if (
-            net_state is None
-            or price_state is None
-            or net_state.state in ("unknown", "unavailable")
-            or price_state.state in ("unknown", "unavailable")
-        ):
-            self._attr_available = False
+        if net_state is None:
+            self._set_unavailable(
+                f"geen netto warmtevraag sensor gevonden ({ent})"
+            )
+            return
+        if net_state.state in ("unknown", "unavailable"):
+            self._set_unavailable(
+                f"netto warmtevraag sensor {ent} heeft status '{net_state.state}'"
+            )
+            return
+        if price_state is None:
+            self._set_unavailable(
+                f"prijssensor {self.price_sensor} werd niet gevonden"
+            )
+            return
+        if price_state.state in ("unknown", "unavailable"):
+            self._set_unavailable(
+                f"prijssensor {self.price_sensor} heeft status '{price_state.state}'"
+            )
             return
 
         demand = self._extract_demand(net_state)
@@ -1627,13 +1712,20 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         outdoor_max = float(data.get("heat_curve_max_outdoor", 15.0))
 
         o_state = self.hass.states.get("sensor.outdoor_temperature")
-        if o_state is None or o_state.state in ("unknown", "unavailable"):
-            self._attr_available = False
+        if o_state is None:
+            self._set_unavailable("sensor.outdoor_temperature werd niet gevonden")
+            return
+        if o_state.state in ("unknown", "unavailable"):
+            self._set_unavailable(
+                f"sensor.outdoor_temperature heeft status '{o_state.state}'"
+            )
             return
         try:
             outdoor_temp = float(o_state.state)
         except ValueError:
-            self._attr_available = False
+            self._set_unavailable(
+                "sensor.outdoor_temperature levert een ongeldige waarde"
+            )
             return
 
         base_temp = _calculate_supply_temperature(
@@ -1680,7 +1772,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             "future_supply_temperatures": supply_temps,
             "base_supply_temperature": round(base_temp, 1),
         }
-        self._attr_available = True
+        self._mark_available()
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
@@ -1735,18 +1827,29 @@ class HeatBufferSensor(BaseUtilitySensor):
             if hasattr(self.offset_entity, "entity_id")
             else self.offset_entity
         )
-        state = self.hass.states.get(ent) if ent else None
-        if (
-            state is None
-            or state.state in ("unknown", "unavailable")
-            or "buffer_evolution" not in state.attributes
-        ):
-            self._attr_available = False
+        if not ent:
+            self._set_unavailable("geen offset-sensor ingesteld")
+            return
+        state = self.hass.states.get(ent)
+        if state is None:
+            self._set_unavailable(f"offset-sensor {ent} werd niet gevonden")
+            return
+        if state.state in ("unknown", "unavailable"):
+            self._set_unavailable(
+                f"offset-sensor {ent} heeft status '{state.state}'"
+            )
+            return
+        if "buffer_evolution" not in state.attributes:
+            self._set_unavailable(
+                f"offset-sensor {ent} levert geen 'buffer_evolution' attribuut"
+            )
             return
 
         evolution = [float(v) for v in state.attributes.get("buffer_evolution", [])]
         if not evolution:
-            self._attr_available = False
+            self._set_unavailable(
+                f"offset-sensor {ent} gaf een lege bufferprognose terug"
+            )
             return
 
         self._attr_native_value = evolution[0]
@@ -1754,7 +1857,7 @@ class HeatBufferSensor(BaseUtilitySensor):
             "buffer_evolution": evolution,
             "buffer_by_step": {str(i): v for i, v in enumerate(evolution)},
         }
-        self._attr_available = True
+        self._mark_available()
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
