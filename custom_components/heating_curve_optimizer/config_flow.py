@@ -29,6 +29,8 @@ from .const import (
     CONF_HEAT_CURVE_MIN_OUTDOOR,
     CONF_HEAT_CURVE_MAX_OUTDOOR,
     CONF_PRICE_SENSOR,
+    CONF_CONSUMPTION_PRICE_SENSOR,
+    CONF_PRODUCTION_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
     DEFAULT_K_FACTOR,
     DEFAULT_COP_AT_35,
@@ -61,6 +63,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.source_type: str | None = None
         self.sources: list[str] | None = None
         self.price_settings: dict[str, Any] = {}
+        self.consumption_price_sensor: str | None = None
+        self.production_price_sensor: str | None = None
         self.area_m2: float | None = None
         self.energy_label: str | None = None
         self.glass_east_m2: float | None = None
@@ -104,11 +108,19 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         data_schema=self._schema_user(),
                         errors={"base": "no_blocks"},
                     )
+                consumption_price_sensor = self.consumption_price_sensor or self.price_settings.get(
+                    CONF_CONSUMPTION_PRICE_SENSOR
+                ) or self.price_settings.get(CONF_PRICE_SENSOR)
+                production_price_sensor = self.production_price_sensor or self.price_settings.get(
+                    CONF_PRODUCTION_PRICE_SENSOR
+                ) or consumption_price_sensor
                 return self.async_create_entry(
                     title="Heating Curve Optimizer",
                     data={
                         CONF_CONFIGS: self.configs,
-                        CONF_PRICE_SENSOR: self.price_settings.get(CONF_PRICE_SENSOR),
+                        CONF_PRICE_SENSOR: consumption_price_sensor,
+                        CONF_CONSUMPTION_PRICE_SENSOR: consumption_price_sensor,
+                        CONF_PRODUCTION_PRICE_SENSOR: production_price_sensor,
                         CONF_AREA_M2: self.area_m2,
                         CONF_ENERGY_LABEL: self.energy_label,
                         CONF_GLASS_EAST_M2: self.glass_east_m2,
@@ -473,6 +485,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_price_settings(self, user_input=None) -> ConfigFlowResult:
         if user_input is not None:
+            self.consumption_price_sensor = user_input[CONF_CONSUMPTION_PRICE_SENSOR]
+            self.production_price_sensor = user_input[CONF_PRODUCTION_PRICE_SENSOR]
             self.price_settings = dict(user_input)
             return await self.async_step_user()
 
@@ -482,10 +496,30 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if state.attributes.get("device_class") == "monetary"
             or state.attributes.get("unit_of_measurement") == "€/kWh"
         ]
-        current_price_sensor = self.price_settings.get(CONF_PRICE_SENSOR, "")
+        current_consumption_sensor = self.consumption_price_sensor or self.price_settings.get(
+            CONF_CONSUMPTION_PRICE_SENSOR,
+            self.price_settings.get(CONF_PRICE_SENSOR, ""),
+        )
+        current_production_sensor = self.production_price_sensor or self.price_settings.get(
+            CONF_PRODUCTION_PRICE_SENSOR,
+            current_consumption_sensor,
+        )
 
         schema_fields: dict[Any, Any] = {
-            vol.Required(CONF_PRICE_SENSOR, default=current_price_sensor): selector(
+            vol.Required(
+                CONF_CONSUMPTION_PRICE_SENSOR, default=current_consumption_sensor
+            ): selector(
+                {
+                    "select": {
+                        "options": all_prices,
+                        "multiple": False,
+                        "mode": "dropdown",
+                    }
+                }
+            ),
+            vol.Required(
+                CONF_PRODUCTION_PRICE_SENSOR, default=current_production_sensor
+            ): selector(
                 {
                     "select": {
                         "options": all_prices,
@@ -547,9 +581,28 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                 {},
             )
         )
+        self.consumption_price_sensor = _get(CONF_CONSUMPTION_PRICE_SENSOR)
+        self.production_price_sensor = _get(CONF_PRODUCTION_PRICE_SENSOR)
+        price_sensor = _get(CONF_PRICE_SENSOR)
+        if self.consumption_price_sensor is None:
+            self.consumption_price_sensor = price_sensor
+        if self.production_price_sensor is None:
+            self.production_price_sensor = price_sensor
         if (
-            price_sensor := _get(CONF_PRICE_SENSOR)
-        ) and CONF_PRICE_SENSOR not in self.price_settings:
+            self.consumption_price_sensor
+            and CONF_CONSUMPTION_PRICE_SENSOR not in self.price_settings
+        ):
+            self.price_settings[CONF_CONSUMPTION_PRICE_SENSOR] = (
+                self.consumption_price_sensor
+            )
+        if (
+            self.production_price_sensor
+            and CONF_PRODUCTION_PRICE_SENSOR not in self.price_settings
+        ):
+            self.price_settings[CONF_PRODUCTION_PRICE_SENSOR] = (
+                self.production_price_sensor
+            )
+        if price_sensor and CONF_PRICE_SENSOR not in self.price_settings:
             self.price_settings[CONF_PRICE_SENSOR] = price_sensor
         self.source_type: str | None = None
         self.sources: list[str] | None = None
@@ -596,11 +649,19 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         data_schema=self._schema_user(),
                         errors={"base": "no_blocks"},
                     )
+                consumption_price_sensor = self.consumption_price_sensor or self.price_settings.get(
+                    CONF_CONSUMPTION_PRICE_SENSOR
+                ) or self.price_settings.get(CONF_PRICE_SENSOR)
+                production_price_sensor = self.production_price_sensor or self.price_settings.get(
+                    CONF_PRODUCTION_PRICE_SENSOR
+                ) or consumption_price_sensor
                 return self.async_create_entry(
                     title="",
                     data={
                         CONF_CONFIGS: self.configs,
-                        CONF_PRICE_SENSOR: self.price_settings.get(CONF_PRICE_SENSOR),
+                        CONF_PRICE_SENSOR: consumption_price_sensor,
+                        CONF_CONSUMPTION_PRICE_SENSOR: consumption_price_sensor,
+                        CONF_PRODUCTION_PRICE_SENSOR: production_price_sensor,
                         CONF_AREA_M2: self.area_m2,
                         CONF_ENERGY_LABEL: self.energy_label,
                         CONF_GLASS_EAST_M2: self.glass_east_m2,
@@ -803,6 +864,8 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_price_settings(self, user_input=None):
         if user_input is not None:
+            self.consumption_price_sensor = user_input[CONF_CONSUMPTION_PRICE_SENSOR]
+            self.production_price_sensor = user_input[CONF_PRODUCTION_PRICE_SENSOR]
             self.price_settings = dict(user_input)
             return await self.async_step_user()
 
@@ -812,10 +875,30 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             if state.attributes.get("device_class") == "monetary"
             or state.attributes.get("unit_of_measurement") == "€/kWh"
         ]
-        current_price_sensor = self.price_settings.get(CONF_PRICE_SENSOR, "")
+        current_consumption_sensor = self.consumption_price_sensor or self.price_settings.get(
+            CONF_CONSUMPTION_PRICE_SENSOR,
+            self.price_settings.get(CONF_PRICE_SENSOR, ""),
+        )
+        current_production_sensor = self.production_price_sensor or self.price_settings.get(
+            CONF_PRODUCTION_PRICE_SENSOR,
+            current_consumption_sensor,
+        )
 
         schema_fields = {
-            vol.Required(CONF_PRICE_SENSOR, default=current_price_sensor): selector(
+            vol.Required(
+                CONF_CONSUMPTION_PRICE_SENSOR, default=current_consumption_sensor
+            ): selector(
+                {
+                    "select": {
+                        "options": all_prices,
+                        "multiple": False,
+                        "mode": "dropdown",
+                    }
+                }
+            ),
+            vol.Required(
+                CONF_PRODUCTION_PRICE_SENSOR, default=current_production_sensor
+            ): selector(
                 {
                     "select": {
                         "options": all_prices,

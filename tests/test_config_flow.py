@@ -8,8 +8,13 @@ from custom_components.heating_curve_optimizer.const import (
     DOMAIN,
     CONF_SOURCE_TYPE,
     CONF_ENERGY_LABEL,
+    CONF_CONSUMPTION_PRICE_SENSOR,
+    CONF_PRODUCTION_PRICE_SENSOR,
 )
-from custom_components.heating_curve_optimizer.config_flow import STEP_BASIC
+from custom_components.heating_curve_optimizer.config_flow import (
+    STEP_BASIC,
+    STEP_PRICE_SETTINGS,
+)
 
 
 @pytest.mark.asyncio
@@ -86,3 +91,39 @@ async def test_energy_labels_available(hass: HomeAssistant):
 
     energy_label_field = result2["data_schema"].schema[CONF_ENERGY_LABEL]
     assert "A+++" in energy_label_field.config["options"]
+
+
+@pytest.mark.asyncio
+async def test_price_settings_step_includes_consumption_and_production(hass):
+    hass.states.async_set(
+        "sensor.price_consumption",
+        "0.1",
+        {"device_class": "monetary"},
+    )
+    hass.states.async_set(
+        "sensor.price_production",
+        "0.2",
+        {"unit_of_measurement": "€/kWh"},
+    )
+    with patch(
+        "homeassistant.config_entries._load_integration", return_value=None
+    ), patch(
+        "homeassistant.loader.async_get_integration",
+        AsyncMock(
+            return_value=SimpleNamespace(domain=DOMAIN, single_config_entry=False)
+        ),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_SOURCE_TYPE: STEP_PRICE_SETTINGS}
+        )
+
+    assert result2["type"] == "form"
+    schema = result2["data_schema"].schema
+    assert CONF_CONSUMPTION_PRICE_SENSOR in schema
+    assert CONF_PRODUCTION_PRICE_SENSOR in schema
+    options = schema[CONF_CONSUMPTION_PRICE_SENSOR].config["options"]
+    assert "sensor.price_consumption" in options
+    assert "sensor.price_production" in options

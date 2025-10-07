@@ -11,6 +11,8 @@ PLATFORMS = ["sensor", "number"]
 CONF_SOURCE_TYPE = "source_type"
 CONF_SOURCES = "sources"
 CONF_PRICE_SENSOR = "price_sensor"
+CONF_CONSUMPTION_PRICE_SENSOR = "consumption_price_sensor"
+CONF_PRODUCTION_PRICE_SENSOR = "production_price_sensor"
 CONF_PRICE_SETTINGS = "price_settings"
 
 # New configuration keys for the heating curve optimizer
