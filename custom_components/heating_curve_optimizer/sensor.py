@@ -12,7 +12,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import pycares  # noqa: F401
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
@@ -1043,9 +1043,32 @@ class CalculatedSupplyTemperatureSensor(BaseUtilitySensor):
         if self.entity_id:
             self.async_write_ha_state()
 
+    def _resolve_entity_id(self, entity_ref: str | SensorEntity) -> str | None:
+        """Return the entity_id for a reference or None if unavailable."""
+
+        if isinstance(entity_ref, SensorEntity):
+            return entity_ref.entity_id
+        return cast(str, entity_ref)
+
+    def _get_state(self, entity_ref: str | SensorEntity) -> State | None:
+        """Return hass state for the given entity reference."""
+
+        entity_id = self._resolve_entity_id(entity_ref)
+        if entity_id is None:
+            return None
+        state = self.hass.states.get(entity_id)
+        if state is None:
+            return None
+        if isinstance(entity_ref, SensorEntity) and entity_ref.entity_id is not None:
+            if entity_ref is self.outdoor_sensor:
+                self.outdoor_sensor = entity_ref.entity_id
+            elif entity_ref is self.offset_entity:
+                self.offset_entity = entity_ref.entity_id
+        return state
+
     async def async_update(self) -> None:
-        out_state = self.hass.states.get(cast(str, self.outdoor_sensor))
-        off_state = self.hass.states.get(cast(str, self.offset_entity))
+        out_state = self._get_state(self.outdoor_sensor)
+        off_state = self._get_state(self.offset_entity)
 
         if out_state is None or out_state.state in ("unknown", "unavailable"):
             self._attr_available = False
