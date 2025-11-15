@@ -4,9 +4,6 @@
       "basic": {
         "data": {
           "energy_label": "Energielabel",
-          "base_cop": "Basale COP bij 35°C",
-          "outdoor_temp_coefficient": "Buitentemperatuur-coëfficiënt",
-          "cop_compensation_factor": "COP-compensatiefactor",
           "pv_east_wp": "PV-panelen oost (Wp)",
           "pv_south_wp": "PV-panelen zuid (Wp)",
           "pv_west_wp": "PV-panelen west (Wp)",
@@ -19,12 +16,35 @@
           "pv_tilt": "Hellingshoek van PV-panelen (0=horizontaal, 90=verticaal, typisch: 35°)"
         }
       },
+      "heating_curve_settings": {
+        "title": "Stooklijn instellingen",
+        "description": "Configureer stooklijn en optimalisatie parameters",
+        "data": {
+          "supply_temperature_sensor": "Aanvoertemperatuur sensor",
+          "k_factor": "K-factor (COP afname per °C aanvoertemp verhoging)",
+          "base_cop": "Basale COP bij 35°C aanvoertemperatuur",
+          "outdoor_temp_coefficient": "Buitentemperatuur-coëfficiënt",
+          "cop_compensation_factor": "COP-compensatiefactor",
+          "planning_window": "Planningsvenster (uren)",
+          "time_base": "Tijdsbasis (minuten per stap)",
+          "heat_curve_min_outdoor": "Minimum buitentemperatuur (°C)",
+          "heat_curve_max_outdoor": "Maximum buitentemperatuur (°C)"
+        },
+        "data_description": {
+          "supply_temperature_sensor": "Sensor die de aanvoertemperatuur van de warmtepomp meet",
+          "k_factor": "Hoeveel de COP afneemt per °C verhoging van de aanvoertemperatuur (typisch: 0,01-0,11)",
+          "base_cop": "COP van de warmtepomp bij 35°C aanvoertemperatuur (typisch: 3,5-5,0)",
+          "outdoor_temp_coefficient": "Hoeveel de COP toeneemt per °C stijging van de buitentemperatuur (typisch: 0,025-0,08)",
+          "cop_compensation_factor": "Factor om theoretische COP aan te passen aan werkelijke systeemprestaties (typisch: 0,8-1,2)",
+          "planning_window": "Optimalisatie planningshorizon in uren (standaard: 6)",
+          "time_base": "Tijdsinterval voor optimalisatie in minuten (standaard: 60)",
+          "heat_curve_min_outdoor": "Minimum buitentemperatuur voor stooklijn (standaard: -20°C)",
+          "heat_curve_max_outdoor": "Maximum buitentemperatuur voor stooklijn (standaard: 15°C)"
+        }
+      },
       "user": {
         "data": {
           "energy_label": "Energielabel",
-          "base_cop": "Basale COP bij 35°C",
-          "outdoor_temp_coefficient": "Buitentemperatuur-coëfficiënt",
-          "cop_compensation_factor": "COP-compensatiefactor",
           "pv_east_wp": "PV-panelen oost (Wp)",
           "pv_south_wp": "PV-panelen zuid (Wp)",
           "pv_west_wp": "PV-panelen west (Wp)",

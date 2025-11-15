@@ -53,6 +53,7 @@ from .const import (
 STEP_SELECT_SOURCES = "select_sources"
 STEP_PRICE_SETTINGS = "price_settings"
 STEP_BASIC = "basic"
+STEP_HEATING_CURVE_SETTINGS = "heating_curve_settings"
 
 
 class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
@@ -102,6 +103,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             choice = user_input[CONF_SOURCE_TYPE]
             if choice == STEP_BASIC:
                 return await self.async_step_basic_options()
+            if choice == STEP_HEATING_CURVE_SETTINGS:
+                return await self.async_step_heating_curve_settings()
             if choice == STEP_PRICE_SETTINGS:
                 return await self.async_step_price_settings()
             if choice == "finish":
@@ -165,6 +168,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def _schema_user(self) -> vol.Schema:
         options = [{"value": STEP_BASIC, "label": "Basic Settings"}]
         options.extend({"value": t, "label": t.title()} for t in SOURCE_TYPES)
+        options.append({"value": STEP_HEATING_CURVE_SETTINGS, "label": "Heating Curve Settings"})
         options.append({"value": STEP_PRICE_SETTINGS, "label": "Price Settings"})
         options.append({"value": "finish", "label": "Finish"})
 
@@ -227,31 +231,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_INDOOR_TEMPERATURE_SENSOR
             )
             self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
-            self.supply_temperature_sensor = user_input.get(
-                CONF_SUPPLY_TEMPERATURE_SENSOR
-            )
-            self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
-            self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
-            self.outdoor_temp_coefficient = float(
-                user_input.get(
-                    CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
-                )
-            )
-            self.cop_compensation_factor = float(
-                user_input.get(
-                    CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR
-                )
-            )
-            self.planning_window = int(
-                user_input.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
-            )
-            self.time_base = int(user_input.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
-            self.heat_curve_min_outdoor = float(
-                user_input.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
-            )
-            self.heat_curve_max_outdoor = float(
-                user_input.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
-            )
             return await self.async_step_user()
 
         power_sensors = await self._get_power_sensors()
@@ -295,6 +274,44 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         }
                     }
                 ),
+            }
+        )
+
+        return self.async_show_form(step_id=STEP_BASIC, data_schema=schema)
+
+    async def async_step_heating_curve_settings(self, user_input=None):
+        if user_input is not None:
+            self.supply_temperature_sensor = user_input.get(
+                CONF_SUPPLY_TEMPERATURE_SENSOR
+            )
+            self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
+            self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
+            self.outdoor_temp_coefficient = float(
+                user_input.get(
+                    CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
+                )
+            )
+            self.cop_compensation_factor = float(
+                user_input.get(
+                    CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR
+                )
+            )
+            self.planning_window = int(
+                user_input.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
+            )
+            self.time_base = int(user_input.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
+            self.heat_curve_min_outdoor = float(
+                user_input.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
+            )
+            self.heat_curve_max_outdoor = float(
+                user_input.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
+            )
+            return await self.async_step_user()
+
+        temp_sensors = await self._get_temperature_sensors()
+
+        schema = vol.Schema(
+            {
                 vol.Optional(
                     CONF_SUPPLY_TEMPERATURE_SENSOR,
                     default=self.supply_temperature_sensor,
@@ -342,7 +359,9 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
 
-        return self.async_show_form(step_id=STEP_BASIC, data_schema=schema)
+        return self.async_show_form(
+            step_id=STEP_HEATING_CURVE_SETTINGS, data_schema=schema
+        )
 
     async def async_step_basic(self, user_input=None):
         if user_input is not None:
@@ -360,31 +379,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_INDOOR_TEMPERATURE_SENSOR
             )
             self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
-            self.supply_temperature_sensor = user_input.get(
-                CONF_SUPPLY_TEMPERATURE_SENSOR
-            )
-            self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
-            self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
-            self.outdoor_temp_coefficient = float(
-                user_input.get(
-                    CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
-                )
-            )
-            self.cop_compensation_factor = float(
-                user_input.get(
-                    CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR
-                )
-            )
-            self.planning_window = int(
-                user_input.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
-            )
-            self.time_base = int(user_input.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
-            self.heat_curve_min_outdoor = float(
-                user_input.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
-            )
-            self.heat_curve_max_outdoor = float(
-                user_input.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
-            )
             return await self.async_step_user()
 
         power_sensors = await self._get_power_sensors()
@@ -428,50 +422,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         }
                     }
                 ),
-                vol.Optional(
-                    CONF_SUPPLY_TEMPERATURE_SENSOR,
-                    default=self.supply_temperature_sensor,
-                ): selector(
-                    {
-                        "select": {
-                            "options": temp_sensors,
-                            "multiple": False,
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
-                vol.Optional(
-                    CONF_K_FACTOR, default=self.k_factor or DEFAULT_K_FACTOR
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_BASE_COP, default=self.base_cop or DEFAULT_COP_AT_35
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_OUTDOOR_TEMP_COEFFICIENT,
-                    default=self.outdoor_temp_coefficient
-                    or DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_COP_COMPENSATION_FACTOR,
-                    default=self.cop_compensation_factor
-                    or DEFAULT_COP_COMPENSATION_FACTOR,
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_PLANNING_WINDOW,
-                    default=self.planning_window or DEFAULT_PLANNING_WINDOW,
-                ): vol.Coerce(int),
-                vol.Optional(
-                    CONF_TIME_BASE,
-                    default=self.time_base or DEFAULT_TIME_BASE,
-                ): vol.Coerce(int),
-                vol.Optional(
-                    CONF_HEAT_CURVE_MIN_OUTDOOR,
-                    default=self.heat_curve_min_outdoor,
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_HEAT_CURVE_MAX_OUTDOOR,
-                    default=self.heat_curve_max_outdoor,
-                ): vol.Coerce(float),
             }
         )
 
@@ -619,6 +569,8 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
         )
         self.planning_window = _get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
         self.time_base = _get(CONF_TIME_BASE, DEFAULT_TIME_BASE)
+        self.heat_curve_min_outdoor = _get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
+        self.heat_curve_max_outdoor = _get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
         self.price_settings = copy.deepcopy(
             config_entry.options.get(
                 CONF_PRICE_SETTINGS,
@@ -678,6 +630,8 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             choice = user_input[CONF_SOURCE_TYPE]
             if choice == STEP_BASIC:
                 return await self.async_step_basic()
+            if choice == STEP_HEATING_CURVE_SETTINGS:
+                return await self.async_step_heating_curve_settings()
             if choice == STEP_PRICE_SETTINGS:
                 return await self.async_step_price_settings()
             if choice == "finish":
@@ -729,6 +683,8 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_COP_COMPENSATION_FACTOR: self.cop_compensation_factor,
                         CONF_PLANNING_WINDOW: self.planning_window,
                         CONF_TIME_BASE: self.time_base,
+                        CONF_HEAT_CURVE_MIN_OUTDOOR: self.heat_curve_min_outdoor,
+                        CONF_HEAT_CURVE_MAX_OUTDOOR: self.heat_curve_max_outdoor,
                     },
                 )
             self.source_type = choice
@@ -739,6 +695,7 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
     def _schema_user(self) -> vol.Schema:
         options = [{"value": STEP_BASIC, "label": "Basic Settings"}]
         options.extend({"value": t, "label": t.title()} for t in SOURCE_TYPES)
+        options.append({"value": STEP_HEATING_CURVE_SETTINGS, "label": "Heating Curve Settings"})
         options.append({"value": STEP_PRICE_SETTINGS, "label": "Price Settings"})
         options.append({"value": "finish", "label": "Finish"})
 
@@ -772,21 +729,6 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                 CONF_INDOOR_TEMPERATURE_SENSOR
             )
             self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
-            self.supply_temperature_sensor = user_input.get(
-                CONF_SUPPLY_TEMPERATURE_SENSOR
-            )
-            self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
-            self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
-            self.outdoor_temp_coefficient = float(
-                user_input.get(
-                    CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
-                )
-            )
-            self.cop_compensation_factor = float(
-                user_input.get(
-                    CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR
-                )
-            )
             return await self.async_step_user()
 
         power_sensors = await self._get_power_sensors()
@@ -853,6 +795,46 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         }
                     }
                 ),
+            }
+        )
+
+        return self.async_show_form(step_id=STEP_BASIC, data_schema=schema)
+
+    async def async_step_heating_curve_settings(self, user_input=None):
+        if user_input is not None:
+            self.supply_temperature_sensor = user_input.get(
+                CONF_SUPPLY_TEMPERATURE_SENSOR
+            )
+            self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
+            self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
+            self.outdoor_temp_coefficient = float(
+                user_input.get(
+                    CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
+                )
+            )
+            self.cop_compensation_factor = float(
+                user_input.get(
+                    CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR
+                )
+            )
+            self.planning_window = int(
+                user_input.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
+            )
+            self.time_base = int(user_input.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
+            self.heat_curve_min_outdoor = float(
+                user_input.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
+            )
+            self.heat_curve_max_outdoor = float(
+                user_input.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
+            )
+            return await self.async_step_user()
+
+        temp_sensors = await HeatingCurveOptimizerConfigFlow._get_temperature_sensors(
+            self
+        )
+
+        schema = vol.Schema(
+            {
                 vol.Optional(
                     CONF_SUPPLY_TEMPERATURE_SENSOR,
                     default=self.supply_temperature_sensor,
@@ -881,10 +863,28 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                     default=self.cop_compensation_factor
                     or DEFAULT_COP_COMPENSATION_FACTOR,
                 ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_PLANNING_WINDOW,
+                    default=self.planning_window or DEFAULT_PLANNING_WINDOW,
+                ): vol.Coerce(int),
+                vol.Optional(
+                    CONF_TIME_BASE,
+                    default=self.time_base or DEFAULT_TIME_BASE,
+                ): vol.Coerce(int),
+                vol.Optional(
+                    CONF_HEAT_CURVE_MIN_OUTDOOR,
+                    default=self.heat_curve_min_outdoor,
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_HEAT_CURVE_MAX_OUTDOOR,
+                    default=self.heat_curve_max_outdoor,
+                ): vol.Coerce(float),
             }
         )
 
-        return self.async_show_form(step_id=STEP_BASIC, data_schema=schema)
+        return self.async_show_form(
+            step_id=STEP_HEATING_CURVE_SETTINGS, data_schema=schema
+        )
 
     async def async_step_select_sources(self, user_input=None):
         if user_input and CONF_SOURCES in user_input:

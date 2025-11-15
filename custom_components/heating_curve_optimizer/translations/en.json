@@ -4,9 +4,6 @@
       "basic": {
         "data": {
           "energy_label": "Energy label",
-          "base_cop": "Base COP at 35°C",
-          "outdoor_temp_coefficient": "Outdoor temperature coefficient",
-          "cop_compensation_factor": "COP compensation factor",
           "pv_east_wp": "PV panels east (Wp)",
           "pv_south_wp": "PV panels south (Wp)",
           "pv_west_wp": "PV panels west (Wp)",
@@ -19,12 +16,35 @@
           "pv_tilt": "Tilt angle of PV panels (0=horizontal, 90=vertical, typical: 35°)"
         }
       },
+      "heating_curve_settings": {
+        "title": "Heating Curve Settings",
+        "description": "Configure heating curve and optimization parameters",
+        "data": {
+          "supply_temperature_sensor": "Supply temperature sensor",
+          "k_factor": "K-factor (COP decline per °C supply temp increase)",
+          "base_cop": "Base COP at 35°C supply temperature",
+          "outdoor_temp_coefficient": "Outdoor temperature coefficient",
+          "cop_compensation_factor": "COP compensation factor",
+          "planning_window": "Planning window (hours)",
+          "time_base": "Time base (minutes per step)",
+          "heat_curve_min_outdoor": "Minimum outdoor temperature (°C)",
+          "heat_curve_max_outdoor": "Maximum outdoor temperature (°C)"
+        },
+        "data_description": {
+          "supply_temperature_sensor": "Sensor that measures the heat pump supply temperature",
+          "k_factor": "How much COP decreases per °C increase in supply temperature (typical: 0.01-0.11)",
+          "base_cop": "Heat pump COP at 35°C supply temperature (typical: 3.5-5.0)",
+          "outdoor_temp_coefficient": "How much COP increases per °C outdoor temperature rise (typical: 0.025-0.08)",
+          "cop_compensation_factor": "Factor to adjust theoretical COP to actual system performance (typical: 0.8-1.2)",
+          "planning_window": "Optimization planning horizon in hours (default: 6)",
+          "time_base": "Time interval for optimization in minutes (default: 60)",
+          "heat_curve_min_outdoor": "Minimum outdoor temperature for heating curve (default: -20°C)",
+          "heat_curve_max_outdoor": "Maximum outdoor temperature for heating curve (default: 15°C)"
+        }
+      },
       "user": {
         "data": {
           "energy_label": "Energy label",
-          "base_cop": "Base COP at 35°C",
-          "outdoor_temp_coefficient": "Outdoor temperature coefficient",
-          "cop_compensation_factor": "COP compensation factor",
           "pv_east_wp": "PV panels east (Wp)",
           "pv_south_wp": "PV panels south (Wp)",
           "pv_west_wp": "PV panels west (Wp)",
