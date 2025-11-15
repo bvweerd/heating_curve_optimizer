@@ -828,7 +828,7 @@ class NetPowerConsumptionSensor(BaseUtilitySensor):
             unit="W",
             device_class=None,
             icon=icon,
-            visible=True,
+            visible=False,
             device=device,
             translation_key=name.lower().replace(" ", "_"),
         )
@@ -2589,7 +2589,7 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
             unit="kWh",
             device_class=None,
             icon=icon,
-            visible=True,
+            visible=False,
             device=device,
             translation_key=name.lower().replace(" ", "_"),
         )
