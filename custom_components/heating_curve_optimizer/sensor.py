@@ -744,8 +744,14 @@ class NetHeatLossSensor(BaseUtilitySensor):
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
-        if isinstance(self.outdoor_sensor, SensorEntity):
-            self.outdoor_sensor = self.outdoor_sensor.entity_id
+        if self.heat_loss_sensor:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass,
+                    self.heat_loss_sensor.entity_id,
+                    self._handle_change,
+                )
+            )
         if self.window_gain_sensor:
             self.async_on_remove(
                 async_track_state_change_event(
