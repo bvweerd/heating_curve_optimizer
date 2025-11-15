@@ -27,6 +27,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up a config entry by forwarding to sensor & number platforms."""
     _LOGGER.info("Setting up entry %s", entry.entry_id)
 
+    # Ensure DOMAIN exists in hass.data
+    hass.data.setdefault(DOMAIN, {})
+
     # Store entry data
     hass.data[DOMAIN][entry.entry_id] = entry.data
 
