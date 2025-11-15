@@ -28,7 +28,10 @@
           "planning_window": "Planning window (hours)",
           "time_base": "Time base (minutes per step)",
           "heat_curve_min_outdoor": "Minimum outdoor temperature (°C)",
-          "heat_curve_max_outdoor": "Maximum outdoor temperature (°C)"
+          "heat_curve_max_outdoor": "Maximum outdoor temperature (°C)",
+          "heating_curve_offset": "Manual heating curve offset (°C)",
+          "heat_curve_min": "Minimum supply temperature (°C)",
+          "heat_curve_max": "Maximum supply temperature (°C)"
         },
         "data_description": {
           "supply_temperature_sensor": "Sensor that measures the heat pump supply temperature",
@@ -39,7 +42,10 @@
           "planning_window": "Optimization planning horizon in hours (default: 6)",
           "time_base": "Time interval for optimization in minutes (default: 60)",
           "heat_curve_min_outdoor": "Minimum outdoor temperature for heating curve (default: -20°C)",
-          "heat_curve_max_outdoor": "Maximum outdoor temperature for heating curve (default: 15°C)"
+          "heat_curve_max_outdoor": "Maximum outdoor temperature for heating curve (default: 15°C)",
+          "heating_curve_offset": "Manual offset to add to optimized heating curve (range: -4 to +4°C, default: 0)",
+          "heat_curve_min": "Minimum allowed supply temperature (default: 20°C)",
+          "heat_curve_max": "Maximum allowed supply temperature (default: 45°C)"
         }
       },
       "user": {

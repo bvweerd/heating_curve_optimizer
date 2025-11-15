@@ -28,7 +28,10 @@
           "planning_window": "Planningsvenster (uren)",
           "time_base": "Tijdsbasis (minuten per stap)",
           "heat_curve_min_outdoor": "Minimum buitentemperatuur (°C)",
-          "heat_curve_max_outdoor": "Maximum buitentemperatuur (°C)"
+          "heat_curve_max_outdoor": "Maximum buitentemperatuur (°C)",
+          "heating_curve_offset": "Handmatige stooklijn offset (°C)",
+          "heat_curve_min": "Minimum aanvoertemperatuur (°C)",
+          "heat_curve_max": "Maximum aanvoertemperatuur (°C)"
         },
         "data_description": {
           "supply_temperature_sensor": "Sensor die de aanvoertemperatuur van de warmtepomp meet",
@@ -39,7 +42,10 @@
           "planning_window": "Optimalisatie planningshorizon in uren (standaard: 6)",
           "time_base": "Tijdsinterval voor optimalisatie in minuten (standaard: 60)",
           "heat_curve_min_outdoor": "Minimum buitentemperatuur voor stooklijn (standaard: -20°C)",
-          "heat_curve_max_outdoor": "Maximum buitentemperatuur voor stooklijn (standaard: 15°C)"
+          "heat_curve_max_outdoor": "Maximum buitentemperatuur voor stooklijn (standaard: 15°C)",
+          "heating_curve_offset": "Handmatige offset om toe te voegen aan geoptimaliseerde stooklijn (bereik: -4 tot +4°C, standaard: 0)",
+          "heat_curve_min": "Minimum toegestane aanvoertemperatuur (standaard: 20°C)",
+          "heat_curve_max": "Maximum toegestane aanvoertemperatuur (standaard: 45°C)"
         }
       },
       "user": {

@@ -49,10 +49,18 @@ from .const import (
     CONF_PV_SOUTH_WP,
     CONF_PV_WEST_WP,
     CONF_PV_TILT,
+    CONF_HEATING_CURVE_OFFSET,
+    CONF_HEAT_CURVE_MIN,
+    CONF_HEAT_CURVE_MAX,
+    CONF_HEAT_CURVE_MIN_OUTDOOR,
+    CONF_HEAT_CURVE_MAX_OUTDOOR,
     DEFAULT_COP_AT_35,
     DEFAULT_K_FACTOR,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_COP_COMPENSATION_FACTOR,
+    DEFAULT_HEATING_CURVE_OFFSET,
+    DEFAULT_HEAT_CURVE_MIN,
+    DEFAULT_HEAT_CURVE_MAX,
     DEFAULT_PLANNING_WINDOW,
     DEFAULT_TIME_BASE,
     DEFAULT_PV_TILT,
@@ -1464,7 +1472,7 @@ class CalculatedSupplyTemperatureSensor(BaseUtilitySensor):
         unique_id: str,
         *,
         outdoor_sensor: str | SensorEntity,
-        offset_entity: str | SensorEntity,
+        entry: ConfigEntry,
         device: DeviceInfo,
     ) -> None:
         super().__init__(
@@ -1480,24 +1488,18 @@ class CalculatedSupplyTemperatureSensor(BaseUtilitySensor):
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self.hass = hass
         self.outdoor_sensor = outdoor_sensor
-        self.offset_entity = offset_entity
+        self._entry = entry
 
     async def async_added_to_hass(self) -> None:  # pragma: no cover - simple track
         await super().async_added_to_hass()
         if isinstance(self.outdoor_sensor, SensorEntity):
             self.outdoor_sensor = self.outdoor_sensor.entity_id
-        if isinstance(self.offset_entity, SensorEntity):
-            self.offset_entity = self.offset_entity.entity_id
-        entities = [
-            cast(str, self.outdoor_sensor),
-            cast(str, self.offset_entity),
-            "number.heating_curve_min",
-            "number.heating_curve_max",
-        ]
-        for ent in entities:
-            self.async_on_remove(
-                async_track_state_change_event(self.hass, ent, self._handle_change)
+        # Track outdoor sensor for changes
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass, cast(str, self.outdoor_sensor), self._handle_change
             )
+        )
 
     async def _handle_change(self, event):  # pragma: no cover - simple callback
         await self.async_update()
@@ -1523,13 +1525,10 @@ class CalculatedSupplyTemperatureSensor(BaseUtilitySensor):
         if isinstance(entity_ref, SensorEntity) and entity_ref.entity_id is not None:
             if entity_ref is self.outdoor_sensor:
                 self.outdoor_sensor = entity_ref.entity_id
-            elif entity_ref is self.offset_entity:
-                self.offset_entity = entity_ref.entity_id
         return state
 
     async def async_update(self) -> None:
         out_state = self._get_state(self.outdoor_sensor)
-        off_state = self._get_state(self.offset_entity)
 
         if out_state is None or out_state.state in ("unknown", "unavailable"):
             self._attr_available = False
@@ -1540,21 +1539,38 @@ class CalculatedSupplyTemperatureSensor(BaseUtilitySensor):
             self._attr_available = False
             return
 
-        offset = 0.0
-        if off_state is not None and off_state.state not in (
-            "unknown",
-            "unavailable",
-        ):
-            try:
-                offset = float(off_state.state)
-            except ValueError:
-                offset = 0.0
-
+        # Get values from config entry
         try:
-            min_temp = float(self.hass.data[DOMAIN]["heat_curve_min"])
-            max_temp = float(self.hass.data[DOMAIN]["heat_curve_max"])
-            outdoor_min = float(self.hass.data[DOMAIN]["heat_curve_min_outdoor"])
-            outdoor_max = float(self.hass.data[DOMAIN]["heat_curve_max_outdoor"])
+            offset = float(
+                self._entry.options.get(
+                    CONF_HEATING_CURVE_OFFSET,
+                    self._entry.data.get(CONF_HEATING_CURVE_OFFSET, DEFAULT_HEATING_CURVE_OFFSET)
+                )
+            )
+            min_temp = float(
+                self._entry.options.get(
+                    CONF_HEAT_CURVE_MIN,
+                    self._entry.data.get(CONF_HEAT_CURVE_MIN, DEFAULT_HEAT_CURVE_MIN)
+                )
+            )
+            max_temp = float(
+                self._entry.options.get(
+                    CONF_HEAT_CURVE_MAX,
+                    self._entry.data.get(CONF_HEAT_CURVE_MAX, DEFAULT_HEAT_CURVE_MAX)
+                )
+            )
+            outdoor_min = float(
+                self._entry.options.get(
+                    CONF_HEAT_CURVE_MIN_OUTDOOR,
+                    self._entry.data.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
+                )
+            )
+            outdoor_max = float(
+                self._entry.options.get(
+                    CONF_HEAT_CURVE_MAX_OUTDOOR,
+                    self._entry.data.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
+                )
+            )
         except (KeyError, TypeError, ValueError):
             self._attr_available = False
             return
@@ -1590,7 +1606,7 @@ class OptimizedSupplyTemperatureSensor(CalculatedSupplyTemperatureSensor):
         unique_id: str,
         *,
         outdoor_sensor: str | SensorEntity,
-        offset_entity: str | SensorEntity,
+        entry: ConfigEntry,
         device: DeviceInfo,
         k_factor: float = DEFAULT_K_FACTOR,
         planning_window: int = DEFAULT_PLANNING_WINDOW,
@@ -1601,7 +1617,7 @@ class OptimizedSupplyTemperatureSensor(CalculatedSupplyTemperatureSensor):
             name=name,
             unique_id=unique_id,
             outdoor_sensor=outdoor_sensor,
-            offset_entity=offset_entity,
+            entry=entry,
             device=device,
         )
         self.k_factor = k_factor
@@ -2970,7 +2986,7 @@ async def async_setup_entry(
             name="Calculated Supply Temperature",
             unique_id=f"{entry.entry_id}_calculated_supply_temperature",
             outdoor_sensor=outdoor_sensor_entity,
-            offset_entity="number.heating_curve_offset",
+            entry=entry,
             device=device_info,
         )
     )
@@ -3248,7 +3264,7 @@ async def async_setup_entry(
                 name="Optimized Supply Temperature",
                 unique_id=f"{entry.entry_id}_optimized_supply_temperature",
                 outdoor_sensor=outdoor_sensor_entity,
-                offset_entity=heating_curve_offset_sensor,
+                entry=entry,
                 device=device_info,
                 k_factor=k_factor,
                 planning_window=planning_window,

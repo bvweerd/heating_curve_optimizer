@@ -28,6 +28,9 @@ from .const import (
     CONF_COP_COMPENSATION_FACTOR,
     CONF_HEAT_CURVE_MIN_OUTDOOR,
     CONF_HEAT_CURVE_MAX_OUTDOOR,
+    CONF_HEATING_CURVE_OFFSET,
+    CONF_HEAT_CURVE_MIN,
+    CONF_HEAT_CURVE_MAX,
     CONF_PRICE_SENSOR,
     CONF_CONSUMPTION_PRICE_SENSOR,
     CONF_PRODUCTION_PRICE_SENSOR,
@@ -43,6 +46,9 @@ from .const import (
     DEFAULT_COP_COMPENSATION_FACTOR,
     DEFAULT_PLANNING_WINDOW,
     DEFAULT_TIME_BASE,
+    DEFAULT_HEATING_CURVE_OFFSET,
+    DEFAULT_HEAT_CURVE_MIN,
+    DEFAULT_HEAT_CURVE_MAX,
     CONF_SOURCE_TYPE,
     CONF_SOURCES,
     DOMAIN,
@@ -92,6 +98,9 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.time_base: int = DEFAULT_TIME_BASE
         self.heat_curve_min_outdoor: float = -20.0
         self.heat_curve_max_outdoor: float = 15.0
+        self.heating_curve_offset: float = DEFAULT_HEATING_CURVE_OFFSET
+        self.heat_curve_min: float = DEFAULT_HEAT_CURVE_MIN
+        self.heat_curve_max: float = DEFAULT_HEAT_CURVE_MAX
 
     async def async_step_user(
         self, user_input: dict[str, str] | None = None
@@ -158,6 +167,9 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_TIME_BASE: self.time_base,
                         CONF_HEAT_CURVE_MIN_OUTDOOR: self.heat_curve_min_outdoor,
                         CONF_HEAT_CURVE_MAX_OUTDOOR: self.heat_curve_max_outdoor,
+                        CONF_HEATING_CURVE_OFFSET: self.heating_curve_offset,
+                        CONF_HEAT_CURVE_MIN: self.heat_curve_min,
+                        CONF_HEAT_CURVE_MAX: self.heat_curve_max,
                     },
                 )
             self.source_type = choice
@@ -306,6 +318,15 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.heat_curve_max_outdoor = float(
                 user_input.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
             )
+            self.heating_curve_offset = float(
+                user_input.get(CONF_HEATING_CURVE_OFFSET, DEFAULT_HEATING_CURVE_OFFSET)
+            )
+            self.heat_curve_min = float(
+                user_input.get(CONF_HEAT_CURVE_MIN, DEFAULT_HEAT_CURVE_MIN)
+            )
+            self.heat_curve_max = float(
+                user_input.get(CONF_HEAT_CURVE_MAX, DEFAULT_HEAT_CURVE_MAX)
+            )
             return await self.async_step_user()
 
         temp_sensors = await self._get_temperature_sensors()
@@ -355,6 +376,18 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(
                     CONF_HEAT_CURVE_MAX_OUTDOOR,
                     default=self.heat_curve_max_outdoor,
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_HEATING_CURVE_OFFSET,
+                    default=self.heating_curve_offset,
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_HEAT_CURVE_MIN,
+                    default=self.heat_curve_min,
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_HEAT_CURVE_MAX,
+                    default=self.heat_curve_max,
                 ): vol.Coerce(float),
             }
         )
@@ -571,6 +604,9 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
         self.time_base = _get(CONF_TIME_BASE, DEFAULT_TIME_BASE)
         self.heat_curve_min_outdoor = _get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
         self.heat_curve_max_outdoor = _get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
+        self.heating_curve_offset = _get(CONF_HEATING_CURVE_OFFSET, DEFAULT_HEATING_CURVE_OFFSET)
+        self.heat_curve_min = _get(CONF_HEAT_CURVE_MIN, DEFAULT_HEAT_CURVE_MIN)
+        self.heat_curve_max = _get(CONF_HEAT_CURVE_MAX, DEFAULT_HEAT_CURVE_MAX)
         self.price_settings = copy.deepcopy(
             config_entry.options.get(
                 CONF_PRICE_SETTINGS,
@@ -685,6 +721,9 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_TIME_BASE: self.time_base,
                         CONF_HEAT_CURVE_MIN_OUTDOOR: self.heat_curve_min_outdoor,
                         CONF_HEAT_CURVE_MAX_OUTDOOR: self.heat_curve_max_outdoor,
+                        CONF_HEATING_CURVE_OFFSET: self.heating_curve_offset,
+                        CONF_HEAT_CURVE_MIN: self.heat_curve_min,
+                        CONF_HEAT_CURVE_MAX: self.heat_curve_max,
                     },
                 )
             self.source_type = choice
@@ -827,6 +866,15 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             self.heat_curve_max_outdoor = float(
                 user_input.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
             )
+            self.heating_curve_offset = float(
+                user_input.get(CONF_HEATING_CURVE_OFFSET, DEFAULT_HEATING_CURVE_OFFSET)
+            )
+            self.heat_curve_min = float(
+                user_input.get(CONF_HEAT_CURVE_MIN, DEFAULT_HEAT_CURVE_MIN)
+            )
+            self.heat_curve_max = float(
+                user_input.get(CONF_HEAT_CURVE_MAX, DEFAULT_HEAT_CURVE_MAX)
+            )
             return await self.async_step_user()
 
         temp_sensors = await HeatingCurveOptimizerConfigFlow._get_temperature_sensors(
@@ -878,6 +926,18 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_HEAT_CURVE_MAX_OUTDOOR,
                     default=self.heat_curve_max_outdoor,
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_HEATING_CURVE_OFFSET,
+                    default=self.heating_curve_offset,
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_HEAT_CURVE_MIN,
+                    default=self.heat_curve_min,
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_HEAT_CURVE_MAX,
+                    default=self.heat_curve_max,
                 ): vol.Coerce(float),
             }
         )
