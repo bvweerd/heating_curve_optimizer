@@ -2006,10 +2006,21 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
 
         result: list[float] = []
         for step in range(self.steps):
-            minute_offset = step * self.time_base
-            idx = int(minute_offset / base)
-            if idx < len(numeric_values):
-                result.append(numeric_values[idx])
+            start_minute = step * self.time_base
+            end_minute = (step + 1) * self.time_base
+
+            # Find all indices that fall within this time range
+            start_idx = int(start_minute / base)
+            end_idx = int(end_minute / base)
+
+            # Calculate average of all values in this range
+            if end_idx <= len(numeric_values):
+                values_in_range = numeric_values[start_idx:end_idx]
+            else:
+                values_in_range = numeric_values[start_idx:]
+
+            if values_in_range:
+                result.append(sum(values_in_range) / len(values_in_range))
             else:
                 result.append(float(fill_value))
 
