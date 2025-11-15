@@ -217,13 +217,13 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
     def extra_state_attributes(self) -> dict[str, list[float]]:
         return self._extra_attrs
 
-    async def _fetch_weather(self) -> tuple[float, list[float]]:
+    async def _fetch_weather(self) -> tuple[float, list[float], list[float]]:
         _LOGGER.debug("Fetching weather for %.4f, %.4f", self.latitude, self.longitude)
 
         url = (
             "https://api.open-meteo.com/v1/forecast"
             f"?latitude={self.latitude}&longitude={self.longitude}"
-            "&hourly=temperature_2m&current_weather=true&timezone=UTC"
+            "&hourly=temperature_2m,relative_humidity_2m&current_weather=true&timezone=UTC"
         )
         try:
             async with self.session.get(
@@ -233,7 +233,7 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
             _LOGGER.error("Error fetching weather data: %s", err)
             self._attr_available = False
-            return 0.0, []
+            return 0.0, [], []
         self._attr_available = True
 
         current = float(data.get("current_weather", {}).get("temperature", 0))
@@ -241,9 +241,10 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
         hourly = data.get("hourly", {})
         times = hourly.get("time", [])
         values = hourly.get("temperature_2m", [])
+        humidity_values = hourly.get("relative_humidity_2m", [])
 
         if not times or not values:
-            return current, []
+            return current, [], []
 
         now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
         start_idx = 0
@@ -257,16 +258,18 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
                 break
 
         temps = [float(v) for v in values[start_idx : start_idx + 24]]
-        _LOGGER.debug("Weather data current=%s forecast=%s", current, temps)
-        return current, temps
+        humidity = [float(v) for v in humidity_values[start_idx : start_idx + 24]] if humidity_values else []
+        _LOGGER.debug("Weather data current=%s forecast=%s humidity=%s", current, temps, humidity)
+        return current, temps, humidity
 
     async def async_update(self):
-        current, forecast = await self._fetch_weather()
+        current, forecast, humidity = await self._fetch_weather()
         if not self._attr_available:
             return
         self._attr_native_value = round(current, 2)
         self._extra_attrs = {
             "forecast": [round(v, 2) for v in forecast],
+            "humidity_forecast": [round(v, 1) for v in humidity] if humidity else [],
             "forecast_time_base": 60,
         }
 
@@ -965,13 +968,32 @@ class QuadraticCopSensor(BaseUtilitySensor):
             self._set_unavailable(f"waarde van buitensensor {sensor_name} is ongeldig")
             return
 
-        cop = (
+        # Calculate base COP
+        cop_base = (
             self.base_cop
             + self.outdoor_temp_coefficient * o_temp
             - self.k_factor * (s_temp - 35)
         ) * self.cop_compensation_factor
+
+        # Apply defrost factor if outdoor sensor has humidity data
+        # Otherwise use default 80% humidity (typical for Dutch maritime climate)
+        humidity = 80.0
+        if o_state.attributes and "humidity_forecast" in o_state.attributes:
+            humidity_list = o_state.attributes.get("humidity_forecast", [])
+            if humidity_list and len(humidity_list) > 0:
+                humidity = float(humidity_list[0])  # Use current hour humidity
+
+        defrost_factor = _calculate_defrost_factor(o_temp, humidity)
+        cop = cop_base * defrost_factor
+
         _LOGGER.debug(
-            "Calculated COP with supply=%s outdoor=%s -> %s", s_temp, o_temp, cop
+            "Calculated COP: supply=%s outdoor=%s humidity=%.0f%% base_cop=%.2f defrost_factor=%.3f final_cop=%.2f",
+            s_temp,
+            o_temp,
+            humidity,
+            cop_base,
+            defrost_factor,
+            cop,
         )
         self._mark_available()
         self._attr_native_value = round(cop, 3)
@@ -1716,6 +1738,84 @@ def _calculate_supply_temperature(
     return water_max + (water_min - water_max) * ratio
 
 
+def _calculate_defrost_factor(outdoor_temp: float, humidity: float = 80.0) -> float:
+    """Calculate COP degradation due to defrost cycles for air-source heat pumps.
+
+    Based on research for air-source heat pumps in humid climates (like Netherlands).
+    Frosting occurs when outdoor temperature is between -10°C and 6°C with sufficient humidity.
+    The worst frosting occurs around 0-3°C with high humidity (70-90%).
+
+    Args:
+        outdoor_temp: Outdoor temperature in °C
+        humidity: Relative humidity in % (default 80% for Dutch maritime climate)
+
+    Returns:
+        Multiplier (0.60-1.0) to apply to base COP accounting for defrost losses
+
+    Research references:
+    - Frosting occurs at 100% RH below 3.1°C, at 70% RH below 5.3°C
+    - COP degradation: typical 10-15%, worst case up to 40%
+    - Most critical range: 0-7°C in humid climates
+    """
+    # No frosting above 6°C - heat pump operates at full efficiency
+    if outdoor_temp >= 6.0:
+        return 1.0
+
+    # No frosting below -10°C (air too dry, insufficient moisture to freeze)
+    if outdoor_temp <= -10.0:
+        return 1.0
+
+    # Calculate humidity-dependent frosting threshold
+    # At 100% RH: frosting starts at 3.1°C
+    # At 70% RH: frosting starts at 5.3°C
+    # Linear interpolation for other humidity levels
+    frosting_threshold = 3.1 + (humidity - 100) * (5.3 - 3.1) / (70 - 100)
+    frosting_threshold = max(min(frosting_threshold, 6.0), -10.0)
+
+    # No frosting if temperature is above the humidity-dependent threshold
+    if outdoor_temp >= frosting_threshold:
+        return 1.0
+
+    # Frosting zone: calculate defrost penalty
+    if outdoor_temp >= 0:
+        # Worst frosting zone: 0-3°C
+        # COP loss increases as we approach 0-2°C
+        if outdoor_temp <= 3:
+            # Maximum penalty at 0-2°C: 15-40% depending on humidity
+            base_penalty = 0.25  # 25% base COP loss in worst conditions
+            temp_factor = 1.0 - (outdoor_temp / 3.0) * 0.4  # Reduces penalty as temp increases
+        else:
+            # Moderate frosting zone: 3-6°C
+            # Linear reduction in penalty from 3°C to frosting threshold
+            base_penalty = 0.15  # 15% COP loss
+            temp_factor = (frosting_threshold - outdoor_temp) / (frosting_threshold - 3.0)
+    else:
+        # Below freezing: -10 to 0°C
+        # Moderate frosting, less severe than near-zero temperatures
+        base_penalty = 0.12  # 12% COP loss
+        temp_factor = (outdoor_temp + 10) / 10.0
+
+    # Adjust for humidity (Dutch climate typically 75-90% RH in winter)
+    # Higher humidity = more frost formation = worse COP degradation
+    humidity_factor = min(1.0, max(0.5, humidity / 80.0))  # Normalized to 80% baseline
+
+    # Calculate final defrost penalty
+    defrost_penalty = base_penalty * temp_factor * humidity_factor
+
+    # Return COP multiplier (1.0 = no loss, 0.6 = 40% loss in worst case)
+    cop_multiplier = 1.0 - defrost_penalty
+
+    _LOGGER.debug(
+        "Defrost factor: T=%.1f°C, RH=%.0f%% -> multiplier=%.3f (%.0f%% COP loss)",
+        outdoor_temp,
+        humidity,
+        cop_multiplier,
+        defrost_penalty * 100,
+    )
+
+    return max(0.60, cop_multiplier)  # Minimum 60% efficiency (40% max loss)
+
+
 def _optimize_offsets(
     demand: list[float],
     prices: list[float],
@@ -1726,6 +1826,9 @@ def _optimize_offsets(
     buffer: float = 0.0,
     water_min: float = 28.0,
     water_max: float = 45.0,
+    outdoor_temps: list[float] | None = None,
+    humidity_forecast: list[float] | None = None,
+    outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
 ) -> tuple[list[int], list[float]]:
     r"""Return cost optimized offsets for the given demand and prices.
 
@@ -1740,23 +1843,57 @@ def _optimize_offsets(
     to zero.
     """
     _LOGGER.debug(
-        "Optimizing offsets demand=%s prices=%s base=%s k=%s comp=%s buffer=%s",
+        "Optimizing offsets demand=%s prices=%s base=%s k=%s comp=%s buffer=%s outdoor_temps=%s humidity=%s",
         demand,
         prices,
         base_temp,
         k_factor,
         cop_compensation_factor,
         buffer,
+        outdoor_temps,
+        humidity_forecast,
     )
     horizon = min(len(demand), len(prices))
     if horizon == 0:
         return [], []
 
-    base_cop = (
-        DEFAULT_COP_AT_35 - k_factor * (base_temp - 35)
-    ) * cop_compensation_factor
-    reciprocal_base_cop = 1 / base_cop
-    cop_derivative = (k_factor * cop_compensation_factor) / (base_cop**2)
+    # Prepare outdoor temperature and humidity data for defrost modeling
+    # Use forecasts if available, otherwise use a default assumption
+    outdoor_temps_data = outdoor_temps if outdoor_temps else [5.0] * horizon
+    humidity_data = humidity_forecast if humidity_forecast else [80.0] * horizon
+
+    # Ensure we have enough data points
+    if len(outdoor_temps_data) < horizon:
+        # Pad with the last value if needed
+        last_temp = outdoor_temps_data[-1] if outdoor_temps_data else 5.0
+        outdoor_temps_data = list(outdoor_temps_data) + [last_temp] * (horizon - len(outdoor_temps_data))
+
+    if len(humidity_data) < horizon:
+        # Pad with default humidity
+        humidity_data = list(humidity_data) + [80.0] * (horizon - len(humidity_data))
+
+    # Calculate defrost factors for each time step
+    defrost_factors = [
+        _calculate_defrost_factor(outdoor_temps_data[t], humidity_data[t])
+        for t in range(horizon)
+    ]
+
+    def _calculate_cop(offset: int, time_step: int) -> float:
+        """Calculate COP for given offset and time step, including outdoor temp and defrost effects."""
+        supply_temp = base_temp + offset
+        outdoor_temp = outdoor_temps_data[time_step]
+
+        # COP formula: base + outdoor_effect - supply_temp_effect
+        cop_base = (
+            DEFAULT_COP_AT_35
+            + outdoor_temp_coefficient * outdoor_temp
+            - k_factor * (supply_temp - 35)
+        ) * cop_compensation_factor
+
+        # Apply defrost factor
+        cop_adjusted = cop_base * defrost_factors[time_step]
+
+        return max(0.5, cop_adjusted)  # Ensure COP doesn't go below 0.5
 
     allowed_offsets = [
         o for o in range(-4, 5) if water_min <= base_temp + o <= water_max
@@ -1772,14 +1909,14 @@ def _optimize_offsets(
     ]
 
     for off in allowed_offsets:
-        cost = demand[0] * prices[0] * (reciprocal_base_cop + cop_derivative * off)
+        cop = _calculate_cop(off, 0)
+        cost = demand[0] * prices[0] / cop if cop > 0 else demand[0] * prices[0] * 10
         dp[0][off] = {off: (cost, None, None)}
 
     for t in range(1, horizon):
         for off in allowed_offsets:
-            step_cost = (
-                demand[t] * prices[t] * (reciprocal_base_cop + cop_derivative * off)
-            )
+            cop = _calculate_cop(off, t)
+            step_cost = demand[t] * prices[t] / cop if cop > 0 else demand[t] * prices[t] * 10
             for prev_off, sums in dp[t - 1].items():
                 if abs(off - prev_off) <= 1:
                     for prev_sum, (prev_cost, _, _) in sums.items():
@@ -2147,6 +2284,27 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             outdoor_max=outdoor_max,
         )
 
+        # Extract outdoor temperature and humidity forecasts for defrost modeling
+        outdoor_temp_forecast: list[float] = []
+        humidity_forecast: list[float] = []
+
+        if o_state.attributes:
+            # Get forecast from outdoor sensor attributes
+            forecast_attr = o_state.attributes.get("forecast", [])
+            if forecast_attr and isinstance(forecast_attr, list):
+                outdoor_temp_forecast = [float(v) for v in forecast_attr[: self.steps]]
+
+            # Get humidity forecast if available
+            humidity_attr = o_state.attributes.get("humidity_forecast", [])
+            if humidity_attr and isinstance(humidity_attr, list):
+                humidity_forecast = [float(v) for v in humidity_attr[: self.steps]]
+
+        _LOGGER.debug(
+            "Outdoor forecasts for optimization: temp=%s, humidity=%s",
+            outdoor_temp_forecast,
+            humidity_forecast,
+        )
+
         allowed_offsets = [
             o for o in range(-4, 5) if water_min <= base_temp + o <= water_max
         ]
@@ -2172,6 +2330,9 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
                     buffer=0.0,
                     water_min=water_min,
                     water_max=water_max,
+                    outdoor_temps=outdoor_temp_forecast if outdoor_temp_forecast else None,
+                    humidity_forecast=humidity_forecast if humidity_forecast else None,
+                    outdoor_temp_coefficient=self.outdoor_temp_coefficient,
                 ),
                 demand,
                 prices,
