@@ -45,17 +45,23 @@ from .const import (
     CONF_SOURCE_TYPE,
     CONF_SOURCES,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
+    CONF_PV_EAST_WP,
+    CONF_PV_SOUTH_WP,
+    CONF_PV_WEST_WP,
+    CONF_PV_TILT,
     DEFAULT_COP_AT_35,
     DEFAULT_K_FACTOR,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_COP_COMPENSATION_FACTOR,
     DEFAULT_PLANNING_WINDOW,
     DEFAULT_TIME_BASE,
+    DEFAULT_PV_TILT,
     DOMAIN,
     INDOOR_TEMPERATURE,
     SOURCE_TYPE_CONSUMPTION,
     SOURCE_TYPE_PRODUCTION,
     U_VALUE_MAP,
+    calculate_htc_from_energy_label,
 )
 from .entity import BaseUtilitySensor
 
@@ -441,7 +447,11 @@ class HeatLossSensor(BaseUtilitySensor):
             if isinstance(v, (int, float, str))
         ]
         self._mark_available()
-        u_value = U_VALUE_MAP.get(self.energy_label.upper(), 1.0)
+
+        # Calculate HTC (Heat Transfer Coefficient) from energy label
+        # This properly converts energy label to building heat loss rate
+        htc = calculate_htc_from_energy_label(self.energy_label, self.area_m2)
+
         indoor = INDOOR_TEMPERATURE
         if self.indoor_sensor:
             state = self.hass.states.get(self.indoor_sensor)
@@ -450,21 +460,33 @@ class HeatLossSensor(BaseUtilitySensor):
                     indoor = float(state.state)
                 except ValueError:
                     indoor = INDOOR_TEMPERATURE
-        q_loss = self.area_m2 * u_value * (indoor - current) / 1000.0
+
+        # Heat loss (kW) = HTC (W/K) × ΔT (K) / 1000
+        delta_t = indoor - current
+        q_loss = htc * delta_t / 1000.0
+
         _LOGGER.debug(
-            "Heat loss calculation area=%.2f u=%.2f indoor=%.2f outdoor=%.2f",
+            "Heat loss calculation: label=%s area=%.2f HTC=%.1f W/K indoor=%.2f outdoor=%.2f ΔT=%.2f q_loss=%.3f kW",
+            self.energy_label,
             self.area_m2,
-            u_value,
+            htc,
             indoor,
             current,
+            delta_t,
+            q_loss,
         )
         self._attr_native_value = round(q_loss, 3)
+
+        # Calculate forecast values using HTC
         forecast_values = [
-            round(self.area_m2 * u_value * (indoor - t) / 1000.0, 3) for t in forecast
+            round(htc * (indoor - t) / 1000.0, 3) for t in forecast
         ]
         self._extra_attrs = {
             "forecast": forecast_values,
             "forecast_time_base": 60,
+            "htc_w_per_k": round(htc, 1),
+            "energy_label": self.energy_label,
+            "calculation_method": "HTC from energy label (NTA 8800)",
         }
 
     async def async_update(self):
@@ -835,35 +857,82 @@ class NetPowerConsumptionSensor(BaseUtilitySensor):
         self.production_sensors = production_sensors
 
     def _compute_value(self) -> None:
+        """Calculate net power consumption from energy sensors.
+
+        Energy sensors (kWh) often expose a 'power' attribute (W) showing
+        current instantaneous power. We use this if available.
+        """
         consumption = 0.0
         for sensor in self.consumption_sensors:
             state = self.hass.states.get(sensor)
             if state is None or state.state in ("unknown", "unavailable"):
                 continue
-            try:
-                consumption += float(state.state)
-            except ValueError:
-                continue
+
+            # Try to get power from attribute first (W)
+            power_attr = state.attributes.get("power")
+            if power_attr is not None:
+                try:
+                    consumption += float(power_attr)
+                    continue
+                except (ValueError, TypeError):
+                    pass
+
+            # Fallback: if device_class is power, use state directly
+            if state.attributes.get("device_class") == "power":
+                try:
+                    # State is already in W
+                    consumption += float(state.state)
+                    continue
+                except ValueError:
+                    pass
+
+            # If it's an energy sensor without power attribute, we can't
+            # calculate instantaneous power without derivatives
+            _LOGGER.debug(
+                "Sensor %s is energy sensor without power attribute, skipping",
+                sensor
+            )
 
         production = 0.0
         for sensor in self.production_sensors:
             state = self.hass.states.get(sensor)
             if state is None or state.state in ("unknown", "unavailable"):
                 continue
-            try:
-                production += float(state.state)
-            except ValueError:
-                continue
+
+            # Try to get power from attribute first (W)
+            power_attr = state.attributes.get("power")
+            if power_attr is not None:
+                try:
+                    production += float(power_attr)
+                    continue
+                except (ValueError, TypeError):
+                    pass
+
+            # Fallback: if device_class is power, use state directly
+            if state.attributes.get("device_class") == "power":
+                try:
+                    # State is already in W
+                    production += float(state.state)
+                    continue
+                except ValueError:
+                    pass
+
+            # If it's an energy sensor without power attribute, we can't
+            # calculate instantaneous power without derivatives
+            _LOGGER.debug(
+                "Sensor %s is energy sensor without power attribute, skipping",
+                sensor
+            )
 
         self._attr_available = True
         net = consumption - production
         _LOGGER.debug(
-            "Power consumption total=%s production=%s net=%s",
-            consumption,
-            production,
-            net,
+            "Net power consumption: consumption=%sW production=%sW net=%sW",
+            round(consumption, 1),
+            round(production, 1),
+            round(net, 1),
         )
-        self._attr_native_value = round(net, 3)
+        self._attr_native_value = round(net, 1)
 
     async def async_update(self):
         self._compute_value()
@@ -2013,6 +2082,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         *,
         k_factor: float = DEFAULT_K_FACTOR,
         cop_compensation_factor: float = 1.0,
+        outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
         planning_window: int = DEFAULT_PLANNING_WINDOW,
         time_base: int = DEFAULT_TIME_BASE,
         consumption_sensors: list[str] | None = None,
@@ -2036,6 +2106,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         self.price_sensor = price_sensor
         self.k_factor = k_factor
         self.cop_compensation_factor = cop_compensation_factor
+        self.outdoor_temp_coefficient = outdoor_temp_coefficient
         self.planning_window = planning_window
         self.time_base = time_base
         self.steps = max(1, int(planning_window * 60 // time_base))
@@ -2506,7 +2577,10 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
         icon: str,
         device: DeviceInfo,
         heatpump_sensor: str | None = None,
-        pv_sensor: str | None = None,
+        pv_east_wp: float = 0.0,
+        pv_south_wp: float = 0.0,
+        pv_west_wp: float = 0.0,
+        pv_tilt: float = 35.0,
     ):
         super().__init__(
             name=name,
@@ -2523,7 +2597,10 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
         self.consumption_sensors = consumption_sensors
         self.production_sensors = production_sensors
         self.heatpump_sensor = heatpump_sensor
-        self.pv_sensor = pv_sensor
+        self.pv_east_wp = pv_east_wp
+        self.pv_south_wp = pv_south_wp
+        self.pv_west_wp = pv_west_wp
+        self.pv_tilt = pv_tilt
         self.session = async_get_clientsession(hass)
         self._extra_attrs: dict[str, list[float]] = {}
 
@@ -2532,22 +2609,16 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
         return self._extra_attrs
 
     async def _fetch_pv_forecast(self) -> list[float]:
-        if not self.pv_sensor:
+        """Fetch PV production forecast with orientation-specific modeling."""
+        # If no PV panels configured, return zeros
+        if self.pv_east_wp == 0 and self.pv_south_wp == 0 and self.pv_west_wp == 0:
             return [0.0] * 24
 
-        state = self.hass.states.get(self.pv_sensor)
-        if state is None or state.state in ("unknown", "unavailable"):
-            return [0.0] * 24
-        try:
-            coeff = float(state.state)
-        except ValueError:
-            _LOGGER.warning("PV sensor %s has invalid state", self.pv_sensor)
-            return [0.0] * 24
-
+        # Fetch solar radiation forecast from open-meteo
         url = (
             "https://api.open-meteo.com/v1/forecast"
             f"?latitude={self.hass.config.latitude}&longitude={self.hass.config.longitude}"
-            "&hourly=shortwave_radiation&timezone=UTC"
+            "&hourly=shortwave_radiation&timezone=UTC&forecast_days=2"
         )
         try:
             async with self.session.get(
@@ -2560,10 +2631,12 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
 
         hourly = data.get("hourly", {})
         times = hourly.get("time", [])
-        radiation = hourly.get("shortwave_radiation", [])
+        radiation = hourly.get("shortwave_radiation", [])  # W/m²
         if not times or not radiation:
+            _LOGGER.warning("No radiation data available from open-meteo")
             return [0.0] * 24
 
+        # Find start index for current hour
         now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
         start_idx = 0
         for i, ts in enumerate(times):
@@ -2575,8 +2648,83 @@ class EnergyConsumptionForecastSensor(BaseUtilitySensor):
                 start_idx = i
                 break
 
-        rad = [float(v) for v in radiation[start_idx : start_idx + 24]]
-        return [r / 1000 * coeff for r in rad]
+        # Extract 24 hours of radiation data
+        rad_24h = [max(0.0, float(v)) for v in radiation[start_idx : start_idx + 24]]
+        if len(rad_24h) < 24:
+            rad_24h.extend([0.0] * (24 - len(rad_24h)))
+
+        # Calculate orientation-specific production
+        production = []
+        for hour, rad in enumerate(rad_24h):
+            # Get hour of day (local time, approximate using UTC + longitude correction)
+            hour_of_day = (now.hour + hour) % 24
+
+            # Calculate orientation-specific efficiency factors
+            # These are approximate cosine corrections for east/south/west orientations
+            # Peak times: East=9am, South=12pm, West=3pm
+            east_factor = self._calc_orientation_factor(hour_of_day, peak_hour=9)
+            south_factor = self._calc_orientation_factor(hour_of_day, peak_hour=12)
+            west_factor = self._calc_orientation_factor(hour_of_day, peak_hour=15)
+
+            # Apply tilt correction (simplified: optimal tilt reduces winter losses)
+            # Tilt factor ranges from 0.7 (poor) to 1.2 (optimal ~35°)
+            tilt_factor = 1.0 + (35.0 - abs(self.pv_tilt - 35.0)) * 0.005
+            tilt_factor = max(0.7, min(1.2, tilt_factor))
+
+            # Standard PV efficiency: 15-20%, use 17.5% average
+            # Radiation (W/m²) → Production (W): radiation * panel_area * efficiency
+            # Wp rating is at 1000 W/m² STC, so: production = rad/1000 * Wp * factors
+            base_efficiency = 0.175
+
+            east_prod = (rad / 1000.0) * self.pv_east_wp * east_factor * tilt_factor * base_efficiency
+            south_prod = (rad / 1000.0) * self.pv_south_wp * south_factor * tilt_factor * base_efficiency
+            west_prod = (rad / 1000.0) * self.pv_west_wp * west_factor * tilt_factor * base_efficiency
+
+            total_prod_w = east_prod + south_prod + west_prod
+            # Convert W to kWh (1 hour duration)
+            production.append(total_prod_w / 1000.0)
+
+        _LOGGER.debug(
+            "PV forecast: East=%sWp, South=%sWp, West=%sWp, Tilt=%s°, Total 24h=%s kWh",
+            self.pv_east_wp,
+            self.pv_south_wp,
+            self.pv_west_wp,
+            self.pv_tilt,
+            round(sum(production), 2),
+        )
+
+        return production
+
+    def _calc_orientation_factor(self, hour_of_day: int, peak_hour: int) -> float:
+        """Calculate orientation-specific efficiency factor using cosine curve.
+
+        Args:
+            hour_of_day: Hour of day (0-23)
+            peak_hour: Hour when this orientation peaks (9 for east, 12 for south, 15 for west)
+
+        Returns:
+            Efficiency factor (0.0-1.0) for this orientation at this time
+        """
+        import math
+
+        # Effective daylight hours: 6am to 6pm (12 hours)
+        if hour_of_day < 6 or hour_of_day >= 18:
+            return 0.0
+
+        # Calculate hours from peak
+        hours_from_peak = abs(hour_of_day - peak_hour)
+
+        # Cosine curve: peak at 0 hours, drops to 0 at ±6 hours
+        # Factor ranges from 1.0 (at peak) to 0.0 (±6 hours away)
+        if hours_from_peak >= 6:
+            return 0.0
+
+        # Cosine function: cos(0) = 1, cos(π/2) = 0
+        # Map 0-6 hours to 0-π/2 radians
+        angle = (hours_from_peak / 6.0) * (math.pi / 2.0)
+        factor = math.cos(angle)
+
+        return max(0.0, factor)
 
     async def _fetch_history(self, sensors: list[str], start, end) -> dict[str, list]:
         """Fetch history data for the given sensors."""  # mypy: ignore-errors
@@ -2869,6 +3017,10 @@ async def async_setup_entry(
     glass_west = float(entry.data.get(CONF_GLASS_WEST_M2, 0))
     glass_south = float(entry.data.get(CONF_GLASS_SOUTH_M2, 0))
     glass_u = float(entry.data.get(CONF_GLASS_U_VALUE, 1.2))
+    pv_east_wp = float(entry.data.get(CONF_PV_EAST_WP, 0))
+    pv_south_wp = float(entry.data.get(CONF_PV_SOUTH_WP, 0))
+    pv_west_wp = float(entry.data.get(CONF_PV_WEST_WP, 0))
+    pv_tilt = float(entry.data.get(CONF_PV_TILT, DEFAULT_PV_TILT))
     planning_window = int(entry.data.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW))
     time_base = int(entry.data.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
 
@@ -2884,32 +3036,9 @@ async def async_setup_entry(
         entry.data.get(CONF_PRODUCTION_PRICE_SENSOR, price_sensor),
     )
 
-    consumption_price_entity = None
-    if consumption_price_sensor:
-        consumption_price_entity = CurrentElectricityPriceSensor(
-            hass=hass,
-            name="Current Consumption Price",
-            unique_id=f"{entry.entry_id}_current_consumption_price",
-            price_sensor=consumption_price_sensor,
-            source_type=SOURCE_TYPE_CONSUMPTION,
-            price_settings=price_settings,
-            icon="mdi:transmission-tower-import",
-            device=price_device_info,
-        )
-        entities.append(consumption_price_entity)
-    if production_price_sensor:
-        entities.append(
-            CurrentElectricityPriceSensor(
-                hass=hass,
-                name="Current Production Price",
-                unique_id=f"{entry.entry_id}_current_production_price",
-                price_sensor=production_price_sensor,
-                source_type=SOURCE_TYPE_PRODUCTION,
-                price_settings=price_settings,
-                icon="mdi:transmission-tower-export",
-                device=price_device_info,
-            )
-        )
+    # Note: We don't create wrapper entities for price sensors anymore.
+    # The integration uses the price sensors from other integrations directly.
+    # This reduces clutter in the UI and avoids unnecessary entity duplication.
 
     heat_loss_sensor = None
     if area_m2 and energy_label:
@@ -2950,6 +3079,10 @@ async def async_setup_entry(
             consumption_sensors=consumption_sources,
             production_sensors=production_sources,
             heatpump_sensor=power_sensor,
+            pv_east_wp=pv_east_wp,
+            pv_south_wp=pv_south_wp,
+            pv_west_wp=pv_west_wp,
+            pv_tilt=pv_tilt,
             icon="mdi:flash-clock",
             device=device_info,
         )
@@ -2966,7 +3099,7 @@ async def async_setup_entry(
             )
         )
 
-    if consumption_price_sensor and forecast_entity and consumption_price_entity:
+    if consumption_price_sensor and forecast_entity:
         price_levels = {
             k: float(v)
             for k, v in price_settings.items()
@@ -2983,7 +3116,7 @@ async def async_setup_entry(
                     hass=hass,
                     name="Available Energy by Price",
                     unique_id=f"{entry.entry_id}_available_energy_by_price",
-                    price_sensor=f"sensor.{consumption_price_entity.translation_key}",
+                    price_sensor=consumption_price_sensor,
                     forecast_sensor=f"sensor.{forecast_entity.translation_key}",
                     price_levels=price_levels,
                     icon="mdi:scale-balance",
@@ -3076,6 +3209,7 @@ async def async_setup_entry(
             device=device_info,
             k_factor=k_factor,
             cop_compensation_factor=cop_compensation_factor,
+            outdoor_temp_coefficient=outdoor_temp_coefficient,
             consumption_sensors=consumption_sources,
             heatpump_sensor=power_sensor,
             production_sensors=production_sources,

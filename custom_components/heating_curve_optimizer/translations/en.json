@@ -6,7 +6,17 @@
           "energy_label": "Energy label",
           "base_cop": "Base COP at 35°C",
           "outdoor_temp_coefficient": "Outdoor temperature coefficient",
-          "cop_compensation_factor": "COP compensation factor"
+          "cop_compensation_factor": "COP compensation factor",
+          "pv_east_wp": "PV panels east (Wp)",
+          "pv_south_wp": "PV panels south (Wp)",
+          "pv_west_wp": "PV panels west (Wp)",
+          "pv_tilt": "PV panel tilt angle (degrees)"
+        },
+        "data_description": {
+          "pv_east_wp": "Total peak power of east-facing PV panels in Wp",
+          "pv_south_wp": "Total peak power of south-facing PV panels in Wp",
+          "pv_west_wp": "Total peak power of west-facing PV panels in Wp",
+          "pv_tilt": "Tilt angle of PV panels (0=horizontal, 90=vertical, typical: 35°)"
         }
       },
       "user": {
@@ -14,16 +24,42 @@
           "energy_label": "Energy label",
           "base_cop": "Base COP at 35°C",
           "outdoor_temp_coefficient": "Outdoor temperature coefficient",
-          "cop_compensation_factor": "COP compensation factor"
+          "cop_compensation_factor": "COP compensation factor",
+          "pv_east_wp": "PV panels east (Wp)",
+          "pv_south_wp": "PV panels south (Wp)",
+          "pv_west_wp": "PV panels west (Wp)",
+          "pv_tilt": "PV panel tilt angle (degrees)"
+        },
+        "data_description": {
+          "pv_east_wp": "Total peak power of east-facing PV panels in Wp",
+          "pv_south_wp": "Total peak power of south-facing PV panels in Wp",
+          "pv_west_wp": "Total peak power of west-facing PV panels in Wp",
+          "pv_tilt": "Tilt angle of PV panels (0=horizontal, 90=vertical, typical: 35°)"
         }
       }
     }
-  }
-,
+  },
   "entity": {
     "binary_sensor": {
       "heat_pump_demand": {
         "name": "Heat pump demand"
+      }
+    },
+    "number": {
+      "heating_curve_offset": {
+        "name": "Heating curve offset"
+      },
+      "heating_curve_min": {
+        "name": "Heating curve minimum (supply temp)"
+      },
+      "heating_curve_max": {
+        "name": "Heating curve maximum (supply temp)"
+      },
+      "heat_curve_min_outdoor": {
+        "name": "Heating curve outdoor temp minimum"
+      },
+      "heat_curve_max_outdoor": {
+        "name": "Heating curve outdoor temp maximum"
       }
     },
     "sensor": {
@@ -31,6 +67,36 @@
         "state": {
           "formula": "COP = (base_cop + outdoor_temp_coefficient × T_outdoor − k_factor × (T_supply − 35)) × cop_compensation_factor"
         }
+      },
+      "heating_curve_offset": {
+        "name": "Heating curve offset (optimized)"
+      },
+      "calculated_supply_temperature": {
+        "name": "Calculated supply temperature"
+      },
+      "optimized_supply_temperature": {
+        "name": "Optimized supply temperature"
+      },
+      "heat_loss": {
+        "name": "Hourly heat loss"
+      },
+      "net_heat_loss": {
+        "name": "Net heat loss"
+      },
+      "window_solar_gain": {
+        "name": "Solar gain through windows"
+      },
+      "cop_delta": {
+        "name": "COP delta (future offsets)"
+      },
+      "heat_generation_delta": {
+        "name": "Heat generation delta"
+      },
+      "heat_buffer": {
+        "name": "Heat buffer (energy storage)"
+      },
+      "net_power_consumption": {
+        "name": "Net power consumption"
       }
     }
   }
