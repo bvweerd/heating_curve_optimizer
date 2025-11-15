@@ -6,7 +6,17 @@
           "energy_label": "Energielabel",
           "base_cop": "Basale COP bij 35°C",
           "outdoor_temp_coefficient": "Buitentemperatuur-coëfficiënt",
-          "cop_compensation_factor": "COP-compensatiefactor"
+          "cop_compensation_factor": "COP-compensatiefactor",
+          "pv_east_wp": "PV-panelen oost (Wp)",
+          "pv_south_wp": "PV-panelen zuid (Wp)",
+          "pv_west_wp": "PV-panelen west (Wp)",
+          "pv_tilt": "PV-panelen hellingshoek (graden)"
+        },
+        "data_description": {
+          "pv_east_wp": "Totaal piekvermogen van op het oosten gerichte PV-panelen in Wp",
+          "pv_south_wp": "Totaal piekvermogen van op het zuiden gerichte PV-panelen in Wp",
+          "pv_west_wp": "Totaal piekvermogen van op het westen gerichte PV-panelen in Wp",
+          "pv_tilt": "Hellingshoek van PV-panelen (0=horizontaal, 90=verticaal, typisch: 35°)"
         }
       },
       "user": {
@@ -14,7 +24,17 @@
           "energy_label": "Energielabel",
           "base_cop": "Basale COP bij 35°C",
           "outdoor_temp_coefficient": "Buitentemperatuur-coëfficiënt",
-          "cop_compensation_factor": "COP-compensatiefactor"
+          "cop_compensation_factor": "COP-compensatiefactor",
+          "pv_east_wp": "PV-panelen oost (Wp)",
+          "pv_south_wp": "PV-panelen zuid (Wp)",
+          "pv_west_wp": "PV-panelen west (Wp)",
+          "pv_tilt": "PV-panelen hellingshoek (graden)"
+        },
+        "data_description": {
+          "pv_east_wp": "Totaal piekvermogen van op het oosten gerichte PV-panelen in Wp",
+          "pv_south_wp": "Totaal piekvermogen van op het zuiden gerichte PV-panelen in Wp",
+          "pv_west_wp": "Totaal piekvermogen van op het westen gerichte PV-panelen in Wp",
+          "pv_tilt": "Hellingshoek van PV-panelen (0=horizontaal, 90=verticaal, typisch: 35°)"
         }
       }
     }

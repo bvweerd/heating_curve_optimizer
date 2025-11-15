@@ -6,7 +6,17 @@
           "energy_label": "Energy label",
           "base_cop": "Base COP at 35°C",
           "outdoor_temp_coefficient": "Outdoor temperature coefficient",
-          "cop_compensation_factor": "COP compensation factor"
+          "cop_compensation_factor": "COP compensation factor",
+          "pv_east_wp": "PV panels east (Wp)",
+          "pv_south_wp": "PV panels south (Wp)",
+          "pv_west_wp": "PV panels west (Wp)",
+          "pv_tilt": "PV panel tilt angle (degrees)"
+        },
+        "data_description": {
+          "pv_east_wp": "Total peak power of east-facing PV panels in Wp",
+          "pv_south_wp": "Total peak power of south-facing PV panels in Wp",
+          "pv_west_wp": "Total peak power of west-facing PV panels in Wp",
+          "pv_tilt": "Tilt angle of PV panels (0=horizontal, 90=vertical, typical: 35°)"
         }
       },
       "user": {
@@ -14,7 +24,17 @@
           "energy_label": "Energy label",
           "base_cop": "Base COP at 35°C",
           "outdoor_temp_coefficient": "Outdoor temperature coefficient",
-          "cop_compensation_factor": "COP compensation factor"
+          "cop_compensation_factor": "COP compensation factor",
+          "pv_east_wp": "PV panels east (Wp)",
+          "pv_south_wp": "PV panels south (Wp)",
+          "pv_west_wp": "PV panels west (Wp)",
+          "pv_tilt": "PV panel tilt angle (degrees)"
+        },
+        "data_description": {
+          "pv_east_wp": "Total peak power of east-facing PV panels in Wp",
+          "pv_south_wp": "Total peak power of south-facing PV panels in Wp",
+          "pv_west_wp": "Total peak power of west-facing PV panels in Wp",
+          "pv_tilt": "Tilt angle of PV panels (0=horizontal, 90=vertical, typical: 35°)"
         }
       }
     }

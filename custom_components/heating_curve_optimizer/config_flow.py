@@ -32,7 +32,12 @@ from .const import (
     CONF_CONSUMPTION_PRICE_SENSOR,
     CONF_PRODUCTION_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
+    CONF_PV_EAST_WP,
+    CONF_PV_SOUTH_WP,
+    CONF_PV_WEST_WP,
+    CONF_PV_TILT,
     DEFAULT_K_FACTOR,
+    DEFAULT_PV_TILT,
     DEFAULT_COP_AT_35,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_COP_COMPENSATION_FACTOR,
@@ -71,6 +76,10 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.glass_west_m2: float | None = None
         self.glass_south_m2: float | None = None
         self.glass_u_value: float | None = None
+        self.pv_east_wp: float | None = None
+        self.pv_south_wp: float | None = None
+        self.pv_west_wp: float | None = None
+        self.pv_tilt: float = DEFAULT_PV_TILT
         self.power_consumption: str | None = None
         self.indoor_temperature_sensor: str | None = None
         self.supply_temperature_sensor: str | None = None
@@ -131,6 +140,10 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_GLASS_WEST_M2: self.glass_west_m2,
                         CONF_GLASS_SOUTH_M2: self.glass_south_m2,
                         CONF_GLASS_U_VALUE: self.glass_u_value,
+                        CONF_PV_EAST_WP: self.pv_east_wp,
+                        CONF_PV_SOUTH_WP: self.pv_south_wp,
+                        CONF_PV_WEST_WP: self.pv_west_wp,
+                        CONF_PV_TILT: self.pv_tilt,
                         CONF_INDOOR_TEMPERATURE_SENSOR: self.indoor_temperature_sensor,
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                         CONF_SUPPLY_TEMPERATURE_SENSOR: self.supply_temperature_sensor,
@@ -206,6 +219,10 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.glass_west_m2 = float(user_input.get(CONF_GLASS_WEST_M2, 0))
             self.glass_south_m2 = float(user_input.get(CONF_GLASS_SOUTH_M2, 0))
             self.glass_u_value = float(user_input.get(CONF_GLASS_U_VALUE, 1.2))
+            self.pv_east_wp = float(user_input.get(CONF_PV_EAST_WP, 0))
+            self.pv_south_wp = float(user_input.get(CONF_PV_SOUTH_WP, 0))
+            self.pv_west_wp = float(user_input.get(CONF_PV_WEST_WP, 0))
+            self.pv_tilt = float(user_input.get(CONF_PV_TILT, DEFAULT_PV_TILT))
             self.indoor_temperature_sensor = user_input.get(
                 CONF_INDOOR_TEMPERATURE_SENSOR
             )
@@ -256,6 +273,10 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_GLASS_WEST_M2, default=0.0): vol.Coerce(float),
                 vol.Optional(CONF_GLASS_SOUTH_M2, default=0.0): vol.Coerce(float),
                 vol.Optional(CONF_GLASS_U_VALUE, default=1.2): vol.Coerce(float),
+                vol.Optional(CONF_PV_EAST_WP, default=0.0): vol.Coerce(float),
+                vol.Optional(CONF_PV_SOUTH_WP, default=0.0): vol.Coerce(float),
+                vol.Optional(CONF_PV_WEST_WP, default=0.0): vol.Coerce(float),
+                vol.Optional(CONF_PV_TILT, default=DEFAULT_PV_TILT): vol.Coerce(float),
                 vol.Optional(CONF_INDOOR_TEMPERATURE_SENSOR): selector(
                     {
                         "select": {
@@ -331,6 +352,10 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.glass_west_m2 = float(user_input.get(CONF_GLASS_WEST_M2, 0))
             self.glass_south_m2 = float(user_input.get(CONF_GLASS_SOUTH_M2, 0))
             self.glass_u_value = float(user_input.get(CONF_GLASS_U_VALUE, 1.2))
+            self.pv_east_wp = float(user_input.get(CONF_PV_EAST_WP, 0))
+            self.pv_south_wp = float(user_input.get(CONF_PV_SOUTH_WP, 0))
+            self.pv_west_wp = float(user_input.get(CONF_PV_WEST_WP, 0))
+            self.pv_tilt = float(user_input.get(CONF_PV_TILT, DEFAULT_PV_TILT))
             self.indoor_temperature_sensor = user_input.get(
                 CONF_INDOOR_TEMPERATURE_SENSOR
             )
@@ -381,6 +406,10 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_GLASS_WEST_M2, default=0.0): vol.Coerce(float),
                 vol.Optional(CONF_GLASS_SOUTH_M2, default=0.0): vol.Coerce(float),
                 vol.Optional(CONF_GLASS_U_VALUE, default=1.2): vol.Coerce(float),
+                vol.Optional(CONF_PV_EAST_WP, default=0.0): vol.Coerce(float),
+                vol.Optional(CONF_PV_SOUTH_WP, default=0.0): vol.Coerce(float),
+                vol.Optional(CONF_PV_WEST_WP, default=0.0): vol.Coerce(float),
+                vol.Optional(CONF_PV_TILT, default=DEFAULT_PV_TILT): vol.Coerce(float),
                 vol.Optional(CONF_INDOOR_TEMPERATURE_SENSOR): selector(
                     {
                         "select": {
@@ -573,6 +602,10 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
         self.glass_west_m2 = _get(CONF_GLASS_WEST_M2)
         self.glass_south_m2 = _get(CONF_GLASS_SOUTH_M2)
         self.glass_u_value = _get(CONF_GLASS_U_VALUE, 1.2)
+        self.pv_east_wp = _get(CONF_PV_EAST_WP, 0)
+        self.pv_south_wp = _get(CONF_PV_SOUTH_WP, 0)
+        self.pv_west_wp = _get(CONF_PV_WEST_WP, 0)
+        self.pv_tilt = _get(CONF_PV_TILT, DEFAULT_PV_TILT)
         self.indoor_temperature_sensor = _get(CONF_INDOOR_TEMPERATURE_SENSOR)
         self.power_consumption = _get(CONF_POWER_CONSUMPTION)
         self.supply_temperature_sensor = _get(CONF_SUPPLY_TEMPERATURE_SENSOR)
@@ -683,6 +716,10 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_GLASS_WEST_M2: self.glass_west_m2,
                         CONF_GLASS_SOUTH_M2: self.glass_south_m2,
                         CONF_GLASS_U_VALUE: self.glass_u_value,
+                        CONF_PV_EAST_WP: self.pv_east_wp,
+                        CONF_PV_SOUTH_WP: self.pv_south_wp,
+                        CONF_PV_WEST_WP: self.pv_west_wp,
+                        CONF_PV_TILT: self.pv_tilt,
                         CONF_INDOOR_TEMPERATURE_SENSOR: self.indoor_temperature_sensor,
                         CONF_POWER_CONSUMPTION: self.power_consumption,
                         CONF_SUPPLY_TEMPERATURE_SENSOR: self.supply_temperature_sensor,
@@ -727,6 +764,10 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             self.glass_west_m2 = float(user_input.get(CONF_GLASS_WEST_M2, 0))
             self.glass_south_m2 = float(user_input.get(CONF_GLASS_SOUTH_M2, 0))
             self.glass_u_value = float(user_input.get(CONF_GLASS_U_VALUE, 1.2))
+            self.pv_east_wp = float(user_input.get(CONF_PV_EAST_WP, 0))
+            self.pv_south_wp = float(user_input.get(CONF_PV_SOUTH_WP, 0))
+            self.pv_west_wp = float(user_input.get(CONF_PV_WEST_WP, 0))
+            self.pv_tilt = float(user_input.get(CONF_PV_TILT, DEFAULT_PV_TILT))
             self.indoor_temperature_sensor = user_input.get(
                 CONF_INDOOR_TEMPERATURE_SENSOR
             )
@@ -776,6 +817,18 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                 ): vol.Coerce(float),
                 vol.Optional(
                     CONF_GLASS_U_VALUE, default=self.glass_u_value or 1.2
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_PV_EAST_WP, default=self.pv_east_wp or 0.0
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_PV_SOUTH_WP, default=self.pv_south_wp or 0.0
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_PV_WEST_WP, default=self.pv_west_wp or 0.0
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_PV_TILT, default=self.pv_tilt or DEFAULT_PV_TILT
                 ): vol.Coerce(float),
                 vol.Optional(
                     CONF_INDOOR_TEMPERATURE_SENSOR,

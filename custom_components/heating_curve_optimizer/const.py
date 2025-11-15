@@ -39,6 +39,15 @@ CONF_OUTDOOR_TEMP_COEFFICIENT = "outdoor_temp_coefficient"
 CONF_HEAT_CURVE_MIN_OUTDOOR = "heat_curve_min_outdoor"
 CONF_HEAT_CURVE_MAX_OUTDOOR = "heat_curve_max_outdoor"
 
+# PV panel configuration
+CONF_PV_EAST_WP = "pv_east_wp"
+CONF_PV_SOUTH_WP = "pv_south_wp"
+CONF_PV_WEST_WP = "pv_west_wp"
+CONF_PV_TILT = "pv_tilt"
+
+# Default PV tilt angle (degrees) - typical for Netherlands
+DEFAULT_PV_TILT = 35
+
 # Allowed energy labels
 ENERGY_LABELS = ["A+++", "A++", "A+", "A", "B", "C", "D", "E", "F", "G"]
 
