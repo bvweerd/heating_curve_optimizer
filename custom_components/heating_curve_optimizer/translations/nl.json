@@ -18,12 +18,28 @@
         }
       }
     }
-  }
-,
+  },
   "entity": {
     "binary_sensor": {
       "heat_pump_demand": {
         "name": "Warmtevraag warmtepomp"
+      }
+    },
+    "number": {
+      "heating_curve_offset": {
+        "name": "Stooklijn offset"
+      },
+      "heating_curve_min": {
+        "name": "Stooklijn minimum (aanvoertemperatuur)"
+      },
+      "heating_curve_max": {
+        "name": "Stooklijn maximum (aanvoertemperatuur)"
+      },
+      "heat_curve_min_outdoor": {
+        "name": "Stooklijn buitentemperatuur minimum"
+      },
+      "heat_curve_max_outdoor": {
+        "name": "Stooklijn buitentemperatuur maximum"
       }
     },
     "sensor": {
@@ -31,6 +47,36 @@
         "state": {
           "formula": "COP = (basale_COP + buitentemperatuur-coëfficiënt × T_buiten − k_factor × (T_aanvoer − 35)) × cop_compensatiefactor"
         }
+      },
+      "heating_curve_offset": {
+        "name": "Stooklijn offset (geoptimaliseerd)"
+      },
+      "calculated_supply_temperature": {
+        "name": "Berekende aanvoertemperatuur"
+      },
+      "optimized_supply_temperature": {
+        "name": "Geoptimaliseerde aanvoertemperatuur"
+      },
+      "heat_loss": {
+        "name": "Warmteverlies per uur"
+      },
+      "net_heat_loss": {
+        "name": "Netto warmteverlies"
+      },
+      "window_solar_gain": {
+        "name": "Zonnewinst via ramen"
+      },
+      "cop_delta": {
+        "name": "COP verschil (toekomstige offsets)"
+      },
+      "heat_generation_delta": {
+        "name": "Warmteproductie verschil"
+      },
+      "heat_buffer": {
+        "name": "Warmtebuffer (energie opslag)"
+      },
+      "net_power_consumption": {
+        "name": "Netto stroomverbruik"
       }
     }
   }

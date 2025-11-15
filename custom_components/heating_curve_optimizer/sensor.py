@@ -2013,6 +2013,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         *,
         k_factor: float = DEFAULT_K_FACTOR,
         cop_compensation_factor: float = 1.0,
+        outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
         planning_window: int = DEFAULT_PLANNING_WINDOW,
         time_base: int = DEFAULT_TIME_BASE,
         consumption_sensors: list[str] | None = None,
@@ -2036,6 +2037,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         self.price_sensor = price_sensor
         self.k_factor = k_factor
         self.cop_compensation_factor = cop_compensation_factor
+        self.outdoor_temp_coefficient = outdoor_temp_coefficient
         self.planning_window = planning_window
         self.time_base = time_base
         self.steps = max(1, int(planning_window * 60 // time_base))
@@ -3076,6 +3078,7 @@ async def async_setup_entry(
             device=device_info,
             k_factor=k_factor,
             cop_compensation_factor=cop_compensation_factor,
+            outdoor_temp_coefficient=outdoor_temp_coefficient,
             consumption_sensors=consumption_sources,
             heatpump_sensor=power_sensor,
             production_sensors=production_sources,

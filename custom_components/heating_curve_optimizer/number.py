@@ -58,6 +58,7 @@ class HeatCurveMinNumber(NumberEntity, RestoreEntity):
     _attr_native_unit_of_measurement = "°C"
     _attr_native_step = 1.0
     _attr_icon = "mdi:thermometer-low"
+    _attr_mode = "box"
 
     def __init__(
         self,
@@ -106,6 +107,7 @@ class HeatCurveMaxNumber(NumberEntity, RestoreEntity):
     _attr_native_unit_of_measurement = "°C"
     _attr_native_step = 1.0
     _attr_icon = "mdi:thermometer-high"
+    _attr_mode = "box"
 
     def __init__(
         self,
@@ -154,6 +156,7 @@ class HeatCurveMinOutdoorNumber(NumberEntity, RestoreEntity):
     _attr_native_unit_of_measurement = "°C"
     _attr_native_step = 1.0
     _attr_icon = "mdi:weather-snowy"
+    _attr_mode = "box"
 
     def __init__(
         self,
@@ -202,6 +205,7 @@ class HeatCurveMaxOutdoorNumber(NumberEntity, RestoreEntity):
     _attr_native_unit_of_measurement = "°C"
     _attr_native_step = 1.0
     _attr_icon = "mdi:weather-sunny"
+    _attr_mode = "box"
 
     def __init__(
         self,
@@ -256,22 +260,22 @@ async def async_setup_entry(
     curve_min = HeatCurveMinNumber(
         unique_id=f"{entry.entry_id}_heating_curve_min",
         device=device_info,
-        native_min=20.0,
-        native_max=45.0,
+        native_min=15.0,
+        native_max=50.0,
     )
     curve_max = HeatCurveMaxNumber(
         unique_id=f"{entry.entry_id}_heating_curve_max",
         device=device_info,
-        native_min=35.0,
-        native_max=60.0,
+        native_min=30.0,
+        native_max=70.0,
     )
     min_outdoor = float(entry.data.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0))
     max_outdoor = float(entry.data.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0))
     curve_min_outdoor = HeatCurveMinOutdoorNumber(
         unique_id=f"{entry.entry_id}_heating_curve_min_outdoor",
         device=device_info,
-        native_min=-20.0,
-        native_max=5.0,
+        native_min=-30.0,
+        native_max=10.0,
     )
     curve_min_outdoor._attr_native_value = max(
         curve_min_outdoor._attr_native_min_value,
@@ -280,8 +284,8 @@ async def async_setup_entry(
     curve_max_outdoor = HeatCurveMaxOutdoorNumber(
         unique_id=f"{entry.entry_id}_heating_curve_max_outdoor",
         device=device_info,
-        native_min=5.0,
-        native_max=20.0,
+        native_min=0.0,
+        native_max=25.0,
     )
     curve_max_outdoor._attr_native_value = max(
         curve_max_outdoor._attr_native_min_value,

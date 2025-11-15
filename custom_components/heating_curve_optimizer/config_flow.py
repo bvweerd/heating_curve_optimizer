@@ -194,6 +194,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 state.entity_id
                 for state in self.hass.states.async_all("sensor")
                 if state.attributes.get("device_class") == "temperature"
+                or state.attributes.get("unit_of_measurement") in ["°C", "°F", "K"]
             ]
         )
 
