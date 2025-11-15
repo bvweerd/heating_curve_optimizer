@@ -47,12 +47,16 @@ def _calculate_defrost_factor(outdoor_temp: float, humidity: float = 80.0) -> fl
         if outdoor_temp <= 3:
             # Maximum penalty at 0-2°C: 15-40% depending on humidity
             base_penalty = 0.25  # 25% base COP loss in worst conditions
-            temp_factor = 1.0 - (outdoor_temp / 3.0) * 0.4  # Reduces penalty as temp increases
+            temp_factor = (
+                1.0 - (outdoor_temp / 3.0) * 0.4
+            )  # Reduces penalty as temp increases
         else:
             # Moderate frosting zone: 3-6°C
             # Linear reduction in penalty from 3°C to frosting threshold
             base_penalty = 0.15  # 15% COP loss
-            temp_factor = (frosting_threshold - outdoor_temp) / (frosting_threshold - 3.0)
+            temp_factor = (frosting_threshold - outdoor_temp) / (
+                frosting_threshold - 3.0
+            )
     else:
         # Below freezing: -10 to 0°C
         # Moderate frosting, less severe than near-zero temperatures
@@ -81,17 +85,17 @@ print("=" * 70)
 test_cases = [
     # Temperature, Humidity
     (-15, 80),  # Too cold for frosting
-    (-5, 80),   # Below freezing
-    (0, 80),    # Freezing point - worst case
-    (1, 80),    # Near freezing
-    (2, 90),    # Worst zone with high humidity
-    (3, 80),    # Worst zone
-    (4, 70),    # Moderate frosting
-    (5, 80),    # Light frosting
-    (6, 80),    # Above frosting threshold
-    (10, 80),   # No frosting
-    (2, 50),    # Near freezing, lower humidity
-    (2, 100),   # Near freezing, very high humidity
+    (-5, 80),  # Below freezing
+    (0, 80),  # Freezing point - worst case
+    (1, 80),  # Near freezing
+    (2, 90),  # Worst zone with high humidity
+    (3, 80),  # Worst zone
+    (4, 70),  # Moderate frosting
+    (5, 80),  # Light frosting
+    (6, 80),  # Above frosting threshold
+    (10, 80),  # No frosting
+    (2, 50),  # Near freezing, lower humidity
+    (2, 100),  # Near freezing, very high humidity
 ]
 
 for temp, humidity in test_cases:

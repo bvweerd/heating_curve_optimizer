@@ -180,7 +180,9 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def _schema_user(self) -> vol.Schema:
         options = [{"value": STEP_BASIC, "label": "Basic Settings"}]
         options.extend({"value": t, "label": t.title()} for t in SOURCE_TYPES)
-        options.append({"value": STEP_HEATING_CURVE_SETTINGS, "label": "Heating Curve Settings"})
+        options.append(
+            {"value": STEP_HEATING_CURVE_SETTINGS, "label": "Heating Curve Settings"}
+        )
         options.append({"value": STEP_PRICE_SETTINGS, "label": "Price Settings"})
         options.append({"value": "finish", "label": "Finish"})
 
@@ -604,7 +606,9 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
         self.time_base = _get(CONF_TIME_BASE, DEFAULT_TIME_BASE)
         self.heat_curve_min_outdoor = _get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
         self.heat_curve_max_outdoor = _get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
-        self.heating_curve_offset = _get(CONF_HEATING_CURVE_OFFSET, DEFAULT_HEATING_CURVE_OFFSET)
+        self.heating_curve_offset = _get(
+            CONF_HEATING_CURVE_OFFSET, DEFAULT_HEATING_CURVE_OFFSET
+        )
         self.heat_curve_min = _get(CONF_HEAT_CURVE_MIN, DEFAULT_HEAT_CURVE_MIN)
         self.heat_curve_max = _get(CONF_HEAT_CURVE_MAX, DEFAULT_HEAT_CURVE_MAX)
         self.price_settings = copy.deepcopy(
@@ -734,7 +738,9 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
     def _schema_user(self) -> vol.Schema:
         options = [{"value": STEP_BASIC, "label": "Basic Settings"}]
         options.extend({"value": t, "label": t.title()} for t in SOURCE_TYPES)
-        options.append({"value": STEP_HEATING_CURVE_SETTINGS, "label": "Heating Curve Settings"})
+        options.append(
+            {"value": STEP_HEATING_CURVE_SETTINGS, "label": "Heating Curve Settings"}
+        )
         options.append({"value": STEP_PRICE_SETTINGS, "label": "Price Settings"})
         options.append({"value": "finish", "label": "Finish"})
 

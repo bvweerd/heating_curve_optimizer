@@ -68,7 +68,6 @@ from .const import (
     INDOOR_TEMPERATURE,
     SOURCE_TYPE_CONSUMPTION,
     SOURCE_TYPE_PRODUCTION,
-    U_VALUE_MAP,
     calculate_htc_from_energy_label,
 )
 from .entity import BaseUtilitySensor
@@ -272,8 +271,14 @@ class OutdoorTemperatureSensor(BaseUtilitySensor):
                 break
 
         temps = [float(v) for v in values[start_idx : start_idx + 24]]
-        humidity = [float(v) for v in humidity_values[start_idx : start_idx + 24]] if humidity_values else []
-        _LOGGER.debug("Weather data current=%s forecast=%s humidity=%s", current, temps, humidity)
+        humidity = (
+            [float(v) for v in humidity_values[start_idx : start_idx + 24]]
+            if humidity_values
+            else []
+        )
+        _LOGGER.debug(
+            "Weather data current=%s forecast=%s humidity=%s", current, temps, humidity
+        )
         return current, temps, humidity
 
     async def async_update(self):
@@ -486,9 +491,7 @@ class HeatLossSensor(BaseUtilitySensor):
         self._attr_native_value = round(q_loss, 3)
 
         # Calculate forecast values using HTC
-        forecast_values = [
-            round(htc * (indoor - t) / 1000.0, 3) for t in forecast
-        ]
+        forecast_values = [round(htc * (indoor - t) / 1000.0, 3) for t in forecast]
         self._extra_attrs = {
             "forecast": forecast_values,
             "forecast_time_base": 60,
@@ -1402,31 +1405,33 @@ class CalculatedSupplyTemperatureSensor(BaseUtilitySensor):
             offset = float(
                 self._entry.options.get(
                     CONF_HEATING_CURVE_OFFSET,
-                    self._entry.data.get(CONF_HEATING_CURVE_OFFSET, DEFAULT_HEATING_CURVE_OFFSET)
+                    self._entry.data.get(
+                        CONF_HEATING_CURVE_OFFSET, DEFAULT_HEATING_CURVE_OFFSET
+                    ),
                 )
             )
             min_temp = float(
                 self._entry.options.get(
                     CONF_HEAT_CURVE_MIN,
-                    self._entry.data.get(CONF_HEAT_CURVE_MIN, DEFAULT_HEAT_CURVE_MIN)
+                    self._entry.data.get(CONF_HEAT_CURVE_MIN, DEFAULT_HEAT_CURVE_MIN),
                 )
             )
             max_temp = float(
                 self._entry.options.get(
                     CONF_HEAT_CURVE_MAX,
-                    self._entry.data.get(CONF_HEAT_CURVE_MAX, DEFAULT_HEAT_CURVE_MAX)
+                    self._entry.data.get(CONF_HEAT_CURVE_MAX, DEFAULT_HEAT_CURVE_MAX),
                 )
             )
             outdoor_min = float(
                 self._entry.options.get(
                     CONF_HEAT_CURVE_MIN_OUTDOOR,
-                    self._entry.data.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
+                    self._entry.data.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0),
                 )
             )
             outdoor_max = float(
                 self._entry.options.get(
                     CONF_HEAT_CURVE_MAX_OUTDOOR,
-                    self._entry.data.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
+                    self._entry.data.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0),
                 )
             )
         except (KeyError, TypeError, ValueError):
@@ -1711,12 +1716,16 @@ def _calculate_defrost_factor(outdoor_temp: float, humidity: float = 80.0) -> fl
         if outdoor_temp <= 3:
             # Maximum penalty at 0-2°C: 15-40% depending on humidity
             base_penalty = 0.25  # 25% base COP loss in worst conditions
-            temp_factor = 1.0 - (outdoor_temp / 3.0) * 0.4  # Reduces penalty as temp increases
+            temp_factor = (
+                1.0 - (outdoor_temp / 3.0) * 0.4
+            )  # Reduces penalty as temp increases
         else:
             # Moderate frosting zone: 3-6°C
             # Linear reduction in penalty from 3°C to frosting threshold
             base_penalty = 0.15  # 15% COP loss
-            temp_factor = (frosting_threshold - outdoor_temp) / (frosting_threshold - 3.0)
+            temp_factor = (frosting_threshold - outdoor_temp) / (
+                frosting_threshold - 3.0
+            )
     else:
         # Below freezing: -10 to 0°C
         # Moderate frosting, less severe than near-zero temperatures
@@ -1794,7 +1803,9 @@ def _optimize_offsets(
     if len(outdoor_temps_data) < horizon:
         # Pad with the last value if needed
         last_temp = outdoor_temps_data[-1] if outdoor_temps_data else 5.0
-        outdoor_temps_data = list(outdoor_temps_data) + [last_temp] * (horizon - len(outdoor_temps_data))
+        outdoor_temps_data = list(outdoor_temps_data) + [last_temp] * (
+            horizon - len(outdoor_temps_data)
+        )
 
     if len(humidity_data) < horizon:
         # Pad with default humidity
@@ -1844,7 +1855,9 @@ def _optimize_offsets(
     for t in range(1, horizon):
         for off in allowed_offsets:
             cop = _calculate_cop(off, t)
-            step_cost = demand[t] * prices[t] / cop if cop > 0 else demand[t] * prices[t] * 10
+            step_cost = (
+                demand[t] * prices[t] / cop if cop > 0 else demand[t] * prices[t] * 10
+            )
             for prev_off, sums in dp[t - 1].items():
                 if abs(off - prev_off) <= 1:
                     for prev_sum, (prev_cost, _, _) in sums.items():
@@ -2131,7 +2144,10 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
                             if current_hp_power > 100:
                                 current_hp_power = current_hp_power / 1000.0
                             # Subtract heat pump from baseline
-                            return [max(0.0, c - current_hp_power) for c in consumption_forecast]
+                            return [
+                                max(0.0, c - current_hp_power)
+                                for c in consumption_forecast
+                            ]
                         except (TypeError, ValueError):
                             pass
 
@@ -2203,7 +2219,11 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             if net_balance > 0:
                 # Net production: heat pump reduces sellback
                 # Use production price (opportunity cost of not selling)
-                price = production_prices[i] if i < len(production_prices) else consumption_prices[i]
+                price = (
+                    production_prices[i]
+                    if i < len(production_prices)
+                    else consumption_prices[i]
+                )
             else:
                 # Net consumption: heat pump increases grid consumption
                 # Use consumption price (actual cost of buying)
@@ -2343,7 +2363,10 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         production_prices: list[float] | None = None
         if self.production_price_sensor:
             production_price_state = self.hass.states.get(self.production_price_sensor)
-            if production_price_state and production_price_state.state not in ("unknown", "unavailable"):
+            if production_price_state and production_price_state.state not in (
+                "unknown",
+                "unavailable",
+            ):
                 production_prices = self._extract_prices(production_price_state)
                 _LOGGER.debug("Production prices extracted: %s", production_prices)
 
@@ -2454,7 +2477,9 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
                     buffer=0.0,
                     water_min=water_min,
                     water_max=water_max,
-                    outdoor_temps=outdoor_temp_forecast if outdoor_temp_forecast else None,
+                    outdoor_temps=outdoor_temp_forecast
+                    if outdoor_temp_forecast
+                    else None,
                     humidity_forecast=humidity_forecast if humidity_forecast else None,
                     outdoor_temp_coefficient=self.outdoor_temp_coefficient,
                 ),
@@ -2681,29 +2706,80 @@ async def async_setup_entry(
             production_sources.extend(cfg.get(CONF_SOURCES, []))
 
     area_m2 = entry.options.get(CONF_AREA_M2, entry.data.get(CONF_AREA_M2))
-    energy_label = entry.options.get(CONF_ENERGY_LABEL, entry.data.get(CONF_ENERGY_LABEL))
-    indoor_sensor = entry.options.get(CONF_INDOOR_TEMPERATURE_SENSOR, entry.data.get(CONF_INDOOR_TEMPERATURE_SENSOR))
-    supply_temp_sensor = entry.options.get(CONF_SUPPLY_TEMPERATURE_SENSOR, entry.data.get(CONF_SUPPLY_TEMPERATURE_SENSOR))
+    energy_label = entry.options.get(
+        CONF_ENERGY_LABEL, entry.data.get(CONF_ENERGY_LABEL)
+    )
+    indoor_sensor = entry.options.get(
+        CONF_INDOOR_TEMPERATURE_SENSOR, entry.data.get(CONF_INDOOR_TEMPERATURE_SENSOR)
+    )
+    supply_temp_sensor = entry.options.get(
+        CONF_SUPPLY_TEMPERATURE_SENSOR, entry.data.get(CONF_SUPPLY_TEMPERATURE_SENSOR)
+    )
     outdoor_temp_sensor: str | SensorEntity = outdoor_sensor_entity
-    power_sensor = entry.options.get(CONF_POWER_CONSUMPTION, entry.data.get(CONF_POWER_CONSUMPTION))
-    k_factor = float(entry.options.get(CONF_K_FACTOR, entry.data.get(CONF_K_FACTOR, DEFAULT_K_FACTOR)))
-    base_cop = float(entry.options.get(CONF_BASE_COP, entry.data.get(CONF_BASE_COP, DEFAULT_COP_AT_35)))
+    power_sensor = entry.options.get(
+        CONF_POWER_CONSUMPTION, entry.data.get(CONF_POWER_CONSUMPTION)
+    )
+    k_factor = float(
+        entry.options.get(
+            CONF_K_FACTOR, entry.data.get(CONF_K_FACTOR, DEFAULT_K_FACTOR)
+        )
+    )
+    base_cop = float(
+        entry.options.get(
+            CONF_BASE_COP, entry.data.get(CONF_BASE_COP, DEFAULT_COP_AT_35)
+        )
+    )
     outdoor_temp_coefficient = float(
-        entry.options.get(CONF_OUTDOOR_TEMP_COEFFICIENT, entry.data.get(CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT))
+        entry.options.get(
+            CONF_OUTDOOR_TEMP_COEFFICIENT,
+            entry.data.get(
+                CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
+            ),
+        )
     )
     cop_compensation_factor = float(
-        entry.options.get(CONF_COP_COMPENSATION_FACTOR, entry.data.get(CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR))
+        entry.options.get(
+            CONF_COP_COMPENSATION_FACTOR,
+            entry.data.get(
+                CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR
+            ),
+        )
     )
-    glass_east = float(entry.options.get(CONF_GLASS_EAST_M2, entry.data.get(CONF_GLASS_EAST_M2, 0)))
-    glass_west = float(entry.options.get(CONF_GLASS_WEST_M2, entry.data.get(CONF_GLASS_WEST_M2, 0)))
-    glass_south = float(entry.options.get(CONF_GLASS_SOUTH_M2, entry.data.get(CONF_GLASS_SOUTH_M2, 0)))
-    glass_u = float(entry.options.get(CONF_GLASS_U_VALUE, entry.data.get(CONF_GLASS_U_VALUE, 1.2)))
-    pv_east_wp = float(entry.options.get(CONF_PV_EAST_WP, entry.data.get(CONF_PV_EAST_WP, 0)))
-    pv_south_wp = float(entry.options.get(CONF_PV_SOUTH_WP, entry.data.get(CONF_PV_SOUTH_WP, 0)))
-    pv_west_wp = float(entry.options.get(CONF_PV_WEST_WP, entry.data.get(CONF_PV_WEST_WP, 0)))
-    pv_tilt = float(entry.options.get(CONF_PV_TILT, entry.data.get(CONF_PV_TILT, DEFAULT_PV_TILT)))
-    planning_window = int(entry.options.get(CONF_PLANNING_WINDOW, entry.data.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)))
-    time_base = int(entry.options.get(CONF_TIME_BASE, entry.data.get(CONF_TIME_BASE, DEFAULT_TIME_BASE)))
+    glass_east = float(
+        entry.options.get(CONF_GLASS_EAST_M2, entry.data.get(CONF_GLASS_EAST_M2, 0))
+    )
+    glass_west = float(
+        entry.options.get(CONF_GLASS_WEST_M2, entry.data.get(CONF_GLASS_WEST_M2, 0))
+    )
+    glass_south = float(
+        entry.options.get(CONF_GLASS_SOUTH_M2, entry.data.get(CONF_GLASS_SOUTH_M2, 0))
+    )
+    glass_u = float(
+        entry.options.get(CONF_GLASS_U_VALUE, entry.data.get(CONF_GLASS_U_VALUE, 1.2))
+    )
+    pv_east_wp = float(
+        entry.options.get(CONF_PV_EAST_WP, entry.data.get(CONF_PV_EAST_WP, 0))
+    )
+    pv_south_wp = float(
+        entry.options.get(CONF_PV_SOUTH_WP, entry.data.get(CONF_PV_SOUTH_WP, 0))
+    )
+    pv_west_wp = float(
+        entry.options.get(CONF_PV_WEST_WP, entry.data.get(CONF_PV_WEST_WP, 0))
+    )
+    pv_tilt = float(
+        entry.options.get(CONF_PV_TILT, entry.data.get(CONF_PV_TILT, DEFAULT_PV_TILT))
+    )
+    planning_window = int(
+        entry.options.get(
+            CONF_PLANNING_WINDOW,
+            entry.data.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW),
+        )
+    )
+    time_base = int(
+        entry.options.get(
+            CONF_TIME_BASE, entry.data.get(CONF_TIME_BASE, DEFAULT_TIME_BASE)
+        )
+    )
 
     price_sensor = entry.options.get(
         CONF_PRICE_SENSOR, entry.data.get(CONF_PRICE_SENSOR)

@@ -63,16 +63,16 @@ ENERGY_LABELS = ["A+++", "A++", "A+", "A", "B", "C", "D", "E", "F", "G"]
 # Based on NTA 8800 standard (since Jan 2021)
 # Using midpoint values for each label range
 ENERGY_LABEL_CONSUMPTION = {
-    "A+++": 50,   # Very low energy (passive house level)
-    "A++": 75,    # Very low energy
-    "A+": 90,     # Very low energy
-    "A": 132,     # 105-160 kWh/m²/year (midpoint)
-    "B": 175,     # 160-190 kWh/m²/year (midpoint)
-    "C": 220,     # 190-250 kWh/m²/year (midpoint)
-    "D": 275,     # 250-300 kWh/m²/year (midpoint)
-    "E": 340,     # 300-380 kWh/m²/year (midpoint)
-    "F": 420,     # 380-460 kWh/m²/year (midpoint)
-    "G": 500,     # >460 kWh/m²/year (estimate)
+    "A+++": 50,  # Very low energy (passive house level)
+    "A++": 75,  # Very low energy
+    "A+": 90,  # Very low energy
+    "A": 132,  # 105-160 kWh/m²/year (midpoint)
+    "B": 175,  # 160-190 kWh/m²/year (midpoint)
+    "C": 220,  # 190-250 kWh/m²/year (midpoint)
+    "D": 275,  # 250-300 kWh/m²/year (midpoint)
+    "E": 340,  # 300-380 kWh/m²/year (midpoint)
+    "F": 420,  # 380-460 kWh/m²/year (midpoint)
+    "G": 500,  # >460 kWh/m²/year (estimate)
 }
 
 # Heating fraction of total primary energy by label
@@ -81,13 +81,13 @@ HEATING_FRACTION_MAP = {
     "A+++": 0.40,  # Passive house: excellent insulation, DHW is major portion
     "A++": 0.42,
     "A+": 0.45,
-    "A": 0.50,     # Good insulation
+    "A": 0.50,  # Good insulation
     "B": 0.55,
     "C": 0.60,
     "D": 0.65,
     "E": 0.68,
     "F": 0.70,
-    "G": 0.72,     # Poor insulation: heating dominates
+    "G": 0.72,  # Poor insulation: heating dominates
 }
 
 # Heating degree-days for Netherlands (base 18°C)
@@ -114,7 +114,9 @@ U_VALUE_MAP = {
 
 
 def calculate_htc_from_energy_label(
-    energy_label: str, area_m2: float, heating_degree_days: float = HEATING_DEGREE_DAYS_NL
+    energy_label: str,
+    area_m2: float,
+    heating_degree_days: float = HEATING_DEGREE_DAYS_NL,
 ) -> float:
     """
     Calculate Heat Transfer Coefficient (HTC) from energy label.
@@ -149,6 +151,7 @@ def calculate_htc_from_energy_label(
     htc = annual_heating_energy * 1000.0 / (heating_degree_days * 24.0)
 
     return htc
+
 
 # Default COP at a supply temperature of 35 °C
 DEFAULT_COP_AT_35 = 4.2
