@@ -2903,32 +2903,9 @@ async def async_setup_entry(
         entry.data.get(CONF_PRODUCTION_PRICE_SENSOR, price_sensor),
     )
 
-    consumption_price_entity = None
-    if consumption_price_sensor:
-        consumption_price_entity = CurrentElectricityPriceSensor(
-            hass=hass,
-            name="Current Consumption Price",
-            unique_id=f"{entry.entry_id}_current_consumption_price",
-            price_sensor=consumption_price_sensor,
-            source_type=SOURCE_TYPE_CONSUMPTION,
-            price_settings=price_settings,
-            icon="mdi:transmission-tower-import",
-            device=price_device_info,
-        )
-        entities.append(consumption_price_entity)
-    if production_price_sensor:
-        entities.append(
-            CurrentElectricityPriceSensor(
-                hass=hass,
-                name="Current Production Price",
-                unique_id=f"{entry.entry_id}_current_production_price",
-                price_sensor=production_price_sensor,
-                source_type=SOURCE_TYPE_PRODUCTION,
-                price_settings=price_settings,
-                icon="mdi:transmission-tower-export",
-                device=price_device_info,
-            )
-        )
+    # Note: We don't create wrapper entities for price sensors anymore.
+    # The integration uses the price sensors from other integrations directly.
+    # This reduces clutter in the UI and avoids unnecessary entity duplication.
 
     heat_loss_sensor = None
     if area_m2 and energy_label:
@@ -2985,7 +2962,7 @@ async def async_setup_entry(
             )
         )
 
-    if consumption_price_sensor and forecast_entity and consumption_price_entity:
+    if consumption_price_sensor and forecast_entity:
         price_levels = {
             k: float(v)
             for k, v in price_settings.items()
@@ -3002,7 +2979,7 @@ async def async_setup_entry(
                     hass=hass,
                     name="Available Energy by Price",
                     unique_id=f"{entry.entry_id}_available_energy_by_price",
-                    price_sensor=f"sensor.{consumption_price_entity.translation_key}",
+                    price_sensor=consumption_price_sensor,
                     forecast_sensor=f"sensor.{forecast_entity.translation_key}",
                     price_levels=price_levels,
                     icon="mdi:scale-balance",
