@@ -4,7 +4,12 @@ import copy
 from typing import Any
 
 from homeassistant import config_entries
-from homeassistant.config_entries import ConfigFlowContext, ConfigFlowResult
+try:
+    from homeassistant.config_entries import ConfigFlowContext, ConfigFlowResult
+except ImportError:
+    # For older versions of Home Assistant that don't have these types
+    ConfigFlowContext = dict  # type: ignore
+    ConfigFlowResult = dict[str, Any]  # type: ignore
 from homeassistant.core import callback
 from homeassistant.helpers.selector import selector
 import voluptuous as vol
