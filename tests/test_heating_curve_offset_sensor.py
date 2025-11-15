@@ -16,17 +16,19 @@ from unittest.mock import patch
 
 @pytest.mark.asyncio
 async def test_offset_sensor_handles_sensor_instance(hass):
-    hass.states.async_set("sensor.outdoor", "5")
+    # NetHeatLossSensor now only needs heat_loss_sensor and window_gain_sensor
+    from types import SimpleNamespace
+
+    heat_loss = SimpleNamespace(
+        native_value=1.0, extra_state_attributes={"forecast": [1.0] * 6}
+    )
     net = NetHeatLossSensor(
         hass=hass,
         name="Hourly Net Heat Loss",
         unique_id="test_net",
-        area_m2=10.0,
-        energy_label="A",
-        indoor_sensor=None,
         icon="mdi:test",
         device=DeviceInfo(identifiers={("test", "1")}),
-        outdoor_sensor="sensor.outdoor",
+        heat_loss_sensor=heat_loss,
     )
 
     hass.states.async_set("sensor.price", "0.0")

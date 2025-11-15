@@ -644,12 +644,8 @@ class NetHeatLossSensor(BaseUtilitySensor):
         hass: HomeAssistant,
         name: str,
         unique_id: str,
-        area_m2: float,
-        energy_label: str,
-        indoor_sensor: str | None,
         icon: str,
         device: DeviceInfo,
-        outdoor_sensor: str | SensorEntity,
         heat_loss_sensor: HeatLossSensor | None = None,
         window_gain_sensor: WindowSolarGainSensor | None = None,
         *,
@@ -667,12 +663,8 @@ class NetHeatLossSensor(BaseUtilitySensor):
         )
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self.hass = hass
-        self.area_m2 = area_m2
-        self.energy_label = energy_label
-        self.indoor_sensor = indoor_sensor
         self.heat_loss_sensor = heat_loss_sensor
         self.window_gain_sensor = window_gain_sensor
-        self.outdoor_sensor = outdoor_sensor
         self._extra_attrs: dict[str, list[float]] = {}
         self._config_entry_id = config_entry_id
 
@@ -681,52 +673,7 @@ class NetHeatLossSensor(BaseUtilitySensor):
         return self._extra_attrs
 
     async def _compute_value(self) -> None:
-        entity_id = (
-            self.outdoor_sensor.entity_id
-            if isinstance(self.outdoor_sensor, SensorEntity)
-            else cast(str, self.outdoor_sensor)
-        )
-        sensor_name = entity_id or str(self.outdoor_sensor)
-
-        if entity_id is None:
-            self._set_unavailable("geen buitensensor gevonden")
-            return
-
-        state = self.hass.states.get(entity_id)
-        if (
-            isinstance(self.outdoor_sensor, SensorEntity)
-            and self.outdoor_sensor.entity_id
-        ):
-            self.outdoor_sensor = self.outdoor_sensor.entity_id
-            entity_id = cast(str, self.outdoor_sensor)
-            sensor_name = entity_id
-
-        if state is None:
-            self._set_unavailable(f"geen buitensensor gevonden ({sensor_name})")
-            return
-        if state.state in ("unknown", "unavailable"):
-            self._set_unavailable(
-                f"buitensensor {sensor_name} heeft status '{state.state}'"
-            )
-            return
-        try:
-            t_outdoor = float(state.state)
-        except ValueError:
-            self._set_unavailable(f"waarde van buitensensor {sensor_name} is ongeldig")
-            return
-
-        solar_total = 0.0
-        if self.window_gain_sensor:
-            state = self.window_gain_sensor
-            try:
-                solar_total = float(state.native_value or 0.0)
-            except (ValueError, TypeError):
-                solar_total = 0.0
-
-        self._mark_available()
-
-        # Use heat loss from HeatLossSensor instead of recalculating
-        # This ensures consistency with the proper HTC-based calculation
+        # Get heat loss from HeatLossSensor
         q_loss = 0.0
         if self.heat_loss_sensor:
             try:
@@ -734,7 +681,16 @@ class NetHeatLossSensor(BaseUtilitySensor):
             except (ValueError, TypeError):
                 q_loss = 0.0
 
-        q_solar = solar_total
+        # Get solar gain from WindowSolarGainSensor
+        q_solar = 0.0
+        if self.window_gain_sensor:
+            try:
+                q_solar = float(self.window_gain_sensor.native_value or 0.0)
+            except (ValueError, TypeError):
+                q_solar = 0.0
+
+        # Calculate net heat loss
+        self._mark_available()
         q_net = q_loss - q_solar
         _LOGGER.debug("Net heat loss: loss=%s solar=%s net=%s", q_loss, q_solar, q_net)
         self._attr_native_value = round(q_net, 3)
@@ -3148,19 +3104,15 @@ async def async_setup_entry(
             )
 
     net_heat_sensor = None
-    if area_m2 and energy_label:
+    if heat_loss_sensor:
         net_heat_sensor = NetHeatLossSensor(
             hass=hass,
             name="Hourly Net Heat Loss",
             unique_id=f"{entry.entry_id}_hourly_net_heat_loss",
-            area_m2=float(area_m2),
-            energy_label=energy_label,
-            indoor_sensor=indoor_sensor,
             icon="mdi:fire",
             device=device_info,
             heat_loss_sensor=heat_loss_sensor,
             window_gain_sensor=window_gain_sensor,
-            outdoor_sensor=outdoor_temp_sensor,
             config_entry_id=entry.entry_id,
         )
         entities.append(net_heat_sensor)
