@@ -1,0 +1,76 @@
+/* Custom styles for MathJax formula rendering */
+
+/* Display math (block formulas) - center and add spacing */
+.arithmatex {
+  display: block;
+  margin: 1.5em 0;
+  text-align: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* MathJax display formulas */
+mjx-container[display="true"] {
+  display: block !important;
+  margin: 1.5em auto !important;
+  text-align: center !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* MathJax inline formulas - ensure proper vertical alignment */
+mjx-container[display="false"] {
+  display: inline-block !important;
+  margin: 0 0.2em !important;
+  vertical-align: middle !important;
+}
+
+/* Ensure formula text is readable */
+mjx-container {
+  font-size: 1.1em !important;
+  line-height: 1.5 !important;
+}
+
+/* Fix for dark mode - ensure formulas remain readable */
+[data-md-color-scheme="slate"] mjx-container {
+  color: var(--md-default-fg-color) !important;
+}
+
+/* Prevent formulas from breaking layout on small screens */
+@media screen and (max-width: 768px) {
+  mjx-container[display="true"] {
+    font-size: 0.95em !important;
+  }
+
+  .arithmatex {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Add subtle background to display formulas for better visibility */
+mjx-container[display="true"] {
+  padding: 0.5em 0;
+}
+
+/* Ensure proper spacing in admonitions containing formulas */
+.admonition mjx-container[display="true"] {
+  margin: 1em auto;
+}
+
+/* Fix formula rendering in tables */
+td mjx-container,
+th mjx-container {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Improve rendering of fractions and complex expressions */
+mjx-mfrac {
+  margin: 0.2em 0;
+}
+
+/* Ensure subscripts and superscripts are properly sized */
+mjx-script {
+  font-size: 0.8em !important;
+}
