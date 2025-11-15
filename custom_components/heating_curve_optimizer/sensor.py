@@ -1947,6 +1947,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         consumption_sensors: list[str] | None = None,
         heatpump_sensor: str | None = None,
         production_sensors: list[str] | None = None,
+        production_price_sensor: str | SensorEntity | None = None,
         outdoor_sensor: str | SensorEntity | None = None,
     ):
         super().__init__(
@@ -1963,6 +1964,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         self.hass = hass
         self.net_heat_sensor = net_heat_sensor
         self.price_sensor = price_sensor
+        self.production_price_sensor = production_price_sensor
         self.k_factor = k_factor
         self.cop_compensation_factor = cop_compensation_factor
         self.outdoor_temp_coefficient = outdoor_temp_coefficient
@@ -2057,6 +2059,159 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             label="net_heat",
             fill_value=0.0,
         )
+
+    def _extract_production_forecast(self) -> list[float]:
+        """Extract production forecast from production sensors.
+
+        Returns forecast in kW for each time step. Falls back to current
+        production value if no forecast is available.
+        """
+        if not self.production_sensors:
+            return [0.0] * self.steps
+
+        # Try to get forecast from first production sensor
+        production_state = self.hass.states.get(self.production_sensors[0])
+        if not production_state:
+            return [0.0] * self.steps
+
+        # Check for forecast attribute
+        forecast_attr = production_state.attributes.get("forecast")
+        if forecast_attr and isinstance(forecast_attr, list):
+            source_base = _coerce_time_base(
+                production_state.attributes.get("forecast_time_base")
+            )
+            return self._resample_forecast(
+                forecast_attr,
+                source_base,
+                label="production",
+                fill_value=0.0,
+            )
+
+        # Fallback: use current production value for all steps
+        try:
+            current_production = float(production_state.state)
+            # Convert from W to kW if needed (assume values > 100 are in W)
+            if current_production > 100:
+                current_production = current_production / 1000.0
+            return [max(0.0, current_production)] * self.steps
+        except (TypeError, ValueError):
+            return [0.0] * self.steps
+
+    def _extract_baseline_consumption_forecast(self) -> list[float]:
+        """Extract baseline consumption forecast (excluding heat pump).
+
+        Returns forecast in kW for each time step. Falls back to historical
+        average if no forecast is available.
+        """
+        if not self.consumption_sensors:
+            return [0.0] * self.steps
+
+        # Try to get forecast from first consumption sensor
+        consumption_state = self.hass.states.get(self.consumption_sensors[0])
+        if consumption_state:
+            forecast_attr = consumption_state.attributes.get("forecast")
+            if forecast_attr and isinstance(forecast_attr, list):
+                source_base = _coerce_time_base(
+                    consumption_state.attributes.get("forecast_time_base")
+                )
+                consumption_forecast = self._resample_forecast(
+                    forecast_attr,
+                    source_base,
+                    label="consumption",
+                    fill_value=0.0,
+                )
+
+                # Subtract heat pump consumption if available
+                if self.heatpump_sensor:
+                    heatpump_state = self.hass.states.get(self.heatpump_sensor)
+                    if heatpump_state:
+                        try:
+                            current_hp_power = float(heatpump_state.state)
+                            # Convert from W to kW if needed
+                            if current_hp_power > 100:
+                                current_hp_power = current_hp_power / 1000.0
+                            # Subtract heat pump from baseline
+                            return [max(0.0, c - current_hp_power) for c in consumption_forecast]
+                        except (TypeError, ValueError):
+                            pass
+
+                return consumption_forecast
+
+        # Fallback: use current consumption value
+        if consumption_state:
+            try:
+                current_consumption = float(consumption_state.state)
+                # Convert from W to kW if needed
+                if current_consumption > 100:
+                    current_consumption = current_consumption / 1000.0
+
+                # Subtract current heat pump power
+                baseline = current_consumption
+                if self.heatpump_sensor:
+                    heatpump_state = self.hass.states.get(self.heatpump_sensor)
+                    if heatpump_state:
+                        try:
+                            hp_power = float(heatpump_state.state)
+                            if hp_power > 100:
+                                hp_power = hp_power / 1000.0
+                            baseline -= hp_power
+                        except (TypeError, ValueError):
+                            pass
+
+                return [max(0.0, baseline)] * self.steps
+            except (TypeError, ValueError):
+                pass
+
+        return [0.0] * self.steps
+
+    def _select_dynamic_prices(
+        self,
+        consumption_prices: list[float],
+        production_prices: list[float] | None,
+        production_forecast: list[float],
+        baseline_consumption: list[float],
+    ) -> list[float]:
+        """Select appropriate price per time step based on net energy balance.
+
+        When production > consumption (net production), use production price
+        because heat pump reduces sellback (opportunity cost).
+        When consumption > production (net consumption), use consumption price
+        because we're buying from grid.
+
+        Args:
+            consumption_prices: Electricity consumption prices per step (EUR/kWh)
+            production_prices: Electricity production prices per step (EUR/kWh)
+            production_forecast: Expected production per step (kW)
+            baseline_consumption: Expected consumption excluding heat pump (kW)
+
+        Returns:
+            Selected prices per time step (EUR/kWh)
+        """
+        if not production_prices or not self.production_sensors:
+            # No production price sensor configured, always use consumption prices
+            return consumption_prices
+
+        selected_prices: list[float] = []
+
+        for i in range(self.steps):
+            prod = production_forecast[i] if i < len(production_forecast) else 0.0
+            cons = baseline_consumption[i] if i < len(baseline_consumption) else 0.0
+
+            # Calculate net balance (positive = producing, negative = consuming)
+            net_balance = prod - cons
+
+            if net_balance > 0:
+                # Net production: heat pump reduces sellback
+                # Use production price (opportunity cost of not selling)
+                price = production_prices[i] if i < len(production_prices) else consumption_prices[i]
+            else:
+                # Net consumption: heat pump increases grid consumption
+                # Use consumption price (actual cost of buying)
+                price = consumption_prices[i] if i < len(consumption_prices) else 0.0
+
+            selected_prices.append(price)
+
+        return selected_prices
 
     def _apply_solar_buffer(
         self, demand: list[float]
@@ -2180,12 +2335,40 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             solar_buffer_remaining,
             solar_gain_used,
         ) = self._apply_solar_buffer(baseline_adjusted)
-        prices = self._extract_prices(price_state)
+
+        # Extract consumption prices
+        consumption_prices = self._extract_prices(price_state)
+
+        # Extract production prices if available
+        production_prices: list[float] | None = None
+        if self.production_price_sensor:
+            production_price_state = self.hass.states.get(self.production_price_sensor)
+            if production_price_state and production_price_state.state not in ("unknown", "unavailable"):
+                production_prices = self._extract_prices(production_price_state)
+                _LOGGER.debug("Production prices extracted: %s", production_prices)
+
+        # Extract production and baseline consumption forecasts for dynamic pricing
+        production_forecast = self._extract_production_forecast()
+        baseline_consumption = self._extract_baseline_consumption_forecast()
+
+        # Select appropriate prices based on net energy balance
+        prices = self._select_dynamic_prices(
+            consumption_prices,
+            production_prices,
+            production_forecast,
+            baseline_consumption,
+        )
+
         total_energy = sum(demand)
         _LOGGER.debug(
-            "Offset sensor demand=%s prices=%s baseline=%s solar_buffer=%s",
+            "Offset sensor demand=%s consumption_prices=%s production_prices=%s "
+            "selected_prices=%s production=%s baseline_consumption=%s baseline=%s solar_buffer=%s",
             demand,
+            consumption_prices,
+            production_prices,
             prices,
+            production_forecast,
+            baseline_consumption,
             baseline,
             solar_buffer_evolution,
         )
@@ -2304,9 +2487,26 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             )
             for off in offsets
         ]
+        # Calculate net balance for display
+        net_balance_forecast = [
+            round(production_forecast[i] - baseline_consumption[i], 3)
+            if i < len(production_forecast) and i < len(baseline_consumption)
+            else 0.0
+            for i in range(self.steps)
+        ]
+
         self._extra_attrs = {
             "future_offsets": offsets,
             "prices": prices,
+            "consumption_prices": consumption_prices,
+            "production_prices": production_prices if production_prices else [],
+            "production_forecast_kw": [round(v, 3) for v in production_forecast],
+            "baseline_consumption_kw": [round(v, 3) for v in baseline_consumption],
+            "net_balance_kw": net_balance_forecast,
+            "price_source": [
+                "production" if net_balance_forecast[i] > 0 else "consumption"
+                for i in range(min(len(net_balance_forecast), self.steps))
+            ],
             "buffer_evolution": buffer_energy_evolution,
             "buffer_evolution_offsets": buffer_offset_evolution,
             "total_energy": round(total_energy, 3),
@@ -2636,6 +2836,7 @@ async def async_setup_entry(
             consumption_sensors=consumption_sources,
             heatpump_sensor=power_sensor,
             production_sensors=production_sources,
+            production_price_sensor=production_price_sensor,
             outdoor_sensor=outdoor_sensor_entity,
         )
         entities.append(heating_curve_offset_sensor)
