@@ -724,16 +724,16 @@ class NetHeatLossSensor(BaseUtilitySensor):
                 solar_total = 0.0
 
         self._mark_available()
-        u_value = U_VALUE_MAP.get(self.energy_label.upper(), 1.0)
-        indoor = INDOOR_TEMPERATURE
-        if self.indoor_sensor:
-            state = self.hass.states.get(self.indoor_sensor)
-            if state and state.state not in ("unknown", "unavailable"):
-                try:
-                    indoor = float(state.state)
-                except ValueError:
-                    indoor = INDOOR_TEMPERATURE
-        q_loss = self.area_m2 * u_value * (indoor - t_outdoor) / 1000.0
+
+        # Use heat loss from HeatLossSensor instead of recalculating
+        # This ensures consistency with the proper HTC-based calculation
+        q_loss = 0.0
+        if self.heat_loss_sensor:
+            try:
+                q_loss = float(self.heat_loss_sensor.native_value or 0.0)
+            except (ValueError, TypeError):
+                q_loss = 0.0
+
         q_solar = solar_total
         q_net = q_loss - q_solar
         _LOGGER.debug("Net heat loss: loss=%s solar=%s net=%s", q_loss, q_solar, q_net)
@@ -831,6 +831,17 @@ class NetHeatLossSensor(BaseUtilitySensor):
 
 
 class NetPowerConsumptionSensor(BaseUtilitySensor):
+    """Calculate net power consumption from consumption and production sensors.
+
+    This sensor tracks instantaneous power (W) by:
+    1. Using 'power' attributes from energy sensors if available (most common)
+    2. Using state directly if device_class is 'power'
+    3. Computing derivative (dE/dt) from energy sensors as fallback
+
+    Note: For energy sensors without 'power' attribute, we calculate the derivative
+    over a 5-minute window. This requires state history tracking.
+    """
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -855,74 +866,86 @@ class NetPowerConsumptionSensor(BaseUtilitySensor):
         self.hass = hass
         self.consumption_sensors = consumption_sensors
         self.production_sensors = production_sensors
+        # Track previous states for derivative calculation
+        self._last_states: dict[str, tuple[float, datetime]] = {}
+
+    def _get_power_from_sensor(self, sensor: str) -> float:
+        """Extract power (W) from a sensor, calculating derivative if needed."""
+        state = self.hass.states.get(sensor)
+        if state is None or state.state in ("unknown", "unavailable"):
+            return 0.0
+
+        # Try to get power from attribute first (W) - most common case
+        power_attr = state.attributes.get("power")
+        if power_attr is not None:
+            try:
+                return float(power_attr)
+            except (ValueError, TypeError):
+                pass
+
+        # Fallback: if device_class is power, use state directly
+        if state.attributes.get("device_class") == "power":
+            try:
+                return float(state.state)
+            except ValueError:
+                pass
+
+        # Last resort: calculate derivative for energy sensors (kWh)
+        # This requires tracking previous state to compute dE/dt
+        try:
+            current_energy = float(state.state)
+            current_time = datetime.now()
+
+            if sensor in self._last_states:
+                prev_energy, prev_time = self._last_states[sensor]
+                time_delta = (current_time - prev_time).total_seconds()
+
+                # Only calculate if we have at least 30 seconds of data
+                if time_delta >= 30:
+                    # dE/dt: (kWh) / (hours) = kW, then * 1000 = W
+                    energy_delta_kwh = current_energy - prev_energy
+                    time_delta_hours = time_delta / 3600.0
+                    power_kw = energy_delta_kwh / time_delta_hours
+                    power_w = power_kw * 1000.0
+
+                    # Update stored state
+                    self._last_states[sensor] = (current_energy, current_time)
+
+                    _LOGGER.debug(
+                        "Calculated power for %s via derivative: %.1fW (ΔE=%.3fkWh, Δt=%.1fs)",
+                        sensor,
+                        power_w,
+                        energy_delta_kwh,
+                        time_delta,
+                    )
+                    return max(0.0, power_w)  # Power can't be negative for consumption
+                else:
+                    # Not enough time has passed, use last calculated value or 0
+                    _LOGGER.debug(
+                        "Not enough time elapsed for %s (%.1fs), waiting...",
+                        sensor,
+                        time_delta,
+                    )
+                    return 0.0
+            else:
+                # First time seeing this sensor, store state
+                self._last_states[sensor] = (current_energy, current_time)
+                _LOGGER.debug("First reading for %s, storing baseline", sensor)
+                return 0.0
+
+        except (ValueError, TypeError):
+            pass
+
+        _LOGGER.debug(
+            "Could not extract power from sensor %s (no power attribute, not power device_class, and not energy sensor)",
+            sensor,
+        )
+        return 0.0
 
     def _compute_value(self) -> None:
-        """Calculate net power consumption from energy sensors.
-
-        Energy sensors (kWh) often expose a 'power' attribute (W) showing
-        current instantaneous power. We use this if available.
-        """
-        consumption = 0.0
-        for sensor in self.consumption_sensors:
-            state = self.hass.states.get(sensor)
-            if state is None or state.state in ("unknown", "unavailable"):
-                continue
-
-            # Try to get power from attribute first (W)
-            power_attr = state.attributes.get("power")
-            if power_attr is not None:
-                try:
-                    consumption += float(power_attr)
-                    continue
-                except (ValueError, TypeError):
-                    pass
-
-            # Fallback: if device_class is power, use state directly
-            if state.attributes.get("device_class") == "power":
-                try:
-                    # State is already in W
-                    consumption += float(state.state)
-                    continue
-                except ValueError:
-                    pass
-
-            # If it's an energy sensor without power attribute, we can't
-            # calculate instantaneous power without derivatives
-            _LOGGER.debug(
-                "Sensor %s is energy sensor without power attribute, skipping",
-                sensor
-            )
-
-        production = 0.0
-        for sensor in self.production_sensors:
-            state = self.hass.states.get(sensor)
-            if state is None or state.state in ("unknown", "unavailable"):
-                continue
-
-            # Try to get power from attribute first (W)
-            power_attr = state.attributes.get("power")
-            if power_attr is not None:
-                try:
-                    production += float(power_attr)
-                    continue
-                except (ValueError, TypeError):
-                    pass
-
-            # Fallback: if device_class is power, use state directly
-            if state.attributes.get("device_class") == "power":
-                try:
-                    # State is already in W
-                    production += float(state.state)
-                    continue
-                except ValueError:
-                    pass
-
-            # If it's an energy sensor without power attribute, we can't
-            # calculate instantaneous power without derivatives
-            _LOGGER.debug(
-                "Sensor %s is energy sensor without power attribute, skipping",
-                sensor
-            )
+        """Calculate net power consumption from energy sensors."""
+        consumption = sum(self._get_power_from_sensor(s) for s in self.consumption_sensors)
+        production = sum(self._get_power_from_sensor(s) for s in self.production_sensors)
 
         self._attr_available = True
         net = consumption - production
