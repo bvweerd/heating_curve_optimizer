@@ -857,35 +857,82 @@ class NetPowerConsumptionSensor(BaseUtilitySensor):
         self.production_sensors = production_sensors
 
     def _compute_value(self) -> None:
+        """Calculate net power consumption from energy sensors.
+
+        Energy sensors (kWh) often expose a 'power' attribute (W) showing
+        current instantaneous power. We use this if available.
+        """
         consumption = 0.0
         for sensor in self.consumption_sensors:
             state = self.hass.states.get(sensor)
             if state is None or state.state in ("unknown", "unavailable"):
                 continue
-            try:
-                consumption += float(state.state)
-            except ValueError:
-                continue
+
+            # Try to get power from attribute first (W)
+            power_attr = state.attributes.get("power")
+            if power_attr is not None:
+                try:
+                    consumption += float(power_attr)
+                    continue
+                except (ValueError, TypeError):
+                    pass
+
+            # Fallback: if device_class is power, use state directly
+            if state.attributes.get("device_class") == "power":
+                try:
+                    # State is already in W
+                    consumption += float(state.state)
+                    continue
+                except ValueError:
+                    pass
+
+            # If it's an energy sensor without power attribute, we can't
+            # calculate instantaneous power without derivatives
+            _LOGGER.debug(
+                "Sensor %s is energy sensor without power attribute, skipping",
+                sensor
+            )
 
         production = 0.0
         for sensor in self.production_sensors:
             state = self.hass.states.get(sensor)
             if state is None or state.state in ("unknown", "unavailable"):
                 continue
-            try:
-                production += float(state.state)
-            except ValueError:
-                continue
+
+            # Try to get power from attribute first (W)
+            power_attr = state.attributes.get("power")
+            if power_attr is not None:
+                try:
+                    production += float(power_attr)
+                    continue
+                except (ValueError, TypeError):
+                    pass
+
+            # Fallback: if device_class is power, use state directly
+            if state.attributes.get("device_class") == "power":
+                try:
+                    # State is already in W
+                    production += float(state.state)
+                    continue
+                except ValueError:
+                    pass
+
+            # If it's an energy sensor without power attribute, we can't
+            # calculate instantaneous power without derivatives
+            _LOGGER.debug(
+                "Sensor %s is energy sensor without power attribute, skipping",
+                sensor
+            )
 
         self._attr_available = True
         net = consumption - production
         _LOGGER.debug(
-            "Power consumption total=%s production=%s net=%s",
-            consumption,
-            production,
-            net,
+            "Net power consumption: consumption=%sW production=%sW net=%sW",
+            round(consumption, 1),
+            round(production, 1),
+            round(net, 1),
         )
-        self._attr_native_value = round(net, 3)
+        self._attr_native_value = round(net, 1)
 
     async def async_update(self):
         self._compute_value()
