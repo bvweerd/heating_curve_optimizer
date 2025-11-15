@@ -56,6 +56,7 @@ from .const import (
     SOURCE_TYPE_CONSUMPTION,
     SOURCE_TYPE_PRODUCTION,
     U_VALUE_MAP,
+    calculate_htc_from_energy_label,
 )
 from .entity import BaseUtilitySensor
 
@@ -441,7 +442,11 @@ class HeatLossSensor(BaseUtilitySensor):
             if isinstance(v, (int, float, str))
         ]
         self._mark_available()
-        u_value = U_VALUE_MAP.get(self.energy_label.upper(), 1.0)
+
+        # Calculate HTC (Heat Transfer Coefficient) from energy label
+        # This properly converts energy label to building heat loss rate
+        htc = calculate_htc_from_energy_label(self.energy_label, self.area_m2)
+
         indoor = INDOOR_TEMPERATURE
         if self.indoor_sensor:
             state = self.hass.states.get(self.indoor_sensor)
@@ -450,21 +455,33 @@ class HeatLossSensor(BaseUtilitySensor):
                     indoor = float(state.state)
                 except ValueError:
                     indoor = INDOOR_TEMPERATURE
-        q_loss = self.area_m2 * u_value * (indoor - current) / 1000.0
+
+        # Heat loss (kW) = HTC (W/K) × ΔT (K) / 1000
+        delta_t = indoor - current
+        q_loss = htc * delta_t / 1000.0
+
         _LOGGER.debug(
-            "Heat loss calculation area=%.2f u=%.2f indoor=%.2f outdoor=%.2f",
+            "Heat loss calculation: label=%s area=%.2f HTC=%.1f W/K indoor=%.2f outdoor=%.2f ΔT=%.2f q_loss=%.3f kW",
+            self.energy_label,
             self.area_m2,
-            u_value,
+            htc,
             indoor,
             current,
+            delta_t,
+            q_loss,
         )
         self._attr_native_value = round(q_loss, 3)
+
+        # Calculate forecast values using HTC
         forecast_values = [
-            round(self.area_m2 * u_value * (indoor - t) / 1000.0, 3) for t in forecast
+            round(htc * (indoor - t) / 1000.0, 3) for t in forecast
         ]
         self._extra_attrs = {
             "forecast": forecast_values,
             "forecast_time_base": 60,
+            "htc_w_per_k": round(htc, 1),
+            "energy_label": self.energy_label,
+            "calculation_method": "HTC from energy label (NTA 8800)",
         }
 
     async def async_update(self):

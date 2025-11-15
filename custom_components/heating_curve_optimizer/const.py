@@ -42,7 +42,46 @@ CONF_HEAT_CURVE_MAX_OUTDOOR = "heat_curve_max_outdoor"
 # Allowed energy labels
 ENERGY_LABELS = ["A+++", "A++", "A+", "A", "B", "C", "D", "E", "F", "G"]
 
-# Mapping energielabel -> U-waarde (W/m²K)
+# Mapping energielabel -> primary energy consumption (kWh/m²/year)
+# Based on NTA 8800 standard (since Jan 2021)
+# Using midpoint values for each label range
+ENERGY_LABEL_CONSUMPTION = {
+    "A+++": 50,   # Very low energy (passive house level)
+    "A++": 75,    # Very low energy
+    "A+": 90,     # Very low energy
+    "A": 132,     # 105-160 kWh/m²/year (midpoint)
+    "B": 175,     # 160-190 kWh/m²/year (midpoint)
+    "C": 220,     # 190-250 kWh/m²/year (midpoint)
+    "D": 275,     # 250-300 kWh/m²/year (midpoint)
+    "E": 340,     # 300-380 kWh/m²/year (midpoint)
+    "F": 420,     # 380-460 kWh/m²/year (midpoint)
+    "G": 500,     # >460 kWh/m²/year (estimate)
+}
+
+# Heating fraction of total primary energy by label
+# Better insulated homes have relatively more DHW energy use
+HEATING_FRACTION_MAP = {
+    "A+++": 0.40,  # Passive house: excellent insulation, DHW is major portion
+    "A++": 0.42,
+    "A+": 0.45,
+    "A": 0.50,     # Good insulation
+    "B": 0.55,
+    "C": 0.60,
+    "D": 0.65,
+    "E": 0.68,
+    "F": 0.70,
+    "G": 0.72,     # Poor insulation: heating dominates
+}
+
+# Heating degree-days for Netherlands (base 18°C)
+# Average value for Dutch climate
+HEATING_DEGREE_DAYS_NL = 2900
+
+# Binnentemperatuur in °C voor warmteverliesberekening
+INDOOR_TEMPERATURE = 21.0
+
+# Legacy U-value map (deprecated, kept for backward compatibility)
+# DO NOT USE - these values incorrectly treat energy labels as U-values
 U_VALUE_MAP = {
     "A+++": 0.2,
     "A++": 0.3,
@@ -56,8 +95,43 @@ U_VALUE_MAP = {
     "G": 1.8,
 }
 
-# Binnentemperatuur in °C voor warmteverliesberekening
-INDOOR_TEMPERATURE = 21.0
+
+def calculate_htc_from_energy_label(
+    energy_label: str, area_m2: float, heating_degree_days: float = HEATING_DEGREE_DAYS_NL
+) -> float:
+    """
+    Calculate Heat Transfer Coefficient (HTC) from energy label.
+
+    This converts the energy label (primary energy in kWh/m²/year) to an
+    actual building heat loss coefficient (W/K) using heating degree-days.
+
+    Formula:
+    - Annual heating energy (kWh) = Label energy × Area × Heating fraction
+    - HTC (W/K) = Annual heating energy × 1000 / (HDD × 24)
+
+    Args:
+        energy_label: Energy label (A+++, A++, A+, A, B, C, D, E, F, G)
+        area_m2: Floor area in m²
+        heating_degree_days: Heating degree-days for the climate (default: NL)
+
+    Returns:
+        Heat Transfer Coefficient in W/K
+    """
+    # Get energy consumption and heating fraction for this label
+    energy_per_m2 = ENERGY_LABEL_CONSUMPTION.get(energy_label.upper(), 220)
+    heating_fraction = HEATING_FRACTION_MAP.get(energy_label.upper(), 0.60)
+
+    # Calculate annual heating energy (kWh/year)
+    annual_heating_energy = energy_per_m2 * area_m2 * heating_fraction
+
+    # Convert to HTC using degree-days
+    # HTC (W/K) = kWh/year × 1000 W/kW / (degree-days × 24 hours/day)
+    if heating_degree_days <= 0:
+        heating_degree_days = HEATING_DEGREE_DAYS_NL
+
+    htc = annual_heating_energy * 1000.0 / (heating_degree_days * 24.0)
+
+    return htc
 
 # Default COP at a supply temperature of 35 °C
 DEFAULT_COP_AT_35 = 4.2
