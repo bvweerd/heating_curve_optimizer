@@ -5,7 +5,7 @@ DOMAIN = "heating_curve_optimizer"
 DOMAIN_ABBREVIATION = "HCO"
 
 # Supported platforms for this integration
-PLATFORMS = ["sensor", "number", "binary_sensor"]
+PLATFORMS = ["sensor", "binary_sensor"]
 
 # Configuration keys
 CONF_SOURCE_TYPE = "source_type"
@@ -38,6 +38,14 @@ CONF_COP_COMPENSATION_FACTOR = "cop_compensation_factor"
 CONF_OUTDOOR_TEMP_COEFFICIENT = "outdoor_temp_coefficient"
 CONF_HEAT_CURVE_MIN_OUTDOOR = "heat_curve_min_outdoor"
 CONF_HEAT_CURVE_MAX_OUTDOOR = "heat_curve_max_outdoor"
+CONF_HEATING_CURVE_OFFSET = "heating_curve_offset"
+CONF_HEAT_CURVE_MIN = "heat_curve_min"
+CONF_HEAT_CURVE_MAX = "heat_curve_max"
+
+# Default values for heating curve settings
+DEFAULT_HEATING_CURVE_OFFSET = 0.0
+DEFAULT_HEAT_CURVE_MIN = 20.0
+DEFAULT_HEAT_CURVE_MAX = 45.0
 
 # PV panel configuration
 CONF_PV_EAST_WP = "pv_east_wp"
