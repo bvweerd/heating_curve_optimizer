@@ -1471,6 +1471,7 @@ class OptimizedSupplyTemperatureSensor(CalculatedSupplyTemperatureSensor):
         outdoor_sensor: str | SensorEntity,
         entry: ConfigEntry,
         device: DeviceInfo,
+        offset_entity: SensorEntity | None = None,
         k_factor: float = DEFAULT_K_FACTOR,
         planning_window: int = DEFAULT_PLANNING_WINDOW,
         time_base: int = DEFAULT_TIME_BASE,
@@ -1483,6 +1484,7 @@ class OptimizedSupplyTemperatureSensor(CalculatedSupplyTemperatureSensor):
             entry=entry,
             device=device,
         )
+        self.offset_entity = offset_entity
         self.k_factor = k_factor
         self.planning_window = planning_window
         self.time_base = time_base
@@ -2969,6 +2971,7 @@ async def async_setup_entry(
                 outdoor_sensor=outdoor_sensor_entity,
                 entry=entry,
                 device=device_info,
+                offset_entity=heating_curve_offset_sensor,
                 k_factor=k_factor,
                 planning_window=planning_window,
                 time_base=time_base,
