@@ -23,7 +23,7 @@ async def test_calculated_supply_temperature_sensor(hass):
             "heat_curve_min_outdoor": -20.0,
             "heat_curve_max_outdoor": 15.0,
             "heating_curve_offset": 2.0,
-        }
+        },
     }
 
     sensor = CalculatedSupplyTemperatureSensor(
@@ -54,13 +54,15 @@ async def test_optimized_supply_temperature_sensor(hass):
             "heat_curve_min_outdoor": -20.0,
             "heat_curve_max_outdoor": 15.0,
             "heating_curve_offset": -1.0,
-        }
+        },
     }
 
     # Create a mock heating curve offset sensor
-    hass.states.async_set("sensor.heating_curve_offset", "-1", {
-        "future_supply_temperatures": [37.0, 36.5, 36.0]
-    })
+    hass.states.async_set(
+        "sensor.heating_curve_offset",
+        "-1",
+        {"future_supply_temperatures": [37.0, 36.5, 36.0]},
+    )
 
     sensor = OptimizedSupplyTemperatureSensor(
         hass=hass,
