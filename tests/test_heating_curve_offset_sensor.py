@@ -339,3 +339,263 @@ async def test_offset_sensor_reports_no_offset_range_reason(hass):
     attrs = sensor.extra_state_attributes
     assert all(v == 0 for v in attrs["future_offsets"])
     assert "stooklijn" in attrs["optimization_status"]
+
+
+@pytest.mark.asyncio
+async def test_offset_sensor_resamples_15min_to_60min_by_averaging(hass):
+    """Test that 15-minute price intervals are averaged correctly to 60-minute intervals."""
+    # Real user data: 15-minute intervals that should be averaged to hourly
+    # 18:00-19:00: [0.2790986, 0.2823051, 0.2778039, 0.2709311] → avg ≈ 0.2775
+    # 19:00-20:00: [0.2730486, 0.2649416, 0.2714877, 0.2636953] → avg ≈ 0.2683
+    # 20:00-21:00: [0.2632234, 0.2622191, 0.2520551, 0.2439965] → avg ≈ 0.2554
+    # 21:00-22:00: [0.2578026, 0.2555399, 0.2541484, 0.2488365] → avg ≈ 0.2541
+    fifteen_min_prices = [
+        {"value": 0.2790986},
+        {"value": 0.2823051},
+        {"value": 0.2778039},
+        {"value": 0.2709311},
+        {"value": 0.2730486},
+        {"value": 0.2649416},
+        {"value": 0.2714877},
+        {"value": 0.2636953},
+        {"value": 0.2632234},
+        {"value": 0.2622191},
+        {"value": 0.2520551},
+        {"value": 0.2439965},
+        {"value": 0.2578026},
+        {"value": 0.2555399},
+        {"value": 0.2541484},
+        {"value": 0.2488365},
+    ]
+
+    hass.states.async_set(
+        "sensor.net_heat",
+        "1",
+        {"forecast": [1.0, 1.0, 1.0, 1.0], "forecast_time_base": 60},
+    )
+    hass.states.async_set(
+        "sensor.price",
+        "0.25",
+        {"forecast": fifteen_min_prices, "forecast_time_base": 15},
+    )
+    hass.states.async_set("sensor.outdoor_temperature", "5")
+
+    with patch(
+        "custom_components.heating_curve_optimizer.sensor._optimize_offsets",
+        return_value=([0, 0, 0, 0], [0, 0, 0, 0]),
+    ):
+        sensor = HeatingCurveOffsetSensor(
+            hass=hass,
+            name="Heating Curve Offset",
+            unique_id="offset_resample_15min",
+            net_heat_sensor="sensor.net_heat",
+            price_sensor="sensor.price",
+            device=DeviceInfo(identifiers={("test", "resample15")}),
+            planning_window=4,
+            time_base=60,
+        )
+
+        await sensor.async_update()
+
+    prices = sensor.extra_state_attributes["prices"]
+    # Verify that prices are averaged correctly
+    assert len(prices) == 4
+    assert abs(prices[0] - 0.2775) < 0.001  # 18:00-19:00 avg
+    assert abs(prices[1] - 0.2683) < 0.001  # 19:00-20:00 avg
+    assert abs(prices[2] - 0.2554) < 0.001  # 20:00-21:00 avg
+    assert abs(prices[3] - 0.2541) < 0.001  # 21:00-22:00 avg
+
+
+@pytest.mark.asyncio
+async def test_offset_sensor_uses_production_prices_when_net_producing(hass):
+    """Test that production prices are used when household is net producing energy."""
+    # Setup: Net production scenario (production > consumption)
+    # Production: 3.0 kW, Baseline consumption: 1.0 kW → Net balance: +2.0 kW
+    hass.states.async_set(
+        "sensor.net_heat",
+        "1",
+        {"forecast": [1.0, 1.0, 1.0, 1.0], "forecast_time_base": 60},
+    )
+    # Consumption prices: 0.30 EUR/kWh
+    hass.states.async_set(
+        "sensor.consumption_price",
+        "0.30",
+        {"forecast": [{"value": 0.30}] * 4, "forecast_time_base": 60},
+    )
+    # Production prices: 0.10 EUR/kWh (much lower, as typical)
+    hass.states.async_set(
+        "sensor.production_price",
+        "0.10",
+        {"forecast": [{"value": 0.10}] * 4, "forecast_time_base": 60},
+    )
+    # Production: 3.0 kW (net producing)
+    hass.states.async_set("sensor.pv_power", "3000")  # 3000 W = 3.0 kW
+    # Baseline consumption: 1.0 kW
+    hass.states.async_set("sensor.home_power", "1000")  # 1000 W = 1.0 kW
+    hass.states.async_set("sensor.outdoor_temperature", "5")
+
+    with patch(
+        "custom_components.heating_curve_optimizer.sensor._optimize_offsets",
+        return_value=([0, 0, 0, 0], [0, 0, 0, 0]),
+    ):
+        sensor = HeatingCurveOffsetSensor(
+            hass=hass,
+            name="Heating Curve Offset",
+            unique_id="offset_production_price",
+            net_heat_sensor="sensor.net_heat",
+            price_sensor="sensor.consumption_price",
+            production_price_sensor="sensor.production_price",
+            device=DeviceInfo(identifiers={("test", "prod_price")}),
+            planning_window=4,
+            time_base=60,
+            production_sensors=["sensor.pv_power"],
+            consumption_sensors=["sensor.home_power"],
+        )
+
+        await sensor.async_update()
+
+    attrs = sensor.extra_state_attributes
+    # Should use production prices because net balance > 0
+    assert attrs["prices"] == [0.10, 0.10, 0.10, 0.10]
+    assert attrs["consumption_prices"] == [0.30, 0.30, 0.30, 0.30]
+    assert attrs["production_prices"] == [0.10, 0.10, 0.10, 0.10]
+    assert all(source == "production" for source in attrs["price_source"])
+    # Net balance should be positive (production - consumption)
+    assert all(balance > 0 for balance in attrs["net_balance_kw"])
+
+
+@pytest.mark.asyncio
+async def test_offset_sensor_uses_consumption_prices_when_net_consuming(hass):
+    """Test that consumption prices are used when household is net consuming energy."""
+    # Setup: Net consumption scenario (consumption > production)
+    # Production: 0.5 kW, Baseline consumption: 2.0 kW → Net balance: -1.5 kW
+    hass.states.async_set(
+        "sensor.net_heat",
+        "1",
+        {"forecast": [1.0, 1.0, 1.0, 1.0], "forecast_time_base": 60},
+    )
+    hass.states.async_set(
+        "sensor.consumption_price",
+        "0.30",
+        {"forecast": [{"value": 0.30}] * 4, "forecast_time_base": 60},
+    )
+    hass.states.async_set(
+        "sensor.production_price",
+        "0.10",
+        {"forecast": [{"value": 0.10}] * 4, "forecast_time_base": 60},
+    )
+    hass.states.async_set("sensor.pv_power", "500")  # 500 W = 0.5 kW
+    hass.states.async_set("sensor.home_power", "2000")  # 2000 W = 2.0 kW
+    hass.states.async_set("sensor.outdoor_temperature", "5")
+
+    with patch(
+        "custom_components.heating_curve_optimizer.sensor._optimize_offsets",
+        return_value=([0, 0, 0, 0], [0, 0, 0, 0]),
+    ):
+        sensor = HeatingCurveOffsetSensor(
+            hass=hass,
+            name="Heating Curve Offset",
+            unique_id="offset_consumption_price",
+            net_heat_sensor="sensor.net_heat",
+            price_sensor="sensor.consumption_price",
+            production_price_sensor="sensor.production_price",
+            device=DeviceInfo(identifiers={("test", "cons_price")}),
+            planning_window=4,
+            time_base=60,
+            production_sensors=["sensor.pv_power"],
+            consumption_sensors=["sensor.home_power"],
+        )
+
+        await sensor.async_update()
+
+    attrs = sensor.extra_state_attributes
+    # Should use consumption prices because net balance < 0
+    assert attrs["prices"] == [0.30, 0.30, 0.30, 0.30]
+    assert attrs["consumption_prices"] == [0.30, 0.30, 0.30, 0.30]
+    assert attrs["production_prices"] == [0.10, 0.10, 0.10, 0.10]
+    assert all(source == "consumption" for source in attrs["price_source"])
+    # Net balance should be negative (consumption > production)
+    assert all(balance < 0 for balance in attrs["net_balance_kw"])
+
+
+@pytest.mark.asyncio
+async def test_offset_sensor_mixed_production_consumption_scenario(hass):
+    """Test dynamic price selection when net balance varies across forecast."""
+    # Setup: Mixed scenario - net producing early, net consuming later
+    hass.states.async_set(
+        "sensor.net_heat",
+        "1",
+        {"forecast": [1.0, 1.0, 1.0, 1.0], "forecast_time_base": 60},
+    )
+    # Varying consumption prices
+    hass.states.async_set(
+        "sensor.consumption_price",
+        "0.30",
+        {
+            "forecast": [
+                {"value": 0.25},
+                {"value": 0.30},
+                {"value": 0.35},
+                {"value": 0.40},
+            ],
+            "forecast_time_base": 60,
+        },
+    )
+    # Production prices (lower)
+    hass.states.async_set(
+        "sensor.production_price",
+        "0.10",
+        {
+            "forecast": [
+                {"value": 0.08},
+                {"value": 0.10},
+                {"value": 0.12},
+                {"value": 0.14},
+            ],
+            "forecast_time_base": 60,
+        },
+    )
+    # Production forecast (high early, low later)
+    hass.states.async_set(
+        "sensor.pv_power",
+        "3000",
+        {"forecast": [3.0, 2.0, 1.0, 0.5], "forecast_time_base": 60},
+    )
+    # Baseline consumption (constant)
+    hass.states.async_set("sensor.home_power", "1500")  # 1.5 kW constant
+    hass.states.async_set("sensor.outdoor_temperature", "5")
+
+    with patch(
+        "custom_components.heating_curve_optimizer.sensor._optimize_offsets",
+        return_value=([0, 0, 0, 0], [0, 0, 0, 0]),
+    ):
+        sensor = HeatingCurveOffsetSensor(
+            hass=hass,
+            name="Heating Curve Offset",
+            unique_id="offset_mixed",
+            net_heat_sensor="sensor.net_heat",
+            price_sensor="sensor.consumption_price",
+            production_price_sensor="sensor.production_price",
+            device=DeviceInfo(identifiers={("test", "mixed")}),
+            planning_window=4,
+            time_base=60,
+            production_sensors=["sensor.pv_power"],
+            consumption_sensors=["sensor.home_power"],
+        )
+
+        await sensor.async_update()
+
+    attrs = sensor.extra_state_attributes
+    # Step 0: 3.0 - 1.5 = +1.5 kW (producing) → use production price 0.08
+    # Step 1: 2.0 - 1.5 = +0.5 kW (producing) → use production price 0.10
+    # Step 2: 1.0 - 1.5 = -0.5 kW (consuming) → use consumption price 0.35
+    # Step 3: 0.5 - 1.5 = -1.0 kW (consuming) → use consumption price 0.40
+    expected_prices = [0.08, 0.10, 0.35, 0.40]
+    expected_sources = ["production", "production", "consumption", "consumption"]
+
+    assert attrs["prices"] == expected_prices
+    assert attrs["price_source"] == expected_sources
+    assert attrs["net_balance_kw"][0] > 0  # Producing
+    assert attrs["net_balance_kw"][1] > 0  # Producing
+    assert attrs["net_balance_kw"][2] < 0  # Consuming
+    assert attrs["net_balance_kw"][3] < 0  # Consuming
