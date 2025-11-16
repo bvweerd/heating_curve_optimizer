@@ -165,6 +165,14 @@ DEFAULT_OUTDOOR_TEMP_COEFFICIENT = 0.08
 # Default COP compensation factor
 DEFAULT_COP_COMPENSATION_FACTOR = 1.0
 
+# Thermal storage efficiency: fraction of heat demand that goes to/from
+# thermal mass storage per degree of temperature offset
+# When offset is +1°C, building is overheated and stores thermal energy
+# When offset is -1°C, building uses stored thermal energy
+# Value of 0.15 means 15% of current heat demand is stored/released per °C offset
+# This represents the thermal inertia of building materials (concrete, brick, etc.)
+DEFAULT_THERMAL_STORAGE_EFFICIENCY = 0.15
+
 # Possible source types
 SOURCE_TYPE_CONSUMPTION = "Electricity consumption"
 SOURCE_TYPE_PRODUCTION = "Electricity production"

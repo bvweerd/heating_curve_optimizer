@@ -53,6 +53,7 @@ from .const import (
     DEFAULT_K_FACTOR,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_COP_COMPENSATION_FACTOR,
+    DEFAULT_THERMAL_STORAGE_EFFICIENCY,
     DEFAULT_HEATING_CURVE_OFFSET,
     DEFAULT_HEAT_CURVE_MIN,
     DEFAULT_HEAT_CURVE_MAX,
@@ -1897,6 +1898,9 @@ def _optimize_offsets(
         last_off = prev_off
         last_sum = prev_sum
 
+    # Track cumulative offset sum (in °C) for constraint purposes
+    # Note: This is NOT energy - it tracks how far we've deviated from base temperature
+    # The actual thermal energy buffer is calculated separately by _calculate_buffer_energy()
     buffer_evolution: list[float] = []
     cur = buffer
     for off in result:
@@ -1916,8 +1920,30 @@ def _calculate_buffer_energy(
     *,
     time_base: int,
 ) -> list[float]:
-    """Convert offset evolution to stored thermal energy in kWh."""
+    """Convert offset evolution to stored thermal energy in kWh.
 
+    Physical model:
+    - When offset > 0: supply temperature is raised, building is overheated,
+      excess thermal energy is stored in building's thermal mass
+    - When offset < 0: supply temperature is lowered, building uses stored
+      thermal energy from its thermal mass
+    - Energy stored per time step = offset × demand × storage_efficiency × time
+
+    Units verification:
+    - offset: °C (temperature adjustment)
+    - demand: kW (thermal power demand)
+    - storage_efficiency: dimensionless (fraction of demand stored per °C)
+    - time: hours
+    - Result: °C × kW × (dimensionless) × hours = kWh ✓
+
+    Args:
+        offsets: Temperature offsets in °C for each time step
+        demand: Heat demand in kW for each time step
+        time_base: Time base in minutes per step
+
+    Returns:
+        Cumulative thermal energy buffer in kWh at each time step
+    """
     if time_base <= 0:
         step_hours = 1.0
     else:
@@ -1932,7 +1958,13 @@ def _calculate_buffer_energy(
         else:
             heat_demand = 0.0
 
-        buffer_energy += offset * heat_demand * step_hours
+        # Calculate energy stored/released in this time step
+        # Positive offset stores energy, negative offset uses stored energy
+        # Storage amount is proportional to demand (more demand = more thermal mass active)
+        energy_delta = (
+            offset * heat_demand * DEFAULT_THERMAL_STORAGE_EFFICIENCY * step_hours
+        )
+        buffer_energy += energy_delta
         energy_evolution.append(round(buffer_energy, 3))
 
     return energy_evolution
