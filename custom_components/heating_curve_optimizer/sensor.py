@@ -2403,7 +2403,6 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         Returns:
             Power in kW, or None if insufficient data
         """
-        import time
 
         # Get previous reading
         if entity_id not in self._energy_history:
