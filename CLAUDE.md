@@ -212,17 +212,18 @@ All entities:
 ### Setting Up Development Environment
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies (for local development)
+pip install pre-commit
 
 # Install pre-commit hooks
 pre-commit install
 
-# Run tests
-pytest
+# IMPORTANT: Before pushing, always run
+pre-commit run --all-files
 
-# Run specific test
-pytest tests/test_heating_curve_offset_sensor.py -v
+# Note: Full test suite requires Home Assistant test environment
+# Tests run automatically in CI via .github/workflows/pytest.yml
+# To set up full test environment locally: pip install -r requirements.txt
 ```
 
 ### Pre-commit Hooks
@@ -237,6 +238,31 @@ pytest tests/test_heating_curve_offset_sensor.py -v
 ```bash
 pre-commit run --all-files
 ```
+
+### Pre-Push Checklist
+
+**IMPORTANT: Always run these commands before pushing code:**
+
+```bash
+# 1. Run pre-commit hooks to check code quality
+pre-commit run --all-files
+
+# 2. Pytest runs automatically in CI - no need to run locally
+# The test suite requires Home Assistant test fixtures that are
+# complex to set up locally, so rely on the CI/CD pipeline
+```
+
+**Why this workflow?**
+- **Pre-commit hooks**: Run locally and fix formatting/linting issues immediately
+- **Pytest**: Runs in CI with proper Home Assistant test environment
+- This ensures code quality while avoiding complex local test setup
+
+**If pre-commit hooks fail:**
+1. Review the errors
+2. Fix the issues (many are auto-fixed by the hooks)
+3. Stage the fixed files: `git add .`
+4. Re-run: `pre-commit run --all-files`
+5. Repeat until all hooks pass
 
 ### CI/CD Pipelines
 
@@ -919,6 +945,7 @@ else:
 6. **Consider performance**: Use executor for CPU-intensive work
 7. **Validate inputs**: Check for None, "unknown", "unavailable"
 8. **Log appropriately**: Debug for data, Warning for recoverable errors, Error for failures
+9. **Run pre-commit hooks**: Always run `pre-commit run --all-files` before pushing
 
 ### When Fixing Bugs
 
@@ -965,22 +992,16 @@ else:
 
 ### Useful Commands
 ```bash
-# Run all tests
-pytest
-
-# Run specific test with verbose output
-pytest tests/test_heating_curve_offset_sensor.py -v
-
-# Run tests with coverage
-pytest --cov=custom_components.heating_curve_optimizer
-
-# Run pre-commit hooks
+# IMPORTANT: Always run before pushing
 pre-commit run --all-files
 
-# Format code
+# Tests run automatically in CI (complex local setup required)
+# See .github/workflows/pytest.yml for CI test configuration
+
+# Manual formatting (pre-commit handles this automatically)
 black custom_components/ tests/
 
-# Lint code
+# Manual linting (pre-commit handles this automatically)
 ruff check --fix custom_components/ tests/
 
 # Bump version
