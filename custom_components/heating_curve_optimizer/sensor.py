@@ -2295,6 +2295,9 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         if isinstance(self._outdoor_sensor, str):
             self._outdoor_entity_id = self._outdoor_sensor
         self._time_base_issues: set[str] = set()
+        # Store energy sensor history for derivative calculation (kWh -> kW)
+        # Format: {entity_id: (energy_kwh, timestamp)}
+        self._energy_history: dict[str, tuple[float, float]] = {}
 
     @property
     def extra_state_attributes(self) -> dict[str, list[int] | list[float] | float]:
@@ -2366,6 +2369,109 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             )
 
         return result
+
+    def _is_energy_sensor(self, state: State) -> bool:
+        """Check if a sensor is a cumulative energy sensor (kWh) vs power (W/kW)."""
+        if state is None:
+            return False
+
+        # Check device class
+        device_class = state.attributes.get("device_class")
+        if device_class == "energy":
+            return True
+
+        # Check unit of measurement
+        unit = state.attributes.get("unit_of_measurement", "")
+        if unit.lower() in ("kwh", "wh", "mwh"):
+            return True
+
+        return False
+
+    def _calculate_power_from_energy(
+        self, entity_id: str, current_energy: float, current_time: float
+    ) -> float | None:
+        """Calculate instantaneous power (kW) from cumulative energy (kWh).
+
+        Uses derivative: Power = ΔEnergy / Δ Time
+        Stores history for next calculation.
+
+        Args:
+            entity_id: Sensor entity ID
+            current_energy: Current energy reading in kWh
+            current_time: Current timestamp (from time.time())
+
+        Returns:
+            Power in kW, or None if insufficient data
+        """
+        import time
+
+        # Get previous reading
+        if entity_id not in self._energy_history:
+            # First reading - store and return None
+            self._energy_history[entity_id] = (current_energy, current_time)
+            _LOGGER.debug(
+                "Energy sensor %s: First reading %.3f kWh, no derivative yet",
+                entity_id,
+                current_energy,
+            )
+            return None
+
+        prev_energy, prev_time = self._energy_history[entity_id]
+
+        # Calculate time delta in hours
+        time_delta_hours = (current_time - prev_time) / 3600.0
+
+        # Require at least 5 seconds between readings
+        if time_delta_hours < (5.0 / 3600.0):
+            _LOGGER.debug(
+                "Energy sensor %s: Time delta too small (%.1f sec), skipping",
+                entity_id,
+                (current_time - prev_time),
+            )
+            return None
+
+        # Calculate energy delta
+        energy_delta = current_energy - prev_energy
+
+        # Handle meter resets (negative delta)
+        if energy_delta < 0:
+            _LOGGER.warning(
+                "Energy sensor %s: Negative delta detected (%.3f kWh), "
+                "possible meter reset. Resetting history.",
+                entity_id,
+                energy_delta,
+            )
+            self._energy_history[entity_id] = (current_energy, current_time)
+            return None
+
+        # Calculate power (kW)
+        power_kw = energy_delta / time_delta_hours
+
+        # Sanity check: typical household shouldn't exceed 50 kW
+        if power_kw > 50.0:
+            _LOGGER.warning(
+                "Energy sensor %s: Calculated power %.1f kW seems unrealistic. "
+                "Delta: %.3f kWh over %.1f sec. Check sensor configuration.",
+                entity_id,
+                power_kw,
+                energy_delta,
+                (current_time - prev_time),
+            )
+            # Don't update history - keep old reading for next attempt
+            return None
+
+        # Update history with current reading
+        self._energy_history[entity_id] = (current_energy, current_time)
+
+        _LOGGER.debug(
+            "Energy sensor %s: Calculated power %.3f kW (Δ%.3f kWh / %.1f sec)",
+            entity_id,
+            power_kw,
+            energy_delta,
+            (current_time - prev_time),
+        )
+
+        return power_kw
 
     def _extract_prices(self, state) -> list[float]:
         prices = extract_price_forecast(state)
@@ -2451,24 +2557,61 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         if self.production_sensors:
             production_state = self.hass.states.get(self.production_sensors[0])
             if production_state:
-                _LOGGER.warning(
-                    "Production sensor '%s' does not have 'forecast' attribute "
-                    "and no PV forecast sensor available. "
-                    "Using constant value (%.3f kW) for all time steps. "
-                    "For accurate optimization, configure a power sensor with forecast capability.",
-                    self.production_sensors[0],
-                    float(production_state.state) / 1000
-                    if float(production_state.state) > 100
-                    else float(production_state.state),
-                )
-                try:
-                    current_production = float(production_state.state)
-                    # Convert from W to kW if needed (assume values > 100 are in W)
-                    if current_production > 100:
-                        current_production = current_production / 1000.0
-                    return [max(0.0, current_production)] * self.steps
-                except (TypeError, ValueError):
-                    pass
+                import time
+
+                # Check if this is a cumulative energy sensor (kWh)
+                is_energy = self._is_energy_sensor(production_state)
+
+                if is_energy:
+                    # Energy sensor (kWh) - calculate power via derivative
+                    _LOGGER.info(
+                        "Production sensor '%s' is a cumulative energy sensor (kWh). "
+                        "Calculating instantaneous power via derivative (ΔkWh/Δt).",
+                        self.production_sensors[0],
+                    )
+                    try:
+                        current_energy = float(production_state.state)
+                        current_time = time.time()
+
+                        # Calculate power from energy derivative
+                        current_production = self._calculate_power_from_energy(
+                            self.production_sensors[0], current_energy, current_time
+                        )
+
+                        if current_production is None:
+                            # First reading or insufficient data
+                            _LOGGER.debug(
+                                "Insufficient data for derivative calculation on '%s'. "
+                                "Waiting for next update.",
+                                self.production_sensors[0],
+                            )
+                            return [0.0] * self.steps
+
+                    except (TypeError, ValueError) as e:
+                        _LOGGER.warning(
+                            "Failed to calculate power from energy sensor '%s': %s",
+                            self.production_sensors[0],
+                            e,
+                        )
+                        return [0.0] * self.steps
+                else:
+                    # Power sensor (W or kW) - use value directly
+                    _LOGGER.warning(
+                        "Production sensor '%s' does not have 'forecast' attribute "
+                        "and no PV forecast sensor available. "
+                        "Using constant value for all time steps. "
+                        "For accurate optimization, configure a power sensor with forecast capability.",
+                        self.production_sensors[0],
+                    )
+                    try:
+                        current_production = float(production_state.state)
+                        # Convert from W to kW if needed (assume values > 100 are in W)
+                        if current_production > 100:
+                            current_production = current_production / 1000.0
+                    except (TypeError, ValueError):
+                        return [0.0] * self.steps
+
+                return [max(0.0, current_production)] * self.steps
 
         return [0.0] * self.steps
 
@@ -2518,35 +2661,73 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         # Fallback: use current consumption value
         # Log warning if sensor doesn't have forecast attribute
         if consumption_state:
-            _LOGGER.warning(
-                "Consumption sensor '%s' does not have 'forecast' attribute. "
-                "Using constant value for all time steps. "
-                "For accurate optimization, configure a power sensor with forecast capability. "
-                "Note: Cumulative energy sensors (kWh) should not be used - they lack forecast data.",
-                self.consumption_sensors[0],
-            )
-            try:
-                current_consumption = float(consumption_state.state)
-                # Convert from W to kW if needed
-                if current_consumption > 100:
-                    current_consumption = current_consumption / 1000.0
+            import time
 
-                # Subtract current heat pump power
-                baseline = current_consumption
-                if self.heatpump_sensor:
-                    heatpump_state = self.hass.states.get(self.heatpump_sensor)
-                    if heatpump_state:
-                        try:
-                            hp_power = float(heatpump_state.state)
-                            if hp_power > 100:
-                                hp_power = hp_power / 1000.0
-                            baseline -= hp_power
-                        except (TypeError, ValueError):
-                            pass
+            # Check if this is a cumulative energy sensor (kWh)
+            is_energy = self._is_energy_sensor(consumption_state)
 
-                return [max(0.0, baseline)] * self.steps
-            except (TypeError, ValueError):
-                pass
+            if is_energy:
+                # Energy sensor (kWh) - calculate power via derivative
+                _LOGGER.info(
+                    "Consumption sensor '%s' is a cumulative energy sensor (kWh). "
+                    "Calculating instantaneous power via derivative (ΔkWh/Δt).",
+                    self.consumption_sensors[0],
+                )
+                try:
+                    current_energy = float(consumption_state.state)
+                    current_time = time.time()
+
+                    # Calculate power from energy derivative
+                    current_consumption = self._calculate_power_from_energy(
+                        self.consumption_sensors[0], current_energy, current_time
+                    )
+
+                    if current_consumption is None:
+                        # First reading or insufficient data
+                        _LOGGER.debug(
+                            "Insufficient data for derivative calculation on '%s'. "
+                            "Waiting for next update.",
+                            self.consumption_sensors[0],
+                        )
+                        return [0.0] * self.steps
+
+                except (TypeError, ValueError) as e:
+                    _LOGGER.warning(
+                        "Failed to calculate power from energy sensor '%s': %s",
+                        self.consumption_sensors[0],
+                        e,
+                    )
+                    return [0.0] * self.steps
+            else:
+                # Power sensor (W or kW) - use value directly
+                _LOGGER.warning(
+                    "Consumption sensor '%s' does not have 'forecast' attribute. "
+                    "Using constant power value for all time steps. "
+                    "For accurate optimization, configure a power sensor with forecast capability.",
+                    self.consumption_sensors[0],
+                )
+                try:
+                    current_consumption = float(consumption_state.state)
+                    # Convert from W to kW if needed
+                    if current_consumption > 100:
+                        current_consumption = current_consumption / 1000.0
+                except (TypeError, ValueError):
+                    return [0.0] * self.steps
+
+            # Subtract current heat pump power
+            baseline = current_consumption
+            if self.heatpump_sensor:
+                heatpump_state = self.hass.states.get(self.heatpump_sensor)
+                if heatpump_state:
+                    try:
+                        hp_power = float(heatpump_state.state)
+                        if hp_power > 100:
+                            hp_power = hp_power / 1000.0
+                        baseline -= hp_power
+                    except (TypeError, ValueError):
+                        pass
+
+            return [max(0.0, baseline)] * self.steps
 
         return [0.0] * self.steps
 
