@@ -772,7 +772,7 @@ ruff check custom_components/ tests/
 - repo: https://github.com/codespell-project/codespell
   hooks:
     - id: codespell
-      args: [--ignore-words-list=hass,additonal,som]
+      args: [--ignore-words-list=hass,additional,some]
 ```
 
 ### Performance Issues
