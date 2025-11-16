@@ -2694,6 +2694,10 @@ async def async_setup_entry(
         elif cfg.get(CONF_SOURCE_TYPE) == SOURCE_TYPE_PRODUCTION:
             production_sources.extend(cfg.get(CONF_SOURCES, []))
 
+    # Deduplicate sources while preserving order (fixes issue with duplicate configs)
+    consumption_sources = list(dict.fromkeys(consumption_sources))
+    production_sources = list(dict.fromkeys(production_sources))
+
     area_m2 = entry.options.get(CONF_AREA_M2, entry.data.get(CONF_AREA_M2))
     energy_label = entry.options.get(
         CONF_ENERGY_LABEL, entry.data.get(CONF_ENERGY_LABEL)
