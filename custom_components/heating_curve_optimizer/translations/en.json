@@ -112,6 +112,9 @@
       "window_solar_gain": {
         "name": "Solar gain through windows"
       },
+      "pv_production_forecast": {
+        "name": "PV production forecast"
+      },
       "cop_delta": {
         "name": "COP delta (future offsets)"
       },

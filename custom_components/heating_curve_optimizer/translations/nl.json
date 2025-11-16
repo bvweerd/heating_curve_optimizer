@@ -112,6 +112,9 @@
       "window_solar_gain": {
         "name": "Zonnewinst via ramen"
       },
+      "pv_production_forecast": {
+        "name": "PV productie voorspelling"
+      },
       "cop_delta": {
         "name": "COP verschil (toekomstige offsets)"
       },
