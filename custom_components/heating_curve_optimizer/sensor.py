@@ -2129,6 +2129,15 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             )
 
         # Fallback: use current production value for all steps
+        # Log warning if sensor doesn't have forecast attribute
+        _LOGGER.warning(
+            "Production sensor '%s' does not have 'forecast' attribute. "
+            "Using constant value (%.3f kW) for all time steps. "
+            "For accurate optimization, configure a power sensor with forecast capability, "
+            "or ensure PV production forecast is implemented.",
+            self.production_sensors[0],
+            float(production_state.state) / 1000 if float(production_state.state) > 100 else float(production_state.state)
+        )
         try:
             current_production = float(production_state.state)
             # Convert from W to kW if needed (assume values > 100 are in W)
@@ -2182,7 +2191,15 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
                 return consumption_forecast
 
         # Fallback: use current consumption value
+        # Log warning if sensor doesn't have forecast attribute
         if consumption_state:
+            _LOGGER.warning(
+                "Consumption sensor '%s' does not have 'forecast' attribute. "
+                "Using constant value for all time steps. "
+                "For accurate optimization, configure a power sensor with forecast capability. "
+                "Note: Cumulative energy sensors (kWh) should not be used - they lack forecast data.",
+                self.consumption_sensors[0]
+            )
             try:
                 current_consumption = float(consumption_state.state)
                 # Convert from W to kW if needed
@@ -2927,6 +2944,8 @@ async def async_setup_entry(
             production_sensors=production_sources,
             production_price_sensor=production_price_sensor,
             outdoor_sensor=outdoor_sensor_entity,
+            planning_window=planning_window,
+            time_base=time_base,
         )
         entities.append(heating_curve_offset_sensor)
 
