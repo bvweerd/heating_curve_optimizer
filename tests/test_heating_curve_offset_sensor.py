@@ -77,12 +77,12 @@ async def test_offset_sensor_sets_future_offsets_attribute(hass):
     assert sensor.extra_state_attributes["future_offsets"] == [1, 2, 3, 4, 5, 6]
     assert sensor.extra_state_attributes["prices"] == [0.0] * 6
     assert sensor.extra_state_attributes["buffer_evolution"] == [
-        0.5,
-        1.5,
-        3.0,
-        5.0,
-        7.5,
-        10.5,
+        0.075,
+        0.225,
+        0.45,
+        0.75,
+        1.125,
+        1.575,
     ]
     assert sensor.extra_state_attributes["buffer_evolution_offsets"] == [
         0,
@@ -320,10 +320,12 @@ async def test_offset_sensor_reports_no_offset_range_reason(hass):
     )
     hass.states.async_set("sensor.outdoor_temperature", "5")
 
-    hass.data.setdefault(DOMAIN, {})["heat_curve_min"] = 30.0
-    hass.data[DOMAIN]["heat_curve_max"] = 30.0
-    hass.data[DOMAIN]["heat_curve_min_outdoor"] = -20.0
-    hass.data[DOMAIN]["heat_curve_max_outdoor"] = 15.0
+    hass.data.setdefault(DOMAIN, {})["runtime"] = {
+        "heat_curve_min": 30.0,
+        "heat_curve_max": 30.0,
+        "heat_curve_min_outdoor": -20.0,
+        "heat_curve_max_outdoor": 15.0,
+    }
 
     sensor = HeatingCurveOffsetSensor(
         hass=hass,
