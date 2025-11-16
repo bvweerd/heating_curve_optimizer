@@ -471,12 +471,25 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_select_sources(self, user_input=None) -> ConfigFlowResult:
         if user_input is not None:
             self.sources = user_input[CONF_SOURCES]
-            self.configs.append(
-                {
-                    CONF_SOURCE_TYPE: self.source_type,
-                    CONF_SOURCES: self.sources,
-                }
+            # Check if a config with this source_type already exists
+            existing_index = next(
+                (
+                    i
+                    for i, cfg in enumerate(self.configs)
+                    if cfg.get(CONF_SOURCE_TYPE) == self.source_type
+                ),
+                None,
             )
+            new_config = {
+                CONF_SOURCE_TYPE: self.source_type,
+                CONF_SOURCES: self.sources,
+            }
+            if existing_index is not None:
+                # Replace existing config instead of creating duplicate
+                self.configs[existing_index] = new_config
+            else:
+                # Add new config
+                self.configs.append(new_config)
             return await self.async_step_user()
 
         all_sensors = await self._get_energy_sensors()
@@ -961,12 +974,25 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_select_sources(self, user_input=None):
         if user_input and CONF_SOURCES in user_input:
             self.sources = user_input[CONF_SOURCES]
-            self.configs.append(
-                {
-                    CONF_SOURCE_TYPE: self.source_type,
-                    CONF_SOURCES: self.sources,
-                }
+            # Check if a config with this source_type already exists
+            existing_index = next(
+                (
+                    i
+                    for i, cfg in enumerate(self.configs)
+                    if cfg.get(CONF_SOURCE_TYPE) == self.source_type
+                ),
+                None,
             )
+            new_config = {
+                CONF_SOURCE_TYPE: self.source_type,
+                CONF_SOURCES: self.sources,
+            }
+            if existing_index is not None:
+                # Replace existing config instead of creating duplicate
+                self.configs[existing_index] = new_config
+            else:
+                # Add new config
+                self.configs.append(new_config)
             return await self.async_step_user()
 
         all_sensors = [
