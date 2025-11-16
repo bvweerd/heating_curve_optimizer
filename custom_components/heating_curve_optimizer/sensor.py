@@ -1986,6 +1986,9 @@ def _optimize_offsets(
     outdoor_temps: list[float] | None = None,
     humidity_forecast: list[float] | None = None,
     outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+    time_base: int = 60,
+    outdoor_min: float = -20.0,
+    outdoor_max: float = 15.0,
 ) -> tuple[list[int], list[float]]:
     r"""Return cost optimized offsets for the given demand and prices.
 
@@ -2037,9 +2040,21 @@ def _optimize_offsets(
         for t in range(horizon)
     ]
 
+    # Calculate base temperature for each forecast step based on outdoor temperature
+    base_temps = [
+        _calculate_supply_temperature(
+            outdoor_temps_data[t],
+            water_min=water_min,
+            water_max=water_max,
+            outdoor_min=outdoor_min,
+            outdoor_max=outdoor_max,
+        )
+        for t in range(horizon)
+    ]
+
     def _calculate_cop(offset: int, time_step: int) -> float:
         """Calculate COP for given offset and time step, including outdoor temp and defrost effects."""
-        supply_temp = base_temp + offset
+        supply_temp = base_temps[time_step] + offset
         outdoor_temp = outdoor_temps_data[time_step]
 
         # COP formula: base + outdoor_effect - supply_temp_effect
@@ -2054,23 +2069,35 @@ def _optimize_offsets(
 
         return max(0.5, cop_adjusted)  # Ensure COP doesn't go below 0.5
 
-    allowed_offsets = [
-        o for o in range(-4, 5) if water_min <= base_temp + o <= water_max
-    ]
+    # Check which offsets are allowed - must respect water_min/max for all forecast steps
+    # An offset is allowed only if it keeps supply temp within bounds for ALL time steps
+    allowed_offsets = []
+    for o in range(-4, 5):
+        if all(water_min <= base_temps[t] + o <= water_max for t in range(horizon)):
+            allowed_offsets.append(o)
     if not allowed_offsets:
         return [0 for _ in range(horizon)], [buffer for _ in range(horizon)]
 
     target_sum = -int(round(buffer))
 
-    # dynamic programming table storing (cost, prev_offset, prev_sum)
-    dp: list[dict[int, dict[int, tuple[float, int | None, int | None]]]] = [
+    # Calculate step duration in hours for buffer energy calculation
+    step_hours = time_base / 60.0
+
+    # dynamic programming table storing (cost, prev_offset, prev_sum, buffer_energy)
+    # State: (time_step, offset) -> {cumulative_sum: (cost, prev_offset, prev_sum, buffer_kwh)}
+    dp: list[dict[int, dict[int, tuple[float, int | None, int | None, float]]]] = [
         {} for _ in range(horizon)
     ]
 
     for off in allowed_offsets:
         cop = _calculate_cop(off, 0)
         cost = demand[0] * prices[0] / cop if cop > 0 else demand[0] * prices[0] * 10
-        dp[0][off] = {off: (cost, None, None)}
+        # Calculate initial buffer energy
+        heat_demand = max(float(demand[0]), 0.0)
+        buffer_kwh = buffer + off * heat_demand * DEFAULT_THERMAL_STORAGE_EFFICIENCY * step_hours
+        # Only allow states with non-negative buffer
+        if buffer_kwh >= 0:
+            dp[0][off] = {off: (cost, None, None, buffer_kwh)}
 
     for t in range(1, horizon):
         for off in allowed_offsets:
@@ -2080,13 +2107,18 @@ def _optimize_offsets(
             )
             for prev_off, sums in dp[t - 1].items():
                 if abs(off - prev_off) <= 1:
-                    for prev_sum, (prev_cost, _, _) in sums.items():
+                    for prev_sum, (prev_cost, _, _, prev_buffer_kwh) in sums.items():
                         new_sum = prev_sum + off
                         total = prev_cost + step_cost
-                        dp[t].setdefault(off, {})
-                        cur = dp[t][off].get(new_sum)
-                        if cur is None or total < cur[0]:
-                            dp[t][off][new_sum] = (total, prev_off, prev_sum)
+                        # Calculate new buffer energy
+                        heat_demand = max(float(demand[t]), 0.0)
+                        buffer_kwh = prev_buffer_kwh + off * heat_demand * DEFAULT_THERMAL_STORAGE_EFFICIENCY * step_hours
+                        # Only allow states with non-negative buffer
+                        if buffer_kwh >= 0:
+                            dp[t].setdefault(off, {})
+                            cur = dp[t][off].get(new_sum)
+                            if cur is None or total < cur[0]:
+                                dp[t][off][new_sum] = (total, prev_off, prev_sum, buffer_kwh)
 
     if not dp[horizon - 1]:
         return [0 for _ in range(horizon)], [buffer for _ in range(horizon)]
@@ -2095,14 +2127,14 @@ def _optimize_offsets(
     best_sum: int | None = None
     best_cost = math.inf
     for off, sums in dp[horizon - 1].items():
-        for sum_off, (cost, _, _) in sums.items():
+        for sum_off, (cost, _, _, _) in sums.items():
             if sum_off == target_sum and cost < best_cost:
                 best_cost = cost
                 best_off = off
                 best_sum = sum_off
     if best_off is None:
         for off, sums in dp[horizon - 1].items():
-            for sum_off, (cost, _, _) in sums.items():
+            for sum_off, (cost, _, _, _) in sums.items():
                 if cost < best_cost:
                     best_cost = cost
                     best_off = off
@@ -2115,7 +2147,7 @@ def _optimize_offsets(
     last_sum = best_sum
     result[-1] = last_off
     for t in range(horizon - 1, 0, -1):
-        _, prev_off, prev_sum = dp[t][last_off][last_sum]
+        _, prev_off, prev_sum, _ = dp[t][last_off][last_sum]
         assert prev_off is not None and prev_sum is not None
         result[t - 1] = prev_off
         last_off = prev_off
@@ -2698,11 +2730,31 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             solar_buffer_evolution,
         )
 
-        data = self.hass.data.get(DOMAIN, {})
-        water_min = float(data.get("heat_curve_min", 28.0))
-        water_max = float(data.get("heat_curve_max", 45.0))
-        outdoor_min = float(data.get("heat_curve_min_outdoor", -20.0))
-        outdoor_max = float(data.get("heat_curve_max_outdoor", 15.0))
+        # Get heating curve parameters from config entry
+        water_min = float(
+            self._entry.options.get(
+                CONF_HEAT_CURVE_MIN,
+                self._entry.data.get(CONF_HEAT_CURVE_MIN, DEFAULT_HEAT_CURVE_MIN),
+            )
+        )
+        water_max = float(
+            self._entry.options.get(
+                CONF_HEAT_CURVE_MAX,
+                self._entry.data.get(CONF_HEAT_CURVE_MAX, DEFAULT_HEAT_CURVE_MAX),
+            )
+        )
+        outdoor_min = float(
+            self._entry.options.get(
+                CONF_HEAT_CURVE_MIN_OUTDOOR,
+                self._entry.data.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0),
+            )
+        )
+        outdoor_max = float(
+            self._entry.options.get(
+                CONF_HEAT_CURVE_MAX_OUTDOOR,
+                self._entry.data.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0),
+            )
+        )
 
         entity_id = self._outdoor_entity_id
         if entity_id is None and isinstance(self._outdoor_sensor, SensorEntity):
@@ -2784,6 +2836,9 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
                     else None,
                     humidity_forecast=humidity_forecast if humidity_forecast else None,
                     outdoor_temp_coefficient=self.outdoor_temp_coefficient,
+                    time_base=self.time_base,
+                    outdoor_min=outdoor_min,
+                    outdoor_max=outdoor_max,
                 ),
                 demand,
                 prices,
@@ -2807,12 +2862,30 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             self._attr_native_value = offsets[0]
         else:
             self._attr_native_value = 0
+
+        # Calculate per-step base temperatures using outdoor forecast
+        # If we have outdoor forecast, use it; otherwise fall back to current outdoor temp
+        if outdoor_temp_forecast and len(outdoor_temp_forecast) >= self.steps:
+            base_temps_for_display = [
+                _calculate_supply_temperature(
+                    outdoor_temp_forecast[i],
+                    water_min=water_min,
+                    water_max=water_max,
+                    outdoor_min=outdoor_min,
+                    outdoor_max=outdoor_max,
+                )
+                for i in range(self.steps)
+            ]
+        else:
+            # Fallback to using current base_temp for all steps
+            base_temps_for_display = [base_temp] * self.steps
+
         supply_temps = [
             round(
-                max(min(base_temp + off, water_max), water_min),
+                max(min(base_temps_for_display[i] + offsets[i], water_max), water_min),
                 1,
             )
-            for off in offsets
+            for i in range(len(offsets))
         ]
         # Calculate net balance for display
         net_balance_forecast = [
