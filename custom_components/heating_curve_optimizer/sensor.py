@@ -2094,7 +2094,9 @@ def _optimize_offsets(
         cost = demand[0] * prices[0] / cop if cop > 0 else demand[0] * prices[0] * 10
         # Calculate initial buffer energy
         heat_demand = max(float(demand[0]), 0.0)
-        buffer_kwh = buffer + off * heat_demand * DEFAULT_THERMAL_STORAGE_EFFICIENCY * step_hours
+        buffer_kwh = (
+            buffer + off * heat_demand * DEFAULT_THERMAL_STORAGE_EFFICIENCY * step_hours
+        )
         # Only allow states with non-negative buffer
         if buffer_kwh >= 0:
             dp[0][off] = {off: (cost, None, None, buffer_kwh)}
@@ -2112,13 +2114,24 @@ def _optimize_offsets(
                         total = prev_cost + step_cost
                         # Calculate new buffer energy
                         heat_demand = max(float(demand[t]), 0.0)
-                        buffer_kwh = prev_buffer_kwh + off * heat_demand * DEFAULT_THERMAL_STORAGE_EFFICIENCY * step_hours
+                        buffer_kwh = (
+                            prev_buffer_kwh
+                            + off
+                            * heat_demand
+                            * DEFAULT_THERMAL_STORAGE_EFFICIENCY
+                            * step_hours
+                        )
                         # Only allow states with non-negative buffer
                         if buffer_kwh >= 0:
                             dp[t].setdefault(off, {})
                             cur = dp[t][off].get(new_sum)
                             if cur is None or total < cur[0]:
-                                dp[t][off][new_sum] = (total, prev_off, prev_sum, buffer_kwh)
+                                dp[t][off][new_sum] = (
+                                    total,
+                                    prev_off,
+                                    prev_sum,
+                                    buffer_kwh,
+                                )
 
     if not dp[horizon - 1]:
         return [0 for _ in range(horizon)], [buffer for _ in range(horizon)]
