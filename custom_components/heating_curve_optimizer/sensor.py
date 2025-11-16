@@ -2736,22 +2736,27 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         production_prices: list[float] | None,
         production_forecast: list[float],
         baseline_consumption: list[float],
+        heat_demand: list[float] | None = None,
     ) -> list[float]:
-        """Select appropriate price per time step based on net energy balance.
+        """Calculate blended price per time step based on heat pump energy sources.
 
-        When production > consumption (net production), use production price
-        because heat pump reduces sellback (opportunity cost).
-        When consumption > production (net consumption), use consumption price
-        because we're buying from grid.
+        Calculates a weighted blend of consumption and production prices based on
+        how much of the heat pump's electrical demand is covered by PV production
+        versus grid consumption.
+
+        When there's insufficient PV to cover baseline + heat pump:
+        - Fraction from PV pays production price (opportunity cost of not selling)
+        - Fraction from grid pays consumption price (actual purchase cost)
 
         Args:
             consumption_prices: Electricity consumption prices per step (EUR/kWh)
             production_prices: Electricity production prices per step (EUR/kWh)
-            production_forecast: Expected production per step (kW)
+            production_forecast: Expected PV production per step (kW)
             baseline_consumption: Expected consumption excluding heat pump (kW)
+            heat_demand: Heat demand forecast per step (kW thermal)
 
         Returns:
-            Selected prices per time step (EUR/kWh)
+            Blended prices per time step (EUR/kWh) weighted by energy source
         """
         if not production_prices or not self.production_sensors:
             # No production price sensor configured, always use consumption prices
@@ -2759,25 +2764,53 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
 
         selected_prices: list[float] = []
 
+        # Estimate a representative COP for price calculation
+        # Use a middle-ground estimate (outdoor ~7°C, supply ~28°C)
+        estimated_cop = max(
+            1.0,
+            (
+                DEFAULT_COP_AT_35
+                + self.outdoor_temp_coefficient * 7.0  # typical winter temp
+                - self.k_factor * (28.0 - 35.0)  # typical supply temp
+            )
+            * self.cop_compensation_factor,
+        )
+
         for i in range(self.steps):
             prod = production_forecast[i] if i < len(production_forecast) else 0.0
             cons = baseline_consumption[i] if i < len(baseline_consumption) else 0.0
+            cons_price = consumption_prices[i] if i < len(consumption_prices) else 0.0
+            prod_price = (
+                production_prices[i] if i < len(production_prices) else cons_price
+            )
 
-            # Calculate net balance (positive = producing, negative = consuming)
-            net_balance = prod - cons
-
-            if net_balance > 0:
-                # Net production: heat pump reduces sellback
-                # Use production price (opportunity cost of not selling)
-                price = (
-                    production_prices[i]
-                    if i < len(production_prices)
-                    else consumption_prices[i]
-                )
+            # Estimate heat pump electrical consumption
+            if heat_demand and i < len(heat_demand):
+                hp_thermal_kw = max(0.0, heat_demand[i])
+                hp_electrical_kw = hp_thermal_kw / estimated_cop
             else:
-                # Net consumption: heat pump increases grid consumption
-                # Use consumption price (actual cost of buying)
-                price = consumption_prices[i] if i < len(consumption_prices) else 0.0
+                hp_electrical_kw = 0.0
+
+            # Calculate available PV for heat pump (after baseline consumption)
+            available_pv_for_hp = max(0.0, prod - cons)
+
+            # Calculate blended price based on energy sources
+            if hp_electrical_kw <= 0.0:
+                # No heat pump demand
+                price = cons_price
+            elif available_pv_for_hp >= hp_electrical_kw:
+                # Heat pump fully covered by excess PV production
+                # Use production price (opportunity cost of not selling)
+                price = prod_price
+            elif available_pv_for_hp > 0.0:
+                # Heat pump partially covered by PV, rest from grid
+                # Blend prices weighted by energy source
+                fraction_from_pv = available_pv_for_hp / hp_electrical_kw
+                fraction_from_grid = 1.0 - fraction_from_pv
+                price = fraction_from_pv * prod_price + fraction_from_grid * cons_price
+            else:
+                # Heat pump entirely from grid consumption
+                price = cons_price
 
             selected_prices.append(price)
 
@@ -2924,12 +2957,13 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         production_forecast = self._extract_production_forecast()
         baseline_consumption = self._extract_baseline_consumption_forecast()
 
-        # Select appropriate prices based on net energy balance
+        # Select appropriate prices based on net energy balance and heat pump demand
         prices = self._select_dynamic_prices(
             consumption_prices,
             production_prices,
             production_forecast,
             baseline_consumption,
+            heat_demand=demand,
         )
 
         total_energy = sum(demand)
@@ -3095,6 +3129,20 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             for i in range(self.steps)
         ]
 
+        # Calculate heat pump electrical demand for diagnostics
+        estimated_cop_for_diag = max(
+            1.0,
+            (
+                DEFAULT_COP_AT_35
+                + self.outdoor_temp_coefficient * 7.0
+                - self.k_factor * (28.0 - 35.0)
+            )
+            * self.cop_compensation_factor,
+        )
+        hp_electrical_demand = [
+            round(max(0.0, d) / estimated_cop_for_diag, 3) for d in demand
+        ]
+
         self._extra_attrs = {
             "future_offsets": offsets,
             "prices": prices,
@@ -3102,6 +3150,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             "production_prices": production_prices if production_prices else [],
             "production_forecast_kw": [round(v, 3) for v in production_forecast],
             "baseline_consumption_kw": [round(v, 3) for v in baseline_consumption],
+            "heat_pump_electrical_demand_kw": hp_electrical_demand,
             "net_balance_kw": net_balance_forecast,
             "price_source": [
                 "production" if net_balance_forecast[i] > 0 else "consumption"
