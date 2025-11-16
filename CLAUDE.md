@@ -221,9 +221,11 @@ pre-commit install
 # IMPORTANT: Before pushing, always run
 pre-commit run --all-files
 
-# Note: Full test suite requires Home Assistant test environment
-# Tests run automatically in CI via .github/workflows/pytest.yml
-# To set up full test environment locally: pip install -r requirements.txt
+# Install test dependencies
+pip install -r requirements.txt
+
+# Run tests
+pytest
 ```
 
 ### Pre-commit Hooks
@@ -247,15 +249,14 @@ pre-commit run --all-files
 # 1. Run pre-commit hooks to check code quality
 pre-commit run --all-files
 
-# 2. Pytest runs automatically in CI - no need to run locally
-# The test suite requires Home Assistant test fixtures that are
-# complex to set up locally, so rely on the CI/CD pipeline
+# 2. Run pytest to ensure all tests pass
+pytest
 ```
 
 **Why this workflow?**
 - **Pre-commit hooks**: Run locally and fix formatting/linting issues immediately
-- **Pytest**: Runs in CI with proper Home Assistant test environment
-- This ensures code quality while avoiding complex local test setup
+- **Pytest**: Run locally to ensure all tests pass before pushing
+- This ensures code quality and prevents breaking changes
 
 **If pre-commit hooks fail:**
 1. Review the errors
