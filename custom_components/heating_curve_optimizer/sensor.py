@@ -2248,6 +2248,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         price_sensor: str | SensorEntity,
         device: DeviceInfo,
         *,
+        entry: ConfigEntry | None = None,
         k_factor: float = DEFAULT_K_FACTOR,
         cop_compensation_factor: float = 1.0,
         outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
@@ -2272,6 +2273,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         )
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self.hass = hass
+        self._entry = entry
         self.net_heat_sensor = net_heat_sensor
         self.price_sensor = price_sensor
         self.production_price_sensor = production_price_sensor
@@ -2297,6 +2299,27 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
     @property
     def extra_state_attributes(self) -> dict[str, list[int] | list[float] | float]:
         return self._extra_attrs
+
+    def _get_config_value(self, key: str, default: Any) -> Any:
+        """Get config value with fallback to runtime data."""
+        # Try entry options first
+        if self._entry is not None:
+            value = self._entry.options.get(key)
+            if value is not None:
+                return value
+            # Try entry data
+            value = self._entry.data.get(key)
+            if value is not None:
+                return value
+
+        # Fall back to runtime data
+        runtime = self.hass.data.get(DOMAIN, {}).get("runtime", {})
+        value = runtime.get(key)
+        if value is not None:
+            return value
+
+        # Use default
+        return default
 
     def _resample_forecast(
         self,
@@ -2745,28 +2768,14 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
 
         # Get heating curve parameters from config entry
         water_min = float(
-            self._entry.options.get(
-                CONF_HEAT_CURVE_MIN,
-                self._entry.data.get(CONF_HEAT_CURVE_MIN, DEFAULT_HEAT_CURVE_MIN),
-            )
+            self._get_config_value(CONF_HEAT_CURVE_MIN, DEFAULT_HEAT_CURVE_MIN)
         )
         water_max = float(
-            self._entry.options.get(
-                CONF_HEAT_CURVE_MAX,
-                self._entry.data.get(CONF_HEAT_CURVE_MAX, DEFAULT_HEAT_CURVE_MAX),
-            )
+            self._get_config_value(CONF_HEAT_CURVE_MAX, DEFAULT_HEAT_CURVE_MAX)
         )
-        outdoor_min = float(
-            self._entry.options.get(
-                CONF_HEAT_CURVE_MIN_OUTDOOR,
-                self._entry.data.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0),
-            )
-        )
+        outdoor_min = float(self._get_config_value(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0))
         outdoor_max = float(
-            self._entry.options.get(
-                CONF_HEAT_CURVE_MAX_OUTDOOR,
-                self._entry.data.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0),
-            )
+            self._get_config_value(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
         )
 
         entity_id = self._outdoor_entity_id
@@ -3308,6 +3317,7 @@ async def async_setup_entry(
             net_heat_sensor=net_heat_sensor,
             price_sensor=consumption_price_sensor,
             device=device_info,
+            entry=entry,
             k_factor=k_factor,
             cop_compensation_factor=cop_compensation_factor,
             outdoor_temp_coefficient=outdoor_temp_coefficient,
