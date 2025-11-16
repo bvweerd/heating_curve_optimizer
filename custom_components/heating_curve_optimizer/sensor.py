@@ -644,6 +644,226 @@ class WindowSolarGainSensor(BaseUtilitySensor):
         await super().async_will_remove_from_hass()
 
 
+class PVProductionForecastSensor(BaseUtilitySensor):
+    """Sensor that calculates PV production forecast from solar radiation and Wp parameters."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        unique_id: str,
+        east_wp: float,
+        west_wp: float,
+        south_wp: float,
+        tilt: float,
+        icon: str,
+        device: DeviceInfo,
+    ):
+        """Initialize the PV production forecast sensor.
+
+        Args:
+            hass: Home Assistant instance
+            name: Sensor name
+            unique_id: Unique identifier
+            east_wp: East-facing PV capacity in Watt-peak
+            west_wp: West-facing PV capacity in Watt-peak
+            south_wp: South-facing PV capacity in Watt-peak
+            tilt: Panel tilt angle in degrees (0=horizontal, 90=vertical)
+            icon: Icon to use
+            device: Device info
+        """
+        super().__init__(
+            name=name,
+            unique_id=unique_id,
+            unit="kW",
+            device_class=None,
+            icon=icon,
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self.hass = hass
+        self.east_wp = east_wp
+        self.west_wp = west_wp
+        self.south_wp = south_wp
+        self.tilt = tilt
+        self.latitude = hass.config.latitude
+        self.longitude = hass.config.longitude
+        self.session = async_get_clientsession(hass)
+        self._extra_attrs: dict[str, list[float] | float] = {}
+        self._radiation_history: list[float] = []
+
+    async def _fetch_radiation(self) -> list[float]:
+        """Fetch solar radiation forecast from open-meteo API."""
+        _LOGGER.debug(
+            "Fetching radiation for PV production at %.4f, %.4f",
+            self.latitude,
+            self.longitude,
+        )
+
+        url = (
+            "https://api.open-meteo.com/v1/forecast"
+            f"?latitude={self.latitude}&longitude={self.longitude}"
+            "&hourly=shortwave_radiation&timezone=UTC"
+        )
+        try:
+            async with self.session.get(
+                url, timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                data = await resp.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            _LOGGER.error("Error fetching radiation data for PV forecast: %s", err)
+            self._attr_available = False
+            return []
+        self._attr_available = True
+
+        hourly = data.get("hourly", {})
+        times = hourly.get("time", [])
+        values = hourly.get("shortwave_radiation", [])
+
+        if not times or not values:
+            return []
+
+        now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+        start_idx = 0
+        for i, ts in enumerate(times):
+            try:
+                t = datetime.fromisoformat(ts)
+            except ValueError:
+                continue
+            if t >= now:
+                start_idx = i
+                break
+
+        values_list = [float(v) for v in values[start_idx : start_idx + 24]]
+        _LOGGER.debug("PV radiation forecast=%s", values_list)
+        return values_list
+
+    def _orientation_factor(self, azimuth: float, orientation: float) -> float:
+        """Calculate orientation factor based on sun azimuth and panel orientation.
+
+        Args:
+            azimuth: Sun azimuth angle in degrees
+            orientation: Panel orientation (90=east, 180=south, 270=west)
+
+        Returns:
+            Factor between 0 and 1
+        """
+        diff = abs(azimuth - orientation)
+        if diff > 180:
+            diff = 360 - diff
+        return max(math.cos(math.radians(diff)), 0)
+
+    def _tilt_factor(self, elevation: float) -> float:
+        """Calculate tilt factor based on sun elevation and panel tilt.
+
+        For optimal energy capture, panels should be perpendicular to sun rays.
+        This is simplified - real calculation would consider both elevation and azimuth.
+
+        Args:
+            elevation: Sun elevation angle in degrees
+
+        Returns:
+            Factor between 0 and 1
+        """
+        # Optimal panel angle is 90° - elevation
+        # Tilt factor = cos(elevation - (90 - tilt))
+        optimal_angle = 90 - elevation
+        angle_diff = abs(self.tilt - optimal_angle)
+        return max(math.cos(math.radians(angle_diff)), 0)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, list[float] | float]:
+        """Return extra state attributes."""
+        return self._extra_attrs
+
+    async def _compute_value(self) -> None:
+        """Compute PV production from radiation forecast."""
+        rad = await self._fetch_radiation()
+        if not self._attr_available:
+            return
+
+        _LOGGER.debug("PV production raw radiation=%s", rad)
+
+        # Get sun position
+        sun = self.hass.states.get("sun.sun")
+        az = float(sun.attributes.get("azimuth", 0)) if sun else 180.0
+        elev = float(sun.attributes.get("elevation", 0)) if sun else 30.0
+
+        # Calculate weighted orientation factor
+        total_wp = self.east_wp + self.west_wp + self.south_wp
+        if total_wp == 0:
+            # No PV capacity configured
+            self._attr_native_value = 0.0
+            self._attr_available = True
+            self._extra_attrs = {
+                "forecast": [],
+                "radiation_forecast": [],
+                "forecast_time_base": 60,
+            }
+            return
+
+        orient_factors = (
+            self._orientation_factor(az, 90) * self.east_wp
+            + self._orientation_factor(az, 270) * self.west_wp
+            + self._orientation_factor(az, 180) * self.south_wp
+        ) / total_wp
+
+        # Calculate tilt factor
+        tilt_fac = self._tilt_factor(elev)
+
+        # Standard test conditions: 1000 W/m²
+        # PV power = (radiation / 1000) × Wp × orientation_factor × tilt_factor / 1000 kW
+        # Simplified: radiation × Wp × factors / 1,000,000
+        rad_forecast = [round(v, 2) for v in rad]
+        if rad:
+            # Current production
+            current = (
+                rad[0] * total_wp * orient_factors * tilt_fac / 1_000_000.0
+            )  # kW
+
+            # Forecast production (use average factors - could be improved with hourly sun position)
+            forecast = [
+                round(v * total_wp * orient_factors * tilt_fac / 1_000_000.0, 3)
+                for v in rad
+            ]
+        else:
+            current = 0.0
+            forecast = []
+
+        self._radiation_history.append(rad[0] if rad else 0.0)
+        if len(self._radiation_history) > 24:
+            self._radiation_history = self._radiation_history[-24:]
+
+        _LOGGER.debug("PV production current=%s kW forecast=%s", current, forecast)
+        self._attr_available = True
+        self._attr_native_value = round(current, 3)
+        self._extra_attrs = {
+            "forecast": forecast,
+            "radiation_forecast": rad_forecast,
+            "radiation_history": [round(v, 2) for v in self._radiation_history],
+            "forecast_time_base": 60,
+            "total_pv_capacity_wp": total_wp,
+            "east_wp": self.east_wp,
+            "west_wp": self.west_wp,
+            "south_wp": self.south_wp,
+            "tilt_degrees": self.tilt,
+        }
+
+    async def async_update(self):
+        """Update sensor state."""
+        await self._compute_value()
+
+    async def async_added_to_hass(self):
+        """Handle entity added to hass."""
+        await super().async_added_to_hass()
+
+    async def async_will_remove_from_hass(self):
+        """Handle entity removal."""
+        await super().async_will_remove_from_hass()
+
+
 class NetHeatLossSensor(BaseUtilitySensor):
     def __init__(
         self,
@@ -1990,6 +2210,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         production_sensors: list[str] | None = None,
         production_price_sensor: str | SensorEntity | None = None,
         outdoor_sensor: str | SensorEntity | None = None,
+        pv_forecast_sensor: PVProductionForecastSensor | None = None,
     ):
         super().__init__(
             name=name,
@@ -2015,6 +2236,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         self.consumption_sensors = consumption_sensors or []
         self.heatpump_sensor = heatpump_sensor
         self.production_sensors = production_sensors or []
+        self.pv_forecast_sensor = pv_forecast_sensor
         self._extra_attrs: dict[str, list[int] | list[float] | float] = {}
         self._outdoor_sensor: str | SensorEntity | None = (
             outdoor_sensor or "sensor.outdoor_temperature"
@@ -2102,50 +2324,84 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         )
 
     def _extract_production_forecast(self) -> list[float]:
-        """Extract production forecast from production sensors.
+        """Extract production forecast from production sensors or PV forecast sensor.
 
-        Returns forecast in kW for each time step. Falls back to current
-        production value if no forecast is available.
+        Returns forecast in kW for each time step. Tries in this order:
+        1. Production sensor with forecast attribute
+        2. PV production forecast sensor (if configured)
+        3. Current production value repeated for all steps
         """
-        if not self.production_sensors:
+        if not self.production_sensors and not self.pv_forecast_sensor:
             return [0.0] * self.steps
 
         # Try to get forecast from first production sensor
-        production_state = self.hass.states.get(self.production_sensors[0])
-        if not production_state:
-            return [0.0] * self.steps
+        if self.production_sensors:
+            production_state = self.hass.states.get(self.production_sensors[0])
+            if production_state:
+                # Check for forecast attribute
+                forecast_attr = production_state.attributes.get("forecast")
+                if forecast_attr and isinstance(forecast_attr, list):
+                    source_base = _coerce_time_base(
+                        production_state.attributes.get("forecast_time_base")
+                    )
+                    return self._resample_forecast(
+                        forecast_attr,
+                        source_base,
+                        label="production",
+                        fill_value=0.0,
+                    )
 
-        # Check for forecast attribute
-        forecast_attr = production_state.attributes.get("forecast")
-        if forecast_attr and isinstance(forecast_attr, list):
-            source_base = _coerce_time_base(
-                production_state.attributes.get("forecast_time_base")
-            )
-            return self._resample_forecast(
-                forecast_attr,
-                source_base,
-                label="production",
-                fill_value=0.0,
-            )
+        # Fallback 1: Use PV forecast sensor if available
+        if self.pv_forecast_sensor:
+            try:
+                forecast_attr = self.pv_forecast_sensor.extra_state_attributes.get(
+                    "forecast"
+                )
+                if forecast_attr and isinstance(forecast_attr, list):
+                    _LOGGER.info(
+                        "Using PV production forecast sensor as production source "
+                        "(configured production sensor lacks forecast attribute)"
+                    )
+                    source_base = _coerce_time_base(
+                        self.pv_forecast_sensor.extra_state_attributes.get(
+                            "forecast_time_base"
+                        )
+                    )
+                    return self._resample_forecast(
+                        forecast_attr,
+                        source_base,
+                        label="pv_production",
+                        fill_value=0.0,
+                    )
+            except (AttributeError, TypeError) as err:
+                _LOGGER.debug(
+                    "Could not get forecast from PV sensor: %s", err
+                )
 
-        # Fallback: use current production value for all steps
-        # Log warning if sensor doesn't have forecast attribute
-        _LOGGER.warning(
-            "Production sensor '%s' does not have 'forecast' attribute. "
-            "Using constant value (%.3f kW) for all time steps. "
-            "For accurate optimization, configure a power sensor with forecast capability, "
-            "or ensure PV production forecast is implemented.",
-            self.production_sensors[0],
-            float(production_state.state) / 1000 if float(production_state.state) > 100 else float(production_state.state)
-        )
-        try:
-            current_production = float(production_state.state)
-            # Convert from W to kW if needed (assume values > 100 are in W)
-            if current_production > 100:
-                current_production = current_production / 1000.0
-            return [max(0.0, current_production)] * self.steps
-        except (TypeError, ValueError):
-            return [0.0] * self.steps
+        # Fallback 2: Use current production value for all steps
+        if self.production_sensors:
+            production_state = self.hass.states.get(self.production_sensors[0])
+            if production_state:
+                _LOGGER.warning(
+                    "Production sensor '%s' does not have 'forecast' attribute "
+                    "and no PV forecast sensor available. "
+                    "Using constant value (%.3f kW) for all time steps. "
+                    "For accurate optimization, configure a power sensor with forecast capability.",
+                    self.production_sensors[0],
+                    float(production_state.state) / 1000
+                    if float(production_state.state) > 100
+                    else float(production_state.state),
+                )
+                try:
+                    current_production = float(production_state.state)
+                    # Convert from W to kW if needed (assume values > 100 are in W)
+                    if current_production > 100:
+                        current_production = current_production / 1000.0
+                    return [max(0.0, current_production)] * self.steps
+                except (TypeError, ValueError):
+                    pass
+
+        return [0.0] * self.steps
 
     def _extract_baseline_consumption_forecast(self) -> list[float]:
         """Extract baseline consumption forecast (excluding heat pump).
@@ -2857,6 +3113,35 @@ async def async_setup_entry(
         )
         entities.append(window_gain_sensor)
 
+    # PV production forecast sensor
+    pv_east_wp = float(
+        entry.options.get(CONF_PV_EAST_WP, entry.data.get(CONF_PV_EAST_WP, 0))
+    )
+    pv_west_wp = float(
+        entry.options.get(CONF_PV_WEST_WP, entry.data.get(CONF_PV_WEST_WP, 0))
+    )
+    pv_south_wp = float(
+        entry.options.get(CONF_PV_SOUTH_WP, entry.data.get(CONF_PV_SOUTH_WP, 0))
+    )
+    pv_tilt = float(
+        entry.options.get(CONF_PV_TILT, entry.data.get(CONF_PV_TILT, DEFAULT_PV_TILT))
+    )
+
+    pv_forecast_sensor = None
+    if pv_east_wp or pv_west_wp or pv_south_wp:
+        pv_forecast_sensor = PVProductionForecastSensor(
+            hass=hass,
+            name="PV Production Forecast",
+            unique_id=f"{entry.entry_id}_pv_production_forecast",
+            east_wp=pv_east_wp,
+            west_wp=pv_west_wp,
+            south_wp=pv_south_wp,
+            tilt=pv_tilt,
+            icon="mdi:solar-power",
+            device=device_info,
+        )
+        entities.append(pv_forecast_sensor)
+
     net_heat_sensor = None
     if heat_loss_sensor:
         net_heat_sensor = NetHeatLossSensor(
@@ -2946,6 +3231,7 @@ async def async_setup_entry(
             outdoor_sensor=outdoor_sensor_entity,
             planning_window=planning_window,
             time_base=time_base,
+            pv_forecast_sensor=pv_forecast_sensor,
         )
         entities.append(heating_curve_offset_sensor)
 
