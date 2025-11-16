@@ -8,9 +8,9 @@ The integration optimizes a **multi-objective problem** with the following goals
 
 ### Primary Objective: Minimize Cost
 
-\\[
+$$
 \min \sum_{t=0}^{T-1} \frac{Q_{actual}(t)}{\text{COP}(t)} \times P(t)
-\\]
+$$
 
 Minimize total electricity cost while meeting heat demand.
 
@@ -41,8 +41,8 @@ Minimize total electricity cost while meeting heat demand.
 
 **Effectiveness**:
 
-- High with dynamic pricing (10-30% savings)
-- Minimal with fixed pricing (2-5% savings)
+- Higher benefit with dynamic pricing
+- Lower benefit with fixed pricing
 
 ```mermaid
 graph LR
@@ -119,9 +119,9 @@ The optimizer must balance:
 
 **Decision factor**:
 
-\\[
+$$
 \frac{\text{Price}_{\text{cheap}}}{\text{Price}_{\text{expensive}}} \quad \text{vs} \quad \frac{\text{COP}_{\text{low-temp}}}{\text{COP}_{\text{high-temp}}}
-\\]
+$$
 
 If price ratio > COP ratio → favor timing over efficiency
 
@@ -309,9 +309,9 @@ Attributes include:
 
 Shows COP improvement from optimization:
 
-\\[
+$$
 \Delta \text{COP} = \text{COP}_{\text{optimized}} - \text{COP}_{\text{baseline}}
-\\]
+$$
 
 Positive values indicate efficiency gains.
 
@@ -321,9 +321,9 @@ Positive values indicate efficiency gains.
 
 Shows heat output difference:
 
-\\[
+$$
 \Delta Q = Q_{\text{optimized}} - Q_{\text{baseline}}
-\\]
+$$
 
 ## Real-World Optimization Patterns
 

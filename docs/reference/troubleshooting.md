@@ -184,12 +184,12 @@ sensor.heating_curve_optimizer_net_heat_loss:
 
 **Reality Check**:
 
-Optimization **reduces** costs, doesn't eliminate them. Typical savings:
+Optimization **reduces** costs, doesn't eliminate them. Expected outcomes:
 
-- Dynamic pricing: **10-30%**
-- Fixed pricing: **2-8%**
-- Cold weather: **2-5%**
-- Mild weather: **15-30%**
+- Dynamic pricing: Higher cost reduction potential
+- Fixed pricing: Lower cost reduction potential
+- Cold weather: Limited optimization opportunities
+- Mild weather: Better optimization opportunities
 
 **Debug Steps**:
 
@@ -231,7 +231,7 @@ Optimization **reduces** costs, doesn't eliminate them. Typical savings:
     | Before | 420 | 5 | 420 / 5 = 84 |
     | After | 380 | 7 | 380 / 7 = 54 |
 
-    **Improvement**: ~36% after temperature normalization
+    **Example calculation**: Temperature-normalized comparison
 
 === "Check Price Volatility"
     ```yaml
@@ -297,9 +297,9 @@ sensor.heating_curve_optimizer_heating_curve_offset:
 
 ---
 
-### Poor Savings in Cold Weather
+### Limited Optimization in Cold Weather
 
-**Symptoms**: Minimal savings during winter
+**Symptoms**: Minimal cost reduction during winter
 
 **This is normal!** See [Cold Snap Example](../examples/cold-snap.md).
 
@@ -309,11 +309,11 @@ sensor.heating_curve_optimizer_heating_curve_offset:
 - Low COP in cold (less efficiency gain)
 - Minimal solar gain (short days, low angle)
 
-**Expected savings in extreme cold**: **2-5%**
+**Expected outcomes**:
+- Extreme cold: Very limited optimization opportunities
+- Mild weather: Better optimization opportunities
 
-**Expected savings in mild weather**: **15-30%**
-
-**Solution**: Accept physics. Focus on annual average savings.
+**Solution**: Accept physics. Focus on annual average performance.
 
 ---
 

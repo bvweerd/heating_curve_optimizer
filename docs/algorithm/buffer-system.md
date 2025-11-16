@@ -33,21 +33,21 @@ When solar radiation heats these materials, the energy is stored and slowly rele
 
 ### Heat Balance Equation
 
-\\[
+$$
 Q_{net}(t) = Q_{loss}(t) - Q_{solar}(t)
-\\]
+$$
 
 Where:
 
-- \\( Q_{loss}(t) \\): Heat loss to outside (kW)
-- \\( Q_{solar}(t) \\): Solar gain through windows (kW)
-- \\( Q_{net}(t) \\): Net heat demand (kW)
+- $Q_{loss}(t)$: Heat loss to outside (kW)
+- $Q_{solar}(t)$: Solar gain through windows (kW)
+- $Q_{net}(t)$: Net heat demand (kW)
 
 **Three cases**:
 
-1. \\( Q_{net} > 0 \\): Need heating (solar insufficient)
-2. \\( Q_{net} = 0 \\): Balanced (no heating needed)
-3. \\( Q_{net} < 0 \\): **Excess solar** (buffer accumulates)
+1. $Q_{net} > 0$: Need heating (solar insufficient)
+2. $Q_{net} = 0$: Balanced (no heating needed)
+3. $Q_{net} < 0$: **Excess solar** (buffer accumulates)
 
 ## Buffer Dynamics
 
@@ -55,9 +55,9 @@ Where:
 
 When net demand is negative:
 
-\\[
+$$
 \Delta B(t) = |Q_{net}(t)| \times \Delta t
-\\]
+$$
 
 The buffer increases by the excess energy.
 
@@ -75,9 +75,9 @@ The buffer increases by the excess energy.
 
 When net demand is positive but buffer is available:
 
-\\[
+$$
 \Delta B(t) = -\min(B(t), Q_{net}(t) \times \Delta t)
-\\]
+$$
 
 The buffer is used before activating the heat pump.
 
@@ -96,10 +96,10 @@ The buffer is used before activating the heat pump.
 
 ### Buffer Constraints
 
-1. **Non-negativity**: \\( B(t) \geq 0 \\) (cannot have "heat debt")
-2. **Bounded**: \\( B(t) \leq B_{max} \\) (thermal mass capacity)
+1. **Non-negativity**: $B(t) \geq 0$ (cannot have "heat debt")
+2. **Bounded**: $B(t) \leq B_{max}$ (thermal mass capacity)
 
-In practice, \\( B_{max} \\) is not explicitly enforced (thermal mass is large), but buffer rarely exceeds 10-15 kWh in real scenarios.
+In practice, $B_{max}$ is not explicitly enforced (thermal mass is large), but buffer rarely exceeds 10-15 kWh in real scenarios.
 
 ## Buffer Algorithm
 
@@ -205,7 +205,7 @@ Wait, this example doesn't show buffer accumulation because net demand is always
 
 **Total electricity**: 2.81 + 0.86 + 0 + 0 + 1.11 + 2.58 = **7.36 kWh**
 
-**Savings**: (9.55 - 7.36) / 9.55 = **23% reduction!**
+**Comparison**: Without buffer optimization: 9.55 kWh | With buffer: 7.36 kWh
 
 ## Why Buffer Matters for Optimization
 
@@ -220,9 +220,9 @@ The buffer decouples **heat demand** from **heat production**:
 
 Without buffer, solar gain during zero-demand periods is wasted. With buffer:
 
-\\[
+$$
 \text{Value of solar} = \text{Solar energy} \times \text{COP} \times \text{Future electricity price}
-\\]
+$$
 
 ### 3. COP Optimization
 
@@ -291,25 +291,25 @@ Buffer (kWh)
 
 A rough estimate of building thermal capacity:
 
-\\[
+$$
 C_{thermal} = m \times c_p \times \Delta T
-\\]
+$$
 
 Where:
 
-- \\( m \\): Mass of building materials (kg)
-- \\( c_p \\): Specific heat capacity (~1000 J/kg·K for concrete)
-- \\( \Delta T \\): Allowed temperature swing (e.g., 2°C)
+- $m$: Mass of building materials (kg)
+- $c_p$: Specific heat capacity (~1000 J/kg·K for concrete)
+- $\Delta T$: Allowed temperature swing (e.g., 2°C)
 
 For a typical house:
 
 - Concrete: 100,000 kg
-- \\( c_p \\): 1000 J/kg·K
-- \\( \Delta T \\): 2°C
+- $c_p$: 1000 J/kg·K
+- $\Delta T$: 2°C
 
-\\[
+$$
 C = 100,000 \times 1000 \times 2 = 200,000,000 \text{ J} = 55.6 \text{ kWh}
-\\]
+$$
 
 **Practical capacity**: 10-20 kWh (accounting for non-uniform heating)
 
@@ -329,9 +329,9 @@ This is rarely an issue in practice (thermal mass is large).
 
 The DP algorithm tracks buffer as part of the state:
 
-\\[
+$$
 \text{State} = (\text{offset}, \textbf{buffer}, \text{cumulative\_sum})
-\\]
+$$
 
 Transitions update buffer based on net demand:
 
@@ -353,17 +353,6 @@ for next_offset in feasible_offsets:
     # Update DP table
     dp[next_state] = (cost, parent_state, new_buffer)
 ```
-
-## Real-World Performance
-
-Users report buffer provides:
-
-- **10-20% cost savings** on sunny winter days
-- **30-40% savings** during shoulder seasons (spring/fall)
-- **Minimal benefit** during cloudy periods or extreme cold
-
-!!! success "User Report"
-    "On a sunny March day, my buffer accumulated 8 kWh between 10 AM and 2 PM. This covered my heating needs until 6 PM, saving €2.40 that day!"
 
 ---
 

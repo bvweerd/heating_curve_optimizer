@@ -8,24 +8,24 @@ This page provides a detailed explanation of the dynamic programming algorithm u
 
 We want to minimize:
 
-\\[
+$$
 \min \sum_{t=0}^{T-1} C(s_t, a_t)
-\\]
+$$
 
 Subject to:
 
-\\[
+$$
 s_{t+1} = f(s_t, a_t, w_t)
-\\]
+$$
 
 Where:
 
-- \\( s_t \\): State at time \\( t \\) = (offset, buffer, cumulative_offset_sum)
-- \\( a_t \\): Action at time \\( t \\) = chosen offset
-- \\( w_t \\): External factors = (outdoor temp, price, solar radiation)
-- \\( C(s_t, a_t) \\): Cost function
-- \\( f \\): State transition function
-- \\( T \\): Planning horizon
+- $s_t$: State at time $t$ = (offset, buffer, cumulative_offset_sum)
+- $a_t$: Action at time $t$ = chosen offset
+- $w_t$: External factors = (outdoor temp, price, solar radiation)
+- $C(s_t, a_t)$: Cost function
+- $f$: State transition function
+- $T$: Planning horizon
 
 ## State Space
 
@@ -131,29 +131,29 @@ The cost has two components:
 
 ### 1. Electricity Cost
 
-\\[
+$$
 C_{electricity}(t) = \frac{Q_{actual}(t)}{\text{COP}(t)} \times P(t)
-\\]
+$$
 
 Where:
 
-- \\( Q_{actual}(t) \\): Actual heat demand after buffer (kWh)
-- \\( \text{COP}(t) \\): Heat pump coefficient of performance
-- \\( P(t) \\): Electricity price (€/kWh)
+- $Q_{actual}(t)$: Actual heat demand after buffer (kWh)
+- $\text{COP}(t)$: Heat pump coefficient of performance
+- $P(t)$: Electricity price (€/kWh)
 
 ### 2. Smoothness Penalty (Optional)
 
-\\[
+$$
 C_{smoothness}(t) = \lambda \times |\Delta \text{offset}|
-\\]
+$$
 
 Where:
 
-- \\( \lambda \\): Penalty weight (default: 0, can be configured)
-- \\( \Delta \text{offset} \\): Change in offset from previous step
+- $\lambda$: Penalty weight (default: 0, can be configured)
+- $\Delta \text{offset}$: Change in offset from previous step
 
 !!! note "Current Implementation"
-    The smoothness penalty is currently not used (\\( \lambda = 0 \\)). The ±1°C change constraint is sufficient to prevent excessive oscillation.
+    The smoothness penalty is currently not used ($\lambda = 0$). The ±1°C change constraint is sufficient to prevent excessive oscillation.
 
 ## Dynamic Programming Algorithm
 
@@ -161,15 +161,15 @@ Where:
 
 The optimal value function satisfies:
 
-\\[
+$$
 V_t(s_t) = \min_{a_t \in A(s_t)} \left[ C(s_t, a_t) + V_{t+1}(s_{t+1}) \right]
-\\]
+$$
 
 Where:
 
-- \\( V_t(s_t) \\): Minimum cost-to-go from state \\( s_t \\) at time \\( t \\)
-- \\( A(s_t) \\): Set of feasible actions from state \\( s_t \\)
-- \\( s_{t+1} = f(s_t, a_t, w_t) \\): Next state
+- $V_t(s_t)$: Minimum cost-to-go from state $s_t$ at time $t$
+- $A(s_t)$: Set of feasible actions from state $s_t$
+- $s_{t+1} = f(s_t, a_t, w_t)$: Next state
 
 ### Backward Induction
 
@@ -301,27 +301,27 @@ This ensures we don't "borrow" heat from the future.
 
 ### Time Complexity
 
-\\[
+$$
 O(T \times S \times A)
-\\]
+$$
 
 Where:
 
-- \\( T \\): Number of time steps (e.g., 6)
-- \\( S \\): Number of states per time step (~50,000)
-- \\( A \\): Number of actions per state (~3 due to ±1 constraint)
+- $T$: Number of time steps (e.g., 6)
+- $S$: Number of states per time step (~50,000)
+- $A$: Number of actions per state (~3 due to ±1 constraint)
 
-For a 6-hour window: \\( 6 \times 50,000 \times 3 = 900,000 \\) operations
+For a 6-hour window: $6 \times 50,000 \times 3 = 900,000$ operations
 
 **Runtime**: Typically < 1 second on modern hardware
 
 ### Space Complexity
 
-\\[
+$$
 O(T \times S)
-\\]
+$$
 
-Storage for DP table: \\( 6 \times 50,000 = 300,000 \\) entries
+Storage for DP table: $6 \times 50,000 = 300,000$ entries
 
 **Memory**: ~10 MB (with 32-byte entries)
 
@@ -360,15 +360,15 @@ Only create DP entries for states that are actually reached during backward indu
 
 When prices are constant:
 
-\\[
+$$
 P(t) = P \quad \forall t
-\\]
+$$
 
 The optimization focuses purely on COP efficiency:
 
-\\[
+$$
 \min \sum_{t=0}^{T-1} \frac{Q_{actual}(t)}{\text{COP}(t)}
-\\]
+$$
 
 Result: Always use lowest feasible supply temperature.
 
@@ -376,9 +376,9 @@ Result: Always use lowest feasible supply temperature.
 
 When outdoor temperature is high:
 
-\\[
+$$
 Q_{demand}(t) < 0 \quad \forall t
-\\]
+$$
 
 The optimizer sets offset to minimum (-4°C) and accumulates buffer:
 
@@ -391,9 +391,9 @@ buffer_evolution = [0, 2, 4, 6, ...]  # Accumulates
 
 When heat demand exceeds capacity:
 
-\\[
+$$
 Q_{demand}(t) > Q_{max} \quad \text{for some } t
-\\]
+$$
 
 The optimizer:
 
@@ -409,11 +409,11 @@ The algorithm validates the solution:
 
 Total heat delivered ≥ total demand (accounting for buffer):
 
-\\[
+$$
 \sum_{t=0}^{T-1} Q_{delivered}(t) + B_0 \geq \sum_{t=0}^{T-1} Q_{demand}(t)
-\\]
+$$
 
-Where \\( B_0 \\) is initial buffer.
+Where $B_0$ is initial buffer.
 
 ### 2. Constraint Satisfaction
 
@@ -426,9 +426,9 @@ Where \\( B_0 \\) is initial buffer.
 
 Verify that no single-step deviation reduces cost:
 
-\\[
+$$
 C(s_t, a_t^*) \leq C(s_t, a) \quad \forall a \neq a_t^*
-\\]
+$$
 
 ## Implementation Details
 

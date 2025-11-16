@@ -149,28 +149,28 @@ Actually, the optimized version delivered MORE heat (49.1 vs 45.5 kWh) by pre-he
 - Electricity: 13.88 kWh
 - Cost: **€4.07**
 
-**Savings**: (€4.07 - €3.17) / €4.07 = **22% reduction** ✓
+**Cost comparison**: Baseline: €4.07 vs. Optimized: €3.17
 
 ## Weekly Summary
 
 ### Total Costs
 
-| Day | Weather | Baseline Cost (€) | Optimized Cost (€) | Savings (€) | Savings (%) |
-|-----|---------|-------------------|-------------------|-------------|-------------|
-| Mon | Cold & Cloudy | 4.85 | 4.46 | 0.39 | 8% |
-| Tue | Mild & Sunny | 2.42 | 1.57 | 0.85 | 35% |
-| Wed | Cold Snap | 6.23 | 5.92 | 0.31 | 5% |
-| Thu | Mild & Volatile | 4.07 | 3.17 | 0.90 | 22% |
-| Fri | Variable | 3.68 | 3.24 | 0.44 | 12% |
-| Sat | Mild | 2.98 | 2.80 | 0.18 | 6% |
-| Sun | Mild | 2.95 | 2.78 | 0.17 | 6% |
-| **Total** | **Mixed** | **€27.18** | **€23.94** | **€3.24** | **12%** |
+| Day | Weather | Baseline Cost (€) | Optimized Cost (€) | Difference (€) |
+|-----|---------|-------------------|-------------------|----------------|
+| Mon | Cold & Cloudy | 4.85 | 4.46 | 0.39 |
+| Tue | Mild & Sunny | 2.42 | 1.57 | 0.85 |
+| Wed | Cold Snap | 6.23 | 5.92 | 0.31 |
+| Thu | Mild & Volatile | 4.07 | 3.17 | 0.90 |
+| Fri | Variable | 3.68 | 3.24 | 0.44 |
+| Sat | Mild | 2.98 | 2.80 | 0.18 |
+| Sun | Mild | 2.95 | 2.78 | 0.17 |
+| **Total** | **Mixed** | **€27.18** | **€23.94** | **€3.24** |
 
-**Weekly savings**: €3.24
+**Weekly cost difference**: €3.24
 
-**Projected annual savings** (heating season = 180 days):
+**Projected for heating season** (180 days):
 
-€3.24/week × 25.7 weeks = **€83.27 per year**
+€3.24/week × 25.7 weeks = **€83.27 per season**
 
 ### Strategy Distribution
 
@@ -196,13 +196,13 @@ The optimizer seamlessly switches strategies based on conditions:
 
 No manual intervention required!
 
-### 2. Savings Vary Daily
+### 2. Effectiveness Varies Daily
 
-Don't expect consistent daily savings:
+Optimization effectiveness varies significantly:
 
-- **Best days** (sunny + price volatility): 30-40% savings
-- **Average days** (mild + moderate prices): 10-15% savings
-- **Worst days** (cold snap): 2-5% savings
+- **Best days** (sunny + price volatility): High effectiveness
+- **Average days** (mild + moderate prices): Moderate effectiveness
+- **Worst days** (cold snap): Limited effectiveness
 
 **Average over time** is what matters (10-15% typical).
 
@@ -215,9 +215,9 @@ The optimizer relies on weather forecasts:
 
 But re-optimization every hour limits damage from forecast errors.
 
-### 4. Price Volatility Drives Savings
+### 4. Price Volatility Drives Optimization
 
-Days with highest savings correlate with:
+Days with best cost reduction correlate with:
 
 - Price range > €0.15/kWh
 - Clear peak/valley patterns
@@ -278,7 +278,7 @@ Offset (°C)
 
 ### 1. Be Patient
 
-Savings accumulate over weeks and months:
+Cost differences accumulate over weeks and months:
 
 - Don't judge by single day
 - Weather and prices vary
@@ -297,11 +297,11 @@ sensor:
     sampling_size: 7
 ```
 
-Track week-over-week to see real savings.
+Track week-over-week to see cost trends.
 
 ### 3. Seasonal Expectations
 
-| Season | Typical Savings | Limiting Factor |
+| Season | Optimization Potential | Limiting Factor |
 |--------|-----------------|-----------------|
 | Winter | 5-10% | Capacity limits, low solar |
 | Spring | 20-30% | High solar, moderate demand |
@@ -318,11 +318,11 @@ Best conditions for optimization:
 - Price range: > €0.15/kWh volatility
 - Heat demand: 40-70% of capacity
 
-When all align: 30-40% savings possible!
+When all align: High optimization potential!
 
 ## Troubleshooting Mixed Results
 
-### Some days have good savings, others poor
+### Some days have better optimization than others
 
 **Normal!** Depends on:
 
@@ -354,6 +354,6 @@ When all align: 30-40% savings possible!
 
 ---
 
-**Congratulations!** You've now seen the optimizer handle diverse conditions. In reality, your week will look similar: varied conditions, varied strategies, consistent long-term savings.
+**Congratulations!** You've now seen the optimizer handle diverse conditions. In reality, your week will look similar: varied conditions, varied strategies, consistent long-term optimization.
 
 **Next**: [Reference Documentation](../reference/sensors.md) for detailed sensor information

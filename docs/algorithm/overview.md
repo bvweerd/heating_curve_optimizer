@@ -22,17 +22,17 @@ At its core, we're solving this problem:
 
 Heat demand varies with weather:
 
-\\[
+$$
 Q_{demand}(t) = Q_{loss}(t) - Q_{solar}(t)
-\\]
+$$
 
 Where:
 
-- \\( Q_{loss}(t) \\) = Heat loss due to temperature difference
-- \\( Q_{solar}(t) \\) = Solar gain through windows
+- $Q_{loss}(t)$ = Heat loss due to temperature difference
+- $Q_{solar}(t)$ = Solar gain through windows
 
 !!! info "Negative Demand"
-    When \\( Q_{solar} > Q_{loss} \\), demand is **negative**, meaning solar gain exceeds heat loss. This excess heat is stored in the building's thermal mass as a **buffer**.
+    When $Q_{solar} > Q_{loss}$, demand is **negative**, meaning solar gain exceeds heat loss. This excess heat is stored in the building's thermal mass as a **buffer**.
 
 ### 2. Heating Curve Offset
 
@@ -49,11 +49,11 @@ graph LR
 
 The supply temperature is calculated as:
 
-\\[
+$$
 T_{supply} = T_{base}(T_{outdoor}) + \text{offset}
-\\]
+$$
 
-Where \\( T_{base} \\) is your heat pump's base heating curve (typically linear with outdoor temperature).
+Where $T_{base}$ is your heat pump's base heating curve (typically linear with outdoor temperature).
 
 **Offset range**: -4°C to +4°C (configurable)
 
@@ -61,16 +61,16 @@ Where \\( T_{base} \\) is your heat pump's base heating curve (typically linear 
 
 The Coefficient of Performance (COP) determines how efficiently the heat pump converts electricity to heat:
 
-\\[
+$$
 \text{COP} = \left( \text{COP}_{base} + \alpha \times T_{outdoor} - k \times (T_{supply} - 35) \right) \times f
-\\]
+$$
 
 Parameters:
 
-- \\( \text{COP}_{base} \\): Base COP at standard conditions
-- \\( \alpha = 0.025 \\): Outdoor temperature coefficient
-- \\( k \\): K-factor (how COP degrades with supply temp)
-- \\( f \\): COP compensation factor (system efficiency)
+- $\text{COP}_{base}$: Base COP at standard conditions
+- $\alpha = 0.025$: Outdoor temperature coefficient
+- $k$: K-factor (how COP degrades with supply temp)
+- $f$: COP compensation factor (system efficiency)
 
 !!! example "COP Calculation Example"
     **Given**:
@@ -82,26 +82,26 @@ Parameters:
     - Compensation = 0.9
 
     **Calculation**:
-    \\[
+    $$
     \text{COP} = (3.5 + 0.025 \times 5 - 0.03 \times (40 - 35)) \times 0.9
-    \\]
-    \\[
+    $$
+    $$
     = (3.5 + 0.125 - 0.15) \times 0.9 = 3.475 \times 0.9 = \mathbf{3.13}
-    \\]
+    $$
 
 ### 4. Electricity Cost
 
-The cost to produce heat at time \\( t \\):
+The cost to produce heat at time $t$:
 
-\\[
+$$
 \text{Cost}(t) = \frac{Q_{heat}(t)}{\text{COP}(t)} \times P_{electricity}(t)
-\\]
+$$
 
 Where:
 
-- \\( Q_{heat}(t) \\): Heat delivered (kWh)
-- \\( \text{COP}(t) \\): Heat pump efficiency
-- \\( P_{electricity}(t) \\): Electricity price (€/kWh)
+- $Q_{heat}(t)$: Heat delivered (kWh)
+- $\text{COP}(t)$: Heat pump efficiency
+- $P_{electricity}(t)$: Electricity price (€/kWh)
 
 !!! tip "Two Levers for Optimization"
     The optimizer can reduce costs by:
@@ -294,8 +294,6 @@ gantt
 3. **12:00 - 15:00**: Peak solar gain → **Minimize** heating with low offset (-2°C), build thermal buffer
 4. **15:00 - 18:00**: Solar fading, prices moderate → **Moderate** heating (+2°C)
 
-**Result**: 25% cost savings compared to constant heating curve
-
 ## Why This Works
 
 ### 1. Temporal Shifting
@@ -317,8 +315,6 @@ Free heat from sun reduces need for heat pump operation
     - **Simplified building model**: Uses steady-state heat loss, not dynamic thermal modeling
     - **Fixed COP model**: Assumes COP formula is accurate across all conditions
     - **No occupancy**: Doesn't account for internal heat gains from people/appliances
-
-Despite these simplifications, real-world testing shows **15-30% cost savings** in typical scenarios.
 
 ## Next Steps
 
