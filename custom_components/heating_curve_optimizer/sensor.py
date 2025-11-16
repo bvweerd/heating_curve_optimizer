@@ -3410,8 +3410,8 @@ async def async_setup_entry(
     if area_m2 and energy_label:
         heat_loss_sensor = HeatLossSensor(
             hass=hass,
-            name="Hourly Heat Loss",
-            unique_id=f"{entry.entry_id}_hourly_heat_loss",
+            name="Heat Loss",
+            unique_id=f"{entry.entry_id}_heat_loss",
             area_m2=float(area_m2),
             energy_label=energy_label,
             indoor_sensor=indoor_sensor,
@@ -3469,8 +3469,8 @@ async def async_setup_entry(
     if heat_loss_sensor:
         net_heat_sensor = NetHeatLossSensor(
             hass=hass,
-            name="Hourly Net Heat Loss",
-            unique_id=f"{entry.entry_id}_hourly_net_heat_loss",
+            name="Net Heat Loss",
+            unique_id=f"{entry.entry_id}_net_heat_loss",
             icon="mdi:fire",
             device=device_info,
             heat_loss_sensor=heat_loss_sensor,

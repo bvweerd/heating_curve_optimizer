@@ -104,7 +104,7 @@
         "name": "Geoptimaliseerde aanvoertemperatuur"
       },
       "heat_loss": {
-        "name": "Warmteverlies per uur"
+        "name": "Warmteverlies"
       },
       "net_heat_loss": {
         "name": "Netto warmteverlies"

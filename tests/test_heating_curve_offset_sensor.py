@@ -24,7 +24,7 @@ async def test_offset_sensor_handles_sensor_instance(hass):
     )
     net = NetHeatLossSensor(
         hass=hass,
-        name="Hourly Net Heat Loss",
+        name="Net Heat Loss",
         unique_id="test_net",
         icon="mdi:test",
         device=DeviceInfo(identifiers={("test", "1")}),
