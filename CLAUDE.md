@@ -519,7 +519,7 @@ def translation_key(self) -> str:
   "entity": {
     "sensor": {
       "heat_loss": {
-        "name": "Hourly Heat Loss"
+        "name": "Heat Loss"
       }
     }
   }

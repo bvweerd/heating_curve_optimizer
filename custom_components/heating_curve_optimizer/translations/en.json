@@ -104,7 +104,7 @@
         "name": "Optimized supply temperature"
       },
       "heat_loss": {
-        "name": "Hourly heat loss"
+        "name": "Heat loss"
       },
       "net_heat_loss": {
         "name": "Net heat loss"

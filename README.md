@@ -6,7 +6,7 @@ WARNING: Work In Progress!!
 
 ## Overview
 - Retrieves weather and solar radiation data from *open-meteo.com*.
-- Estimates hourly heat loss and net heat loss for your home.
+- Estimates heat loss and net heat loss for your home.
 - Creates sensors for electricity prices, consumption and production.
 - Predicts standby energy usage and current net power.
 - Optimizes the heating curve offset using a dynamic programming algorithm.
@@ -28,9 +28,9 @@ Configuration is done entirely through the UI. The following options can be prov
 | `sensor.outdoor_temperature` | Outdoor temperature with a 24h forecast used by other sensors. |
 | `sensor.current_consumption_price` | Current electricity price for consumption. |
 | `sensor.current_production_price` | Current electricity price for production. |
-| `sensor.hourly_heat_loss` | Estimated heat loss in kW per hour. |
+| `sensor.heat_loss` | Estimated heat loss in kW. |
 | `sensor.window_solar_gain` | Expected solar gain through windows in kW. |
-| `sensor.hourly_net_heat_loss` | Net Heat Loss after subtracting solar gain. |
+| `sensor.net_heat_loss` | Net heat loss after subtracting solar gain. |
 | `sensor.expected_energy_consumption` | Average standby power usage per hour. |
 | `sensor.current_net_consumption` | Current net power (consumption minus production). |
 | `sensor.heat_pump_cop` | COP derived from outdoor and supply temperature. |
