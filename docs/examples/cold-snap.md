@@ -131,11 +131,11 @@ Use variable offsets within capacity constraints:
 
 **Daily total**: 32.67 kWh electricity = **€8.54**
 
-**Savings**: €0.22 per day = **2.5% reduction**
+**Cost difference**: €0.22 per day
 
 Much lower than mild weather (where 10-30% is typical).
 
-## Why Limited Savings?
+## Why Limited Optimization?
 
 ### 1. Capacity Constraints
 
@@ -188,7 +188,7 @@ When this triggers:
 1. **High electricity costs**: Inevitable, heat demand is high
 2. **Minimal offset variation**: Stays at +3 to +4°C most of the time
 3. **Low buffer**: Zero or near-zero throughout
-4. **Limited savings**: 2-5% instead of 10-30%
+4. **Limited cost reduction**: Much less than in mild weather
 
 ### Warning Signs
 
@@ -233,7 +233,7 @@ During warmer parts of day (12:00-15:00), lowering offset improves COP:
 
 - Offset +4°C: COP 2.95, electricity 2.88 kWh
 - Offset +1°C: COP 3.08, electricity 2.76 kWh
-- **Savings**: 0.12 kWh = 4%
+- **Energy difference**: 0.12 kWh
 
 ### 2. Avoiding Excess
 
@@ -292,7 +292,7 @@ During cold snaps:
 - ✅ Expect high electricity costs (physics!)
 - ✅ Expect minimal optimization benefit (2-5%)
 - ✅ Focus on COP efficiency, not price timing
-- ❌ Don't expect 20% savings (impossible at capacity)
+- ❌ Don't expect high cost reductions (limited opportunities at capacity)
 
 ## Comparison: Cold vs Mild Weather
 
@@ -302,15 +302,8 @@ During cold snaps:
 | COP range | 2.4-3.0 | 3.5-4.0 |
 | Offset range | +2 to +4°C | -4 to +4°C |
 | Buffer accumulation | None | 0-6 kWh |
-| Optimization savings | 2-5% | 10-30% |
+| Optimization effectiveness | Very limited | Much higher |
 | Primary strategy | COP efficiency | Price timing + COP |
-
-## Real-World Cold Snap Data
-
-!!! quote "User Report: January 2025 Cold Snap"
-    "During the week of -6°C to 0°C, my heat pump ran almost continuously. The optimizer kept offset at +3 to +4°C most of the time. Savings were minimal (€2-3 for the week), but at least I stayed warm! In contrast, during the mild October week before, I saved €15 with the same integration."
-
-    — Netherlands, 150m² home, energy label C
 
 ---
 

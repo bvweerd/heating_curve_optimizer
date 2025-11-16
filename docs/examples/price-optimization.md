@@ -149,9 +149,7 @@ Let me recalculate with proper pre-heating strategy...
 - Electricity: 19.78 kWh (-5.9%)
 - Cost: **€5.08** (-3.6%)
 
-**Savings**: €0.19 per 12 hours = **€0.38 per day**
-
-Over a heating season (150 days): **€57 savings**
+**Cost difference**: €0.19 per 12 hours
 
 ## Visualization
 
@@ -213,11 +211,11 @@ Building thermal mass can store 3-6 kWh of excess heat, allowing strategic over-
 
 ### 2. Price Volatility Matters
 
-Savings scale with price volatility:
+Optimization effectiveness scales with price volatility:
 
-- **Low volatility** (€0.25-€0.30): ~1-2% savings
-- **Medium volatility** (€0.15-€0.40): ~3-5% savings
-- **High volatility** (€0.10-€0.60): ~8-12% savings
+- **Low volatility** (€0.25-€0.30): Limited opportunities
+- **Medium volatility** (€0.15-€0.40): Moderate opportunities
+- **High volatility** (€0.10-€0.60): Better opportunities
 
 ### 3. COP vs Price Trade-off
 

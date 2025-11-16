@@ -151,9 +151,7 @@ Early morning pre-heat strategy:
 
 **Total daily cost**: €0.30 + €0.23 (midnight) = **€0.53**
 
-**Daily savings**: Traditional heating without buffer would cost ~€1.80
-
-**Actual savings**: (€1.80 - €0.53) / €1.80 = **71% reduction!**
+**Cost comparison**: Traditional heating without buffer: ~€1.80 vs. With optimization: €0.53
 
 ## Solar Production Value
 
@@ -262,13 +260,6 @@ Did we claim 20.6 kWh buffer? Is this realistic?
 - Very high solar gain
 - Minimal/no heat demand
 - **Savings**: Not applicable (no heating needed)
-
-## Real User Data
-
-!!! quote "User Testimonial"
-    "On sunny spring days, my heat pump doesn't run from 9 AM to 11 PM thanks to the solar buffer. My March heating cost was €45 instead of the usual €120!"
-
-    — Netherlands, 140m² home with A++ energy label
 
 ## Key Takeaways
 

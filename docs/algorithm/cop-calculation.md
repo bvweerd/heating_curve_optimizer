@@ -6,9 +6,9 @@ The Coefficient of Performance (COP) is crucial for optimization - it determines
 
 COP is the ratio of heat output to electrical input:
 
-\\[
+$$
 \text{COP} = \frac{\text{Heat Output (kW)}}{\text{Electrical Input (kW)}}
-\\]
+$$
 
 For example, a COP of 4.0 means the heat pump produces 4 kW of heat for every 1 kW of electricity consumed.
 
@@ -27,16 +27,16 @@ For example, a COP of 4.0 means the heat pump produces 4 kW of heat for every 1 
 
 The theoretical maximum COP is given by the Carnot efficiency:
 
-\\[
+$$
 \text{COP}_{Carnot} = \frac{T_{hot}}{T_{hot} - T_{cold}}
-\\]
+$$
 
 Where temperatures are in Kelvin.
 
 !!! example "Carnot COP"
-    **Supply temperature** (\\( T_{hot} \\)): 40°C = 313K
+    **Supply temperature** ($T_{hot}$): 40°C = 313K
 
-    **Outdoor temperature** (\\( T_{cold} \\)): 5°C = 278K
+    **Outdoor temperature** ($T_{cold}$): 5°C = 278K
 
     **Carnot COP**: 313 / (313 - 278) = 313 / 35 = **8.9**
 
@@ -51,13 +51,13 @@ Real heat pumps achieve 40-60% of Carnot efficiency due to:
 
 The integration uses a **linearized empirical model** that's simpler than Carnot but accurate for typical operating ranges:
 
-\\[
+$$
 \text{COP} = \left( \text{COP}_{base} + \alpha \times T_{outdoor} - k \times (T_{supply} - 35) \right) \times f
-\\]
+$$
 
 ### Parameters
 
-#### 1. Base COP (\\( \text{COP}_{base} \\))
+#### 1. Base COP ($\text{COP}_{base}$)
 Heat pump COP at reference conditions:
 
 - **Outdoor temperature**: 7°C (A7)
@@ -66,30 +66,30 @@ Heat pump COP at reference conditions:
 
 This value is found in heat pump datasheets under "A7/W35" rating.
 
-#### 2. Outdoor Temperature Coefficient (\\( \alpha \\))
+#### 2. Outdoor Temperature Coefficient ($\alpha$)
 How much COP improves per °C increase in outdoor temperature.
 
 - **Fixed value**: 0.025
 - **Physical meaning**: Higher outdoor temp = less work to lift heat
 
-\\[
+$$
 \Delta \text{COP} = 0.025 \times \Delta T_{outdoor}
-\\]
+$$
 
 !!! example "Outdoor Temperature Effect"
-    From 0°C to 10°C outdoor (\\( \Delta T = 10°C \\)):
+    From 0°C to 10°C outdoor ($\Delta T = 10°C$):
 
     COP increase = 0.025 × 10 = **+0.25 COP points**
 
-#### 3. K-Factor (\\( k \\))
+#### 3. K-Factor ($k$)
 How much COP degrades per °C increase in supply temperature.
 
 - **Typical range**: 0.015 - 0.045
 - **Physical meaning**: Higher supply temp = more compressor work
 
-\\[
+$$
 \Delta \text{COP} = -k \times \Delta T_{supply}
-\\]
+$$
 
 K-factor varies by heat pump type:
 
@@ -109,7 +109,7 @@ K-factor varies by heat pump type:
 
     Actually: Use the **linearized** slope around your typical operating point.
 
-#### 4. COP Compensation Factor (\\( f \\))
+#### 4. COP Compensation Factor ($f$)
 Accounts for real-world system losses:
 
 - Distribution losses in pipes
@@ -121,9 +121,9 @@ Accounts for real-world system losses:
 - **Well-designed system**: 0.90 - 0.95
 - **Older system**: 0.80 - 0.85
 
-\\[
+$$
 \text{Actual COP} = \text{Theoretical COP} \times f
-\\]
+$$
 
 ## Complete Calculation Example
 
@@ -137,23 +137,23 @@ Accounts for real-world system losses:
 - Supply temperature: 40°C
 
 **Step 1**: Calculate temperature effects
-\\[
+$$
 \text{Outdoor effect} = 0.025 \times 5 = +0.125
-\\]
+$$
 
-\\[
+$$
 \text{Supply effect} = -0.03 \times (40 - 35) = -0.03 \times 5 = -0.15
-\\]
+$$
 
 **Step 2**: Calculate theoretical COP
-\\[
+$$
 \text{COP}_{theoretical} = 4.0 + 0.125 - 0.15 = 3.975
-\\]
+$$
 
 **Step 3**: Apply compensation
-\\[
+$$
 \text{COP}_{actual} = 3.975 \times 0.90 = 3.58
-\\]
+$$
 
 **Result**: COP = **3.58**
 
@@ -250,9 +250,9 @@ Use typical values from the table, or:
 
 The optimizer uses COP to calculate electricity consumption:
 
-\\[
+$$
 \text{Electricity}(t) = \frac{Q_{heat}(t)}{\text{COP}(t)}
-\\]
+$$
 
 Lower supply temperature → Higher COP → Less electricity
 

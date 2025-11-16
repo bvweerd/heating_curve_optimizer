@@ -335,17 +335,17 @@ Max Supply Temperature: 50°C  # Higher = more heat capacity
 
     **Expected**: Buffer only accumulates when solar gain exceeds heat loss
 
-??? question "Savings not as expected?"
-    **Factors affecting savings**:
+??? question "Optimizing Performance"
+    **Factors affecting optimization effectiveness**:
 
-    - Price volatility: Higher volatility = more savings
+    - Price volatility: Higher volatility provides more optimization opportunities
     - Weather: Shoulder seasons have best optimization potential
     - Building thermal mass: Better insulation = better buffering
 
-    **Realistic expectations**:
+    **Expected outcomes**:
 
-    - Dynamic pricing: 10-30% savings
-    - Fixed pricing: 2-8% savings (COP optimization only)
+    - Dynamic pricing: Higher cost reduction potential
+    - Fixed pricing: Lower cost reduction potential (COP optimization only)
 
 ## Next Steps
 
@@ -360,4 +360,4 @@ Now that you're running:
 
 **Congratulations! Your heating optimization is now active.** 🎉
 
-Monitor your energy costs over the next few weeks to see the savings accumulate!
+Monitor your energy costs over the next few weeks to observe the optimization in action!

@@ -57,20 +57,6 @@ The integration continuously:
 4. **Outputs** optimal supply temperature adjustments
 5. **Adapts** in real-time as conditions change
 
-## Real-World Performance
-
-!!! success "Typical Savings"
-    Users report **15-30% reduction** in heating costs during shoulder seasons when electricity prices vary significantly throughout the day.
-
-!!! example "Example Scenario"
-    **Situation**: Cold morning (-2°C) followed by sunny afternoon (8°C), with low electricity prices overnight.
-
-    **Traditional Heating**: Constant heating throughout the day = 45 kWh
-
-    **Optimized Heating**: Pre-heat overnight at low prices, reduce during sunny hours = 32 kWh
-
-    **Result**: 29% energy savings + 35% cost savings (due to price timing)
-
 ## Quick Start
 
 Get started in minutes:
@@ -147,9 +133,9 @@ The result is a globally optimal heating strategy, not just locally optimal deci
 ### Real Physics Modeling
 The integration uses actual thermal engineering principles:
 
-- **Heat Loss**: \\( Q_{loss} = U \times A \times \Delta T \\)
+- **Heat Loss**: $Q_{loss} = U \times A \times \Delta T$
 - **Solar Gain**: Based on radiation intensity and window orientation
-- **COP Modeling**: \\( COP = (COP_{base} + \alpha \times T_{outdoor} - k \times (T_{supply} - 35)) \times f \\)
+- **COP Modeling**: $COP = (COP_{base} + \alpha \times T_{outdoor} - k \times (T_{supply} - 35)) \times f$
 
 This ensures realistic predictions and reliable optimization.
 
