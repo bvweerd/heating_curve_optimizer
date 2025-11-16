@@ -2774,9 +2774,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             self._get_config_value(CONF_HEAT_CURVE_MAX, DEFAULT_HEAT_CURVE_MAX)
         )
         outdoor_min = float(self._get_config_value(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0))
-        outdoor_max = float(
-            self._get_config_value(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
-        )
+        outdoor_max = float(self._get_config_value(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0))
 
         entity_id = self._outdoor_entity_id
         if entity_id is None and isinstance(self._outdoor_sensor, SensorEntity):
