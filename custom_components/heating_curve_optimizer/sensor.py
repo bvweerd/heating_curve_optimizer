@@ -819,9 +819,7 @@ class PVProductionForecastSensor(BaseUtilitySensor):
         rad_forecast = [round(v, 2) for v in rad]
         if rad:
             # Current production
-            current = (
-                rad[0] * total_wp * orient_factors * tilt_fac / 1_000_000.0
-            )  # kW
+            current = rad[0] * total_wp * orient_factors * tilt_fac / 1_000_000.0  # kW
 
             # Forecast production (use average factors - could be improved with hourly sun position)
             forecast = [
@@ -2374,9 +2372,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
                         fill_value=0.0,
                     )
             except (AttributeError, TypeError) as err:
-                _LOGGER.debug(
-                    "Could not get forecast from PV sensor: %s", err
-                )
+                _LOGGER.debug("Could not get forecast from PV sensor: %s", err)
 
         # Fallback 2: Use current production value for all steps
         if self.production_sensors:
@@ -2454,7 +2450,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
                 "Using constant value for all time steps. "
                 "For accurate optimization, configure a power sensor with forecast capability. "
                 "Note: Cumulative energy sensors (kWh) should not be used - they lack forecast data.",
-                self.consumption_sensors[0]
+                self.consumption_sensors[0],
             )
             try:
                 current_consumption = float(consumption_state.state)
