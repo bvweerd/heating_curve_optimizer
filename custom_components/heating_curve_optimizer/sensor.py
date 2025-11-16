@@ -39,16 +39,11 @@ from .const import (
     CONF_PRICE_SENSOR,
     CONF_CONSUMPTION_PRICE_SENSOR,
     CONF_PRODUCTION_PRICE_SENSOR,
-    CONF_PRICE_SETTINGS,
     CONF_PLANNING_WINDOW,
     CONF_TIME_BASE,
     CONF_SOURCE_TYPE,
     CONF_SOURCES,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
-    CONF_PV_EAST_WP,
-    CONF_PV_SOUTH_WP,
-    CONF_PV_WEST_WP,
-    CONF_PV_TILT,
     CONF_HEATING_CURVE_OFFSET,
     CONF_HEAT_CURVE_MIN,
     CONF_HEAT_CURVE_MAX,
@@ -63,7 +58,6 @@ from .const import (
     DEFAULT_HEAT_CURVE_MAX,
     DEFAULT_PLANNING_WINDOW,
     DEFAULT_TIME_BASE,
-    DEFAULT_PV_TILT,
     DOMAIN,
     INDOOR_TEMPERATURE,
     SOURCE_TYPE_CONSUMPTION,
@@ -2666,16 +2660,9 @@ class HeatBufferSensor(BaseUtilitySensor):
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    price_settings = entry.options.get(
-        CONF_PRICE_SETTINGS, entry.data.get(CONF_PRICE_SETTINGS, {})
-    )
     device_info = DeviceInfo(
         identifiers={(DOMAIN, entry.entry_id)},
         name="Heating Curve Optimizer",
-    )
-    price_device_info = DeviceInfo(
-        identifiers={(DOMAIN, f"{entry.entry_id}_prices")},
-        name="Energy Prices",
     )
     entities: list[BaseUtilitySensor] = []
 
@@ -2758,18 +2745,6 @@ async def async_setup_entry(
     )
     glass_u = float(
         entry.options.get(CONF_GLASS_U_VALUE, entry.data.get(CONF_GLASS_U_VALUE, 1.2))
-    )
-    pv_east_wp = float(
-        entry.options.get(CONF_PV_EAST_WP, entry.data.get(CONF_PV_EAST_WP, 0))
-    )
-    pv_south_wp = float(
-        entry.options.get(CONF_PV_SOUTH_WP, entry.data.get(CONF_PV_SOUTH_WP, 0))
-    )
-    pv_west_wp = float(
-        entry.options.get(CONF_PV_WEST_WP, entry.data.get(CONF_PV_WEST_WP, 0))
-    )
-    pv_tilt = float(
-        entry.options.get(CONF_PV_TILT, entry.data.get(CONF_PV_TILT, DEFAULT_PV_TILT))
     )
     planning_window = int(
         entry.options.get(
