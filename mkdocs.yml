@@ -95,6 +95,9 @@ nav:
       - Scenario 2 - Solar Integration: examples/solar-integration.md
       - Scenario 3 - Cold Snap: examples/cold-snap.md
       - Scenario 4 - Mixed Conditions: examples/mixed-conditions.md
+  - Heat Pump Profiles:
+      - Overview: heat-pump-profiles/index.md
+      - LG HM091MR.U44 Monoblock: heat-pump-profiles/LG-HM091MR-U44.md
   - Reference:
       - Sensors: reference/sensors.md
       - Configuration Options: reference/configuration.md

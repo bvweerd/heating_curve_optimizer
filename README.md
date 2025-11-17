@@ -171,6 +171,7 @@ automation:
 ### Quick Links
 
 - **[Quick Start Guide](https://bvweerd.github.io/heating_curve_optimizer/quick-start/)** - Get up and running in minutes
+- **[Heat Pump Profiles](https://bvweerd.github.io/heating_curve_optimizer/heat-pump-profiles/)** - Optimized settings for specific heat pump models
 - **[Algorithm Explanation](https://bvweerd.github.io/heating_curve_optimizer/algorithm/overview/)** - Deep dive into the optimization engine
 - **[Example Scenarios](https://bvweerd.github.io/heating_curve_optimizer/examples/price-optimization/)** - Real-world usage examples
 - **[Configuration Reference](https://bvweerd.github.io/heating_curve_optimizer/reference/configuration/)** - Complete configuration options
