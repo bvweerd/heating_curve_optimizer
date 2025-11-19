@@ -674,8 +674,8 @@ async def test_offset_sensor_resamples_15min_prices_to_hourly(hass, monkeypatch)
     # Check that prices are correctly averaged
     assert len(attrs["prices"]) == 6
     for i, (actual, expected) in enumerate(zip(attrs["prices"], expected_prices)):
-        assert abs(actual - expected) < 0.001, (
-            f"Hour {i}: expected {expected}, got {actual}"
-        )
+        assert (
+            abs(actual - expected) < 0.001
+        ), f"Hour {i}: expected {expected}, got {actual}"
 
     await sensor_obj.async_will_remove_from_hass()
