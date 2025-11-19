@@ -2492,11 +2492,19 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
     def _extract_demand(self, state) -> list[float]:
         source_base = _coerce_time_base(state.attributes.get("forecast_time_base"))
         forecast = state.attributes.get("forecast", [])
+
+        # Use current state value as fallback when forecast is empty
+        # This allows optimization to run even when no forecast is available
+        try:
+            current_value = float(state.state)
+        except (TypeError, ValueError):
+            current_value = 0.0
+
         return self._resample_forecast(
             forecast,
             source_base,
             label="net_heat",
-            fill_value=0.0,
+            fill_value=current_value,
         )
 
     def _extract_production_forecast(self) -> list[float]:
