@@ -235,13 +235,18 @@ async def test_extract_price_forecast_with_interval_detects_15min(hass, monkeypa
 
 
 @pytest.mark.asyncio
-async def test_extract_price_forecast_with_interval_hourly_default(hass):
+async def test_extract_price_forecast_with_interval_hourly_default(hass, monkeypatch):
     """Test price extraction returns 60 for hourly data."""
     from homeassistant.core import State
 
     from custom_components.heating_curve_optimizer.sensor import (
         extract_price_forecast_with_interval,
     )
+
+    # Mock time to hour 0 so raw_today[hour:] includes all values
+    now = dt_util.parse_datetime("2025-10-07T00:30:00+00:00")
+    assert now is not None
+    monkeypatch.setattr(dt_util, "utcnow", lambda: dt_util.as_utc(now))
 
     state = State(
         "sensor.price",
