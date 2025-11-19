@@ -139,6 +139,7 @@ def extract_price_forecast_with_interval(state: State) -> tuple[list[float], int
     Returns:
         Tuple of (prices list, interval in minutes)
     """
+    # First check for forecast_prices (assumed hourly)
     forecast_attr = state.attributes.get("forecast_prices")
     if isinstance(forecast_attr, (list, tuple)):
         forecast: list[float] = []
@@ -149,16 +150,8 @@ def extract_price_forecast_with_interval(state: State) -> tuple[list[float], int
         if forecast:
             return forecast, 60  # forecast_prices is assumed hourly
 
-    generic_forecast = state.attributes.get("forecast")
-    if isinstance(generic_forecast, (list, tuple)):
-        forecast = []
-        for entry in generic_forecast:
-            price = _normalize_price_value(entry)
-            if price is not None:
-                forecast.append(price)
-        if forecast:
-            return forecast, 60  # generic forecast is assumed hourly
-
+    # Check for net_prices_today/tomorrow BEFORE generic forecast
+    # These attributes have timestamps that allow proper interval detection
     from homeassistant.util import dt as dt_util
 
     now = dt_util.utcnow()
@@ -198,6 +191,17 @@ def extract_price_forecast_with_interval(state: State) -> tuple[list[float], int
 
     if interval_forecast:
         return interval_forecast, detected_interval
+
+    # Fallback to generic forecast (assumed hourly)
+    generic_forecast = state.attributes.get("forecast")
+    if isinstance(generic_forecast, (list, tuple)):
+        forecast = []
+        for entry in generic_forecast:
+            price = _normalize_price_value(entry)
+            if price is not None:
+                forecast.append(price)
+        if forecast:
+            return forecast, 60  # generic forecast is assumed hourly
 
     hour = now.hour
 
