@@ -31,7 +31,7 @@ async def test_heat_buffer_sensor_reads_evolution(hass):
         "1": 1.5,
         "2": 3.0,
     }
-    assert sensor.state_class == SensorStateClass.MEASUREMENT
+    assert sensor.state_class == SensorStateClass.TOTAL
     await sensor.async_will_remove_from_hass()
 
 

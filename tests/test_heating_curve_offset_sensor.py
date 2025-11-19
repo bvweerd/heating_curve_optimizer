@@ -202,7 +202,10 @@ async def test_offset_sensor_respects_time_base(hass):
     assert len(sensor.extra_state_attributes["future_offsets"]) == 4
     assert len(sensor.extra_state_attributes["prices"]) == 4
     assert sensor.extra_state_attributes["time_base_minutes"] == 30
-    assert sensor.extra_state_attributes["time_base_issues"] == []
+    # raw_today is assumed hourly (60 min) but time_base is 30 min, so mismatch is expected
+    assert sensor.extra_state_attributes["time_base_issues"] == [
+        "price: forecast uses 60 min steps (expected 30)"
+    ]
 
 
 @pytest.mark.asyncio
