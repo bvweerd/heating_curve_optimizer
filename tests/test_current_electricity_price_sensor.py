@@ -138,3 +138,119 @@ async def test_price_sensor_uses_net_price_forecast(hass, monkeypatch):
     attrs = sensor.extra_state_attributes
     assert attrs["forecast_prices"] == [0.2, 0.3, 0.4]
     await sensor.async_will_remove_from_hass()
+
+
+@pytest.mark.asyncio
+async def test_detect_interval_from_entries_15min():
+    """Test interval detection from 15-minute price entries."""
+    from custom_components.heating_curve_optimizer.sensor import (
+        _detect_interval_from_entries,
+    )
+
+    entries = [
+        {"start": "2025-10-07T00:00:00+02:00", "value": 0.1},
+        {"start": "2025-10-07T00:15:00+02:00", "value": 0.2},
+        {"start": "2025-10-07T00:30:00+02:00", "value": 0.3},
+    ]
+    assert _detect_interval_from_entries(entries) == 15
+
+
+@pytest.mark.asyncio
+async def test_detect_interval_from_entries_30min():
+    """Test interval detection from 30-minute price entries."""
+    from custom_components.heating_curve_optimizer.sensor import (
+        _detect_interval_from_entries,
+    )
+
+    entries = [
+        {"start": "2025-10-07T00:00:00+02:00", "value": 0.1},
+        {"start": "2025-10-07T00:30:00+02:00", "value": 0.2},
+        {"start": "2025-10-07T01:00:00+02:00", "value": 0.3},
+    ]
+    assert _detect_interval_from_entries(entries) == 30
+
+
+@pytest.mark.asyncio
+async def test_detect_interval_from_entries_60min():
+    """Test interval detection from 60-minute price entries."""
+    from custom_components.heating_curve_optimizer.sensor import (
+        _detect_interval_from_entries,
+    )
+
+    entries = [
+        {"start": "2025-10-07T00:00:00+02:00", "value": 0.1},
+        {"start": "2025-10-07T01:00:00+02:00", "value": 0.2},
+        {"start": "2025-10-07T02:00:00+02:00", "value": 0.3},
+    ]
+    assert _detect_interval_from_entries(entries) == 60
+
+
+@pytest.mark.asyncio
+async def test_detect_interval_from_entries_defaults_to_60():
+    """Test interval detection defaults to 60 when not detected."""
+    from custom_components.heating_curve_optimizer.sensor import (
+        _detect_interval_from_entries,
+    )
+
+    # No timestamps
+    entries = [{"value": 0.1}, {"value": 0.2}]
+    assert _detect_interval_from_entries(entries) == 60
+
+    # Empty list
+    assert _detect_interval_from_entries([]) == 60
+
+    # Single entry
+    assert _detect_interval_from_entries([{"start": "2025-10-07T00:00:00+02:00"}]) == 60
+
+
+@pytest.mark.asyncio
+async def test_extract_price_forecast_with_interval_detects_15min(hass, monkeypatch):
+    """Test price extraction detects 15-minute intervals."""
+    from homeassistant.core import State
+
+    from custom_components.heating_curve_optimizer.sensor import (
+        extract_price_forecast_with_interval,
+    )
+
+    now = dt_util.parse_datetime("2025-10-07T00:00:00+02:00")
+    assert now is not None
+    monkeypatch.setattr(dt_util, "utcnow", lambda: dt_util.as_utc(now))
+
+    state = State(
+        "sensor.price",
+        "0.25",
+        {
+            "net_prices_today": [
+                {"start": "2025-10-07T00:00:00+02:00", "value": 0.1},
+                {"start": "2025-10-07T00:15:00+02:00", "value": 0.2},
+                {"start": "2025-10-07T00:30:00+02:00", "value": 0.3},
+                {"start": "2025-10-07T00:45:00+02:00", "value": 0.4},
+            ],
+        },
+    )
+
+    prices, interval = extract_price_forecast_with_interval(state)
+    assert interval == 15
+    assert prices == [0.1, 0.2, 0.3, 0.4]
+
+
+@pytest.mark.asyncio
+async def test_extract_price_forecast_with_interval_hourly_default(hass):
+    """Test price extraction returns 60 for hourly data."""
+    from homeassistant.core import State
+
+    from custom_components.heating_curve_optimizer.sensor import (
+        extract_price_forecast_with_interval,
+    )
+
+    state = State(
+        "sensor.price",
+        "0.25",
+        {
+            "raw_today": [0.1, 0.2, 0.3],
+        },
+    )
+
+    prices, interval = extract_price_forecast_with_interval(state)
+    assert interval == 60
+    assert prices == [0.1, 0.2, 0.3]

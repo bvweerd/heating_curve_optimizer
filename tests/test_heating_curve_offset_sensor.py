@@ -601,3 +601,81 @@ async def test_offset_sensor_mixed_production_consumption_scenario(hass):
     assert attrs["net_balance_kw"][1] > 0  # Producing
     assert attrs["net_balance_kw"][2] < 0  # Consuming
     assert attrs["net_balance_kw"][3] < 0  # Consuming
+
+
+@pytest.mark.asyncio
+async def test_offset_sensor_resamples_15min_prices_to_hourly(hass, monkeypatch):
+    """Test that 15-minute prices are correctly averaged into hourly prices."""
+    from homeassistant.util import dt as dt_util
+
+    now = dt_util.parse_datetime("2025-10-07T00:00:00+02:00")
+    assert now is not None
+    monkeypatch.setattr(dt_util, "utcnow", lambda: dt_util.as_utc(now))
+
+    hass.states.async_set("sensor.net_heat", "1", {"forecast": [0.5] * 6})
+    # 15-minute prices: 4 values per hour that should be averaged
+    # Hour 0: 0.10, 0.20, 0.30, 0.40 → average = 0.25
+    # Hour 1: 0.12, 0.14, 0.16, 0.18 → average = 0.15
+    # Hour 2: 0.20, 0.20, 0.20, 0.20 → average = 0.20
+    # Hour 3: 0.08, 0.12, 0.08, 0.12 → average = 0.10
+    # Hour 4: 0.30, 0.30, 0.30, 0.30 → average = 0.30
+    # Hour 5: 0.50, 0.50, 0.50, 0.50 → average = 0.50
+    hass.states.async_set(
+        "sensor.price",
+        "0.1",
+        {
+            "net_prices_today": [
+                {"start": "2025-10-07T00:00:00+02:00", "value": 0.10},
+                {"start": "2025-10-07T00:15:00+02:00", "value": 0.20},
+                {"start": "2025-10-07T00:30:00+02:00", "value": 0.30},
+                {"start": "2025-10-07T00:45:00+02:00", "value": 0.40},
+                {"start": "2025-10-07T01:00:00+02:00", "value": 0.12},
+                {"start": "2025-10-07T01:15:00+02:00", "value": 0.14},
+                {"start": "2025-10-07T01:30:00+02:00", "value": 0.16},
+                {"start": "2025-10-07T01:45:00+02:00", "value": 0.18},
+                {"start": "2025-10-07T02:00:00+02:00", "value": 0.20},
+                {"start": "2025-10-07T02:15:00+02:00", "value": 0.20},
+                {"start": "2025-10-07T02:30:00+02:00", "value": 0.20},
+                {"start": "2025-10-07T02:45:00+02:00", "value": 0.20},
+                {"start": "2025-10-07T03:00:00+02:00", "value": 0.08},
+                {"start": "2025-10-07T03:15:00+02:00", "value": 0.12},
+                {"start": "2025-10-07T03:30:00+02:00", "value": 0.08},
+                {"start": "2025-10-07T03:45:00+02:00", "value": 0.12},
+                {"start": "2025-10-07T04:00:00+02:00", "value": 0.30},
+                {"start": "2025-10-07T04:15:00+02:00", "value": 0.30},
+                {"start": "2025-10-07T04:30:00+02:00", "value": 0.30},
+                {"start": "2025-10-07T04:45:00+02:00", "value": 0.30},
+                {"start": "2025-10-07T05:00:00+02:00", "value": 0.50},
+                {"start": "2025-10-07T05:15:00+02:00", "value": 0.50},
+                {"start": "2025-10-07T05:30:00+02:00", "value": 0.50},
+                {"start": "2025-10-07T05:45:00+02:00", "value": 0.50},
+            ],
+        },
+    )
+    hass.states.async_set("sensor.outdoor_temperature", "5")
+
+    with patch(
+        "custom_components.heating_curve_optimizer.sensor._optimize_offsets",
+        return_value=([0] * 6, [0.0] * 6),
+    ):
+        sensor_obj = HeatingCurveOffsetSensor(
+            hass=hass,
+            name="Heating Curve Offset",
+            unique_id="offset_resample",
+            net_heat_sensor="sensor.net_heat",
+            price_sensor="sensor.price",
+            device=DeviceInfo(identifiers={("test", "resample")}),
+        )
+
+        await sensor_obj.async_update()
+
+    attrs = sensor_obj.extra_state_attributes
+    expected_prices = [0.25, 0.15, 0.20, 0.10, 0.30, 0.50]
+    # Check that prices are correctly averaged
+    assert len(attrs["prices"]) == 6
+    for i, (actual, expected) in enumerate(zip(attrs["prices"], expected_prices)):
+        assert abs(actual - expected) < 0.001, (
+            f"Hour {i}: expected {expected}, got {actual}"
+        )
+
+    await sensor_obj.async_will_remove_from_hass()
