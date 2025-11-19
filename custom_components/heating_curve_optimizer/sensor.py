@@ -3294,7 +3294,7 @@ class HeatBufferSensor(BaseUtilitySensor):
             device=device,
             translation_key=name.lower().replace(" ", "_").replace(".", "_"),
         )
-        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_state_class = SensorStateClass.TOTAL
         self.hass = hass
         self.offset_entity = offset_entity
         self._extra_attrs: dict[str, list[float] | dict[str, float]] = {}
