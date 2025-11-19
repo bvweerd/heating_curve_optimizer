@@ -105,9 +105,40 @@ def _normalize_price_value(value: Any) -> float | None:
         return None
 
 
-def extract_price_forecast(state: State) -> list[float]:
-    """Extract an hourly price forecast from a Home Assistant price state."""
+def _detect_interval_from_entries(entries: Any) -> int:
+    """Detect the interval in minutes from a list of price entries with timestamps.
 
+    Returns 60 (hourly) if interval cannot be determined.
+    """
+    from homeassistant.util import dt as dt_util
+
+    if not isinstance(entries, (list, tuple)) or len(entries) < 2:
+        return 60
+
+    timestamps = []
+    for entry in entries[:3]:  # Check first 3 entries
+        if isinstance(entry, dict):
+            start = entry.get("start") or entry.get("from")
+            if isinstance(start, str):
+                start_dt = dt_util.parse_datetime(start)
+                if start_dt is not None:
+                    timestamps.append(dt_util.as_utc(start_dt))
+
+    if len(timestamps) >= 2:
+        delta = timestamps[1] - timestamps[0]
+        minutes = int(delta.total_seconds() / 60)
+        if minutes in (15, 30, 60):
+            return minutes
+
+    return 60
+
+
+def extract_price_forecast_with_interval(state: State) -> tuple[list[float], int]:
+    """Extract price forecast and detected interval from a Home Assistant price state.
+
+    Returns:
+        Tuple of (prices list, interval in minutes)
+    """
     forecast_attr = state.attributes.get("forecast_prices")
     if isinstance(forecast_attr, (list, tuple)):
         forecast: list[float] = []
@@ -116,7 +147,7 @@ def extract_price_forecast(state: State) -> list[float]:
             if price is not None:
                 forecast.append(price)
         if forecast:
-            return forecast
+            return forecast, 60  # forecast_prices is assumed hourly
 
     generic_forecast = state.attributes.get("forecast")
     if isinstance(generic_forecast, (list, tuple)):
@@ -126,17 +157,24 @@ def extract_price_forecast(state: State) -> list[float]:
             if price is not None:
                 forecast.append(price)
         if forecast:
-            return forecast
+            return forecast, 60  # generic forecast is assumed hourly
 
     from homeassistant.util import dt as dt_util
 
     now = dt_util.utcnow()
 
     interval_forecast: list[float] = []
+    detected_interval = 60
 
     def _extend_interval_forecast(entries: Any, *, skip_past: bool = False) -> bool:
+        nonlocal detected_interval
         if not isinstance(entries, (list, tuple)):
             return False
+
+        # Detect interval from entries with timestamps
+        interval = _detect_interval_from_entries(entries)
+        if interval != 60:
+            detected_interval = interval
 
         added = False
         for entry in entries:
@@ -159,7 +197,7 @@ def extract_price_forecast(state: State) -> list[float]:
     _extend_interval_forecast(state.attributes.get("net_prices_tomorrow"))
 
     if interval_forecast:
-        return interval_forecast
+        return interval_forecast, detected_interval
 
     hour = now.hour
 
@@ -179,7 +217,7 @@ def extract_price_forecast(state: State) -> list[float]:
                 forecast.append(price)
 
     if forecast:
-        return forecast
+        return forecast, 60  # raw_today/tomorrow is assumed hourly
 
     combined: list[Any] = []
     for key in ("today", "tomorrow"):
@@ -193,14 +231,20 @@ def extract_price_forecast(state: State) -> list[float]:
             forecast.append(price)
 
     if forecast:
-        return forecast
+        return forecast, 60
 
     try:
         price = float(state.state)
     except (TypeError, ValueError):
-        return []
+        return [], 60
 
-    return [price]
+    return [price], 60
+
+
+def extract_price_forecast(state: State) -> list[float]:
+    """Extract an hourly price forecast from a Home Assistant price state."""
+    prices, _ = extract_price_forecast_with_interval(state)
+    return prices
 
 
 class OutdoorTemperatureSensor(BaseUtilitySensor):
@@ -1799,12 +1843,26 @@ class DiagnosticsSensor(BaseUtilitySensor):
         return result
 
     def _extract_prices(self, state) -> list[float]:
-        prices = extract_price_forecast(state)
+        prices, source_interval = extract_price_forecast_with_interval(state)
         result: list[float] = []
+
+        # Calculate how many source entries per target step
+        entries_per_step = max(1, int(self.time_base / source_interval))
+
         for step in range(self.steps):
-            hour_offset = int(step * self.time_base / 60)
-            if hour_offset < len(prices):
-                result.append(float(prices[hour_offset]))
+            # Calculate source index range for this step
+            start_idx = int(step * self.time_base / source_interval)
+            end_idx = start_idx + entries_per_step
+
+            # Gather values for this step
+            step_values = []
+            for idx in range(start_idx, end_idx):
+                if idx < len(prices):
+                    step_values.append(float(prices[idx]))
+
+            if step_values:
+                # Average the values for this step
+                result.append(sum(step_values) / len(step_values))
             else:
                 break
 
@@ -2473,8 +2531,12 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         return power_kw
 
     def _extract_prices(self, state) -> list[float]:
-        prices = extract_price_forecast(state)
-        source_base = _coerce_time_base(state.attributes.get("forecast_time_base"))
+        prices, detected_interval = extract_price_forecast_with_interval(state)
+        # Use detected interval from price data, fallback to forecast_time_base attribute
+        source_base = detected_interval
+        attr_base = _coerce_time_base(state.attributes.get("forecast_time_base"))
+        if attr_base and attr_base != 60:
+            source_base = attr_base
         if prices:
             fallback = float(prices[-1])
         else:
