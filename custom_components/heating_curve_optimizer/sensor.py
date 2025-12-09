@@ -2360,6 +2360,10 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         # Store energy sensor history for derivative calculation (kWh -> kW)
         # Format: {entity_id: (energy_kwh, timestamp)}
         self._energy_history: dict[str, tuple[float, float]] = {}
+        # Track current buffer state (cumulative offset sum in °C)
+        # This represents thermal energy stored in building thermal mass
+        # Initialized to 0.0, restored from previous state if available
+        self._current_buffer: float = 0.0
 
     @property
     def extra_state_attributes(self) -> dict[str, list[int] | list[float] | float]:
@@ -3136,12 +3140,12 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
                     base_temp=base_temp,
                     k_factor=self.k_factor,
                     cop_compensation_factor=self.cop_compensation_factor,
-                    buffer=0.0,
+                    buffer=self._current_buffer,
                     water_min=water_min,
                     water_max=water_max,
-                    outdoor_temps=outdoor_temp_forecast
-                    if outdoor_temp_forecast
-                    else None,
+                    outdoor_temps=(
+                        outdoor_temp_forecast if outdoor_temp_forecast else None
+                    ),
                     humidity_forecast=humidity_forecast if humidity_forecast else None,
                     outdoor_temp_coefficient=self.outdoor_temp_coefficient,
                     time_base=self.time_base,
@@ -3152,10 +3156,16 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
                 prices,
             )
             _LOGGER.debug(
-                "Calculated offsets=%s buffer_evolution=%s",
+                "Calculated offsets=%s buffer_evolution=%s (starting buffer=%.2f)",
                 offsets,
                 buffer_offset_evolution,
+                self._current_buffer,
             )
+            # Update current buffer state based on first time step of optimization
+            # This allows buffer to persist across optimization runs
+            if buffer_offset_evolution:
+                self._current_buffer = buffer_offset_evolution[0]
+                _LOGGER.debug("Updated current buffer to %.2f°C", self._current_buffer)
         else:
             offsets = [0 for _ in range(self.steps)]
             buffer_offset_evolution = [0.0 for _ in range(self.steps)]
@@ -3197,9 +3207,11 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         ]
         # Calculate net balance for display
         net_balance_forecast = [
-            round(production_forecast[i] - baseline_consumption[i], 3)
-            if i < len(production_forecast) and i < len(baseline_consumption)
-            else 0.0
+            (
+                round(production_forecast[i] - baseline_consumption[i], 3)
+                if i < len(production_forecast) and i < len(baseline_consumption)
+                else 0.0
+            )
             for i in range(self.steps)
         ]
 
@@ -3247,11 +3259,29 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             "solar_gain_available_kwh": round(solar_gain_total, 3),
             "solar_gain_used_kwh": round(solar_gain_used, 3),
             "solar_gain_remaining_kwh": round(solar_buffer_remaining, 3),
+            "current_buffer": round(self._current_buffer, 3),
         }
         self._mark_available()
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
+
+        # Restore buffer state from previous session
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.attributes:
+            # Try to restore current_buffer from attributes
+            saved_buffer = last_state.attributes.get("current_buffer")
+            if saved_buffer is not None:
+                try:
+                    self._current_buffer = float(saved_buffer)
+                    _LOGGER.debug(
+                        "Restored buffer state: %.2f°C cumulative offset",
+                        self._current_buffer,
+                    )
+                except (ValueError, TypeError):
+                    _LOGGER.warning("Could not restore buffer state, using 0.0")
+                    self._current_buffer = 0.0
+
         if not isinstance(self.net_heat_sensor, str):
             self.net_heat_sensor = self.net_heat_sensor.entity_id
         if not isinstance(self.price_sensor, str):
