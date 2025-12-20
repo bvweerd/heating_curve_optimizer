@@ -4,12 +4,16 @@
       "basic": {
         "data": {
           "energy_label": "Energielabel",
+          "ventilation_type": "Ventilatietype",
+          "ceiling_height": "Plafondhoogte (m)",
           "pv_east_wp": "PV-panelen oost (Wp)",
           "pv_south_wp": "PV-panelen zuid (Wp)",
           "pv_west_wp": "PV-panelen west (Wp)",
           "pv_tilt": "PV-panelen hellingshoek (graden)"
         },
         "data_description": {
+          "ventilation_type": "Type ventilatiesysteem in de woning voor berekening van ventilatieverliezen",
+          "ceiling_height": "Gemiddelde plafondhoogte voor berekening van gebouwvolume (standaard: 2,5m)",
           "pv_east_wp": "Totaal piekvermogen van op het oosten gerichte PV-panelen in Wp",
           "pv_south_wp": "Totaal piekvermogen van op het zuiden gerichte PV-panelen in Wp",
           "pv_west_wp": "Totaal piekvermogen van op het westen gerichte PV-panelen in Wp",
@@ -126,6 +130,24 @@
       },
       "net_power_consumption": {
         "name": "Netto stroomverbruik"
+      },
+      "calibration": {
+        "name": "Parameter Kalibratie"
+      }
+    }
+  },
+  "selector": {
+    "ventilation_type": {
+      "options": {
+        "none": "Geen/minimaal",
+        "natural_low": "Natuurlijke ventilatie (basis)",
+        "natural_standard": "Natuurlijke ventilatie (standaard)",
+        "natural_leaky": "Natuurlijke ventilatie (lekkage)",
+        "mechanical_exhaust": "Mechanische afzuiging",
+        "balanced_no_recovery": "Gebalanceerd (zonder WTW)",
+        "heat_recovery_50": "WTW 50% rendement",
+        "heat_recovery_70": "WTW 70% rendement",
+        "heat_recovery_90": "WTW 90% rendement"
       }
     }
   }

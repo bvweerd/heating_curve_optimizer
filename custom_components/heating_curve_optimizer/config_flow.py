@@ -45,6 +45,8 @@ from .const import (
     CONF_PV_SOUTH_WP,
     CONF_PV_WEST_WP,
     CONF_PV_TILT,
+    CONF_VENTILATION_TYPE,
+    CONF_CEILING_HEIGHT,
     DEFAULT_K_FACTOR,
     DEFAULT_PV_TILT,
     DEFAULT_COP_AT_35,
@@ -55,11 +57,14 @@ from .const import (
     DEFAULT_HEATING_CURVE_OFFSET,
     DEFAULT_HEAT_CURVE_MIN,
     DEFAULT_HEAT_CURVE_MAX,
+    DEFAULT_VENTILATION_TYPE,
+    DEFAULT_CEILING_HEIGHT,
     CONF_SOURCE_TYPE,
     CONF_SOURCES,
     DOMAIN,
     ENERGY_LABELS,
     SOURCE_TYPES,
+    VENTILATION_TYPES,
 )
 
 STEP_SELECT_SOURCES = "select_sources"
@@ -89,6 +94,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.glass_west_m2: float | None = None
         self.glass_south_m2: float | None = None
         self.glass_u_value: float | None = None
+        self.ventilation_type: str = DEFAULT_VENTILATION_TYPE
+        self.ceiling_height: float = DEFAULT_CEILING_HEIGHT
         self.pv_east_wp: float | None = None
         self.pv_south_wp: float | None = None
         self.pv_west_wp: float | None = None
@@ -158,6 +165,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_GLASS_WEST_M2: self.glass_west_m2,
                         CONF_GLASS_SOUTH_M2: self.glass_south_m2,
                         CONF_GLASS_U_VALUE: self.glass_u_value,
+                        CONF_VENTILATION_TYPE: self.ventilation_type,
+                        CONF_CEILING_HEIGHT: self.ceiling_height,
                         CONF_PV_EAST_WP: self.pv_east_wp,
                         CONF_PV_SOUTH_WP: self.pv_south_wp,
                         CONF_PV_WEST_WP: self.pv_west_wp,
@@ -243,6 +252,12 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.glass_west_m2 = float(user_input.get(CONF_GLASS_WEST_M2, 0))
             self.glass_south_m2 = float(user_input.get(CONF_GLASS_SOUTH_M2, 0))
             self.glass_u_value = float(user_input.get(CONF_GLASS_U_VALUE, 1.2))
+            self.ventilation_type = user_input.get(
+                CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE
+            )
+            self.ceiling_height = float(
+                user_input.get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT)
+            )
             self.pv_east_wp = float(user_input.get(CONF_PV_EAST_WP, 0))
             self.pv_south_wp = float(user_input.get(CONF_PV_SOUTH_WP, 0))
             self.pv_west_wp = float(user_input.get(CONF_PV_WEST_WP, 0))
@@ -272,6 +287,20 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_GLASS_WEST_M2, default=0.0): vol.Coerce(float),
                 vol.Optional(CONF_GLASS_SOUTH_M2, default=0.0): vol.Coerce(float),
                 vol.Optional(CONF_GLASS_U_VALUE, default=1.2): vol.Coerce(float),
+                vol.Optional(
+                    CONF_VENTILATION_TYPE, default=DEFAULT_VENTILATION_TYPE
+                ): selector(
+                    {
+                        "select": {
+                            "options": list(VENTILATION_TYPES.keys()),
+                            "mode": "dropdown",
+                            "translation_key": "ventilation_type",
+                        }
+                    }
+                ),
+                vol.Optional(
+                    CONF_CEILING_HEIGHT, default=DEFAULT_CEILING_HEIGHT
+                ): vol.Coerce(float),
                 vol.Optional(CONF_PV_EAST_WP, default=0.0): vol.Coerce(float),
                 vol.Optional(CONF_PV_SOUTH_WP, default=0.0): vol.Coerce(float),
                 vol.Optional(CONF_PV_WEST_WP, default=0.0): vol.Coerce(float),
@@ -412,6 +441,12 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self.glass_west_m2 = float(user_input.get(CONF_GLASS_WEST_M2, 0))
             self.glass_south_m2 = float(user_input.get(CONF_GLASS_SOUTH_M2, 0))
             self.glass_u_value = float(user_input.get(CONF_GLASS_U_VALUE, 1.2))
+            self.ventilation_type = user_input.get(
+                CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE
+            )
+            self.ceiling_height = float(
+                user_input.get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT)
+            )
             self.pv_east_wp = float(user_input.get(CONF_PV_EAST_WP, 0))
             self.pv_south_wp = float(user_input.get(CONF_PV_SOUTH_WP, 0))
             self.pv_west_wp = float(user_input.get(CONF_PV_WEST_WP, 0))
@@ -441,6 +476,20 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_GLASS_WEST_M2, default=0.0): vol.Coerce(float),
                 vol.Optional(CONF_GLASS_SOUTH_M2, default=0.0): vol.Coerce(float),
                 vol.Optional(CONF_GLASS_U_VALUE, default=1.2): vol.Coerce(float),
+                vol.Optional(
+                    CONF_VENTILATION_TYPE, default=DEFAULT_VENTILATION_TYPE
+                ): selector(
+                    {
+                        "select": {
+                            "options": list(VENTILATION_TYPES.keys()),
+                            "mode": "dropdown",
+                            "translation_key": "ventilation_type",
+                        }
+                    }
+                ),
+                vol.Optional(
+                    CONF_CEILING_HEIGHT, default=DEFAULT_CEILING_HEIGHT
+                ): vol.Coerce(float),
                 vol.Optional(CONF_PV_EAST_WP, default=0.0): vol.Coerce(float),
                 vol.Optional(CONF_PV_SOUTH_WP, default=0.0): vol.Coerce(float),
                 vol.Optional(CONF_PV_WEST_WP, default=0.0): vol.Coerce(float),
@@ -606,6 +655,8 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
         self.glass_west_m2 = _get(CONF_GLASS_WEST_M2)
         self.glass_south_m2 = _get(CONF_GLASS_SOUTH_M2)
         self.glass_u_value = _get(CONF_GLASS_U_VALUE, 1.2)
+        self.ventilation_type = _get(CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE)
+        self.ceiling_height = _get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT)
         self.pv_east_wp = _get(CONF_PV_EAST_WP, 0)
         self.pv_south_wp = _get(CONF_PV_SOUTH_WP, 0)
         self.pv_west_wp = _get(CONF_PV_WEST_WP, 0)
@@ -729,6 +780,8 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_GLASS_WEST_M2: self.glass_west_m2,
                         CONF_GLASS_SOUTH_M2: self.glass_south_m2,
                         CONF_GLASS_U_VALUE: self.glass_u_value,
+                        CONF_VENTILATION_TYPE: self.ventilation_type,
+                        CONF_CEILING_HEIGHT: self.ceiling_height,
                         CONF_PV_EAST_WP: self.pv_east_wp,
                         CONF_PV_SOUTH_WP: self.pv_south_wp,
                         CONF_PV_WEST_WP: self.pv_west_wp,
@@ -785,6 +838,12 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             self.glass_west_m2 = float(user_input.get(CONF_GLASS_WEST_M2, 0))
             self.glass_south_m2 = float(user_input.get(CONF_GLASS_SOUTH_M2, 0))
             self.glass_u_value = float(user_input.get(CONF_GLASS_U_VALUE, 1.2))
+            self.ventilation_type = user_input.get(
+                CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE
+            )
+            self.ceiling_height = float(
+                user_input.get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT)
+            )
             self.pv_east_wp = float(user_input.get(CONF_PV_EAST_WP, 0))
             self.pv_south_wp = float(user_input.get(CONF_PV_SOUTH_WP, 0))
             self.pv_west_wp = float(user_input.get(CONF_PV_WEST_WP, 0))
@@ -823,6 +882,22 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                 ): vol.Coerce(float),
                 vol.Optional(
                     CONF_GLASS_U_VALUE, default=self.glass_u_value or 1.2
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_VENTILATION_TYPE,
+                    default=self.ventilation_type or DEFAULT_VENTILATION_TYPE,
+                ): selector(
+                    {
+                        "select": {
+                            "options": list(VENTILATION_TYPES.keys()),
+                            "mode": "dropdown",
+                            "translation_key": "ventilation_type",
+                        }
+                    }
+                ),
+                vol.Optional(
+                    CONF_CEILING_HEIGHT,
+                    default=self.ceiling_height or DEFAULT_CEILING_HEIGHT,
                 ): vol.Coerce(float),
                 vol.Optional(
                     CONF_PV_EAST_WP, default=self.pv_east_wp or 0.0

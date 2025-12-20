@@ -4,12 +4,16 @@
       "basic": {
         "data": {
           "energy_label": "Energy label",
+          "ventilation_type": "Ventilation type",
+          "ceiling_height": "Ceiling height (m)",
           "pv_east_wp": "PV panels east (Wp)",
           "pv_south_wp": "PV panels south (Wp)",
           "pv_west_wp": "PV panels west (Wp)",
           "pv_tilt": "PV panel tilt angle (degrees)"
         },
         "data_description": {
+          "ventilation_type": "Type of ventilation system for calculating ventilation heat loss",
+          "ceiling_height": "Average ceiling height for calculating building volume (default: 2.5m)",
           "pv_east_wp": "Total peak power of east-facing PV panels in Wp",
           "pv_south_wp": "Total peak power of south-facing PV panels in Wp",
           "pv_west_wp": "Total peak power of west-facing PV panels in Wp",
@@ -126,6 +130,24 @@
       },
       "net_power_consumption": {
         "name": "Net power consumption"
+      },
+      "calibration": {
+        "name": "Parameter Calibration"
+      }
+    }
+  },
+  "selector": {
+    "ventilation_type": {
+      "options": {
+        "none": "None/minimal",
+        "natural_low": "Natural ventilation (basic)",
+        "natural_standard": "Natural ventilation (standard)",
+        "natural_leaky": "Natural ventilation (leaky)",
+        "mechanical_exhaust": "Mechanical exhaust",
+        "balanced_no_recovery": "Balanced (no heat recovery)",
+        "heat_recovery_50": "Heat recovery 50% efficiency",
+        "heat_recovery_70": "Heat recovery 70% efficiency",
+        "heat_recovery_90": "Heat recovery 90% efficiency"
       }
     }
   }

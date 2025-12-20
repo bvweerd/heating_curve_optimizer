@@ -41,11 +41,64 @@ CONF_HEAT_CURVE_MAX_OUTDOOR = "heat_curve_max_outdoor"
 CONF_HEATING_CURVE_OFFSET = "heating_curve_offset"
 CONF_HEAT_CURVE_MIN = "heat_curve_min"
 CONF_HEAT_CURVE_MAX = "heat_curve_max"
+CONF_VENTILATION_TYPE = "ventilation_type"
+CONF_CEILING_HEIGHT = "ceiling_height"
 
 # Default values for heating curve settings
 DEFAULT_HEATING_CURVE_OFFSET = 0.0
 DEFAULT_HEAT_CURVE_MIN = 20.0
 DEFAULT_HEAT_CURVE_MAX = 45.0
+
+# Default ventilation and building settings
+DEFAULT_VENTILATION_TYPE = "natural_standard"
+DEFAULT_CEILING_HEIGHT = 2.5  # meters
+
+# Ventilation types and their effective Air Changes per Hour (ACH)
+# ACH represents the volume of air exchanged per hour
+# For heat recovery systems, effective ACH accounts for recovered heat
+VENTILATION_TYPES = {
+    "none": {"ach": 0.2, "name_nl": "Geen/minimaal", "name_en": "None/minimal"},
+    "natural_low": {
+        "ach": 0.5,
+        "name_nl": "Natuurlijke ventilatie (basis)",
+        "name_en": "Natural ventilation (basic)",
+    },
+    "natural_standard": {
+        "ach": 1.0,
+        "name_nl": "Natuurlijke ventilatie (standaard)",
+        "name_en": "Natural ventilation (standard)",
+    },
+    "natural_leaky": {
+        "ach": 1.5,
+        "name_nl": "Natuurlijke ventilatie (lekkage)",
+        "name_en": "Natural ventilation (leaky)",
+    },
+    "mechanical_exhaust": {
+        "ach": 0.7,
+        "name_nl": "Mechanische afzuiging",
+        "name_en": "Mechanical exhaust",
+    },
+    "balanced_no_recovery": {
+        "ach": 0.8,
+        "name_nl": "Gebalanceerd (zonder WTW)",
+        "name_en": "Balanced (no heat recovery)",
+    },
+    "heat_recovery_50": {
+        "ach": 0.4,
+        "name_nl": "WTW 50% rendement",
+        "name_en": "Heat recovery 50% efficiency",
+    },
+    "heat_recovery_70": {
+        "ach": 0.24,
+        "name_nl": "WTW 70% rendement",
+        "name_en": "Heat recovery 70% efficiency",
+    },
+    "heat_recovery_90": {
+        "ach": 0.08,
+        "name_nl": "WTW 90% rendement",
+        "name_en": "Heat recovery 90% efficiency",
+    },
+}
 
 # PV panel configuration
 CONF_PV_EAST_WP = "pv_east_wp"
@@ -113,28 +166,85 @@ U_VALUE_MAP = {
 }
 
 
+def calculate_ventilation_htc(
+    area_m2: float,
+    ventilation_type: str = DEFAULT_VENTILATION_TYPE,
+    ceiling_height: float = DEFAULT_CEILING_HEIGHT,
+) -> float:
+    """
+    Calculate ventilation Heat Transfer Coefficient (H_V).
+
+    This calculates the heat loss through ventilation and air infiltration
+    based on the ventilation system type and building volume.
+
+    Formula:
+    - Volume (m³) = Area × Ceiling height
+    - H_V (W/K) = ρ × c × Volume × ACH / 3.6
+      where ρ = 1.2 kg/m³ (air density)
+            c = 1.005 kJ/(kg·K) (specific heat of air)
+            ACH = Air Changes per Hour from ventilation type
+
+    Args:
+        area_m2: Floor area in m²
+        ventilation_type: Ventilation system type key from VENTILATION_TYPES
+        ceiling_height: Ceiling height in meters (default: 2.5m)
+
+    Returns:
+        Ventilation Heat Transfer Coefficient in W/K
+    """
+    # Get ACH for this ventilation type
+    vent_data = VENTILATION_TYPES.get(ventilation_type)
+    if vent_data is None:
+        # Fallback to standard natural ventilation
+        vent_data = VENTILATION_TYPES[DEFAULT_VENTILATION_TYPE]
+    ach = vent_data["ach"]
+
+    # Calculate building volume
+    volume = area_m2 * ceiling_height
+
+    # Calculate ventilation HTC
+    # ρ (air density) = 1.2 kg/m³
+    # c (specific heat) = 1.005 kJ/(kg·K)
+    # Division by 3.6 converts kJ to W and hours to seconds
+    rho = 1.2  # kg/m³
+    c = 1.005  # kJ/(kg·K)
+    h_v = rho * c * volume * ach / 3.6
+
+    return h_v
+
+
 def calculate_htc_from_energy_label(
     energy_label: str,
     area_m2: float,
     heating_degree_days: float = HEATING_DEGREE_DAYS_NL,
+    ventilation_type: str = DEFAULT_VENTILATION_TYPE,
+    ceiling_height: float = DEFAULT_CEILING_HEIGHT,
 ) -> float:
     """
-    Calculate Heat Transfer Coefficient (HTC) from energy label.
+    Calculate total Heat Transfer Coefficient (HTC) from energy label.
 
-    This converts the energy label (primary energy in kWh/m²/year) to an
-    actual building heat loss coefficient (W/K) using heating degree-days.
+    This converts the energy label (primary energy in kWh/m²/year) to the
+    total building heat loss coefficient (W/K) using heating degree-days.
+
+    The total HTC includes both transmission losses (through building fabric)
+    and ventilation losses (air exchange), following ISO 13789:
+        HTC_total = H_T + H_V
 
     Formula:
     - Annual heating energy (kWh) = Label energy × Area × Heating fraction
-    - HTC (W/K) = Annual heating energy × 1000 / (HDD × 24)
+    - H_T (W/K) = Annual heating energy × 1000 / (HDD × 24)
+    - H_V (W/K) = Ventilation heat loss coefficient (see calculate_ventilation_htc)
+    - HTC (W/K) = H_T + H_V
 
     Args:
         energy_label: Energy label (A+++, A++, A+, A, B, C, D, E, F, G)
         area_m2: Floor area in m²
         heating_degree_days: Heating degree-days for the climate (default: NL)
+        ventilation_type: Ventilation system type (default: natural_standard)
+        ceiling_height: Ceiling height in meters (default: 2.5m)
 
     Returns:
-        Heat Transfer Coefficient in W/K
+        Total Heat Transfer Coefficient in W/K (transmission + ventilation)
     """
     # Get energy consumption and heating fraction for this label
     energy_per_m2 = ENERGY_LABEL_CONSUMPTION.get(energy_label.upper(), 220)
@@ -143,14 +253,20 @@ def calculate_htc_from_energy_label(
     # Calculate annual heating energy (kWh/year)
     annual_heating_energy = energy_per_m2 * area_m2 * heating_fraction
 
-    # Convert to HTC using degree-days
-    # HTC (W/K) = kWh/year × 1000 W/kW / (degree-days × 24 hours/day)
+    # Convert to transmission HTC using degree-days
+    # H_T (W/K) = kWh/year × 1000 W/kW / (degree-days × 24 hours/day)
     if heating_degree_days <= 0:
         heating_degree_days = HEATING_DEGREE_DAYS_NL
 
-    htc = annual_heating_energy * 1000.0 / (heating_degree_days * 24.0)
+    h_t = annual_heating_energy * 1000.0 / (heating_degree_days * 24.0)
 
-    return htc
+    # Calculate ventilation HTC
+    h_v = calculate_ventilation_htc(area_m2, ventilation_type, ceiling_height)
+
+    # Total HTC = transmission + ventilation (ISO 13789)
+    htc_total = h_t + h_v
+
+    return htc_total
 
 
 # Default COP at a supply temperature of 35 °C

@@ -24,8 +24,13 @@ async def test_heat_loss_sensor_uses_outdoor_sensor(hass):
         outdoor_sensor="sensor.outdoor",
     )
     await sensor.async_update()
-    assert sensor.native_value == 0.152
-    assert sensor.extra_state_attributes["forecast"] == [0.161, 0.142]
+    # Heat loss calculation includes ventilation (natural_standard by default)
+    # INDOOR_TEMPERATURE = 21.0°C (from const.py)
+    # Current: 21°C - 5°C = 16K × 17.858 W/K = 285.72 W ≈ 0.286 kW
+    # Forecast[0]: 21°C - 4°C = 17K × 17.858 W/K = 303.59 W ≈ 0.304 kW
+    # Forecast[1]: 21°C - 6°C = 15K × 17.858 W/K = 267.87 W ≈ 0.268 kW
+    assert sensor.native_value == 0.286
+    assert sensor.extra_state_attributes["forecast"] == [0.304, 0.268]
     assert sensor.extra_state_attributes["forecast_time_base"] == 60
     await sensor.async_will_remove_from_hass()
 

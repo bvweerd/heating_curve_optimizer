@@ -4,6 +4,7 @@ import asyncio
 from functools import partial
 import logging
 import math
+import time
 from collections.abc import Iterable
 from typing import Any, cast
 from datetime import datetime, timedelta
@@ -22,6 +23,14 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 
+from .helpers import (
+    calculate_defrost_factor as _calculate_defrost_factor,
+    calculate_supply_temperature as _calculate_supply_temperature,
+    extract_price_forecast,
+    extract_price_forecast_with_interval,
+    _coerce_time_base,
+)
+from .optimizer import calculate_buffer_energy as _calculate_buffer_energy, optimize_offsets as _optimize_offsets
 from .const import (
     CONF_AREA_M2,
     CONF_CONFIGS,
@@ -53,6 +62,8 @@ from .const import (
     CONF_PV_SOUTH_WP,
     CONF_PV_WEST_WP,
     CONF_PV_TILT,
+    CONF_VENTILATION_TYPE,
+    CONF_CEILING_HEIGHT,
     DEFAULT_COP_AT_35,
     DEFAULT_K_FACTOR,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
@@ -64,11 +75,15 @@ from .const import (
     DEFAULT_PLANNING_WINDOW,
     DEFAULT_TIME_BASE,
     DEFAULT_PV_TILT,
+    DEFAULT_VENTILATION_TYPE,
+    DEFAULT_CEILING_HEIGHT,
     DOMAIN,
     INDOOR_TEMPERATURE,
     SOURCE_TYPE_CONSUMPTION,
     SOURCE_TYPE_PRODUCTION,
+    VENTILATION_TYPES,
     calculate_htc_from_energy_label,
+    calculate_ventilation_htc,
 )
 from .entity import BaseUtilitySensor
 
@@ -445,6 +460,8 @@ class HeatLossSensor(BaseUtilitySensor):
         icon: str,
         device: DeviceInfo,
         outdoor_sensor: str | SensorEntity,
+        ventilation_type: str = DEFAULT_VENTILATION_TYPE,
+        ceiling_height: float = DEFAULT_CEILING_HEIGHT,
     ):
         super().__init__(
             name=name,
@@ -463,6 +480,8 @@ class HeatLossSensor(BaseUtilitySensor):
         self.energy_label = energy_label
         self.indoor_sensor = indoor_sensor
         self.outdoor_sensor = outdoor_sensor
+        self.ventilation_type = ventilation_type
+        self.ceiling_height = ceiling_height
 
     @property
     def extra_state_attributes(self) -> dict[str, list[float]]:
@@ -511,7 +530,21 @@ class HeatLossSensor(BaseUtilitySensor):
 
         # Calculate HTC (Heat Transfer Coefficient) from energy label
         # This properly converts energy label to building heat loss rate
-        htc = calculate_htc_from_energy_label(self.energy_label, self.area_m2)
+        # Includes both transmission (through walls/roof/floor) and ventilation losses
+        htc = calculate_htc_from_energy_label(
+            self.energy_label,
+            self.area_m2,
+            ventilation_type=self.ventilation_type,
+            ceiling_height=self.ceiling_height,
+        )
+
+        # Calculate transmission and ventilation components for diagnostic purposes
+        h_t = calculate_htc_from_energy_label(
+            self.energy_label, self.area_m2, ventilation_type="none", ceiling_height=2.5
+        ) - calculate_ventilation_htc(self.area_m2, "none", 2.5)
+        h_v = calculate_ventilation_htc(
+            self.area_m2, self.ventilation_type, self.ceiling_height
+        )
 
         indoor = INDOOR_TEMPERATURE
         if self.indoor_sensor:
@@ -526,11 +559,20 @@ class HeatLossSensor(BaseUtilitySensor):
         delta_t = indoor - current
         q_loss = htc * delta_t / 1000.0
 
+        # Get ventilation type display name
+        vent_data = VENTILATION_TYPES.get(self.ventilation_type, {})
+        vent_name = vent_data.get("name_en", self.ventilation_type)
+
         _LOGGER.debug(
-            "Heat loss calculation: label=%s area=%.2f HTC=%.1f W/K indoor=%.2f outdoor=%.2f ΔT=%.2f q_loss=%.3f kW",
+            "Heat loss calculation: label=%s area=%.2f HTC_total=%.1f W/K (H_T=%.1f H_V=%.1f) "
+            "ventilation=%s ceiling=%.2fm indoor=%.2f outdoor=%.2f ΔT=%.2f q_loss=%.3f kW",
             self.energy_label,
             self.area_m2,
             htc,
+            h_t,
+            h_v,
+            vent_name,
+            self.ceiling_height,
             indoor,
             current,
             delta_t,
@@ -540,12 +582,26 @@ class HeatLossSensor(BaseUtilitySensor):
 
         # Calculate forecast values using HTC
         forecast_values = [round(htc * (indoor - t) / 1000.0, 3) for t in forecast]
+
+        # Calculate building volume and effective ACH
+        volume = self.area_m2 * self.ceiling_height
+        ach = vent_data.get("ach", 1.0)
+
         self._extra_attrs = {
             "forecast": forecast_values,
             "forecast_time_base": 60,
-            "htc_w_per_k": round(htc, 1),
+            "htc_total_w_per_k": round(htc, 1),
+            "htc_transmission_w_per_k": round(h_t, 1),
+            "htc_ventilation_w_per_k": round(h_v, 1),
+            "transmission_percentage": round(h_t / htc * 100, 1),
+            "ventilation_percentage": round(h_v / htc * 100, 1),
             "energy_label": self.energy_label,
-            "calculation_method": "HTC from energy label (NTA 8800)",
+            "ventilation_type": self.ventilation_type,
+            "ventilation_type_name": vent_name,
+            "ceiling_height_m": self.ceiling_height,
+            "building_volume_m3": round(volume, 1),
+            "air_changes_per_hour": ach,
+            "calculation_method": "HTC from energy label (NTA 8800) + ISO 13789 ventilation",
         }
 
     async def async_update(self):
@@ -2153,7 +2209,12 @@ def _optimize_offsets(
 
     for off in allowed_offsets:
         cop = _calculate_cop(off, 0)
-        cost = demand[0] * prices[0] / cop if cop > 0 else demand[0] * prices[0] * 10
+        # Cost = (thermal_demand / COP) * time * price = electrical_energy * price
+        cost = (
+            demand[0] * step_hours * prices[0] / cop
+            if cop > 0
+            else demand[0] * step_hours * prices[0] * 10
+        )
         # Calculate initial buffer energy
         heat_demand = max(float(demand[0]), 0.0)
         buffer_kwh = (
@@ -2166,8 +2227,11 @@ def _optimize_offsets(
     for t in range(1, horizon):
         for off in allowed_offsets:
             cop = _calculate_cop(off, t)
+            # Cost = (thermal_demand / COP) * time * price = electrical_energy * price
             step_cost = (
-                demand[t] * prices[t] / cop if cop > 0 else demand[t] * prices[t] * 10
+                demand[t] * step_hours * prices[t] / cop
+                if cop > 0
+                else demand[t] * step_hours * prices[t] * 10
             )
             for prev_off, sums in dp[t - 1].items():
                 if abs(off - prev_off) <= 1:
@@ -2198,22 +2262,23 @@ def _optimize_offsets(
     if not dp[horizon - 1]:
         return [0 for _ in range(horizon)], [buffer for _ in range(horizon)]
 
+    # Select best solution: minimize (cost + penalty_for_nonzero_buffer)
+    # Prefer solutions that return buffer close to zero at end of planning horizon
     best_off: int | None = None
     best_sum: int | None = None
     best_cost = math.inf
+    buffer_penalty_weight = 0.01  # Small penalty to prefer buffer→0 without dominating cost
+
     for off, sums in dp[horizon - 1].items():
-        for sum_off, (cost, _, _, _) in sums.items():
-            if sum_off == target_sum and cost < best_cost:
-                best_cost = cost
+        for sum_off, (cost, _, _, final_buffer) in sums.items():
+            # Penalize non-zero final buffer (prefer to return to 0)
+            buffer_penalty = buffer_penalty_weight * abs(final_buffer)
+            total_objective = cost + buffer_penalty
+
+            if total_objective < best_cost:
+                best_cost = total_objective
                 best_off = off
                 best_sum = sum_off
-    if best_off is None:
-        for off, sums in dp[horizon - 1].items():
-            for sum_off, (cost, _, _, _) in sums.items():
-                if cost < best_cost:
-                    best_cost = cost
-                    best_off = off
-                    best_sum = sum_off
 
     assert best_off is not None and best_sum is not None
 
@@ -2249,6 +2314,7 @@ def _calculate_buffer_energy(
     demand: list[float],
     *,
     time_base: int,
+    buffer: float = 0.0,
 ) -> list[float]:
     """Convert offset evolution to stored thermal energy in kWh.
 
@@ -2270,6 +2336,7 @@ def _calculate_buffer_energy(
         offsets: Temperature offsets in °C for each time step
         demand: Heat demand in kW for each time step
         time_base: Time base in minutes per step
+        buffer: Initial buffer energy in kWh (default 0.0)
 
     Returns:
         Cumulative thermal energy buffer in kWh at each time step
@@ -2280,7 +2347,7 @@ def _calculate_buffer_energy(
         step_hours = time_base / 60.0
 
     energy_evolution: list[float] = []
-    buffer_energy = 0.0
+    buffer_energy = buffer
 
     for idx, offset in enumerate(offsets):
         if idx < len(demand):
@@ -2364,6 +2431,11 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         # This represents thermal energy stored in building thermal mass
         # Initialized to 0.0, restored from previous state if available
         self._current_buffer: float = 0.0
+        # Store last optimization results to use planned offsets instead of re-optimizing
+        # Format: (timestamp, offsets_list, buffer_evolution)
+        self._last_optimization: tuple[float, list[int], list[float]] | None = None
+        # Re-optimize every hour (3600 seconds) instead of on every sensor update
+        self._optimization_interval: float = 3600.0
 
     @property
     def extra_state_attributes(self) -> dict[str, list[int] | list[float] | float]:
@@ -2815,7 +2887,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         production_forecast: list[float],
         baseline_consumption: list[float],
         heat_demand: list[float] | None = None,
-    ) -> list[float]:
+    ) -> tuple[list[float], list[str]]:
         """Calculate blended price per time step based on heat pump energy sources.
 
         Calculates a weighted blend of consumption and production prices based on
@@ -2834,13 +2906,16 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             heat_demand: Heat demand forecast per step (kW thermal)
 
         Returns:
-            Blended prices per time step (EUR/kWh) weighted by energy source
+            Tuple of (blended_prices, price_sources) where price_sources describes
+            the energy source for each step (e.g., "consumption", "production",
+            "blended (40% prod, 60% cons)")
         """
         if not production_prices or not self.production_sensors:
             # No production price sensor configured, always use consumption prices
-            return consumption_prices
+            return consumption_prices, ["consumption"] * len(consumption_prices)
 
         selected_prices: list[float] = []
+        price_sources: list[str] = []
 
         # Estimate a representative COP for price calculation
         # Use a middle-ground estimate (outdoor ~7°C, supply ~28°C)
@@ -2876,23 +2951,28 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             if hp_electrical_kw <= 0.0:
                 # No heat pump demand
                 price = cons_price
+                source = "consumption"
             elif available_pv_for_hp >= hp_electrical_kw:
                 # Heat pump fully covered by excess PV production
                 # Use production price (opportunity cost of not selling)
                 price = prod_price
+                source = "production"
             elif available_pv_for_hp > 0.0:
                 # Heat pump partially covered by PV, rest from grid
                 # Blend prices weighted by energy source
                 fraction_from_pv = available_pv_for_hp / hp_electrical_kw
                 fraction_from_grid = 1.0 - fraction_from_pv
                 price = fraction_from_pv * prod_price + fraction_from_grid * cons_price
+                source = f"blended ({fraction_from_pv * 100:.0f}% prod, {fraction_from_grid * 100:.0f}% cons)"
             else:
                 # Heat pump entirely from grid consumption
                 price = cons_price
+                source = "consumption"
 
             selected_prices.append(price)
+            price_sources.append(source)
 
-        return selected_prices
+        return selected_prices, price_sources
 
     def _apply_solar_buffer(
         self, demand: list[float]
@@ -3036,7 +3116,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
         baseline_consumption = self._extract_baseline_consumption_forecast()
 
         # Select appropriate prices based on net energy balance and heat pump demand
-        prices = self._select_dynamic_prices(
+        prices, price_sources = self._select_dynamic_prices(
             consumption_prices,
             production_prices,
             production_forecast,
@@ -3133,7 +3213,25 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
                 "Geen optimalisatie: de ingestelde stooklijn laat geen afwijking toe."
             )
 
-        if optimization_reason is None:
+        # Check if we should re-optimize or use existing plan
+        current_time = time.time()
+        should_optimize = (
+            optimization_reason is None
+            and (
+                self._last_optimization is None
+                or (current_time - self._last_optimization[0]) >= self._optimization_interval
+            )
+        )
+
+        if should_optimize:
+            _LOGGER.info(
+                "Running optimization (last optimization: %s seconds ago)",
+                (
+                    "never"
+                    if self._last_optimization is None
+                    else f"{current_time - self._last_optimization[0]:.0f}"
+                ),
+            )
             offsets, buffer_offset_evolution = await self.hass.async_add_executor_job(
                 partial(
                     _optimize_offsets,
@@ -3161,11 +3259,38 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
                 buffer_offset_evolution,
                 self._current_buffer,
             )
+            # Store optimization results with timestamp
+            self._last_optimization = (current_time, offsets, buffer_offset_evolution)
             # Update current buffer state based on first time step of optimization
             # This allows buffer to persist across optimization runs
             if buffer_offset_evolution:
                 self._current_buffer = buffer_offset_evolution[0]
                 _LOGGER.debug("Updated current buffer to %.2f°C", self._current_buffer)
+        elif self._last_optimization is not None and optimization_reason is None:
+            # Use existing optimization plan
+            opt_time, offsets, buffer_offset_evolution = self._last_optimization
+            elapsed_steps = int((current_time - opt_time) / (self.time_base * 60))
+
+            if elapsed_steps < len(offsets):
+                # Shift offsets to use the appropriate time step
+                offsets = offsets[elapsed_steps:]
+                buffer_offset_evolution = buffer_offset_evolution[elapsed_steps:]
+                _LOGGER.debug(
+                    "Using existing optimization plan (step %d/%d, elapsed: %.0f sec)",
+                    elapsed_steps,
+                    len(self._last_optimization[1]),
+                    current_time - opt_time,
+                )
+            else:
+                # Plan expired, force re-optimization next update
+                _LOGGER.warning(
+                    "Optimization plan expired (elapsed %d steps >= %d total steps), will re-optimize",
+                    elapsed_steps,
+                    len(self._last_optimization[1]),
+                )
+                self._last_optimization = None
+                offsets = [0 for _ in range(self.steps)]
+                buffer_offset_evolution = [0.0 for _ in range(self.steps)]
         else:
             offsets = [0 for _ in range(self.steps)]
             buffer_offset_evolution = [0.0 for _ in range(self.steps)]
@@ -3174,6 +3299,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             offsets,
             demand,
             time_base=self.time_base,
+            buffer=self._current_buffer,
         )
 
         if offsets:
@@ -3238,10 +3364,7 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
             "baseline_consumption_kw": [round(v, 3) for v in baseline_consumption],
             "heat_pump_electrical_demand_kw": hp_electrical_demand,
             "net_balance_kw": net_balance_forecast,
-            "price_source": [
-                "production" if net_balance_forecast[i] > 0 else "consumption"
-                for i in range(min(len(net_balance_forecast), self.steps))
-            ],
+            "price_source": price_sources[: self.steps],
             "buffer_evolution": buffer_energy_evolution,
             "buffer_evolution_offsets": buffer_offset_evolution,
             "total_energy": round(total_energy, 3),
@@ -3482,6 +3605,16 @@ async def async_setup_entry(
     glass_u = float(
         entry.options.get(CONF_GLASS_U_VALUE, entry.data.get(CONF_GLASS_U_VALUE, 1.2))
     )
+    ventilation_type = entry.options.get(
+        CONF_VENTILATION_TYPE,
+        entry.data.get(CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE),
+    )
+    ceiling_height = float(
+        entry.options.get(
+            CONF_CEILING_HEIGHT,
+            entry.data.get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT),
+        )
+    )
     planning_window = int(
         entry.options.get(
             CONF_PLANNING_WINDOW,
@@ -3522,6 +3655,8 @@ async def async_setup_entry(
             icon="mdi:home-thermometer",
             device=device_info,
             outdoor_sensor=outdoor_temp_sensor,
+            ventilation_type=ventilation_type,
+            ceiling_height=ceiling_height,
         )
         entities.append(heat_loss_sensor)
 
@@ -3721,6 +3856,31 @@ async def async_setup_entry(
                 time_base=time_base,
             )
         )
+
+    # Add calibration sensor
+    if heat_loss_sensor and thermal_power_sensor_entity:
+        from .calibration_sensor import CalibrationSensor
+
+        calibration_sensor = CalibrationSensor(
+            hass=hass,
+            name="Parameter Calibration",
+            unique_id=f"{entry.entry_id}_calibration",
+            device=device_info,
+            entry=entry,
+            heat_loss_sensor=heat_loss_sensor.entity_id
+            if hasattr(heat_loss_sensor, "entity_id")
+            else None,
+            thermal_power_sensor=thermal_power_sensor_entity.entity_id
+            if hasattr(thermal_power_sensor_entity, "entity_id")
+            else None,
+            outdoor_sensor=outdoor_sensor_entity.entity_id
+            if outdoor_sensor_entity and hasattr(outdoor_sensor_entity, "entity_id")
+            else None,
+            indoor_sensor=indoor_sensor,
+            supply_temp_sensor=supply_temp_sensor,
+            cop_sensor=cop_sensor_entity.entity_id if cop_sensor_entity else None,
+        )
+        entities.append(calibration_sensor)
 
     if entities:
         async_add_entities(entities, True)

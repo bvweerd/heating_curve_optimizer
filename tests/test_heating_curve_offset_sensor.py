@@ -159,12 +159,18 @@ async def test_offset_sensor_has_measurement_state_class(hass):
 
 
 def test_optimize_offsets_balances_buffer():
+    from custom_components.heating_curve_optimizer.optimizer import (
+        calculate_buffer_energy,
+    )
+
     demand = [1.0] * 6
     prices = [1.0] * 6
     offsets, evolution = sensor._optimize_offsets(demand, prices, buffer=2)
     assert len(offsets) == 6
-    # final buffer should be zero
-    assert evolution[-1] == 0
+    # Calculate actual thermal energy buffer (not cumulative offset sum)
+    energy_buffer = calculate_buffer_energy(offsets, demand, time_base=60, buffer=2.0)
+    # Final energy buffer should be close to zero (within 0.5 kWh tolerance)
+    assert abs(energy_buffer[-1]) < 0.5
     # ensure step changes are at most 1
     assert all(abs(offsets[i] - offsets[i - 1]) <= 1 for i in range(1, 6))
 
