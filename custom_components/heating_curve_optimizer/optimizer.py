@@ -192,7 +192,9 @@ def optimize_offsets(
     best_off: int | None = None
     best_sum: int | None = None
     best_cost = math.inf
-    buffer_penalty_weight = 0.01  # Small penalty to prefer buffer→0 without dominating cost
+    buffer_penalty_weight = (
+        0.01  # Small penalty to prefer buffer→0 without dominating cost
+    )
 
     for off, sums in dp[horizon - 1].items():
         for sum_off, (cost, _, _, final_buffer) in sums.items():

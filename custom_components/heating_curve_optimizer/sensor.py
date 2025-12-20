@@ -30,7 +30,10 @@ from .helpers import (
     extract_price_forecast_with_interval,
     _coerce_time_base,
 )
-from .optimizer import calculate_buffer_energy as _calculate_buffer_energy, optimize_offsets as _optimize_offsets
+from .optimizer import (
+    calculate_buffer_energy as _calculate_buffer_energy,
+    optimize_offsets as _optimize_offsets,
+)
 from .const import (
     CONF_AREA_M2,
     CONF_CONFIGS,
@@ -2267,7 +2270,9 @@ def _optimize_offsets(
     best_off: int | None = None
     best_sum: int | None = None
     best_cost = math.inf
-    buffer_penalty_weight = 0.01  # Small penalty to prefer buffer→0 without dominating cost
+    buffer_penalty_weight = (
+        0.01  # Small penalty to prefer buffer→0 without dominating cost
+    )
 
     for off, sums in dp[horizon - 1].items():
         for sum_off, (cost, _, _, final_buffer) in sums.items():
@@ -3215,12 +3220,10 @@ class HeatingCurveOffsetSensor(BaseUtilitySensor):
 
         # Check if we should re-optimize or use existing plan
         current_time = time.time()
-        should_optimize = (
-            optimization_reason is None
-            and (
-                self._last_optimization is None
-                or (current_time - self._last_optimization[0]) >= self._optimization_interval
-            )
+        should_optimize = optimization_reason is None and (
+            self._last_optimization is None
+            or (current_time - self._last_optimization[0])
+            >= self._optimization_interval
         )
 
         if should_optimize:

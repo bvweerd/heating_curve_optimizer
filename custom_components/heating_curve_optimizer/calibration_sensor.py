@@ -8,7 +8,7 @@ from typing import Any
 
 from homeassistant.components import recorder
 from homeassistant.components.recorder import history
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.components.sensor import SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -21,7 +21,6 @@ from .const import (
     DEFAULT_K_FACTOR,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_THERMAL_STORAGE_EFFICIENCY,
-    ENERGY_LABELS,
     U_VALUE_MAP,
 )
 from .entity import BaseUtilitySensor
@@ -391,7 +390,9 @@ class CalibrationSensor(BaseUtilitySensor):
                 return None
 
             # Get historical data
-            thermal_history = await recorder.get_instance(self.hass).async_add_executor_job(
+            thermal_history = await recorder.get_instance(
+                self.hass
+            ).async_add_executor_job(
                 history.state_changes_during_period,
                 self.hass,
                 start_time,
@@ -402,7 +403,9 @@ class CalibrationSensor(BaseUtilitySensor):
                 1000,  # minimal_response (max states)
             )
 
-            outdoor_history = await recorder.get_instance(self.hass).async_add_executor_job(
+            outdoor_history = await recorder.get_instance(
+                self.hass
+            ).async_add_executor_job(
                 history.state_changes_during_period,
                 self.hass,
                 start_time,

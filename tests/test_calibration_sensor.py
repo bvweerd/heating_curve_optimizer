@@ -1,8 +1,8 @@
 """Test the calibration sensor with graaddagen analysis."""
 
 import pytest
-from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import timedelta
+from unittest.mock import MagicMock, patch
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -39,7 +39,9 @@ def mock_device_info():
 
 
 @pytest.mark.asyncio
-async def test_calibration_sensor_init(hass: HomeAssistant, mock_config_entry, mock_device_info):
+async def test_calibration_sensor_init(
+    hass: HomeAssistant, mock_config_entry, mock_device_info
+):
     """Test calibration sensor initialization."""
     sensor = CalibrationSensor(
         hass=hass,
@@ -62,7 +64,9 @@ async def test_calibration_sensor_init(hass: HomeAssistant, mock_config_entry, m
 
 
 @pytest.mark.asyncio
-async def test_graaddagen_analysis(hass: HomeAssistant, mock_config_entry, mock_device_info):
+async def test_graaddagen_analysis(
+    hass: HomeAssistant, mock_config_entry, mock_device_info
+):
     """Test graaddagen correlation analysis."""
     sensor = CalibrationSensor(
         hass=hass,
@@ -90,7 +94,7 @@ async def test_graaddagen_analysis(hass: HomeAssistant, mock_config_entry, mock_
     # For ΔT=12°C: Q = 1.53 kW
 
     for day in range(7):
-        day_start = now - timedelta(days=7-day)
+        day_start = now - timedelta(days=7 - day)
 
         # Simulate hourly measurements
         for hour in range(24):
@@ -121,7 +125,9 @@ async def test_graaddagen_analysis(hass: HomeAssistant, mock_config_entry, mock_
     mock_indoor_history = {"sensor.indoor_temp": indoor_states}
 
     # Mock recorder
-    with patch("custom_components.heating_curve_optimizer.calibration_sensor.recorder") as mock_recorder:
+    with patch(
+        "custom_components.heating_curve_optimizer.calibration_sensor.recorder"
+    ) as mock_recorder:
         mock_recorder.is_entity_recorded.return_value = True
         mock_instance = MagicMock()
         mock_recorder.get_instance.return_value = mock_instance
@@ -159,14 +165,17 @@ async def test_graaddagen_analysis(hass: HomeAssistant, mock_config_entry, mock_
         assert 0.7 < measured_u < 0.9, f"Expected U ≈ 0.79, got {measured_u}"
 
         # Should recommend label C (current is A+ which is too optimistic)
-        assert result["recommended_label"] in ["B", "C"], \
-            f"Expected label B or C, got {result['recommended_label']}"
+        assert result["recommended_label"] in [
+            "B",
+            "C",
+        ], f"Expected label B or C, got {result['recommended_label']}"
 
         # Should have analyzed 7 days
-        assert result["sample_count"] >= 3, \
-            f"Expected at least 3 days, got {result['sample_count']}"
+        assert (
+            result["sample_count"] >= 3
+        ), f"Expected at least 3 days, got {result['sample_count']}"
 
-        print(f"✅ Graaddagen analysis successful:")
+        print("✅ Graaddagen analysis successful:")
         print(f"   Measured U-value: {measured_u:.2f} W/(m²·K)")
         print(f"   Recommended label: {result['recommended_label']}")
         print(f"   Sample count: {result['sample_count']} days")
@@ -174,7 +183,9 @@ async def test_graaddagen_analysis(hass: HomeAssistant, mock_config_entry, mock_
 
 
 @pytest.mark.asyncio
-async def test_energy_label_recommendation(hass: HomeAssistant, mock_config_entry, mock_device_info):
+async def test_energy_label_recommendation(
+    hass: HomeAssistant, mock_config_entry, mock_device_info
+):
     """Test energy label recommendation in status message."""
     sensor = CalibrationSensor(
         hass=hass,
@@ -232,14 +243,18 @@ async def test_trend_analysis(hass: HomeAssistant, mock_config_entry, mock_devic
         else:
             return 85.0  # Second half: higher accuracy (+10%)
 
-    with patch.object(sensor, "_validate_heat_loss", side_effect=mock_validate_heat_loss):
+    with patch.object(
+        sensor, "_validate_heat_loss", side_effect=mock_validate_heat_loss
+    ):
         result = await sensor._analyze_long_term_trend(start_time, now)
 
         assert result is not None
         assert result["direction"] == "improving"
         assert result["change_pct"] == 10.0
 
-        print(f"✅ Trend analysis: {result['direction']} ({result['change_pct']:+.1f}%)")
+        print(
+            f"✅ Trend analysis: {result['direction']} ({result['change_pct']:+.1f}%)"
+        )
 
 
 if __name__ == "__main__":

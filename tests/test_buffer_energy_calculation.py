@@ -1,6 +1,5 @@
 """Tests for buffer energy calculation with initial buffer."""
 
-import pytest
 from custom_components.heating_curve_optimizer.optimizer import calculate_buffer_energy
 
 
