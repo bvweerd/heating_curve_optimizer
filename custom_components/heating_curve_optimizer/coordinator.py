@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import aiohttp
-from homeassistant.core import HomeAssistant, Event, State
+from homeassistant.core import HomeAssistant, Event
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
@@ -128,9 +128,7 @@ class WeatherDataCoordinator(DataUpdateCoordinator):
         # Extract next 48 hours (2 days)
         temp_forecast = [float(v) for v in temps[start_idx : start_idx + 48]]
         humidity_forecast = (
-            [float(v) for v in humidity[start_idx : start_idx + 48]]
-            if humidity
-            else []
+            [float(v) for v in humidity[start_idx : start_idx + 48]] if humidity else []
         )
         radiation_forecast = (
             [float(v) for v in radiation[start_idx : start_idx + 48]]
@@ -249,7 +247,10 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):
         )
 
         htc = calculate_htc_from_energy_label(
-            energy_label, area_m2, ventilation_type=ventilation_type, ceiling_height=ceiling_height
+            energy_label,
+            area_m2,
+            ventilation_type=ventilation_type,
+            ceiling_height=ceiling_height,
         )
 
         # Calculate current heat loss
@@ -258,8 +259,7 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):
 
         # Calculate heat loss forecast
         heat_loss_forecast = [
-            htc * (indoor_temp - t) / 1000
-            for t in weather_data["temperature_forecast"]
+            htc * (indoor_temp - t) / 1000 for t in weather_data["temperature_forecast"]
         ]
 
         # Calculate solar gain
@@ -276,9 +276,7 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):
 
         # Calculate net heat loss (heat loss - solar gain)
         net_heat_loss = heat_loss - solar_gain
-        net_forecast = [
-            h - s for h, s in zip(heat_loss_forecast, solar_forecast)
-        ]
+        net_forecast = [h - s for h, s in zip(heat_loss_forecast, solar_forecast)]
 
         result = {
             "heat_loss": round(heat_loss, 3),
@@ -343,9 +341,7 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):
 
         return current_solar, solar_forecast
 
-    def _calculate_pv_production(
-        self, radiation_forecast: list[float]
-    ) -> list[float]:
+    def _calculate_pv_production(self, radiation_forecast: list[float]) -> list[float]:
         """Calculate PV production forecast (blocking call)."""
         pv_east = float(self.config.get(CONF_PV_EAST_WP, 0))
         pv_south = float(self.config.get(CONF_PV_SOUTH_WP, 0))
@@ -377,10 +373,16 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):
             # Formula: Power (W) = Wp * (radiation / 1000) * efficiency
             # radiation is in W/m², 1000 W/m² is STC (Standard Test Conditions)
             production = (
-                pv_east * radiation * orientation_factors["east"]
-                + pv_south * radiation * orientation_factors["south"]
-                + pv_west * radiation * orientation_factors["west"]
-            ) * tilt_factor * system_efficiency / 1000 / 1000  # First /1000 for STC, second for W to kW
+                (
+                    pv_east * radiation * orientation_factors["east"]
+                    + pv_south * radiation * orientation_factors["south"]
+                    + pv_west * radiation * orientation_factors["west"]
+                )
+                * tilt_factor
+                * system_efficiency
+                / 1000
+                / 1000
+            )  # First /1000 for STC, second for W to kW
 
             pv_forecast.append(max(0.0, production))
 
@@ -507,7 +509,9 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         max_outdoor = float(self.config.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 20.0))
 
         # Run optimization in executor (CPU-intensive)
-        _LOGGER.debug("Running optimization with %d demand points", len(demand_forecast))
+        _LOGGER.debug(
+            "Running optimization with %d demand points", len(demand_forecast)
+        )
         result = await self.hass.async_add_executor_job(
             self._run_optimization,
             demand_forecast,
@@ -577,14 +581,14 @@ class OptimizationCoordinator(DataUpdateCoordinator):
                 outdoor_max=max_outdoor,
             )
 
-            # Calculate total cost (simple estimation)
-            total_cost = sum(
-                price * abs(offset) for price, offset in zip(price_limited, offsets)
-            )
-
-            # Calculate future supply temperatures from offsets and outdoor temps
+            # Calculate future supply temperatures and COP for both baseline and optimized
             future_supply_temps = []
-            for i, offset in enumerate(offsets):
+            baseline_supply_temps = []
+            baseline_cop = []
+            optimized_cop = []
+            step_hours = time_base / 60.0
+
+            for i in range(len(offsets)):
                 if i < len(temp_limited):
                     outdoor_temp = temp_limited[i]
                     # Calculate base temp using heating curve
@@ -593,22 +597,82 @@ class OptimizationCoordinator(DataUpdateCoordinator):
                     elif outdoor_temp >= max_outdoor:
                         base_temp = min_supply
                     else:
-                        ratio = (outdoor_temp - min_outdoor) / (max_outdoor - min_outdoor)
+                        ratio = (outdoor_temp - min_outdoor) / (
+                            max_outdoor - min_outdoor
+                        )
                         base_temp = max_supply + (min_supply - max_supply) * ratio
 
+                    baseline_supply_temps.append(round(base_temp, 1))
+
                     # Add offset and clamp to limits
-                    supply_temp = max(min(base_temp + offset, max_supply), min_supply)
+                    supply_temp = max(
+                        min(base_temp + offsets[i], max_supply), min_supply
+                    )
                     future_supply_temps.append(round(supply_temp, 1))
+
+                    # Calculate COP for baseline (offset=0)
+                    cop_base = (
+                        base_cop
+                        + outdoor_temp_coefficient * outdoor_temp
+                        - k_factor * (base_temp - 35)
+                    ) * cop_compensation
+                    baseline_cop.append(round(max(0.5, cop_base), 3))
+
+                    # Calculate COP for optimized (with offset)
+                    cop_opt = (
+                        base_cop
+                        + outdoor_temp_coefficient * outdoor_temp
+                        - k_factor * (supply_temp - 35)
+                    ) * cop_compensation
+                    optimized_cop.append(round(max(0.5, cop_opt), 3))
                 else:
                     # No temperature data, use min_supply as fallback
+                    baseline_supply_temps.append(round(min_supply, 1))
                     future_supply_temps.append(round(min_supply, 1))
+                    baseline_cop.append(3.0)
+                    optimized_cop.append(3.0)
+
+            # Calculate real costs: electricity cost = (heat_demand / COP) * time * price
+            baseline_cost = 0.0
+            optimized_cost = 0.0
+
+            for i in range(len(offsets)):
+                if i < len(demand_limited) and i < len(price_limited):
+                    demand = max(0.0, demand_limited[i])  # kW
+                    price = price_limited[i]  # €/kWh
+
+                    # Baseline: electricity = (demand / baseline_cop) * step_hours
+                    baseline_electricity = (
+                        (demand / baseline_cop[i]) * step_hours
+                        if baseline_cop[i] > 0
+                        else 0.0
+                    )
+                    baseline_cost += baseline_electricity * price
+
+                    # Optimized: electricity = (demand / optimized_cop) * step_hours
+                    optimized_electricity = (
+                        (demand / optimized_cop[i]) * step_hours
+                        if optimized_cop[i] > 0
+                        else 0.0
+                    )
+                    optimized_cost += optimized_electricity * price
+
+            cost_savings = baseline_cost - optimized_cost
 
             return {
                 "optimized_offset": round(offsets[0], 1) if offsets else 0.0,
                 "optimized_offsets": [round(v, 1) for v in offsets],
                 "buffer_evolution": [round(v, 3) for v in buffer_evolution],
                 "future_supply_temperatures": future_supply_temps,
-                "total_cost": round(total_cost, 3),
+                "baseline_supply_temperatures": baseline_supply_temps,
+                "baseline_cop": baseline_cop,
+                "optimized_cop": optimized_cop,
+                "baseline_cost": round(baseline_cost, 3),
+                "total_cost": round(optimized_cost, 3),
+                "cost_savings": round(cost_savings, 3),
+                "prices": [round(p, 5) for p in price_limited],
+                "demand_forecast": [round(d, 3) for d in demand_limited],
+                "outdoor_forecast": [round(t, 1) for t in temp_limited],
                 "timestamp": dt_util.utcnow(),
             }
 

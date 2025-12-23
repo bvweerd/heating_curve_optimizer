@@ -4,8 +4,10 @@ from types import SimpleNamespace
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.components.sensor import SensorStateClass
 
-from custom_components.heating_curve_optimizer.coordinator_sensors import CoordinatorOutdoorTemperatureSensor
-from unittest.mock import patch, MagicMock
+from custom_components.heating_curve_optimizer.coordinator_sensors import (
+    CoordinatorOutdoorTemperatureSensor,
+)
+from unittest.mock import MagicMock
 
 
 @pytest.mark.asyncio
@@ -57,7 +59,9 @@ class _ErrorSession:
 request_info = SimpleNamespace(real_url="http://test")
 
 
-@pytest.mark.skip(reason="OutdoorTemperatureSensor is now coordinator-based, fetch errors are handled in WeatherDataCoordinator")
+@pytest.mark.skip(
+    reason="OutdoorTemperatureSensor is now coordinator-based, fetch errors are handled in WeatherDataCoordinator"
+)
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "session",

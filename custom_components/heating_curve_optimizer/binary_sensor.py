@@ -46,7 +46,9 @@ class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity):
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self.coordinator.last_update_success and self.coordinator.data is not None
+        return (
+            self.coordinator.last_update_success and self.coordinator.data is not None
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, float]:
@@ -141,12 +143,18 @@ async def async_setup_entry(
         # Use coordinator-based binary sensor
         _LOGGER.info("Setting up coordinator-based heat demand binary sensor")
         async_add_entities(
-            [CoordinatorHeatDemandBinarySensor(heat_coordinator, entry.entry_id, device)],
+            [
+                CoordinatorHeatDemandBinarySensor(
+                    heat_coordinator, entry.entry_id, device
+                )
+            ],
             True,
         )
     else:
         # Fallback to legacy
-        _LOGGER.warning("Heat coordinator not available, using legacy heat demand sensor")
+        _LOGGER.warning(
+            "Heat coordinator not available, using legacy heat demand sensor"
+        )
         device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name="Heating Curve Optimizer",

@@ -2,7 +2,9 @@ import pytest
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.device_registry import DeviceInfo
 
-from custom_components.heating_curve_optimizer.sensor import HeatLossSensorLegacy as HeatLossSensor
+from custom_components.heating_curve_optimizer.sensor import (
+    HeatLossSensorLegacy as HeatLossSensor,
+)
 
 
 class DummyOutdoorSensor(SensorEntity):

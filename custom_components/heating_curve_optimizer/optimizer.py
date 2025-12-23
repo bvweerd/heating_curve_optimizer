@@ -121,8 +121,6 @@ def optimize_offsets(
     if not allowed_offsets:
         return [0 for _ in range(horizon)], [buffer for _ in range(horizon)]
 
-    target_sum = -int(round(buffer))
-
     # Calculate step duration in hours for buffer energy calculation
     step_hours = time_base / 60.0
 

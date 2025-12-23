@@ -5,10 +5,10 @@ These sensors use DataUpdateCoordinators for efficient data fetching and calcula
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 from homeassistant.core import HomeAssistant
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.components.sensor import SensorStateClass
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -51,7 +51,9 @@ class CoordinatorOutdoorTemperatureSensor(CoordinatorEntity, BaseUtilitySensor):
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self.coordinator.last_update_success and self.coordinator.data is not None
+        return (
+            self.coordinator.last_update_success and self.coordinator.data is not None
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -68,7 +70,9 @@ class CoordinatorOutdoorTemperatureSensor(CoordinatorEntity, BaseUtilitySensor):
 class CoordinatorHeatLossSensor(CoordinatorEntity, BaseUtilitySensor):
     """Heat loss sensor using heat calculation coordinator."""
 
-    def __init__(self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo):
+    def __init__(
+        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
+    ):
         """Initialize the sensor."""
         CoordinatorEntity.__init__(self, coordinator)
         BaseUtilitySensor.__init__(
@@ -95,7 +99,9 @@ class CoordinatorHeatLossSensor(CoordinatorEntity, BaseUtilitySensor):
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self.coordinator.last_update_success and self.coordinator.data is not None
+        return (
+            self.coordinator.last_update_success and self.coordinator.data is not None
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -122,7 +128,10 @@ class CoordinatorHeatLossSensor(CoordinatorEntity, BaseUtilitySensor):
         ceiling_height = config.get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT)
 
         htc = calculate_htc_from_energy_label(
-            energy_label, area_m2, ventilation_type=ventilation_type, ceiling_height=ceiling_height
+            energy_label,
+            area_m2,
+            ventilation_type=ventilation_type,
+            ceiling_height=ceiling_height,
         )
         h_t = calculate_htc_from_energy_label(
             energy_label, area_m2, ventilation_type="none", ceiling_height=2.5
@@ -155,7 +164,9 @@ class CoordinatorHeatLossSensor(CoordinatorEntity, BaseUtilitySensor):
 class CoordinatorWindowSolarGainSensor(CoordinatorEntity, BaseUtilitySensor):
     """Solar gain sensor using heat calculation coordinator."""
 
-    def __init__(self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo):
+    def __init__(
+        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
+    ):
         """Initialize the sensor."""
         CoordinatorEntity.__init__(self, coordinator)
         BaseUtilitySensor.__init__(
@@ -182,7 +193,9 @@ class CoordinatorWindowSolarGainSensor(CoordinatorEntity, BaseUtilitySensor):
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self.coordinator.last_update_success and self.coordinator.data is not None
+        return (
+            self.coordinator.last_update_success and self.coordinator.data is not None
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -198,7 +211,9 @@ class CoordinatorWindowSolarGainSensor(CoordinatorEntity, BaseUtilitySensor):
 class CoordinatorPVProductionForecastSensor(CoordinatorEntity, BaseUtilitySensor):
     """PV production forecast sensor using heat calculation coordinator."""
 
-    def __init__(self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo):
+    def __init__(
+        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
+    ):
         """Initialize the sensor."""
         CoordinatorEntity.__init__(self, coordinator)
         BaseUtilitySensor.__init__(
@@ -226,7 +241,9 @@ class CoordinatorPVProductionForecastSensor(CoordinatorEntity, BaseUtilitySensor
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self.coordinator.last_update_success and self.coordinator.data is not None
+        return (
+            self.coordinator.last_update_success and self.coordinator.data is not None
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -242,7 +259,9 @@ class CoordinatorPVProductionForecastSensor(CoordinatorEntity, BaseUtilitySensor
 class CoordinatorNetHeatLossSensor(CoordinatorEntity, BaseUtilitySensor):
     """Net heat loss sensor using heat calculation coordinator."""
 
-    def __init__(self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo):
+    def __init__(
+        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
+    ):
         """Initialize the sensor."""
         CoordinatorEntity.__init__(self, coordinator)
         BaseUtilitySensor.__init__(
@@ -269,7 +288,9 @@ class CoordinatorNetHeatLossSensor(CoordinatorEntity, BaseUtilitySensor):
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self.coordinator.last_update_success and self.coordinator.data is not None
+        return (
+            self.coordinator.last_update_success and self.coordinator.data is not None
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -285,7 +306,9 @@ class CoordinatorNetHeatLossSensor(CoordinatorEntity, BaseUtilitySensor):
 class CoordinatorHeatingCurveOffsetSensor(CoordinatorEntity, BaseUtilitySensor):
     """Heating curve offset sensor using optimization coordinator."""
 
-    def __init__(self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo):
+    def __init__(
+        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
+    ):
         """Initialize the sensor."""
         CoordinatorEntity.__init__(self, coordinator)
         BaseUtilitySensor.__init__(
@@ -312,26 +335,42 @@ class CoordinatorHeatingCurveOffsetSensor(CoordinatorEntity, BaseUtilitySensor):
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self.coordinator.last_update_success and self.coordinator.data is not None
+        return (
+            self.coordinator.last_update_success and self.coordinator.data is not None
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return optimization results."""
         if not self.coordinator.data:
             return {}
+
+        data = self.coordinator.data
         return {
-            "optimized_offsets": self.coordinator.data.get("optimized_offsets", []),
-            "buffer_evolution": self.coordinator.data.get("buffer_evolution", []),
-            "future_supply_temperatures": self.coordinator.data.get("future_supply_temperatures", []),
-            "total_cost": self.coordinator.data.get("total_cost", 0.0),
+            "optimized_offsets": data.get("optimized_offsets", []),
+            "buffer_evolution": data.get("buffer_evolution", []),
+            "future_supply_temperatures": data.get("future_supply_temperatures", []),
+            "total_cost": data.get("total_cost", 0.0),
+            "baseline_cost": data.get("baseline_cost", 0.0),
+            "cost_savings": data.get("cost_savings", 0.0),
             "forecast_time_base": 60,
+            "prices": data.get("prices", []),
+            "demand_forecast": data.get("demand_forecast", []),
+            "baseline_cop": data.get("baseline_cop", []),
+            "optimized_cop": data.get("optimized_cop", []),
+            "baseline_supply_temperatures": data.get(
+                "baseline_supply_temperatures", []
+            ),
+            "outdoor_forecast": data.get("outdoor_forecast", []),
         }
 
 
 class CoordinatorOptimizedSupplyTemperatureSensor(CoordinatorEntity, BaseUtilitySensor):
     """Optimized supply temperature sensor using optimization coordinator."""
 
-    def __init__(self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo):
+    def __init__(
+        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
+    ):
         """Initialize the sensor."""
         CoordinatorEntity.__init__(self, coordinator)
         BaseUtilitySensor.__init__(
@@ -365,7 +404,9 @@ class CoordinatorOptimizedSupplyTemperatureSensor(CoordinatorEntity, BaseUtility
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self.coordinator.last_update_success and self.coordinator.data is not None
+        return (
+            self.coordinator.last_update_success and self.coordinator.data is not None
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -374,7 +415,9 @@ class CoordinatorOptimizedSupplyTemperatureSensor(CoordinatorEntity, BaseUtility
             return {}
         return {
             "optimized_offsets": self.coordinator.data.get("optimized_offsets", []),
-            "future_supply_temperatures": self.coordinator.data.get("future_supply_temperatures", []),
+            "future_supply_temperatures": self.coordinator.data.get(
+                "future_supply_temperatures", []
+            ),
             "forecast_time_base": 60,
         }
 
@@ -382,7 +425,9 @@ class CoordinatorOptimizedSupplyTemperatureSensor(CoordinatorEntity, BaseUtility
 class CoordinatorHeatBufferSensor(CoordinatorEntity, BaseUtilitySensor):
     """Heat buffer sensor using optimization coordinator."""
 
-    def __init__(self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo):
+    def __init__(
+        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
+    ):
         """Initialize the sensor."""
         CoordinatorEntity.__init__(self, coordinator)
         BaseUtilitySensor.__init__(
@@ -411,7 +456,9 @@ class CoordinatorHeatBufferSensor(CoordinatorEntity, BaseUtilitySensor):
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self.coordinator.last_update_success and self.coordinator.data is not None
+        return (
+            self.coordinator.last_update_success and self.coordinator.data is not None
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -471,7 +518,7 @@ class CoordinatorQuadraticCopSensor(BaseUtilitySensor):
         try:
             supply_temp = float(s_state.state)
         except (ValueError, TypeError):
-            self._set_unavailable(f"Invalid supply temperature")
+            self._set_unavailable("Invalid supply temperature")
             return
 
         # Get outdoor temperature from coordinator
@@ -497,7 +544,9 @@ class CoordinatorQuadraticCopSensor(BaseUtilitySensor):
         self._mark_available()
 
 
-class CoordinatorCalculatedSupplyTemperatureSensor(CoordinatorEntity, BaseUtilitySensor):
+class CoordinatorCalculatedSupplyTemperatureSensor(
+    CoordinatorEntity, BaseUtilitySensor
+):
     """Calculated supply temperature based on heating curve and outdoor temp."""
 
     def __init__(
@@ -561,7 +610,9 @@ class CoordinatorCalculatedSupplyTemperatureSensor(CoordinatorEntity, BaseUtilit
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self.coordinator.last_update_success and self.coordinator.data is not None
+        return (
+            self.coordinator.last_update_success and self.coordinator.data is not None
+        )
 
 
 class CoordinatorDiagnosticsSensor(CoordinatorEntity, BaseUtilitySensor):

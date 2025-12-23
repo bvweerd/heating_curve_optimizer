@@ -230,7 +230,6 @@ async def test_trend_analysis(hass: HomeAssistant, mock_config_entry, mock_devic
     # Mock _validate_heat_loss to return different values for first/second half
     now = dt_util.utcnow()
     start_time = now - timedelta(days=7)
-    mid_time = start_time + (now - start_time) / 2
 
     call_count = [0]
 

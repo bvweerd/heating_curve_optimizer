@@ -4,7 +4,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from homeassistant.helpers.device_registry import DeviceInfo
 
-from custom_components.heating_curve_optimizer.sensor import WindowSolarGainSensorLegacy as WindowSolarGainSensor
+from custom_components.heating_curve_optimizer.sensor import (
+    WindowSolarGainSensorLegacy as WindowSolarGainSensor,
+)
 
 
 @pytest.mark.asyncio

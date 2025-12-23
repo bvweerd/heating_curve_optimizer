@@ -37,55 +37,37 @@ from .optimizer import (
 )
 from .const import (
     CONF_AREA_M2,
-    CONF_CONFIGS,
     CONF_ENERGY_LABEL,
-    CONF_GLASS_EAST_M2,
-    CONF_GLASS_SOUTH_M2,
-    CONF_GLASS_U_VALUE,
-    CONF_GLASS_WEST_M2,
     CONF_INDOOR_TEMPERATURE_SENSOR,
     CONF_K_FACTOR,
     CONF_BASE_COP,
     CONF_COP_COMPENSATION_FACTOR,
     CONF_OUTDOOR_TEMP_COEFFICIENT,
     CONF_POWER_CONSUMPTION,
-    CONF_PRICE_SENSOR,
     CONF_CONSUMPTION_PRICE_SENSOR,
-    CONF_PRODUCTION_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
-    CONF_PLANNING_WINDOW,
-    CONF_TIME_BASE,
-    CONF_SOURCE_TYPE,
-    CONF_SOURCES,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
     CONF_HEATING_CURVE_OFFSET,
     CONF_HEAT_CURVE_MIN,
     CONF_HEAT_CURVE_MAX,
     CONF_HEAT_CURVE_MIN_OUTDOOR,
     CONF_HEAT_CURVE_MAX_OUTDOOR,
-    CONF_PV_EAST_WP,
-    CONF_PV_SOUTH_WP,
-    CONF_PV_WEST_WP,
-    CONF_PV_TILT,
     CONF_VENTILATION_TYPE,
     CONF_CEILING_HEIGHT,
     DEFAULT_COP_AT_35,
     DEFAULT_K_FACTOR,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_COP_COMPENSATION_FACTOR,
-    DEFAULT_THERMAL_STORAGE_EFFICIENCY,
     DEFAULT_HEATING_CURVE_OFFSET,
     DEFAULT_HEAT_CURVE_MIN,
     DEFAULT_HEAT_CURVE_MAX,
     DEFAULT_PLANNING_WINDOW,
     DEFAULT_TIME_BASE,
-    DEFAULT_PV_TILT,
     DEFAULT_VENTILATION_TYPE,
     DEFAULT_CEILING_HEIGHT,
     DOMAIN,
     INDOOR_TEMPERATURE,
     SOURCE_TYPE_CONSUMPTION,
-    SOURCE_TYPE_PRODUCTION,
     VENTILATION_TYPES,
     calculate_htc_from_energy_label,
     calculate_ventilation_htc,
@@ -99,18 +81,6 @@ _PYCARES_CHANNEL = pycares.Channel()
 
 _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 1
-
-
-def _coerce_time_base(value: Any) -> int | None:
-    """Return a positive integer time-base in minutes if possible."""
-
-    try:
-        base = float(value)
-    except (TypeError, ValueError):
-        return None
-    if math.isnan(base) or base <= 0:
-        return None
-    return int(round(base))
 
 
 def _normalize_price_value(value: Any) -> float | None:
@@ -153,130 +123,10 @@ def _detect_interval_from_entries(entries: Any) -> int:
     return 60
 
 
-def extract_price_forecast_with_interval(state: State) -> tuple[list[float], int]:
-    """Extract price forecast and detected interval from a Home Assistant price state.
-
-    Returns:
-        Tuple of (prices list, interval in minutes)
-    """
-    # First check for forecast_prices (assumed hourly)
-    forecast_attr = state.attributes.get("forecast_prices")
-    if isinstance(forecast_attr, (list, tuple)):
-        forecast: list[float] = []
-        for entry in forecast_attr:
-            price = _normalize_price_value(entry)
-            if price is not None:
-                forecast.append(price)
-        if forecast:
-            return forecast, 60  # forecast_prices is assumed hourly
-
-    # Check for net_prices_today/tomorrow BEFORE generic forecast
-    # These attributes have timestamps that allow proper interval detection
-    from homeassistant.util import dt as dt_util
-
-    now = dt_util.utcnow()
-
-    interval_forecast: list[float] = []
-    detected_interval = 60
-
-    def _extend_interval_forecast(entries: Any, *, skip_past: bool = False) -> bool:
-        nonlocal detected_interval
-        if not isinstance(entries, (list, tuple)):
-            return False
-
-        # Detect interval from entries with timestamps
-        interval = _detect_interval_from_entries(entries)
-        if interval != 60:
-            detected_interval = interval
-
-        added = False
-        for entry in entries:
-            if skip_past and isinstance(entry, dict):
-                start = entry.get("start") or entry.get("from")
-                if isinstance(start, str):
-                    start_dt = dt_util.parse_datetime(start)
-                    if start_dt is not None:
-                        start_dt = dt_util.as_utc(start_dt)
-                        if start_dt < now:
-                            continue
-
-            price = _normalize_price_value(entry)
-            if price is not None:
-                interval_forecast.append(price)
-                added = True
-        return added
-
-    _extend_interval_forecast(state.attributes.get("net_prices_today"), skip_past=True)
-    _extend_interval_forecast(state.attributes.get("net_prices_tomorrow"))
-
-    if interval_forecast:
-        return interval_forecast, detected_interval
-
-    # Fallback to generic forecast (assumed hourly)
-    generic_forecast = state.attributes.get("forecast")
-    if isinstance(generic_forecast, (list, tuple)):
-        forecast = []
-        for entry in generic_forecast:
-            price = _normalize_price_value(entry)
-            if price is not None:
-                forecast.append(price)
-        if forecast:
-            return forecast, 60  # generic forecast is assumed hourly
-
-    hour = now.hour
-
-    forecast: list[float] = []
-    raw_today = state.attributes.get("raw_today")
-    if isinstance(raw_today, list):
-        for entry in raw_today[hour:]:
-            price = _normalize_price_value(entry)
-            if price is not None:
-                forecast.append(price)
-
-    raw_tomorrow = state.attributes.get("raw_tomorrow")
-    if isinstance(raw_tomorrow, list):
-        for entry in raw_tomorrow:
-            price = _normalize_price_value(entry)
-            if price is not None:
-                forecast.append(price)
-
-    if forecast:
-        return forecast, 60  # raw_today/tomorrow is assumed hourly
-
-    combined: list[Any] = []
-    for key in ("today", "tomorrow"):
-        attr = state.attributes.get(key)
-        if isinstance(attr, list):
-            combined.extend(attr)
-
-    for entry in combined:
-        price = _normalize_price_value(entry)
-        if price is not None:
-            forecast.append(price)
-
-    if forecast:
-        return forecast, 60
-
-    try:
-        price = float(state.state)
-    except (TypeError, ValueError):
-        return [], 60
-
-    return [price], 60
-
-
-def extract_price_forecast(state: State) -> list[float]:
-    """Extract an hourly price forecast from a Home Assistant price state."""
-    prices, _ = extract_price_forecast_with_interval(state)
-    return prices
-
-
 class OutdoorTemperatureSensor(CoordinatorEntity, BaseUtilitySensor):
     """Sensor with current outdoor temperature and 24h forecast from coordinator."""
 
-    def __init__(
-        self, coordinator, name: str, unique_id: str, device: DeviceInfo
-    ):
+    def __init__(self, coordinator, name: str, unique_id: str, device: DeviceInfo):
         """Initialize the sensor with coordinator."""
         CoordinatorEntity.__init__(self, coordinator)
         BaseUtilitySensor.__init__(
@@ -303,7 +153,9 @@ class OutdoorTemperatureSensor(CoordinatorEntity, BaseUtilitySensor):
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self.coordinator.last_update_success and self.coordinator.data is not None
+        return (
+            self.coordinator.last_update_success and self.coordinator.data is not None
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -440,7 +292,9 @@ class HeatLossSensor(CoordinatorEntity, BaseUtilitySensor):
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self.coordinator.last_update_success and self.coordinator.data is not None
+        return (
+            self.coordinator.last_update_success and self.coordinator.data is not None
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -457,7 +311,10 @@ class HeatLossSensor(CoordinatorEntity, BaseUtilitySensor):
 
         # Calculate HTC components for diagnostics
         htc = calculate_htc_from_energy_label(
-            energy_label, area_m2, ventilation_type=ventilation_type, ceiling_height=ceiling_height
+            energy_label,
+            area_m2,
+            ventilation_type=ventilation_type,
+            ceiling_height=ceiling_height,
         )
         h_t = calculate_htc_from_energy_label(
             energy_label, area_m2, ventilation_type="none", ceiling_height=2.5
@@ -690,7 +547,9 @@ class WindowSolarGainSensor(CoordinatorEntity, BaseUtilitySensor):
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self.coordinator.last_update_success and self.coordinator.data is not None
+        return (
+            self.coordinator.last_update_success and self.coordinator.data is not None
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -2083,383 +1942,6 @@ class DiagnosticsSensor(BaseUtilitySensor):
         self._attr_available = True
 
 
-def _calculate_supply_temperature(
-    outdoor_temp: float,
-    *,
-    water_min: float,
-    water_max: float,
-    outdoor_min: float,
-    outdoor_max: float,
-) -> float:
-    """Return supply temperature for a given outdoor temperature."""
-    if outdoor_temp <= outdoor_min:
-        return water_max
-    if outdoor_temp >= outdoor_max:
-        return water_min
-    ratio = (outdoor_temp - outdoor_min) / (outdoor_max - outdoor_min)
-    return water_max + (water_min - water_max) * ratio
-
-
-def _calculate_defrost_factor(outdoor_temp: float, humidity: float = 80.0) -> float:
-    """Calculate COP degradation due to defrost cycles for air-source heat pumps.
-
-    Based on research for air-source heat pumps in humid climates (like Netherlands).
-    Frosting occurs when outdoor temperature is between -10°C and 6°C with sufficient humidity.
-    The worst frosting occurs around 0-3°C with high humidity (70-90%).
-
-    Args:
-        outdoor_temp: Outdoor temperature in °C
-        humidity: Relative humidity in % (default 80% for Dutch maritime climate)
-
-    Returns:
-        Multiplier (0.60-1.0) to apply to base COP accounting for defrost losses
-
-    Research references:
-    - Frosting occurs at 100% RH below 3.1°C, at 70% RH below 5.3°C
-    - COP degradation: typical 10-15%, worst case up to 40%
-    - Most critical range: 0-7°C in humid climates
-    """
-    # No frosting above 6°C - heat pump operates at full efficiency
-    if outdoor_temp >= 6.0:
-        return 1.0
-
-    # No frosting below -10°C (air too dry, insufficient moisture to freeze)
-    if outdoor_temp <= -10.0:
-        return 1.0
-
-    # Calculate humidity-dependent frosting threshold
-    # At 100% RH: frosting starts at 3.1°C
-    # At 70% RH: frosting starts at 5.3°C
-    # Linear interpolation for other humidity levels
-    frosting_threshold = 3.1 + (humidity - 100) * (5.3 - 3.1) / (70 - 100)
-    frosting_threshold = max(min(frosting_threshold, 6.0), -10.0)
-
-    # No frosting if temperature is above the humidity-dependent threshold
-    if outdoor_temp >= frosting_threshold:
-        return 1.0
-
-    # Frosting zone: calculate defrost penalty
-    if outdoor_temp >= 0:
-        # Worst frosting zone: 0-3°C
-        # COP loss increases as we approach 0-2°C
-        if outdoor_temp <= 3:
-            # Maximum penalty at 0-2°C: 15-40% depending on humidity
-            base_penalty = 0.25  # 25% base COP loss in worst conditions
-            temp_factor = (
-                1.0 - (outdoor_temp / 3.0) * 0.4
-            )  # Reduces penalty as temp increases
-        else:
-            # Moderate frosting zone: 3-6°C
-            # Linear reduction in penalty from 3°C to frosting threshold
-            base_penalty = 0.15  # 15% COP loss
-            temp_factor = (frosting_threshold - outdoor_temp) / (
-                frosting_threshold - 3.0
-            )
-    else:
-        # Below freezing: -10 to 0°C
-        # Moderate frosting, less severe than near-zero temperatures
-        base_penalty = 0.12  # 12% COP loss
-        temp_factor = (outdoor_temp + 10) / 10.0
-
-    # Adjust for humidity (Dutch climate typically 75-90% RH in winter)
-    # Higher humidity = more frost formation = worse COP degradation
-    humidity_factor = min(1.0, max(0.5, humidity / 80.0))  # Normalized to 80% baseline
-
-    # Calculate final defrost penalty
-    defrost_penalty = base_penalty * temp_factor * humidity_factor
-
-    # Return COP multiplier (1.0 = no loss, 0.6 = 40% loss in worst case)
-    cop_multiplier = 1.0 - defrost_penalty
-
-    _LOGGER.debug(
-        "Defrost factor: T=%.1f°C, RH=%.0f%% -> multiplier=%.3f (%.0f%% COP loss)",
-        outdoor_temp,
-        humidity,
-        cop_multiplier,
-        defrost_penalty * 100,
-    )
-
-    return max(0.60, cop_multiplier)  # Minimum 60% efficiency (40% max loss)
-
-
-def _optimize_offsets(
-    demand: list[float],
-    prices: list[float],
-    *,
-    base_temp: float = 35.0,
-    k_factor: float = DEFAULT_K_FACTOR,
-    cop_compensation_factor: float = 1.0,
-    buffer: float = 0.0,
-    water_min: float = 28.0,
-    water_max: float = 45.0,
-    outdoor_temps: list[float] | None = None,
-    humidity_forecast: list[float] | None = None,
-    outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
-    time_base: int = 60,
-    outdoor_min: float = -20.0,
-    outdoor_max: float = 15.0,
-) -> tuple[list[int], list[float]]:
-    r"""Return cost optimized offsets for the given demand and prices.
-
-    The ``demand`` list contains the net heat demand per hour.  The
-    algorithm uses the total energy over the complete horizon and
-    distributes that energy over the hours with a dynamic-programming
-    approach.  Offsets are restricted to ``\-4`` .. ``+4`` and may only
-    change by one degree per step.  The optional ``buffer`` parameter
-    represents the current heat surplus (positive) or deficit (negative)
-    and the returned buffer evolution shows how this value changes with
-    the chosen offsets.  After the planning window the buffer will be close
-    to zero.
-    """
-    _LOGGER.debug(
-        "Optimizing offsets demand=%s prices=%s base=%s k=%s comp=%s buffer=%s outdoor_temps=%s humidity=%s",
-        demand,
-        prices,
-        base_temp,
-        k_factor,
-        cop_compensation_factor,
-        buffer,
-        outdoor_temps,
-        humidity_forecast,
-    )
-    horizon = min(len(demand), len(prices))
-    if horizon == 0:
-        return [], []
-
-    # Prepare outdoor temperature and humidity data for defrost modeling
-    # Use forecasts if available, otherwise use a default assumption
-    outdoor_temps_data = outdoor_temps if outdoor_temps else [5.0] * horizon
-    humidity_data = humidity_forecast if humidity_forecast else [80.0] * horizon
-
-    # Ensure we have enough data points
-    if len(outdoor_temps_data) < horizon:
-        # Pad with the last value if needed
-        last_temp = outdoor_temps_data[-1] if outdoor_temps_data else 5.0
-        outdoor_temps_data = list(outdoor_temps_data) + [last_temp] * (
-            horizon - len(outdoor_temps_data)
-        )
-
-    if len(humidity_data) < horizon:
-        # Pad with default humidity
-        humidity_data = list(humidity_data) + [80.0] * (horizon - len(humidity_data))
-
-    # Calculate defrost factors for each time step
-    defrost_factors = [
-        _calculate_defrost_factor(outdoor_temps_data[t], humidity_data[t])
-        for t in range(horizon)
-    ]
-
-    # Calculate base temperature for each forecast step based on outdoor temperature
-    base_temps = [
-        _calculate_supply_temperature(
-            outdoor_temps_data[t],
-            water_min=water_min,
-            water_max=water_max,
-            outdoor_min=outdoor_min,
-            outdoor_max=outdoor_max,
-        )
-        for t in range(horizon)
-    ]
-
-    def _calculate_cop(offset: int, time_step: int) -> float:
-        """Calculate COP for given offset and time step, including outdoor temp and defrost effects."""
-        supply_temp = base_temps[time_step] + offset
-        outdoor_temp = outdoor_temps_data[time_step]
-
-        # COP formula: base + outdoor_effect - supply_temp_effect
-        cop_base = (
-            DEFAULT_COP_AT_35
-            + outdoor_temp_coefficient * outdoor_temp
-            - k_factor * (supply_temp - 35)
-        ) * cop_compensation_factor
-
-        # Apply defrost factor
-        cop_adjusted = cop_base * defrost_factors[time_step]
-
-        return max(0.5, cop_adjusted)  # Ensure COP doesn't go below 0.5
-
-    # Check which offsets are allowed - must respect water_min/max for all forecast steps
-    # An offset is allowed only if it keeps supply temp within bounds for ALL time steps
-    allowed_offsets = []
-    for o in range(-4, 5):
-        if all(water_min <= base_temps[t] + o <= water_max for t in range(horizon)):
-            allowed_offsets.append(o)
-    if not allowed_offsets:
-        return [0 for _ in range(horizon)], [buffer for _ in range(horizon)]
-
-    target_sum = -int(round(buffer))
-
-    # Calculate step duration in hours for buffer energy calculation
-    step_hours = time_base / 60.0
-
-    # dynamic programming table storing (cost, prev_offset, prev_sum, buffer_energy)
-    # State: (time_step, offset) -> {cumulative_sum: (cost, prev_offset, prev_sum, buffer_kwh)}
-    dp: list[dict[int, dict[int, tuple[float, int | None, int | None, float]]]] = [
-        {} for _ in range(horizon)
-    ]
-
-    for off in allowed_offsets:
-        cop = _calculate_cop(off, 0)
-        # Cost = (thermal_demand / COP) * time * price = electrical_energy * price
-        cost = (
-            demand[0] * step_hours * prices[0] / cop
-            if cop > 0
-            else demand[0] * step_hours * prices[0] * 10
-        )
-        # Calculate initial buffer energy
-        heat_demand = max(float(demand[0]), 0.0)
-        buffer_kwh = (
-            buffer + off * heat_demand * DEFAULT_THERMAL_STORAGE_EFFICIENCY * step_hours
-        )
-        # Only allow states with non-negative buffer
-        if buffer_kwh >= 0:
-            dp[0][off] = {off: (cost, None, None, buffer_kwh)}
-
-    for t in range(1, horizon):
-        for off in allowed_offsets:
-            cop = _calculate_cop(off, t)
-            # Cost = (thermal_demand / COP) * time * price = electrical_energy * price
-            step_cost = (
-                demand[t] * step_hours * prices[t] / cop
-                if cop > 0
-                else demand[t] * step_hours * prices[t] * 10
-            )
-            for prev_off, sums in dp[t - 1].items():
-                if abs(off - prev_off) <= 1:
-                    for prev_sum, (prev_cost, _, _, prev_buffer_kwh) in sums.items():
-                        new_sum = prev_sum + off
-                        total = prev_cost + step_cost
-                        # Calculate new buffer energy
-                        heat_demand = max(float(demand[t]), 0.0)
-                        buffer_kwh = (
-                            prev_buffer_kwh
-                            + off
-                            * heat_demand
-                            * DEFAULT_THERMAL_STORAGE_EFFICIENCY
-                            * step_hours
-                        )
-                        # Only allow states with non-negative buffer
-                        if buffer_kwh >= 0:
-                            dp[t].setdefault(off, {})
-                            cur = dp[t][off].get(new_sum)
-                            if cur is None or total < cur[0]:
-                                dp[t][off][new_sum] = (
-                                    total,
-                                    prev_off,
-                                    prev_sum,
-                                    buffer_kwh,
-                                )
-
-    if not dp[horizon - 1]:
-        return [0 for _ in range(horizon)], [buffer for _ in range(horizon)]
-
-    # Select best solution: minimize (cost + penalty_for_nonzero_buffer)
-    # Prefer solutions that return buffer close to zero at end of planning horizon
-    best_off: int | None = None
-    best_sum: int | None = None
-    best_cost = math.inf
-    buffer_penalty_weight = (
-        0.01  # Small penalty to prefer buffer→0 without dominating cost
-    )
-
-    for off, sums in dp[horizon - 1].items():
-        for sum_off, (cost, _, _, final_buffer) in sums.items():
-            # Penalize non-zero final buffer (prefer to return to 0)
-            buffer_penalty = buffer_penalty_weight * abs(final_buffer)
-            total_objective = cost + buffer_penalty
-
-            if total_objective < best_cost:
-                best_cost = total_objective
-                best_off = off
-                best_sum = sum_off
-
-    assert best_off is not None and best_sum is not None
-
-    result = [0] * horizon
-    last_off = best_off
-    last_sum = best_sum
-    result[-1] = last_off
-    for t in range(horizon - 1, 0, -1):
-        _, prev_off, prev_sum, _ = dp[t][last_off][last_sum]
-        assert prev_off is not None and prev_sum is not None
-        result[t - 1] = prev_off
-        last_off = prev_off
-        last_sum = prev_sum
-
-    # Track cumulative offset sum (in °C) for constraint purposes
-    # Note: This is NOT energy - it tracks how far we've deviated from base temperature
-    # The actual thermal energy buffer is calculated separately by _calculate_buffer_energy()
-    buffer_evolution: list[float] = []
-    cur = buffer
-    for off in result:
-        cur += off
-        buffer_evolution.append(cur)
-
-    _LOGGER.debug(
-        "Optimized offsets result=%s buffer_evolution=%s", result, buffer_evolution
-    )
-
-    return result, buffer_evolution
-
-
-def _calculate_buffer_energy(
-    offsets: list[int],
-    demand: list[float],
-    *,
-    time_base: int,
-    buffer: float = 0.0,
-) -> list[float]:
-    """Convert offset evolution to stored thermal energy in kWh.
-
-    Physical model:
-    - When offset > 0: supply temperature is raised, building is overheated,
-      excess thermal energy is stored in building's thermal mass
-    - When offset < 0: supply temperature is lowered, building uses stored
-      thermal energy from its thermal mass
-    - Energy stored per time step = offset × demand × storage_efficiency × time
-
-    Units verification:
-    - offset: °C (temperature adjustment)
-    - demand: kW (thermal power demand)
-    - storage_efficiency: dimensionless (fraction of demand stored per °C)
-    - time: hours
-    - Result: °C × kW × (dimensionless) × hours = kWh ✓
-
-    Args:
-        offsets: Temperature offsets in °C for each time step
-        demand: Heat demand in kW for each time step
-        time_base: Time base in minutes per step
-        buffer: Initial buffer energy in kWh (default 0.0)
-
-    Returns:
-        Cumulative thermal energy buffer in kWh at each time step
-    """
-    if time_base <= 0:
-        step_hours = 1.0
-    else:
-        step_hours = time_base / 60.0
-
-    energy_evolution: list[float] = []
-    buffer_energy = buffer
-
-    for idx, offset in enumerate(offsets):
-        if idx < len(demand):
-            heat_demand = max(float(demand[idx]), 0.0)
-        else:
-            heat_demand = 0.0
-
-        # Calculate energy stored/released in this time step
-        # Positive offset stores energy, negative offset uses stored energy
-        # Storage amount is proportional to demand (more demand = more thermal mass active)
-        energy_delta = (
-            offset * heat_demand * DEFAULT_THERMAL_STORAGE_EFFICIENCY * step_hours
-        )
-        buffer_energy += energy_delta
-        energy_evolution.append(round(buffer_energy, 3))
-
-    return energy_evolution
-
-
 class HeatingCurveOffsetSensor(BaseUtilitySensor):
     def __init__(
         self,
@@ -3627,7 +3109,6 @@ async def async_setup_entry(
             CoordinatorHeatingCurveOffsetSensor,
             CoordinatorOptimizedSupplyTemperatureSensor,
             CoordinatorHeatBufferSensor,
-            CoordinatorQuadraticCopSensor,
             CoordinatorCalculatedSupplyTemperatureSensor,
             CoordinatorDiagnosticsSensor,
         )
@@ -3770,12 +3251,12 @@ async def async_setup_entry(
             for entity in entities:
                 if isinstance(entity, CoordinatorHeatLossSensor):
                     heat_loss_entity = entity
-                elif hasattr(entity, 'unique_id'):
-                    if 'thermal_power' in entity.unique_id:
+                elif hasattr(entity, "unique_id"):
+                    if "thermal_power" in entity.unique_id:
                         thermal_power_entity = entity
-                    elif 'outdoor_temperature' in entity.unique_id:
+                    elif "outdoor_temperature" in entity.unique_id:
                         outdoor_entity = entity
-                    elif 'quadratic_cop' in entity.unique_id:
+                    elif "quadratic_cop" in entity.unique_id:
                         cop_entity = entity
 
             if heat_loss_entity and thermal_power_entity:
@@ -3787,12 +3268,20 @@ async def async_setup_entry(
                     unique_id=f"{entry.entry_id}_calibration",
                     device=device,
                     entry=entry,
-                    heat_loss_sensor=heat_loss_entity.entity_id if hasattr(heat_loss_entity, 'entity_id') else None,
-                    thermal_power_sensor=thermal_power_entity.entity_id if hasattr(thermal_power_entity, 'entity_id') else None,
-                    outdoor_sensor=outdoor_entity.entity_id if outdoor_entity and hasattr(outdoor_entity, 'entity_id') else None,
+                    heat_loss_sensor=heat_loss_entity.entity_id
+                    if hasattr(heat_loss_entity, "entity_id")
+                    else None,
+                    thermal_power_sensor=thermal_power_entity.entity_id
+                    if hasattr(thermal_power_entity, "entity_id")
+                    else None,
+                    outdoor_sensor=outdoor_entity.entity_id
+                    if outdoor_entity and hasattr(outdoor_entity, "entity_id")
+                    else None,
                     indoor_sensor=indoor_sensor,
                     supply_temp_sensor=supply_sensor,
-                    cop_sensor=cop_entity.entity_id if cop_entity and hasattr(cop_entity, 'entity_id') else None,
+                    cop_sensor=cop_entity.entity_id
+                    if cop_entity and hasattr(cop_entity, "entity_id")
+                    else None,
                 )
                 entities.append(calibration_sensor)
 
@@ -3852,28 +3341,35 @@ def _setup_legacy_sensors(
         entry.data.get(CONF_POWER_CONSUMPTION),
     )
     k_factor = float(
-        entry.options.get(CONF_K_FACTOR, entry.data.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
+        entry.options.get(
+            CONF_K_FACTOR, entry.data.get(CONF_K_FACTOR, DEFAULT_K_FACTOR)
+        )
     )
     base_cop = float(
-        entry.options.get(CONF_BASE_COP, entry.data.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
+        entry.options.get(
+            CONF_BASE_COP, entry.data.get(CONF_BASE_COP, DEFAULT_COP_AT_35)
+        )
     )
     outdoor_temp_coefficient = float(
         entry.options.get(
             CONF_OUTDOOR_TEMP_COEFFICIENT,
-            entry.data.get(CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT),
+            entry.data.get(
+                CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
+            ),
         )
     )
     cop_compensation_factor = float(
         entry.options.get(
             CONF_COP_COMPENSATION_FACTOR,
-            entry.data.get(CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR),
+            entry.data.get(
+                CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR
+            ),
         )
     )
 
     # Track created sensors for inter-dependencies
     cop_sensor_entity = None
     thermal_power_sensor_entity = None
-    heating_curve_offset_entity = None
 
     # Add QuadraticCopSensor if supply sensor is configured
     if supply_sensor:
@@ -3904,7 +3400,9 @@ def _setup_legacy_sensors(
 
             if outdoor_sensor_ref is None:
                 # Fallback: try to construct entity_id (may not work if custom naming is used)
-                outdoor_sensor_ref = f"sensor.heating_curve_optimizer_outdoor_temperature"
+                outdoor_sensor_ref = (
+                    "sensor.heating_curve_optimizer_outdoor_temperature"
+                )
 
             thermal_power_sensor_entity = HeatPumpThermalPowerSensor(
                 hass=hass,
@@ -3933,9 +3431,9 @@ def _setup_legacy_sensors(
 
     # Fallback to entity_id strings if sensors not found
     if heating_curve_offset_ref is None:
-        heating_curve_offset_ref = f"sensor.heating_curve_optimizer_heating_curve_offset"
+        heating_curve_offset_ref = "sensor.heating_curve_optimizer_heating_curve_offset"
     if outdoor_sensor_ref is None:
-        outdoor_sensor_ref = f"sensor.heating_curve_optimizer_outdoor_temperature"
+        outdoor_sensor_ref = "sensor.heating_curve_optimizer_outdoor_temperature"
 
     # Add CopEfficiencyDeltaSensor if we have COP sensor and offset sensor
     if cop_sensor_entity:
@@ -3979,375 +3477,9 @@ def _async_setup_entry_legacy(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Legacy setup for backward compatibility."""
-    device_info = DeviceInfo(
-        identifiers={(DOMAIN, entry.entry_id)},
-        name="Heating Curve Optimizer",
-    )
-    entities: list[BaseUtilitySensor] = []
-
-    # Create a simple outdoor temperature sensor for legacy mode
     # This would need the full legacy implementation restored
     # For now, just log a warning
     _LOGGER.error(
         "Legacy sensor setup not fully implemented. "
         "Please reload the integration to use coordinator-based sensors."
     )
-    return
-
-    entities.append(
-        CalculatedSupplyTemperatureSensor(
-            hass=hass,
-            name="Calculated Supply Temperature",
-            unique_id=f"{entry.entry_id}_calculated_supply_temperature",
-            outdoor_sensor=outdoor_sensor_entity,
-            entry=entry,
-            device=device_info,
-        )
-    )
-
-    configs = entry.options.get(CONF_CONFIGS, entry.data.get(CONF_CONFIGS, []))
-    consumption_sources: list[str] = []
-    production_sources: list[str] = []
-    for cfg in configs:
-        if cfg.get(CONF_SOURCE_TYPE) == SOURCE_TYPE_CONSUMPTION:
-            consumption_sources.extend(cfg.get(CONF_SOURCES, []))
-        elif cfg.get(CONF_SOURCE_TYPE) == SOURCE_TYPE_PRODUCTION:
-            production_sources.extend(cfg.get(CONF_SOURCES, []))
-
-    # Deduplicate sources while preserving order (fixes issue with duplicate configs)
-    consumption_sources = list(dict.fromkeys(consumption_sources))
-    production_sources = list(dict.fromkeys(production_sources))
-
-    area_m2 = entry.options.get(CONF_AREA_M2, entry.data.get(CONF_AREA_M2))
-    energy_label = entry.options.get(
-        CONF_ENERGY_LABEL, entry.data.get(CONF_ENERGY_LABEL)
-    )
-    indoor_sensor = entry.options.get(
-        CONF_INDOOR_TEMPERATURE_SENSOR, entry.data.get(CONF_INDOOR_TEMPERATURE_SENSOR)
-    )
-    supply_temp_sensor = entry.options.get(
-        CONF_SUPPLY_TEMPERATURE_SENSOR, entry.data.get(CONF_SUPPLY_TEMPERATURE_SENSOR)
-    )
-    outdoor_temp_sensor: str | SensorEntity = outdoor_sensor_entity
-    power_sensor = entry.options.get(
-        CONF_POWER_CONSUMPTION, entry.data.get(CONF_POWER_CONSUMPTION)
-    )
-    k_factor = float(
-        entry.options.get(
-            CONF_K_FACTOR, entry.data.get(CONF_K_FACTOR, DEFAULT_K_FACTOR)
-        )
-    )
-    base_cop = float(
-        entry.options.get(
-            CONF_BASE_COP, entry.data.get(CONF_BASE_COP, DEFAULT_COP_AT_35)
-        )
-    )
-    outdoor_temp_coefficient = float(
-        entry.options.get(
-            CONF_OUTDOOR_TEMP_COEFFICIENT,
-            entry.data.get(
-                CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
-            ),
-        )
-    )
-    cop_compensation_factor = float(
-        entry.options.get(
-            CONF_COP_COMPENSATION_FACTOR,
-            entry.data.get(
-                CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR
-            ),
-        )
-    )
-    glass_east = float(
-        entry.options.get(CONF_GLASS_EAST_M2, entry.data.get(CONF_GLASS_EAST_M2, 0))
-    )
-    glass_west = float(
-        entry.options.get(CONF_GLASS_WEST_M2, entry.data.get(CONF_GLASS_WEST_M2, 0))
-    )
-    glass_south = float(
-        entry.options.get(CONF_GLASS_SOUTH_M2, entry.data.get(CONF_GLASS_SOUTH_M2, 0))
-    )
-    glass_u = float(
-        entry.options.get(CONF_GLASS_U_VALUE, entry.data.get(CONF_GLASS_U_VALUE, 1.2))
-    )
-    ventilation_type = entry.options.get(
-        CONF_VENTILATION_TYPE,
-        entry.data.get(CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE),
-    )
-    ceiling_height = float(
-        entry.options.get(
-            CONF_CEILING_HEIGHT,
-            entry.data.get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT),
-        )
-    )
-    planning_window = int(
-        entry.options.get(
-            CONF_PLANNING_WINDOW,
-            entry.data.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW),
-        )
-    )
-    time_base = int(
-        entry.options.get(
-            CONF_TIME_BASE, entry.data.get(CONF_TIME_BASE, DEFAULT_TIME_BASE)
-        )
-    )
-
-    price_sensor = entry.options.get(
-        CONF_PRICE_SENSOR, entry.data.get(CONF_PRICE_SENSOR)
-    )
-    consumption_price_sensor = entry.options.get(
-        CONF_CONSUMPTION_PRICE_SENSOR,
-        entry.data.get(CONF_CONSUMPTION_PRICE_SENSOR, price_sensor),
-    )
-    production_price_sensor = entry.options.get(
-        CONF_PRODUCTION_PRICE_SENSOR,
-        entry.data.get(CONF_PRODUCTION_PRICE_SENSOR, price_sensor),
-    )
-
-    # Note: We don't create wrapper entities for price sensors anymore.
-    # The integration uses the price sensors from other integrations directly.
-    # This reduces clutter in the UI and avoids unnecessary entity duplication.
-
-    heat_loss_sensor = None
-    if area_m2 and energy_label:
-        heat_loss_sensor = HeatLossSensor(
-            hass=hass,
-            name="Heat Loss",
-            unique_id=f"{entry.entry_id}_heat_loss",
-            area_m2=float(area_m2),
-            energy_label=energy_label,
-            indoor_sensor=indoor_sensor,
-            icon="mdi:home-thermometer",
-            device=device_info,
-            outdoor_sensor=outdoor_temp_sensor,
-            ventilation_type=ventilation_type,
-            ceiling_height=ceiling_height,
-        )
-        entities.append(heat_loss_sensor)
-
-    window_gain_sensor = None
-    if area_m2 and (glass_east or glass_west or glass_south):
-        window_gain_sensor = WindowSolarGainSensor(
-            hass=hass,
-            name="Window Solar Gain",
-            unique_id=f"{entry.entry_id}_window_solar_gain",
-            east_m2=glass_east,
-            west_m2=glass_west,
-            south_m2=glass_south,
-            u_value=glass_u,
-            icon="mdi:window-closed-variant",
-            device=device_info,
-        )
-        entities.append(window_gain_sensor)
-
-    # PV production forecast sensor
-    pv_east_wp = float(
-        entry.options.get(CONF_PV_EAST_WP, entry.data.get(CONF_PV_EAST_WP, 0))
-    )
-    pv_west_wp = float(
-        entry.options.get(CONF_PV_WEST_WP, entry.data.get(CONF_PV_WEST_WP, 0))
-    )
-    pv_south_wp = float(
-        entry.options.get(CONF_PV_SOUTH_WP, entry.data.get(CONF_PV_SOUTH_WP, 0))
-    )
-    pv_tilt = float(
-        entry.options.get(CONF_PV_TILT, entry.data.get(CONF_PV_TILT, DEFAULT_PV_TILT))
-    )
-
-    pv_forecast_sensor = None
-    if pv_east_wp or pv_west_wp or pv_south_wp:
-        pv_forecast_sensor = PVProductionForecastSensor(
-            hass=hass,
-            name="PV Production Forecast",
-            unique_id=f"{entry.entry_id}_pv_production_forecast",
-            east_wp=pv_east_wp,
-            west_wp=pv_west_wp,
-            south_wp=pv_south_wp,
-            tilt=pv_tilt,
-            icon="mdi:solar-power",
-            device=device_info,
-        )
-        entities.append(pv_forecast_sensor)
-
-    net_heat_sensor = None
-    if heat_loss_sensor:
-        net_heat_sensor = NetHeatLossSensor(
-            hass=hass,
-            name="Net Heat Loss",
-            unique_id=f"{entry.entry_id}_net_heat_loss",
-            icon="mdi:fire",
-            device=device_info,
-            heat_loss_sensor=heat_loss_sensor,
-            window_gain_sensor=window_gain_sensor,
-            config_entry_id=entry.entry_id,
-        )
-        entities.append(net_heat_sensor)
-        hass.data.setdefault(DOMAIN, {}).setdefault("runtime", {}).setdefault(
-            entry.entry_id, {}
-        )["net_heat_sensor_object"] = net_heat_sensor
-
-    cop_sensor_entity = None
-    thermal_power_sensor_entity = None
-    if supply_temp_sensor:
-        cop_sensor_entity = QuadraticCopSensor(
-            hass=hass,
-            name="Heat Pump COP",
-            unique_id=f"{entry.entry_id}_cop",
-            supply_sensor=supply_temp_sensor,
-            outdoor_sensor=outdoor_temp_sensor,
-            k_factor=k_factor,
-            base_cop=base_cop,
-            outdoor_temp_coefficient=outdoor_temp_coefficient,
-            cop_compensation_factor=cop_compensation_factor,
-            device=device_info,
-        )
-        entities.append(cop_sensor_entity)
-        if power_sensor:
-            thermal_power_sensor_entity = HeatPumpThermalPowerSensor(
-                hass=hass,
-                name="Heat Pump Thermal Power",
-                unique_id=f"{entry.entry_id}_thermal_power",
-                power_sensor=power_sensor,
-                supply_sensor=supply_temp_sensor,
-                outdoor_sensor=outdoor_temp_sensor,
-                device=device_info,
-                k_factor=k_factor,
-                base_cop=base_cop,
-            )
-            entities.append(thermal_power_sensor_entity)
-
-    diagnostics_price_sensor = consumption_price_sensor or production_price_sensor
-
-    if (
-        heat_loss_sensor
-        or window_gain_sensor
-        or diagnostics_price_sensor
-        or cop_sensor_entity
-    ):
-        entities.append(
-            DiagnosticsSensor(
-                hass=hass,
-                name="Optimizer Diagnostics",
-                unique_id=f"{entry.entry_id}_diagnostics",
-                heat_loss_sensor=heat_loss_sensor,
-                window_gain_sensor=window_gain_sensor,
-                price_sensor=diagnostics_price_sensor,
-                cop_sensor=cop_sensor_entity,
-                device=device_info,
-                planning_window=planning_window,
-                time_base=time_base,
-            )
-        )
-
-    heating_curve_offset_sensor = None
-    if net_heat_sensor and consumption_price_sensor:
-        heating_curve_offset_sensor = HeatingCurveOffsetSensor(
-            hass=hass,
-            name="Heating Curve Offset",
-            unique_id=f"{entry.entry_id}_heating_curve_offset",
-            net_heat_sensor=net_heat_sensor,
-            price_sensor=consumption_price_sensor,
-            device=device_info,
-            entry=entry,
-            k_factor=k_factor,
-            cop_compensation_factor=cop_compensation_factor,
-            outdoor_temp_coefficient=outdoor_temp_coefficient,
-            consumption_sensors=consumption_sources,
-            heatpump_sensor=power_sensor,
-            production_sensors=production_sources,
-            production_price_sensor=production_price_sensor,
-            outdoor_sensor=outdoor_sensor_entity,
-            planning_window=planning_window,
-            time_base=time_base,
-            pv_forecast_sensor=pv_forecast_sensor,
-        )
-        entities.append(heating_curve_offset_sensor)
-
-    if cop_sensor_entity and heating_curve_offset_sensor:
-        entities.append(
-            CopEfficiencyDeltaSensor(
-                hass=hass,
-                name="COP Delta",
-                unique_id=f"{entry.entry_id}_cop_delta",
-                cop_sensor=cop_sensor_entity,
-                offset_entity=heating_curve_offset_sensor,
-                outdoor_sensor=outdoor_sensor_entity,
-                device=device_info,
-                k_factor=k_factor,
-                base_cop=base_cop,
-                outdoor_temp_coefficient=outdoor_temp_coefficient,
-                cop_compensation_factor=cop_compensation_factor,
-            )
-        )
-        if thermal_power_sensor_entity is not None:
-            entities.append(
-                HeatGenerationDeltaSensor(
-                    hass=hass,
-                    name="Heat Generation Delta",
-                    unique_id=f"{entry.entry_id}_heat_generation_delta",
-                    thermal_power_sensor=thermal_power_sensor_entity,
-                    cop_sensor=cop_sensor_entity,
-                    offset_entity=heating_curve_offset_sensor,
-                    outdoor_sensor=outdoor_sensor_entity,
-                    device=device_info,
-                    k_factor=k_factor,
-                    base_cop=base_cop,
-                    outdoor_temp_coefficient=outdoor_temp_coefficient,
-                    cop_compensation_factor=cop_compensation_factor,
-                )
-            )
-
-    if heating_curve_offset_sensor is not None:
-        entities.append(
-            HeatBufferSensor(
-                hass=hass,
-                name="Heat Buffer",
-                unique_id=f"{entry.entry_id}_heat_buffer",
-                offset_entity=heating_curve_offset_sensor,
-                device=device_info,
-            )
-        )
-        entities.append(
-            OptimizedSupplyTemperatureSensor(
-                hass=hass,
-                name="Optimized Supply Temperature",
-                unique_id=f"{entry.entry_id}_optimized_supply_temperature",
-                outdoor_sensor=outdoor_sensor_entity,
-                entry=entry,
-                device=device_info,
-                offset_entity=heating_curve_offset_sensor,
-                k_factor=k_factor,
-                planning_window=planning_window,
-                time_base=time_base,
-            )
-        )
-
-    # Add calibration sensor
-    if heat_loss_sensor and thermal_power_sensor_entity:
-        from .calibration_sensor import CalibrationSensor
-
-        calibration_sensor = CalibrationSensor(
-            hass=hass,
-            name="Parameter Calibration",
-            unique_id=f"{entry.entry_id}_calibration",
-            device=device_info,
-            entry=entry,
-            heat_loss_sensor=heat_loss_sensor.entity_id
-            if hasattr(heat_loss_sensor, "entity_id")
-            else None,
-            thermal_power_sensor=thermal_power_sensor_entity.entity_id
-            if hasattr(thermal_power_sensor_entity, "entity_id")
-            else None,
-            outdoor_sensor=outdoor_sensor_entity.entity_id
-            if outdoor_sensor_entity and hasattr(outdoor_sensor_entity, "entity_id")
-            else None,
-            indoor_sensor=indoor_sensor,
-            supply_temp_sensor=supply_temp_sensor,
-            cop_sensor=cop_sensor_entity.entity_id if cop_sensor_entity else None,
-        )
-        entities.append(calibration_sensor)
-
-    if entities:
-        async_add_entities(entities, True)
-
-    hass.data[DOMAIN]["entities"] = {ent.entity_id: ent for ent in entities}
