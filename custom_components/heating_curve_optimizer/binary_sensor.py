@@ -12,10 +12,50 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_AREA_M2, CONF_ENERGY_LABEL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Binary sensor that indicates heat demand using coordinator."""
+
+    _attr_device_class = BinarySensorDeviceClass.HEAT
+    _attr_should_poll = False
+
+    def __init__(self, coordinator, entry_id: str, device: DeviceInfo) -> None:
+        """Initialize the binary sensor."""
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._attr_unique_id = f"{entry_id}_heat_pump_demand"
+        self._attr_translation_key = "heat_pump_demand"
+        self._attr_has_entity_name = True
+        self._attr_device_info = device
+        self._attr_icon = "mdi:radiator"
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if there is heat demand."""
+        if not self.coordinator.data:
+            return False
+        net_heat_loss = self.coordinator.data.get("net_heat_loss", 0.0)
+        return net_heat_loss > 0.0
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success and self.coordinator.data is not None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, float]:
+        """Return extra state attributes."""
+        if not self.coordinator.data:
+            return {}
+        return {
+            "net_heat_kW": round(self.coordinator.data.get("net_heat_loss", 0.0), 3),
+        }
 
 
 class HeatDemandBinarySensor(BinarySensorEntity):
@@ -92,11 +132,25 @@ async def async_setup_entry(
         )
         return
 
-    device_info = DeviceInfo(
-        identifiers={(DOMAIN, entry.entry_id)},
-        name="Heating Curve Optimizer",
-    )
+    # Check if coordinators are available
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+    heat_coordinator = entry_data.get("heat_coordinator")
+    device = entry_data.get("device")
 
-    async_add_entities(
-        [HeatDemandBinarySensor(hass, entry.entry_id, device_info)], True
-    )
+    if heat_coordinator and device:
+        # Use coordinator-based binary sensor
+        _LOGGER.info("Setting up coordinator-based heat demand binary sensor")
+        async_add_entities(
+            [CoordinatorHeatDemandBinarySensor(heat_coordinator, entry.entry_id, device)],
+            True,
+        )
+    else:
+        # Fallback to legacy
+        _LOGGER.warning("Heat coordinator not available, using legacy heat demand sensor")
+        device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name="Heating Curve Optimizer",
+        )
+        async_add_entities(
+            [HeatDemandBinarySensor(hass, entry.entry_id, device_info)], True
+        )

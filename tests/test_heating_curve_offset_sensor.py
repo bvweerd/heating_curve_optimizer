@@ -6,7 +6,6 @@ from custom_components.heating_curve_optimizer.const import DOMAIN
 from custom_components.heating_curve_optimizer.sensor import (
     HeatingCurveOffsetSensor,
     NetHeatLossSensor,
-    OutdoorTemperatureSensor,
 )
 from homeassistant.components.sensor import SensorStateClass
 
@@ -223,14 +222,9 @@ async def test_offset_sensor_uses_internal_outdoor_sensor(hass):
         {"raw_today": [0.0] * 24, "raw_tomorrow": []},
     )
 
-    outdoor_sensor = OutdoorTemperatureSensor(
-        hass=hass,
-        name="Outdoor Temperature",
-        unique_id="outdoor_test",
-        device=DeviceInfo(identifiers={("test", "outdoor")}),
-    )
-    outdoor_sensor.entity_id = "sensor.heating_curve_optimizer_outdoor_temperature"
-    hass.states.async_set(outdoor_sensor.entity_id, "3.5")
+    # Set up outdoor temperature state
+    outdoor_entity_id = "sensor.heating_curve_optimizer_outdoor_temperature"
+    hass.states.async_set(outdoor_entity_id, "3.5")
 
     with patch(
         "custom_components.heating_curve_optimizer.sensor._optimize_offsets",
@@ -243,7 +237,7 @@ async def test_offset_sensor_uses_internal_outdoor_sensor(hass):
             net_heat_sensor="sensor.net_heat",
             price_sensor="sensor.price",
             device=DeviceInfo(identifiers={("test", "5")}),
-            outdoor_sensor=outdoor_sensor,
+            outdoor_sensor=outdoor_entity_id,
         )
 
         await sensor.async_update()

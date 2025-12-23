@@ -1,0 +1,625 @@
+"""Data update coordinators for the Heating Curve Optimizer integration."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from datetime import datetime, timedelta
+from typing import Any
+
+import aiohttp
+from homeassistant.core import HomeAssistant, Event, State
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.update_coordinator import (
+    DataUpdateCoordinator,
+    UpdateFailed,
+)
+from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.util import dt as dt_util
+
+from .const import (
+    CONF_AREA_M2,
+    CONF_ENERGY_LABEL,
+    CONF_GLASS_EAST_M2,
+    CONF_GLASS_SOUTH_M2,
+    CONF_GLASS_U_VALUE,
+    CONF_GLASS_WEST_M2,
+    CONF_INDOOR_TEMPERATURE_SENSOR,
+    CONF_K_FACTOR,
+    CONF_BASE_COP,
+    CONF_COP_COMPENSATION_FACTOR,
+    CONF_OUTDOOR_TEMP_COEFFICIENT,
+    CONF_CONSUMPTION_PRICE_SENSOR,
+    CONF_PLANNING_WINDOW,
+    CONF_TIME_BASE,
+    CONF_HEAT_CURVE_MIN,
+    CONF_HEAT_CURVE_MAX,
+    CONF_HEAT_CURVE_MIN_OUTDOOR,
+    CONF_HEAT_CURVE_MAX_OUTDOOR,
+    CONF_PV_EAST_WP,
+    CONF_PV_SOUTH_WP,
+    CONF_PV_WEST_WP,
+    CONF_PV_TILT,
+    CONF_VENTILATION_TYPE,
+    CONF_CEILING_HEIGHT,
+    DEFAULT_COP_AT_35,
+    DEFAULT_K_FACTOR,
+    DEFAULT_COP_COMPENSATION_FACTOR,
+    DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+    DEFAULT_PLANNING_WINDOW,
+    DEFAULT_TIME_BASE,
+    DEFAULT_VENTILATION_TYPE,
+    DEFAULT_CEILING_HEIGHT,
+    DEFAULT_PV_TILT,
+    INDOOR_TEMPERATURE,
+    calculate_htc_from_energy_label,
+)
+from .helpers import extract_price_forecast_with_interval
+from .optimizer import optimize_offsets
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class WeatherDataCoordinator(DataUpdateCoordinator):
+    """Coordinator for weather and radiation data from open-meteo.com."""
+
+    def __init__(self, hass: HomeAssistant):
+        """Initialize the weather data coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            name="Weather Data",
+            update_interval=timedelta(minutes=30),
+        )
+        self.latitude = hass.config.latitude
+        self.longitude = hass.config.longitude
+        self.session = async_get_clientsession(hass)
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Fetch weather and radiation data from open-meteo.com."""
+        _LOGGER.debug(
+            "Fetching weather data for %.4f, %.4f", self.latitude, self.longitude
+        )
+
+        # Combine temperature, humidity, and radiation in one API call
+        url = (
+            "https://api.open-meteo.com/v1/forecast"
+            f"?latitude={self.latitude}&longitude={self.longitude}"
+            "&hourly=temperature_2m,relative_humidity_2m,shortwave_radiation"
+            "&current_weather=true&timezone=UTC&forecast_days=2"
+        )
+
+        try:
+            async with self.session.get(
+                url, timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                if resp.status != 200:
+                    raise UpdateFailed(f"API returned status {resp.status}")
+                data = await resp.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            raise UpdateFailed(f"Error fetching weather data: {err}")
+
+        # Extract current weather
+        current_weather = data.get("current_weather", {})
+        current_temp = float(current_weather.get("temperature", 0))
+
+        # Extract hourly forecasts
+        hourly = data.get("hourly", {})
+        times = hourly.get("time", [])
+        temps = hourly.get("temperature_2m", [])
+        humidity = hourly.get("relative_humidity_2m", [])
+        radiation = hourly.get("shortwave_radiation", [])
+
+        if not times or not temps:
+            raise UpdateFailed("No forecast data in API response")
+
+        # Find current hour index
+        now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+        start_idx = 0
+        for i, ts in enumerate(times):
+            try:
+                t = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if t >= now:
+                start_idx = i
+                break
+
+        # Extract next 48 hours (2 days)
+        temp_forecast = [float(v) for v in temps[start_idx : start_idx + 48]]
+        humidity_forecast = (
+            [float(v) for v in humidity[start_idx : start_idx + 48]]
+            if humidity
+            else []
+        )
+        radiation_forecast = (
+            [float(v) for v in radiation[start_idx : start_idx + 48]]
+            if radiation
+            else []
+        )
+
+        result = {
+            "current_temperature": round(current_temp, 2),
+            "temperature_forecast": [round(v, 2) for v in temp_forecast],
+            "humidity_forecast": [round(v, 1) for v in humidity_forecast],
+            "radiation_forecast": [round(v, 1) for v in radiation_forecast],
+            "timestamp": dt_util.utcnow(),
+        }
+
+        _LOGGER.debug(
+            "Weather data updated: current=%.1f°C, forecast=%d hours",
+            current_temp,
+            len(temp_forecast),
+        )
+
+        return result
+
+
+class HeatCalculationCoordinator(DataUpdateCoordinator):
+    """Coordinator for heat loss, solar gain, and PV production calculations."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        weather_coordinator: WeatherDataCoordinator,
+        config: dict[str, Any],
+    ):
+        """Initialize the heat calculation coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            name="Heat Calculations",
+            update_interval=timedelta(minutes=5),
+        )
+        self.weather_coordinator = weather_coordinator
+        self.config = config
+        self._indoor_temp_sensor = config.get(CONF_INDOOR_TEMPERATURE_SENSOR)
+        self._unsub = None
+
+    async def async_setup(self) -> None:
+        """Set up event tracking for indoor temperature changes."""
+        if self._indoor_temp_sensor:
+            self._unsub = async_track_state_change_event(
+                self.hass,
+                [self._indoor_temp_sensor],
+                self._handle_indoor_temp_change,
+            )
+            _LOGGER.debug(
+                "Tracking indoor temperature sensor: %s", self._indoor_temp_sensor
+            )
+
+    async def _handle_indoor_temp_change(self, event: Event) -> None:
+        """Handle indoor temperature changes with debouncing."""
+        old_state = event.data.get("old_state")
+        new_state = event.data.get("new_state")
+
+        if not old_state or not new_state:
+            return
+
+        try:
+            old_temp = float(old_state.state)
+            new_temp = float(new_state.state)
+            # Only update if temperature changed by more than 0.5°C
+            if abs(new_temp - old_temp) >= 0.5:
+                _LOGGER.debug(
+                    "Indoor temperature changed significantly: %.1f -> %.1f",
+                    old_temp,
+                    new_temp,
+                )
+                await self.async_request_refresh()
+        except (ValueError, TypeError):
+            pass
+
+    async def async_shutdown(self) -> None:
+        """Clean up event tracking."""
+        if self._unsub:
+            self._unsub()
+            self._unsub = None
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Calculate heat loss, solar gain, and PV production."""
+        # Get weather data from coordinator
+        weather_data = self.weather_coordinator.data
+        if not weather_data:
+            raise UpdateFailed("No weather data available")
+
+        # Get configuration
+        area_m2 = self.config.get(CONF_AREA_M2)
+        energy_label = self.config.get(CONF_ENERGY_LABEL)
+
+        if not area_m2 or not energy_label:
+            raise UpdateFailed("Missing area or energy label configuration")
+
+        # Get indoor temperature
+        indoor_temp = INDOOR_TEMPERATURE
+        if self._indoor_temp_sensor:
+            indoor_state = self.hass.states.get(self._indoor_temp_sensor)
+            if indoor_state and indoor_state.state not in ("unknown", "unavailable"):
+                try:
+                    indoor_temp = float(indoor_state.state)
+                except (ValueError, TypeError):
+                    pass
+
+        # Calculate HTC (Heat Transfer Coefficient)
+        ventilation_type = self.config.get(
+            CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE
+        )
+        ceiling_height = float(
+            self.config.get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT)
+        )
+
+        htc = calculate_htc_from_energy_label(
+            energy_label, area_m2, ventilation_type=ventilation_type, ceiling_height=ceiling_height
+        )
+
+        # Calculate current heat loss
+        outdoor_temp = weather_data["current_temperature"]
+        heat_loss = htc * (indoor_temp - outdoor_temp) / 1000  # Convert to kW
+
+        # Calculate heat loss forecast
+        heat_loss_forecast = [
+            htc * (indoor_temp - t) / 1000
+            for t in weather_data["temperature_forecast"]
+        ]
+
+        # Calculate solar gain
+        solar_gain, solar_forecast = await self.hass.async_add_executor_job(
+            self._calculate_solar_gain,
+            weather_data["radiation_forecast"],
+        )
+
+        # Calculate PV production
+        pv_forecast = await self.hass.async_add_executor_job(
+            self._calculate_pv_production,
+            weather_data["radiation_forecast"],
+        )
+
+        # Calculate net heat loss (heat loss - solar gain)
+        net_heat_loss = heat_loss - solar_gain
+        net_forecast = [
+            h - s for h, s in zip(heat_loss_forecast, solar_forecast)
+        ]
+
+        result = {
+            "heat_loss": round(heat_loss, 3),
+            "heat_loss_forecast": [round(v, 3) for v in heat_loss_forecast],
+            "solar_gain": round(solar_gain, 3),
+            "solar_gain_forecast": [round(v, 3) for v in solar_forecast],
+            "pv_production_forecast": [round(v, 3) for v in pv_forecast],
+            "net_heat_loss": round(net_heat_loss, 3),
+            "net_heat_loss_forecast": [round(v, 3) for v in net_forecast],
+            "outdoor_temperature": outdoor_temp,
+            "indoor_temperature": indoor_temp,
+            "timestamp": dt_util.utcnow(),
+        }
+
+        _LOGGER.debug(
+            "Heat calculations updated: loss=%.2f kW, solar=%.2f kW, net=%.2f kW",
+            heat_loss,
+            solar_gain,
+            net_heat_loss,
+        )
+
+        return result
+
+    def _calculate_solar_gain(
+        self, radiation_forecast: list[float]
+    ) -> tuple[float, list[float]]:
+        """Calculate solar gain through windows (blocking call)."""
+        glass_east = float(self.config.get(CONF_GLASS_EAST_M2, 0))
+        glass_south = float(self.config.get(CONF_GLASS_SOUTH_M2, 0))
+        glass_west = float(self.config.get(CONF_GLASS_WEST_M2, 0))
+        glass_u = float(self.config.get(CONF_GLASS_U_VALUE, 1.2))
+
+        total_glass = glass_east + glass_south + glass_west
+
+        if total_glass == 0 or not radiation_forecast:
+            return 0.0, [0.0] * len(radiation_forecast)
+
+        # SHGC (Solar Heat Gain Coefficient) approximation
+        # Lower U-value glass typically has lower SHGC
+        shgc = max(0.3, 0.7 - (glass_u - 0.8) * 0.2)
+
+        # Orientation factors (how much radiation reaches each direction)
+        # These are rough approximations for Netherlands latitude
+        orientation_factors = {
+            "east": 0.6,  # Morning sun
+            "south": 1.0,  # Maximum sun exposure
+            "west": 0.6,  # Afternoon sun
+        }
+
+        solar_forecast = []
+        for radiation in radiation_forecast:
+            # Calculate solar gain for each orientation
+            gain = (
+                glass_east * radiation * orientation_factors["east"] * shgc
+                + glass_south * radiation * orientation_factors["south"] * shgc
+                + glass_west * radiation * orientation_factors["west"] * shgc
+            ) / 1000  # Convert W to kW
+
+            solar_forecast.append(max(0.0, gain))
+
+        current_solar = solar_forecast[0] if solar_forecast else 0.0
+
+        return current_solar, solar_forecast
+
+    def _calculate_pv_production(
+        self, radiation_forecast: list[float]
+    ) -> list[float]:
+        """Calculate PV production forecast (blocking call)."""
+        pv_east = float(self.config.get(CONF_PV_EAST_WP, 0))
+        pv_south = float(self.config.get(CONF_PV_SOUTH_WP, 0))
+        pv_west = float(self.config.get(CONF_PV_WEST_WP, 0))
+        pv_tilt = float(self.config.get(CONF_PV_TILT, DEFAULT_PV_TILT))
+
+        total_pv = pv_east + pv_south + pv_west
+
+        if total_pv == 0 or not radiation_forecast:
+            return [0.0] * len(radiation_forecast)
+
+        # System efficiency (inverter + wiring + temperature losses)
+        system_efficiency = 0.85
+
+        # Tilt factor (how much radiation is affected by panel angle)
+        # Optimal tilt for Netherlands is ~35°
+        tilt_factor = 1.0 if pv_tilt == 35 else max(0.7, 1.0 - abs(pv_tilt - 35) * 0.01)
+
+        # Orientation factors for PV panels
+        orientation_factors = {
+            "east": 0.65,
+            "south": 1.0,
+            "west": 0.65,
+        }
+
+        pv_forecast = []
+        for radiation in radiation_forecast:
+            # Calculate production for each orientation
+            # Formula: Power (W) = Wp * (radiation / 1000) * efficiency
+            # radiation is in W/m², 1000 W/m² is STC (Standard Test Conditions)
+            production = (
+                pv_east * radiation * orientation_factors["east"]
+                + pv_south * radiation * orientation_factors["south"]
+                + pv_west * radiation * orientation_factors["west"]
+            ) * tilt_factor * system_efficiency / 1000 / 1000  # First /1000 for STC, second for W to kW
+
+            pv_forecast.append(max(0.0, production))
+
+        return pv_forecast
+
+
+class OptimizationCoordinator(DataUpdateCoordinator):
+    """Coordinator for heating curve optimization using dynamic programming."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        heat_coordinator: HeatCalculationCoordinator,
+        config: dict[str, Any],
+    ):
+        """Initialize the optimization coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            name="Heating Optimization",
+            update_interval=timedelta(minutes=15),
+        )
+        self.heat_coordinator = heat_coordinator
+        self.config = config
+        self._price_sensor = config.get(CONF_CONSUMPTION_PRICE_SENSOR)
+        self._unsub = None
+        self._last_price = None
+
+    async def async_setup(self) -> None:
+        """Set up event tracking for price changes."""
+        if self._price_sensor:
+            self._unsub = async_track_state_change_event(
+                self.hass,
+                [self._price_sensor],
+                self._handle_price_change,
+            )
+            _LOGGER.debug("Tracking price sensor: %s", self._price_sensor)
+
+    async def _handle_price_change(self, event: Event) -> None:
+        """Handle significant price changes."""
+        new_state = event.data.get("new_state")
+        if not new_state:
+            return
+
+        try:
+            new_price = float(new_state.state)
+            # Only trigger on significant price change (>10%)
+            if self._last_price is not None:
+                change_pct = abs(new_price - self._last_price) / self._last_price
+                if change_pct >= 0.10:
+                    _LOGGER.debug(
+                        "Significant price change detected: %.2f%%, triggering optimization",
+                        change_pct * 100,
+                    )
+                    await self.async_request_refresh()
+            self._last_price = new_price
+        except (ValueError, TypeError):
+            pass
+
+    async def async_shutdown(self) -> None:
+        """Clean up event tracking."""
+        if self._unsub:
+            self._unsub()
+            self._unsub = None
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Run heating curve optimization."""
+        # Get heat demand forecast
+        heat_data = self.heat_coordinator.data
+        if not heat_data:
+            raise UpdateFailed("No heat calculation data available")
+
+        demand_forecast = heat_data["net_heat_loss_forecast"]
+
+        # Get outdoor temperature forecast from weather coordinator
+        weather_data = self.heat_coordinator.weather_coordinator.data
+        if not weather_data:
+            raise UpdateFailed("No weather data available for optimization")
+
+        temp_forecast = weather_data["temperature_forecast"]
+
+        # Get price forecast
+        if not self._price_sensor:
+            raise UpdateFailed("No price sensor configured")
+
+        price_state = self.hass.states.get(self._price_sensor)
+        if not price_state or price_state.state in ("unknown", "unavailable"):
+            raise UpdateFailed("Price sensor not available")
+
+        price_forecast, price_interval = extract_price_forecast_with_interval(
+            price_state
+        )
+
+        if not price_forecast:
+            # Fallback to current price
+            try:
+                current_price = float(price_state.state)
+                price_forecast = [current_price]
+            except (ValueError, TypeError):
+                raise UpdateFailed("Cannot extract price data")
+
+        # Get optimization parameters
+        planning_window = int(
+            self.config.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
+        )
+        time_base = int(self.config.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
+        k_factor = float(self.config.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
+        base_cop = float(self.config.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
+        outdoor_temp_coefficient = float(
+            self.config.get(
+                CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
+            )
+        )
+        cop_compensation = float(
+            self.config.get(
+                CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR
+            )
+        )
+
+        # Get temperature limits
+        min_supply = float(self.config.get(CONF_HEAT_CURVE_MIN, 20.0))
+        max_supply = float(self.config.get(CONF_HEAT_CURVE_MAX, 45.0))
+        min_outdoor = float(self.config.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0))
+        max_outdoor = float(self.config.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 20.0))
+
+        # Run optimization in executor (CPU-intensive)
+        _LOGGER.debug("Running optimization with %d demand points", len(demand_forecast))
+        result = await self.hass.async_add_executor_job(
+            self._run_optimization,
+            demand_forecast,
+            price_forecast,
+            temp_forecast,
+            planning_window,
+            time_base,
+            price_interval,
+            k_factor,
+            base_cop,
+            outdoor_temp_coefficient,
+            cop_compensation,
+            min_supply,
+            max_supply,
+            min_outdoor,
+            max_outdoor,
+        )
+
+        _LOGGER.debug(
+            "Optimization complete: offset=%.1f°C, cost=%.3f",
+            result["optimized_offset"],
+            result.get("total_cost", 0),
+        )
+
+        return result
+
+    def _run_optimization(
+        self,
+        demand_forecast: list[float],
+        price_forecast: list[float],
+        temp_forecast: list[float],
+        planning_window: int,
+        time_base: int,
+        price_interval: int,
+        k_factor: float,
+        base_cop: float,
+        outdoor_temp_coefficient: float,
+        cop_compensation: float,
+        min_supply: float,
+        max_supply: float,
+        min_outdoor: float,
+        max_outdoor: float,
+    ) -> dict[str, Any]:
+        """Run DP optimization (blocking call in executor)."""
+        try:
+            # Limit forecasts to planning window
+            max_steps = planning_window
+            demand_limited = demand_forecast[:max_steps]
+            price_limited = price_forecast[:max_steps]
+            temp_limited = temp_forecast[:max_steps]
+
+            # Call the optimizer with correct parameter names
+            offsets, buffer_evolution = optimize_offsets(
+                demand=demand_limited,
+                prices=price_limited,
+                base_temp=base_cop,
+                k_factor=k_factor,
+                cop_compensation_factor=cop_compensation,
+                buffer=0.0,  # Start with zero buffer
+                water_min=min_supply,
+                water_max=max_supply,
+                outdoor_temps=temp_limited,
+                humidity_forecast=None,  # Not available yet
+                outdoor_temp_coefficient=outdoor_temp_coefficient,
+                time_base=time_base,
+                outdoor_min=min_outdoor,
+                outdoor_max=max_outdoor,
+            )
+
+            # Calculate total cost (simple estimation)
+            total_cost = sum(
+                price * abs(offset) for price, offset in zip(price_limited, offsets)
+            )
+
+            # Calculate future supply temperatures from offsets and outdoor temps
+            future_supply_temps = []
+            for i, offset in enumerate(offsets):
+                if i < len(temp_limited):
+                    outdoor_temp = temp_limited[i]
+                    # Calculate base temp using heating curve
+                    if outdoor_temp <= min_outdoor:
+                        base_temp = max_supply
+                    elif outdoor_temp >= max_outdoor:
+                        base_temp = min_supply
+                    else:
+                        ratio = (outdoor_temp - min_outdoor) / (max_outdoor - min_outdoor)
+                        base_temp = max_supply + (min_supply - max_supply) * ratio
+
+                    # Add offset and clamp to limits
+                    supply_temp = max(min(base_temp + offset, max_supply), min_supply)
+                    future_supply_temps.append(round(supply_temp, 1))
+                else:
+                    # No temperature data, use min_supply as fallback
+                    future_supply_temps.append(round(min_supply, 1))
+
+            return {
+                "optimized_offset": round(offsets[0], 1) if offsets else 0.0,
+                "optimized_offsets": [round(v, 1) for v in offsets],
+                "buffer_evolution": [round(v, 3) for v in buffer_evolution],
+                "future_supply_temperatures": future_supply_temps,
+                "total_cost": round(total_cost, 3),
+                "timestamp": dt_util.utcnow(),
+            }
+
+        except Exception as err:
+            _LOGGER.error("Optimization failed: %s", err, exc_info=True)
+            # Return safe fallback
+            return {
+                "optimized_offset": 0.0,
+                "optimized_offsets": [0.0],
+                "buffer_evolution": [0.0],
+                "total_cost": 0.0,
+                "timestamp": dt_util.utcnow(),
+                "error": str(err),
+            }

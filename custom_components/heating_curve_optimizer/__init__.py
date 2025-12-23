@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import logging
+
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.entity import DeviceInfo
 
 from .const import DOMAIN, PLATFORMS
-
-import logging
+from .coordinator import (
+    WeatherDataCoordinator,
+    HeatCalculationCoordinator,
+    OptimizationCoordinator,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,8 +36,46 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Ensure DOMAIN exists in hass.data
     hass.data.setdefault(DOMAIN, {})
 
-    # Store entry data
-    hass.data[DOMAIN][entry.entry_id] = entry.data
+    # Merge options and data for configuration
+    config = {**entry.data, **entry.options}
+
+    # Initialize coordinators
+    _LOGGER.debug("Initializing coordinators for entry %s", entry.entry_id)
+
+    # 1. Weather data coordinator (API calls to open-meteo)
+    weather_coordinator = WeatherDataCoordinator(hass)
+    await weather_coordinator.async_config_entry_first_refresh()
+
+    # 2. Heat calculation coordinator (depends on weather coordinator)
+    heat_coordinator = HeatCalculationCoordinator(hass, weather_coordinator, config)
+    await heat_coordinator.async_setup()
+    await heat_coordinator.async_config_entry_first_refresh()
+
+    # 3. Optimization coordinator (depends on heat coordinator)
+    optimization_coordinator = OptimizationCoordinator(hass, heat_coordinator, config)
+    await optimization_coordinator.async_setup()
+    await optimization_coordinator.async_config_entry_first_refresh()
+
+    # Create device info for all entities
+    device = DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        name="Heating Curve Optimizer",
+        manufacturer="Custom",
+        model="Dynamic Heating Optimizer",
+        sw_version="2.0.0",
+    )
+
+    # Store coordinators and config in hass.data
+    hass.data[DOMAIN][entry.entry_id] = {
+        "weather_coordinator": weather_coordinator,
+        "heat_coordinator": heat_coordinator,
+        "optimization_coordinator": optimization_coordinator,
+        "config": config,
+        "entry": entry,
+        "device": device,
+    }
+
+    _LOGGER.debug("Coordinators initialized successfully")
 
     entry.async_on_unload(entry.add_update_listener(_update_listener))
 
@@ -51,6 +95,18 @@ async def _update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry and its platforms."""
     _LOGGER.info("Unloading entry %s", entry.entry_id)
+
+    # Shutdown coordinators
+    entry_data = hass.data[DOMAIN].get(entry.entry_id)
+    if entry_data:
+        heat_coordinator = entry_data.get("heat_coordinator")
+        if heat_coordinator:
+            await heat_coordinator.async_shutdown()
+
+        optimization_coordinator = entry_data.get("optimization_coordinator")
+        if optimization_coordinator:
+            await optimization_coordinator.async_shutdown()
+
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop("entities", None)
