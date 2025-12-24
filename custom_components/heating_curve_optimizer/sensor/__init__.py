@@ -8,7 +8,22 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from ..const import DOMAIN
+from ..const import (
+    DOMAIN,
+    CONF_CONSUMPTION_PRICE_SENSOR,
+    CONF_PRICE_SETTINGS,
+    CONF_POWER_CONSUMPTION,
+    CONF_SUPPLY_TEMPERATURE_SENSOR,
+    SOURCE_TYPE_CONSUMPTION,
+    DEFAULT_K_FACTOR,
+    DEFAULT_COP_AT_35,
+    DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+    DEFAULT_COP_COMPENSATION_FACTOR,
+    CONF_K_FACTOR,
+    CONF_BASE_COP,
+    CONF_OUTDOOR_TEMP_COEFFICIENT,
+    CONF_COP_COMPENSATION_FACTOR,
+)
 
 # Import all sensor classes
 from .weather.outdoor_temperature import CoordinatorOutdoorTemperatureSensor
@@ -26,6 +41,12 @@ from .cop.calculated_supply_temperature import (
     CoordinatorCalculatedSupplyTemperatureSensor,
 )
 from .diagnostics_sensor import CoordinatorDiagnosticsSensor
+from .event_driven import (
+    CurrentElectricityPriceSensor,
+    HeatPumpThermalPowerSensor,
+    CopEfficiencyDeltaSensor,
+    HeatGenerationDeltaSensor,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -172,5 +193,127 @@ async def async_setup_entry(
         )
     )
 
+    # Event-driven sensors (real-time state tracking)
+    _setup_event_driven_sensors(
+        hass, entry, config, device, entities, weather_coordinator
+    )
+
     _LOGGER.debug("Adding %d sensor entities", len(entities))
     async_add_entities(entities)
+
+
+def _setup_event_driven_sensors(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    config: dict,
+    device,
+    entities: list,
+    weather_coordinator,
+) -> None:
+    """Set up event-driven sensors that track state changes in real-time."""
+
+    # Price sensor
+    consumption_price_sensor = config.get(CONF_CONSUMPTION_PRICE_SENSOR)
+    if consumption_price_sensor:
+        price_settings = config.get(CONF_PRICE_SETTINGS, {})
+        entities.append(
+            CurrentElectricityPriceSensor(
+                hass=hass,
+                name="Current Electricity Price",
+                unique_id=f"{entry.entry_id}_current_electricity_price",
+                price_sensor=consumption_price_sensor,
+                source_type=SOURCE_TYPE_CONSUMPTION,
+                price_settings=price_settings,
+                icon="mdi:currency-eur",
+                device=device,
+            )
+        )
+
+    # COP and thermal power sensors
+    supply_sensor = config.get(CONF_SUPPLY_TEMPERATURE_SENSOR)
+    power_sensor = config.get(CONF_POWER_CONSUMPTION)
+
+    if supply_sensor and power_sensor:
+        k_factor = float(config.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
+        base_cop = float(config.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
+        outdoor_temp_coefficient = float(
+            config.get(CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT)
+        )
+        cop_compensation_factor = float(
+            config.get(CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR)
+        )
+
+        # Find outdoor temperature sensor reference
+        outdoor_sensor_ref = None
+        for entity in entities:
+            if isinstance(entity, CoordinatorOutdoorTemperatureSensor):
+                outdoor_sensor_ref = entity
+                break
+        if outdoor_sensor_ref is None:
+            outdoor_sensor_ref = "sensor.heating_curve_optimizer_outdoor_temperature"
+
+        # Thermal power sensor
+        thermal_power_sensor = HeatPumpThermalPowerSensor(
+            hass=hass,
+            name="Heat Pump Thermal Power",
+            unique_id=f"{entry.entry_id}_thermal_power",
+            power_sensor=power_sensor,
+            supply_sensor=supply_sensor,
+            outdoor_sensor=outdoor_sensor_ref,
+            device=device,
+            k_factor=k_factor,
+            base_cop=base_cop,
+        )
+        entities.append(thermal_power_sensor)
+
+        # Find COP sensor (added conditionally earlier)
+        cop_sensor = None
+        for entity in entities:
+            if isinstance(entity, CoordinatorQuadraticCopSensor):
+                cop_sensor = entity
+                break
+
+        # Find heating curve offset sensor
+        offset_sensor = None
+        for entity in entities:
+            if isinstance(entity, CoordinatorHeatingCurveOffsetSensor):
+                offset_sensor = entity
+                break
+        if offset_sensor is None:
+            offset_sensor = "sensor.heating_curve_optimizer_heating_curve_offset"
+
+        # COP delta sensor
+        if cop_sensor:
+            entities.append(
+                CopEfficiencyDeltaSensor(
+                    hass=hass,
+                    name="COP Delta",
+                    unique_id=f"{entry.entry_id}_cop_delta",
+                    cop_sensor=cop_sensor,
+                    offset_entity=offset_sensor,
+                    outdoor_sensor=outdoor_sensor_ref,
+                    device=device,
+                    k_factor=k_factor,
+                    base_cop=base_cop,
+                    outdoor_temp_coefficient=outdoor_temp_coefficient,
+                    cop_compensation_factor=cop_compensation_factor,
+                )
+            )
+
+            # Heat generation delta sensor
+            entities.append(
+                HeatGenerationDeltaSensor(
+                    hass=hass,
+                    name="Heat Generation Delta",
+                    unique_id=f"{entry.entry_id}_heat_generation_delta",
+                    thermal_power_sensor=thermal_power_sensor,
+                    cop_sensor=cop_sensor,
+                    offset_entity=offset_sensor,
+                    outdoor_sensor=outdoor_sensor_ref,
+                    device=device,
+                    k_factor=k_factor,
+                    base_cop=base_cop,
+                    outdoor_temp_coefficient=outdoor_temp_coefficient,
+                    cop_compensation_factor=cop_compensation_factor,
+                )
+            )
