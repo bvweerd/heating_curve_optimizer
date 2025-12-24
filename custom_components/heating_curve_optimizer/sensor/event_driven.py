@@ -249,6 +249,7 @@ class CopEfficiencyDeltaSensor(BaseUtilitySensor):
         cop_sensor: str | SensorEntity,
         offset_entity: str | SensorEntity,
         outdoor_sensor: str | SensorEntity,
+        calculated_supply_sensor: str | SensorEntity,
         device: DeviceInfo,
         k_factor: float = DEFAULT_K_FACTOR,
         base_cop: float = DEFAULT_COP_AT_35,
@@ -270,6 +271,7 @@ class CopEfficiencyDeltaSensor(BaseUtilitySensor):
         self.cop_sensor = cop_sensor
         self.offset_entity = offset_entity
         self.outdoor_sensor = outdoor_sensor
+        self.calculated_supply_sensor = calculated_supply_sensor
         self.k_factor = k_factor
         self.base_cop = base_cop
         self.outdoor_temp_coefficient = outdoor_temp_coefficient
@@ -286,6 +288,7 @@ class CopEfficiencyDeltaSensor(BaseUtilitySensor):
             self._resolve_entity_id(self.cop_sensor),
             self._resolve_entity_id(self.offset_entity),
             self._resolve_entity_id(self.outdoor_sensor),
+            self._resolve_entity_id(self.calculated_supply_sensor),
         ):
             if ent is None:
                 continue
@@ -309,6 +312,8 @@ class CopEfficiencyDeltaSensor(BaseUtilitySensor):
                     self.offset_entity = entity_id
                 elif entity_ref is self.outdoor_sensor:
                     self.outdoor_sensor = entity_id
+                elif entity_ref is self.calculated_supply_sensor:
+                    self.calculated_supply_sensor = entity_id
             return entity_id
         return cast(str, entity_ref)
 
@@ -324,21 +329,23 @@ class CopEfficiencyDeltaSensor(BaseUtilitySensor):
         return state
 
     async def async_update(self):
-        cop_state = self._get_state(self.cop_sensor)
         offset_state = self._get_state(self.offset_entity)
         outdoor_state = self._get_state(self.outdoor_sensor)
+        calculated_supply_state = self._get_state(self.calculated_supply_sensor)
+
         if (
-            cop_state is None
-            or offset_state is None
+            offset_state is None
             or outdoor_state is None
-            or cop_state.state in ("unknown", "unavailable")
+            or calculated_supply_state is None
             or outdoor_state.state in ("unknown", "unavailable")
+            or calculated_supply_state.state in ("unknown", "unavailable")
         ):
             self._attr_available = False
             return
+
         try:
-            reference_cop = float(cop_state.state)
             outdoor_temp = float(outdoor_state.state)
+            baseline_supply_temp = float(calculated_supply_state.state)
         except ValueError:
             self._attr_available = False
             return
@@ -354,31 +361,43 @@ class CopEfficiencyDeltaSensor(BaseUtilitySensor):
         except (ValueError, TypeError):
             current_offset = 0.0
 
+        # Calculate baseline COP (without offset)
+        baseline_cop = (
+            self.base_cop
+            + self.outdoor_temp_coefficient * outdoor_temp
+            - self.k_factor * (baseline_supply_temp - 35)
+        ) * self.cop_compensation_factor
+        baseline_cop = max(0.5, baseline_cop)
+
         # If offset is 0, no optimization is active, so delta is 0
         if abs(current_offset) < 0.01:
             self._attr_native_value = 0.0
             self._extra_attrs = {
-                "future_cop": [round(reference_cop, 3)] * len(supply_temps),
+                "future_cop": [round(baseline_cop, 3)] * len(supply_temps),
                 "cop_deltas": [0.0] * len(supply_temps),
-                "reference_cop": round(reference_cop, 3),
+                "baseline_cop": round(baseline_cop, 3),
             }
             self._attr_available = True
             return
 
+        # Calculate predicted COPs with optimized supply temperatures
         predicted_cops = [
-            (
-                self.base_cop
-                + self.outdoor_temp_coefficient * outdoor_temp
-                - self.k_factor * (float(s_temp) - 35)
+            max(
+                0.5,
+                (
+                    self.base_cop
+                    + self.outdoor_temp_coefficient * outdoor_temp
+                    - self.k_factor * (float(s_temp) - 35)
+                )
+                * self.cop_compensation_factor,
             )
-            * self.cop_compensation_factor
             for s_temp in supply_temps
         ]
-        cop_deltas = [round(c - reference_cop, 3) for c in predicted_cops]
+        cop_deltas = [round(c - baseline_cop, 3) for c in predicted_cops]
         self._extra_attrs = {
             "future_cop": [round(c, 3) for c in predicted_cops],
             "cop_deltas": cop_deltas,
-            "reference_cop": round(reference_cop, 3),
+            "baseline_cop": round(baseline_cop, 3),
         }
         self._attr_native_value = cop_deltas[0] if cop_deltas else 0.0
         self._attr_available = True
@@ -397,6 +416,7 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
         cop_sensor: str | SensorEntity,
         offset_entity: str | SensorEntity,
         outdoor_sensor: str | SensorEntity,
+        calculated_supply_sensor: str | SensorEntity,
         device: DeviceInfo,
         k_factor: float = DEFAULT_K_FACTOR,
         base_cop: float = DEFAULT_COP_AT_35,
@@ -419,6 +439,7 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
         self.cop_sensor = cop_sensor
         self.offset_entity = offset_entity
         self.outdoor_sensor = outdoor_sensor
+        self.calculated_supply_sensor = calculated_supply_sensor
         self.k_factor = k_factor
         self.base_cop = base_cop
         self.outdoor_temp_coefficient = outdoor_temp_coefficient
@@ -436,6 +457,7 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
             self._resolve_entity_id(self.cop_sensor),
             self._resolve_entity_id(self.offset_entity),
             self._resolve_entity_id(self.outdoor_sensor),
+            self._resolve_entity_id(self.calculated_supply_sensor),
         ):
             if ent is None:
                 continue
@@ -461,6 +483,8 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
                     self.offset_entity = entity_id
                 elif entity_ref is self.outdoor_sensor:
                     self.outdoor_sensor = entity_id
+                elif entity_ref is self.calculated_supply_sensor:
+                    self.calculated_supply_sensor = entity_id
             return entity_id
         return cast(str, entity_ref)
 
@@ -477,30 +501,32 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
 
     async def async_update(self):
         power_state = self._get_state(self.thermal_power_sensor)
-        cop_state = self._get_state(self.cop_sensor)
         offset_state = self._get_state(self.offset_entity)
         outdoor_state = self._get_state(self.outdoor_sensor)
+        calculated_supply_state = self._get_state(self.calculated_supply_sensor)
+
         if (
             power_state is None
-            or cop_state is None
             or offset_state is None
             or outdoor_state is None
+            or calculated_supply_state is None
             or power_state.state in ("unknown", "unavailable")
-            or cop_state.state in ("unknown", "unavailable")
             or outdoor_state.state in ("unknown", "unavailable")
+            or calculated_supply_state.state in ("unknown", "unavailable")
         ):
             self._attr_available = False
             return
+
         try:
-            reference_heat = float(power_state.state)
-            reference_cop = float(cop_state.state)
+            current_heat = float(power_state.state)
             outdoor_temp = float(outdoor_state.state)
+            baseline_supply_temp = float(calculated_supply_state.state)
         except ValueError:
             self._attr_available = False
             return
 
         supply_temps = offset_state.attributes.get("future_supply_temperatures")
-        if not supply_temps or reference_cop == 0:
+        if not supply_temps:
             self._attr_available = False
             return
 
@@ -510,33 +536,56 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
         except (ValueError, TypeError):
             current_offset = 0.0
 
+        # Calculate baseline COP (without offset)
+        baseline_cop = (
+            self.base_cop
+            + self.outdoor_temp_coefficient * outdoor_temp
+            - self.k_factor * (baseline_supply_temp - 35)
+        ) * self.cop_compensation_factor
+        baseline_cop = max(0.5, baseline_cop)
+
+        # Calculate baseline heat generation (what heat would be without offset)
+        # We assume the same electrical power consumption, so heat = power * COP
+        # For baseline: we need to estimate electrical power from current heat and a COP estimate
+        # Simplification: assume current_heat represents heat at baseline COP
+        baseline_heat = current_heat
+
         # If offset is 0, no optimization is active, so delta is 0
         if abs(current_offset) < 0.01:
             self._attr_native_value = 0.0
             self._extra_attrs = {
-                "future_heat_generation": [round(reference_heat, 3)]
-                * len(supply_temps),
+                "future_heat_generation": [round(baseline_heat, 3)] * len(supply_temps),
                 "heat_deltas": [0.0] * len(supply_temps),
-                "reference_heat_generation": round(reference_heat, 3),
+                "baseline_heat_generation": round(baseline_heat, 3),
             }
             self._attr_available = True
             return
 
+        # Calculate predicted COPs with optimized supply temperatures
         predicted_cops = [
-            (
-                self.base_cop
-                + self.outdoor_temp_coefficient * outdoor_temp
-                - self.k_factor * (float(s_temp) - 35)
+            max(
+                0.5,
+                (
+                    self.base_cop
+                    + self.outdoor_temp_coefficient * outdoor_temp
+                    - self.k_factor * (float(s_temp) - 35)
+                )
+                * self.cop_compensation_factor,
             )
-            * self.cop_compensation_factor
             for s_temp in supply_temps
         ]
-        predicted_heat = [reference_heat * (c / reference_cop) for c in predicted_cops]
-        heat_deltas = [round(h - reference_heat, 3) for h in predicted_heat]
+
+        # Calculate predicted heat: heat_optimized = (COP_optimized / COP_baseline) * heat_baseline
+        predicted_heat = [
+            baseline_heat * (c / baseline_cop) if baseline_cop > 0 else baseline_heat
+            for c in predicted_cops
+        ]
+        heat_deltas = [round(h - baseline_heat, 3) for h in predicted_heat]
         self._extra_attrs = {
             "future_heat_generation": [round(h, 3) for h in predicted_heat],
             "heat_deltas": heat_deltas,
-            "reference_heat_generation": round(reference_heat, 3),
+            "baseline_heat_generation": round(baseline_heat, 3),
+            "baseline_cop": round(baseline_cop, 3),
         }
         self._attr_native_value = heat_deltas[0] if heat_deltas else 0.0
         self._attr_available = True

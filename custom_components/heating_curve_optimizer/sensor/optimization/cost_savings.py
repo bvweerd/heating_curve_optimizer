@@ -12,7 +12,7 @@ from ...entity import BaseUtilitySensor
 
 
 class CoordinatorCostSavingsSensor(CoordinatorEntity, BaseUtilitySensor):
-    """Cost savings sensor showing optimization savings in EUR."""
+    """Cost savings forecast sensor showing predicted optimization savings in EUR."""
 
     def __init__(
         self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
@@ -30,7 +30,7 @@ class CoordinatorCostSavingsSensor(CoordinatorEntity, BaseUtilitySensor):
             device=device,
             translation_key=name.lower().replace(" ", "_"),
         )
-        self._attr_state_class = SensorStateClass.TOTAL
+        self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_should_poll = False
 
     @property

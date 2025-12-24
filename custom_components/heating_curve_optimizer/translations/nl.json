@@ -122,13 +122,16 @@
         "name": "PV productie voorspelling"
       },
       "cop_delta": {
-        "name": "COP verschil (toekomstige offsets)"
+        "name": "COP Verschil"
       },
       "heat_generation_delta": {
-        "name": "Warmteproductie verschil"
+        "name": "Warmteproductie Verschil"
       },
-      "cost_savings": {
-        "name": "Kostenbesparing (optimalisatie)"
+      "cost_savings_forecast": {
+        "name": "Kostenbesparing Voorspelling"
+      },
+      "total_cost_savings": {
+        "name": "Totale Kostenbesparing"
       },
       "heat_buffer": {
         "name": "Warmtebuffer (energie opslag)"

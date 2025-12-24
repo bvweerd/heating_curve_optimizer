@@ -122,13 +122,16 @@
         "name": "PV production forecast"
       },
       "cop_delta": {
-        "name": "COP delta (future offsets)"
+        "name": "COP Delta"
       },
       "heat_generation_delta": {
-        "name": "Heat generation delta"
+        "name": "Heat Generation Delta"
       },
-      "cost_savings": {
-        "name": "Cost savings (optimization)"
+      "cost_savings_forecast": {
+        "name": "Cost Savings Forecast"
+      },
+      "total_cost_savings": {
+        "name": "Total Cost Savings"
       },
       "heat_buffer": {
         "name": "Heat buffer (energy storage)"

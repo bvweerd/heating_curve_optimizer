@@ -1,6 +1,6 @@
 # Sensor Reference
 
-Complete reference for all 17 sensors provided by the Heating Curve Optimizer integration.
+Complete reference for all 19 sensors provided by the Heating Curve Optimizer integration.
 
 ## Core Sensors
 
@@ -190,6 +190,62 @@ max_buffer_24h: 8.5
 
 ---
 
+### Cost Savings Forecast
+**Entity ID**: `sensor.heating_curve_optimizer_cost_savings_forecast`
+
+**Description**: Predicted cost savings from optimization over the planning window (typically 6 hours)
+
+**Unit**: €
+
+**State Class**: `measurement` (forecast value, not cumulative)
+
+**Attributes**:
+```yaml
+total_cost_eur: 2.45  # Optimized cost
+baseline_cost_eur: 2.73  # Cost without optimization
+cost_savings_eur: 0.28  # Savings
+savings_percentage: 10.3  # Percentage saved
+planning_window_hours: 6
+```
+
+**Formula**:
+\\[ Savings = Cost_{baseline} - Cost_{optimized} \\]
+
+**Usage**: Monitor optimization effectiveness and forecast savings
+
+---
+
+### Total Cost Savings
+**Entity ID**: `sensor.heating_curve_optimizer_total_cost_savings`
+
+**Description**: **Cumulative** cost savings since integration activation
+
+**Unit**: €
+
+**State Class**: `total_increasing` (cumulative counter)
+
+**Attributes**:
+```yaml
+last_update: "2025-11-15T10:30:00"
+time_base_minutes: 60
+```
+
+**Behavior**:
+- Accumulates only **positive** savings
+- Updates every `time_base` minutes (default: 60)
+- Persists across restarts
+- Only counts when offset ≠ 0 and heat demand > 0
+
+**Typical Growth**:
+- Per day: €0.50 - €2.00
+- Per week: €3.00 - €15.00
+- Per month: €15.00 - €60.00
+- Per year: €200.00 - €700.00
+
+**Usage**: Track total financial benefit and ROI
+
+---
+
 ## Price & Power Sensors
 
 ### Current Electricity Price
@@ -341,35 +397,64 @@ percentile: 45  # Current price is 45th percentile
 
 ---
 
-### COP Efficiency Delta
-**Entity ID**: `sensor.heating_curve_optimizer_cop_efficiency_delta`
+### COP Delta
+**Entity ID**: `sensor.heating_curve_optimizer_cop_delta`
 
-**Description**: COP improvement from optimization
+**Description**: COP improvement from optimization compared to baseline (heating curve without offset)
 
 **Unit**: Dimensionless (COP points)
 
 **Formula**:
 \\[ \Delta COP = COP_{optimized} - COP_{baseline} \\]
 
+Where:
+- \\( COP_{baseline} \\): COP calculated using heating curve without offset
+- \\( COP_{optimized} \\): COP with optimized offset applied
+
 **Attributes**:
 ```yaml
-optimized_cop: 3.65
-baseline_cop: 3.52
-delta: 0.13
-percentage_improvement: 3.7
+future_cop: [3.65, 3.68, 3.71, ...]  # Optimized COP forecast
+cop_deltas: [0.13, 0.15, 0.14, ...]  # Delta for each hour
+baseline_cop: 3.52  # COP without offset
 ```
+
+**Behavior**:
+- Returns `0.0` when offset is `0` (no optimization active)
+- Stable when offset remains constant
+- Updates when outdoor temperature or offset changes
+
+**Usage**: Monitor COP efficiency gains from optimization
 
 ---
 
 ### Heat Generation Delta
 **Entity ID**: `sensor.heating_curve_optimizer_heat_generation_delta`
 
-**Description**: Heat output difference from optimization
+**Description**: Heat output difference from optimization compared to baseline
 
 **Unit**: kW
 
 **Formula**:
 \\[ \Delta Q = Q_{optimized} - Q_{baseline} \\]
+
+Where:
+- \\( Q_{baseline} \\): Heat output at baseline COP (without offset)
+- \\( Q_{optimized} \\): Heat output at optimized COP (with offset)
+
+**Attributes**:
+```yaml
+future_heat_generation: [12.5, 12.8, 13.1, ...]  # Optimized heat forecast (kW)
+heat_deltas: [0.5, 0.6, 0.5, ...]  # Delta for each hour (kW)
+baseline_heat_generation: 12.0  # Heat without offset (kW)
+baseline_cop: 3.52  # Baseline COP
+```
+
+**Behavior**:
+- Returns `0.0` when offset is `0`
+- Positive delta: more heat generated (higher COP from lower supply temp)
+- Negative delta: less heat generated (lower COP from higher supply temp)
+
+**Usage**: Monitor heat output changes from optimization
 
 ---
 

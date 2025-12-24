@@ -14,11 +14,13 @@ from ..const import (
     CONF_PRICE_SETTINGS,
     CONF_POWER_CONSUMPTION,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
+    CONF_TIME_BASE,
     SOURCE_TYPE_CONSUMPTION,
     DEFAULT_K_FACTOR,
     DEFAULT_COP_AT_35,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_COP_COMPENSATION_FACTOR,
+    DEFAULT_TIME_BASE,
     CONF_K_FACTOR,
     CONF_BASE_COP,
     CONF_OUTDOOR_TEMP_COEFFICIENT,
@@ -41,6 +43,7 @@ from .optimization.optimized_supply_temperature import (
 )
 from .optimization.heat_buffer import CoordinatorHeatBufferSensor
 from .optimization.cost_savings import CoordinatorCostSavingsSensor
+from .optimization.total_cost_savings import TotalCostSavingsSensor
 from .cop.quadratic_cop import CoordinatorQuadraticCopSensor
 from .cop.calculated_supply_temperature import (
     CoordinatorCalculatedSupplyTemperatureSensor,
@@ -159,15 +162,45 @@ async def async_setup_entry(
     entities.append(
         CoordinatorCostSavingsSensor(
             coordinator=optimization_coordinator,
-            name="Cost Savings",
-            unique_id=f"{entry.entry_id}_cost_savings",
+            name="Cost Savings Forecast",
+            unique_id=f"{entry.entry_id}_cost_savings_forecast",
+            icon="mdi:chart-line-variant",
+            device=device,
+        )
+    )
+
+    # Total cumulative cost savings sensor
+    entities.append(
+        TotalCostSavingsSensor(
+            hass=hass,
+            name="Total Cost Savings",
+            unique_id=f"{entry.entry_id}_total_cost_savings",
             icon="mdi:piggy-bank",
             device=device,
+            offset_sensor="sensor.heating_curve_optimizer_heating_curve_offset",
+            outdoor_sensor="sensor.heating_curve_optimizer_outdoor_temperature",
+            calculated_supply_sensor="sensor.heating_curve_optimizer_calculated_supply_temperature",
+            consumption_price_sensor=config.get(CONF_CONSUMPTION_PRICE_SENSOR, ""),
+            heat_demand_sensor="sensor.heating_curve_optimizer_net_heat_loss",
+            k_factor=float(config.get(CONF_K_FACTOR, DEFAULT_K_FACTOR)),
+            base_cop=float(config.get(CONF_BASE_COP, DEFAULT_COP_AT_35)),
+            outdoor_temp_coefficient=float(
+                config.get(
+                    CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
+                )
+            ),
+            cop_compensation_factor=float(
+                config.get(
+                    CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR
+                )
+            ),
+            time_base=int(config.get(CONF_TIME_BASE, DEFAULT_TIME_BASE)),
         )
     )
 
     # COP sensors (if supply sensor is configured)
     supply_sensor = config.get(CONF_SUPPLY_TEMPERATURE_SENSOR)
+    calculated_supply_sensor = None
     if supply_sensor:
         entities.append(
             CoordinatorQuadraticCopSensor(
@@ -188,18 +221,17 @@ async def async_setup_entry(
             )
         )
 
-        entities.append(
-            CoordinatorCalculatedSupplyTemperatureSensor(
-                coordinator=weather_coordinator,
-                name="Calculated Supply Temperature",
-                unique_id=f"{entry.entry_id}_calculated_supply_temperature",
-                device=device,
-                min_temp=config.get(CONF_HEAT_CURVE_MIN, 20.0),
-                max_temp=config.get(CONF_HEAT_CURVE_MAX, 45.0),
-                min_outdoor=config.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0),
-                max_outdoor=config.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0),
-            )
+        calculated_supply_sensor = CoordinatorCalculatedSupplyTemperatureSensor(
+            coordinator=weather_coordinator,
+            name="Calculated Supply Temperature",
+            unique_id=f"{entry.entry_id}_calculated_supply_temperature",
+            device=device,
+            min_temp=config.get(CONF_HEAT_CURVE_MIN, 20.0),
+            max_temp=config.get(CONF_HEAT_CURVE_MAX, 45.0),
+            min_outdoor=config.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0),
+            max_outdoor=config.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0),
         )
+        entities.append(calculated_supply_sensor)
 
     # Diagnostics sensor
     entities.append(
@@ -324,8 +356,19 @@ def _setup_event_driven_sensors(
         if offset_sensor is None:
             offset_sensor = "sensor.heating_curve_optimizer_heating_curve_offset"
 
+        # Find calculated supply temperature sensor
+        calculated_supply_sensor = None
+        for entity in entities:
+            if isinstance(entity, CoordinatorCalculatedSupplyTemperatureSensor):
+                calculated_supply_sensor = entity
+                break
+        if calculated_supply_sensor is None:
+            calculated_supply_sensor = (
+                "sensor.heating_curve_optimizer_calculated_supply_temperature"
+            )
+
         # COP delta sensor
-        if cop_sensor:
+        if cop_sensor and calculated_supply_sensor:
             entities.append(
                 CopEfficiencyDeltaSensor(
                     hass=hass,
@@ -334,6 +377,7 @@ def _setup_event_driven_sensors(
                     cop_sensor=cop_sensor,
                     offset_entity=offset_sensor,
                     outdoor_sensor=outdoor_sensor_ref,
+                    calculated_supply_sensor=calculated_supply_sensor,
                     device=device,
                     k_factor=k_factor,
                     base_cop=base_cop,
@@ -352,6 +396,7 @@ def _setup_event_driven_sensors(
                     cop_sensor=cop_sensor,
                     offset_entity=offset_sensor,
                     outdoor_sensor=outdoor_sensor_ref,
+                    calculated_supply_sensor=calculated_supply_sensor,
                     device=device,
                     k_factor=k_factor,
                     base_cop=base_cop,
