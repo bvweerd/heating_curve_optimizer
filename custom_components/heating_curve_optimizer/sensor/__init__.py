@@ -40,6 +40,7 @@ from .optimization.optimized_supply_temperature import (
     CoordinatorOptimizedSupplyTemperatureSensor,
 )
 from .optimization.heat_buffer import CoordinatorHeatBufferSensor
+from .optimization.cost_savings import CoordinatorCostSavingsSensor
 from .cop.quadratic_cop import CoordinatorQuadraticCopSensor
 from .cop.calculated_supply_temperature import (
     CoordinatorCalculatedSupplyTemperatureSensor,
@@ -51,6 +52,7 @@ from .event_driven import (
     CopEfficiencyDeltaSensor,
     HeatGenerationDeltaSensor,
 )
+from ..calibration_sensor import CalibrationSensor
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -154,6 +156,16 @@ async def async_setup_entry(
         )
     )
 
+    entities.append(
+        CoordinatorCostSavingsSensor(
+            coordinator=optimization_coordinator,
+            name="Cost Savings",
+            unique_id=f"{entry.entry_id}_cost_savings",
+            icon="mdi:piggy-bank",
+            device=device,
+        )
+    )
+
     # COP sensors (if supply sensor is configured)
     supply_sensor = config.get(CONF_SUPPLY_TEMPERATURE_SENSOR)
     if supply_sensor:
@@ -200,6 +212,28 @@ async def async_setup_entry(
             device=device,
         )
     )
+
+    # Calibration sensor (parameter validation and recommendations)
+    # Requires power_sensor, supply_sensor for validation
+    power_sensor = config.get(CONF_POWER_CONSUMPTION)
+    if power_sensor and supply_sensor:
+        entities.append(
+            CalibrationSensor(
+                hass=hass,
+                name="Calibration",
+                unique_id=f"{entry.entry_id}_calibration",
+                device=device,
+                entry=entry,
+                heat_loss_sensor=f"sensor.{DOMAIN}_heat_loss",
+                thermal_power_sensor=power_sensor,
+                outdoor_sensor=weather_coordinator.data.get("outdoor_sensor_id")
+                if weather_coordinator.data
+                else None,
+                indoor_sensor=config.get("indoor_temperature_sensor"),
+                supply_temp_sensor=supply_sensor,
+                cop_sensor=f"sensor.{DOMAIN}_quadratic_cop",
+            )
+        )
 
     # Event-driven sensors (real-time state tracking)
     _setup_event_driven_sensors(

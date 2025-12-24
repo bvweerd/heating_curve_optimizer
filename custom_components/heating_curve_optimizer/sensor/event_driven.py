@@ -348,6 +348,23 @@ class CopEfficiencyDeltaSensor(BaseUtilitySensor):
             self._attr_available = False
             return
 
+        # Check current offset - if 0, delta should be 0
+        try:
+            current_offset = float(offset_state.state)
+        except (ValueError, TypeError):
+            current_offset = 0.0
+
+        # If offset is 0, no optimization is active, so delta is 0
+        if abs(current_offset) < 0.01:
+            self._attr_native_value = 0.0
+            self._extra_attrs = {
+                "future_cop": [round(reference_cop, 3)] * len(supply_temps),
+                "cop_deltas": [0.0] * len(supply_temps),
+                "reference_cop": round(reference_cop, 3),
+            }
+            self._attr_available = True
+            return
+
         predicted_cops = [
             (
                 self.base_cop
@@ -485,6 +502,24 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
         supply_temps = offset_state.attributes.get("future_supply_temperatures")
         if not supply_temps or reference_cop == 0:
             self._attr_available = False
+            return
+
+        # Check current offset - if 0, delta should be 0
+        try:
+            current_offset = float(offset_state.state)
+        except (ValueError, TypeError):
+            current_offset = 0.0
+
+        # If offset is 0, no optimization is active, so delta is 0
+        if abs(current_offset) < 0.01:
+            self._attr_native_value = 0.0
+            self._extra_attrs = {
+                "future_heat_generation": [round(reference_heat, 3)]
+                * len(supply_temps),
+                "heat_deltas": [0.0] * len(supply_temps),
+                "reference_heat_generation": round(reference_heat, 3),
+            }
+            self._attr_available = True
             return
 
         predicted_cops = [

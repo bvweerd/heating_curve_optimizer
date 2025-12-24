@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from homeassistant.core import HomeAssistant
@@ -54,7 +55,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 3. Optimization coordinator (depends on heat coordinator)
     optimization_coordinator = OptimizationCoordinator(hass, heat_coordinator, config)
     await optimization_coordinator.async_setup()
-    await optimization_coordinator.async_config_entry_first_refresh()
+
+    # Trigger first optimization async (don't block startup)
+    # This allows sensors to be available immediately while optimization runs in background
+    async def _trigger_first_optimization():
+        """Trigger first optimization after a short delay."""
+        await asyncio.sleep(5)  # Give sensors time to initialize
+        _LOGGER.info("Triggering first optimization run")
+        await optimization_coordinator.async_request_refresh()
+
+    hass.async_create_task(_trigger_first_optimization())
 
     # Create device info for all entities
     device = DeviceInfo(
