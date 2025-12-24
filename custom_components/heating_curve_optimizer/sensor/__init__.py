@@ -23,6 +23,10 @@ from ..const import (
     CONF_BASE_COP,
     CONF_OUTDOOR_TEMP_COEFFICIENT,
     CONF_COP_COMPENSATION_FACTOR,
+    CONF_HEAT_CURVE_MIN,
+    CONF_HEAT_CURVE_MAX,
+    CONF_HEAT_CURVE_MIN_OUTDOOR,
+    CONF_HEAT_CURVE_MAX_OUTDOOR,
 )
 
 # Import all sensor classes
@@ -151,7 +155,7 @@ async def async_setup_entry(
     )
 
     # COP sensors (if supply sensor is configured)
-    supply_sensor = config.get("supply_temperature_sensor")
+    supply_sensor = config.get(CONF_SUPPLY_TEMPERATURE_SENSOR)
     if supply_sensor:
         entities.append(
             CoordinatorQuadraticCopSensor(
@@ -161,10 +165,14 @@ async def async_setup_entry(
                 unique_id=f"{entry.entry_id}_quadratic_cop",
                 supply_sensor=supply_sensor,
                 device=device,
-                k_factor=config.get("k_factor", 0.025),
-                base_cop=config.get("base_cop", 4.0),
-                outdoor_temp_coefficient=config.get("outdoor_temp_coefficient", 0.025),
-                cop_compensation_factor=config.get("cop_compensation_factor", 0.9),
+                k_factor=config.get(CONF_K_FACTOR, DEFAULT_K_FACTOR),
+                base_cop=config.get(CONF_BASE_COP, DEFAULT_COP_AT_35),
+                outdoor_temp_coefficient=config.get(
+                    CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
+                ),
+                cop_compensation_factor=config.get(
+                    CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR
+                ),
             )
         )
 
@@ -174,10 +182,10 @@ async def async_setup_entry(
                 name="Calculated Supply Temperature",
                 unique_id=f"{entry.entry_id}_calculated_supply_temperature",
                 device=device,
-                min_temp=config.get("min_supply_temp", 20.0),
-                max_temp=config.get("max_supply_temp", 45.0),
-                min_outdoor=config.get("min_outdoor_temp", -20.0),
-                max_outdoor=config.get("max_outdoor_temp", 15.0),
+                min_temp=config.get(CONF_HEAT_CURVE_MIN, 20.0),
+                max_temp=config.get(CONF_HEAT_CURVE_MAX, 45.0),
+                min_outdoor=config.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0),
+                max_outdoor=config.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0),
             )
         )
 

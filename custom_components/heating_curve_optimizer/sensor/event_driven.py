@@ -20,11 +20,10 @@ from ..const import (
     DEFAULT_K_FACTOR,
     DEFAULT_COP_AT_35,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
-    DEFAULT_COP_COMPENSATION_FACTOR,
-    SOURCE_TYPE_CONSUMPTION,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
 
 class CurrentElectricityPriceSensor(BaseUtilitySensor):
     def __init__(
@@ -506,5 +505,3 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
         }
         self._attr_native_value = heat_deltas[0] if heat_deltas else 0.0
         self._attr_available = True
-
-
