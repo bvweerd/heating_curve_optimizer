@@ -5,22 +5,9 @@ from unittest.mock import MagicMock
 from homeassistant.core import HomeAssistant
 
 from custom_components.heating_curve_optimizer.coordinator import (
-    WeatherDataCoordinator,
     HeatCalculationCoordinator,
     OptimizationCoordinator,
 )
-
-
-@pytest.mark.asyncio
-async def test_weather_coordinator_initialization(hass: HomeAssistant):
-    """Test WeatherDataCoordinator initialization."""
-    coordinator = WeatherDataCoordinator(hass)
-
-    assert coordinator.hass == hass
-    assert coordinator.name == "Weather Data"
-
-    # Cleanup to prevent lingering threads
-    await coordinator.async_shutdown()
 
 
 @pytest.mark.asyncio
