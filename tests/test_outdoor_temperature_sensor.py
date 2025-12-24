@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.components.sensor import SensorStateClass
 
-from custom_components.heating_curve_optimizer.coordinator_sensors import (
+from custom_components.heating_curve_optimizer.sensor.weather.outdoor_temperature import (
     CoordinatorOutdoorTemperatureSensor,
 )
 from unittest.mock import MagicMock

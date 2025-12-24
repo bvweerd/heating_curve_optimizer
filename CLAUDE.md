@@ -47,21 +47,48 @@ Where:
 ## Repository Structure
 
 ```
-/home/user/heating_curve_optimizer/
+/media/data/github/heating_curve_optimizer/
 ├── custom_components/
 │   └── heating_curve_optimizer/
-│       ├── __init__.py                 # Integration entry point
+│       ├── __init__.py                 # Integration entry point, coordinator setup
 │       ├── binary_sensor.py            # Heat demand binary sensor
-│       ├── config_flow.py              # UI configuration (935 lines)
+│       ├── calibration_sensor.py       # Calibration sensor
+│       ├── config_flow.py              # UI configuration (1162 lines)
 │       ├── const.py                    # Constants and defaults
+│       ├── coordinator.py              # Data coordinators (Weather, Heat, Optimization)
 │       ├── diagnostics.py              # Diagnostics export
 │       ├── entity.py                   # Base entity class
+│       ├── helpers.py                  # Helper functions
 │       ├── manifest.json               # Integration manifest
-│       ├── number.py                   # Number entities (offset, min/max temps)
-│       ├── sensor.py                   # 17 sensor implementations (2986 lines)
+│       ├── optimizer.py                # Optimization algorithm (dynamic programming)
+│       │
+│       ├── sensor/                     # MODULAR SENSOR STRUCTURE
+│       │   ├── __init__.py             # Sensor platform setup
+│       │   │
+│       │   ├── weather/                # Weather sensors
+│       │   │   └── outdoor_temperature.py
+│       │   │
+│       │   ├── heat/                   # Heat calculation sensors
+│       │   │   ├── heat_loss.py
+│       │   │   ├── solar_gain.py
+│       │   │   ├── pv_production.py
+│       │   │   └── net_heat_loss.py
+│       │   │
+│       │   ├── optimization/           # Optimization sensors
+│       │   │   ├── heating_curve_offset.py  # Core optimizer sensor
+│       │   │   ├── optimized_supply_temperature.py
+│       │   │   └── heat_buffer.py
+│       │   │
+│       │   ├── cop/                    # COP sensors
+│       │   │   ├── quadratic_cop.py
+│       │   │   └── calculated_supply_temperature.py
+│       │   │
+│       │   └── diagnostics_sensor.py   # Diagnostics sensor
+│       │
 │       └── translations/
 │           ├── en.json                 # English translations
 │           └── nl.json                 # Dutch translations
+│
 ├── tests/                              # 18 test modules
 ├── .github/workflows/                  # CI/CD pipelines
 ├── .pre-commit-config.yaml             # Pre-commit hooks
@@ -75,10 +102,28 @@ Where:
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `sensor.py` | 2986 | All 17 sensor implementations, core optimization algorithm |
-| `config_flow.py` | 935 | Multi-step UI configuration flow |
-| `number.py` | 309 | Manual control entities (offset, temperature limits) |
-| `const.py` | 84 | Configuration keys, defaults, energy label mappings |
+| `coordinator.py` | 689 | Data update coordinators for weather, heat, and optimization |
+| `optimizer.py` | ~300 | Dynamic programming optimization algorithm |
+| `config_flow.py` | 1162 | Multi-step UI configuration flow |
+| `sensor/__init__.py` | ~180 | Sensor platform setup and entity registration |
+| `const.py` | 300+ | Configuration keys, defaults, energy label mappings |
+
+### Modular Sensor Architecture (NEW)
+
+**All sensors are now organized by function in separate files:**
+
+- **Weather**: `sensor/weather/outdoor_temperature.py` (~60 lines)
+- **Heat**: `sensor/heat/` (4 files, ~100 lines each)
+- **Optimization**: `sensor/optimization/` (3 files, ~80 lines each)
+- **COP**: `sensor/cop/` (2 files, ~90 lines each)
+- **Diagnostics**: `sensor/diagnostics_sensor.py` (~100 lines)
+
+**Benefits**:
+- ✅ Easy to find and modify specific sensors
+- ✅ Better testing isolation
+- ✅ Reduced merge conflicts
+- ✅ Improved IDE performance
+- ✅ Clear separation of concerns
 
 ---
 
@@ -114,34 +159,37 @@ All sensors inherit from this base class which provides:
 - Value rounding and validation
 - Unavailability messages (Dutch language)
 
-### `sensor.py` - 17 Sensor Implementations
+### `coordinator.py` - Data Update Coordinators
 
-#### Core Sensors (in dependency order)
-1. **`OutdoorTemperatureSensor`** - Fetches current + 24h forecast from open-meteo.com
-2. **`HeatLossSensor`** - Calculates `Q_loss = U × A × ΔT` where U is from energy label
-3. **`WindowSolarGainSensor`** - Solar gain through windows (east/west/south facing)
-4. **`NetHeatLossSensor`** - `heat_loss - solar_gain` (can be negative)
-5. **`HeatingCurveOffsetSensor`** - **CORE OPTIMIZER** (see below)
+**Three coordinators manage data updates**:
 
-#### Supporting Sensors
-6. **`CurrentElectricityPriceSensor`** - Tracks prices with forecasts
-7. **`NetPowerConsumptionSensor`** - Current net power (consumption - production)
-8. **`QuadraticCopSensor`** - Heat pump COP calculation
-9. **`HeatPumpThermalPowerSensor`** - Current thermal output
-10. **`CalculatedSupplyTemperatureSensor`** - Supply temp based on heating curve
-11. **`OptimizedSupplyTemperatureSensor`** - Optimized future supply temps
-12. **`HeatBufferSensor`** - Thermal energy buffer tracking
-13. **`EnergyConsumptionForecastSensor`** - Expected standby energy
-14. **`EnergyPriceLevelSensor`** - Available energy by price level
-15. **`CopEfficiencyDeltaSensor`** - COP difference metrics
-16. **`HeatGenerationDeltaSensor`** - Heat generation difference
-17. **`DiagnosticsSensor`** - Diagnostic data export
+1. **`WeatherDataCoordinator`** (60-min interval)
+   - Fetches weather data from open-meteo.com API
+   - Provides current temperature + 24h forecast
+   - Provides solar radiation data
 
-### `HeatingCurveOffsetSensor` - Core Optimization Logic
+2. **`HeatCalculationCoordinator`** (depends on WeatherCoordinator)
+   - Calculates heat loss: `Q_loss = HTC × ΔT`
+   - Calculates solar gain through windows
+   - Calculates net heat loss (heat loss - solar gain)
+   - Provides PV production forecast
 
-**Location**: `custom_components/heating_curve_optimizer/sensor.py:1403-1836`
+3. **`OptimizationCoordinator`** (depends on HeatCoordinator)
+   - Runs dynamic programming optimization
+   - Calculates optimal heating curve offsets
+   - Tracks heat buffer evolution
+   - Provides cost savings analysis
 
-**Key Method**: `_optimize_offsets(demand_forecast, price_forecast, base_temp, k_factor, cop_comp)`
+**Benefits of coordinator pattern**:
+- Efficient API calls (single fetch for multiple sensors)
+- Automatic update propagation to all sensors
+- Centralized error handling
+
+### `optimizer.py` - Core Optimization Logic
+
+**Location**: `custom_components/heating_curve_optimizer/optimizer.py`
+
+**Key Function**: `optimize_offsets(demand_forecast, price_forecast, ...)`
 
 **Algorithm**: Dynamic Programming
 - **State Space**: `(time_step, offset, cumulative_offset_sum)`
@@ -157,12 +205,38 @@ All sensors inherit from this base class which provides:
 ```python
 # Dynamic programming table
 dp = {}  # (step, offset, cumulative_offset_sum) → (cost, parent_state, buffer)
-
-# Price forecast extraction supports multiple formats
-- raw_today/raw_tomorrow attributes
-- forecast_prices attribute
-- net_prices_today/net_prices_tomorrow attributes
 ```
+
+### `sensor/` - Modular Sensor Structure (NEW)
+
+**All sensors organized by category**:
+
+#### Weather Sensors (`sensor/weather/`)
+- **`CoordinatorOutdoorTemperatureSensor`** - Current temp + forecast from weather coordinator
+
+#### Heat Calculation Sensors (`sensor/heat/`)
+- **`CoordinatorHeatLossSensor`** - `Q_loss = HTC × ΔT` with detailed HTC breakdown
+- **`CoordinatorWindowSolarGainSensor`** - Solar gain through windows
+- **`CoordinatorPVProductionForecastSensor`** - PV production forecast
+- **`CoordinatorNetHeatLossSensor`** - `heat_loss - solar_gain` (can be negative)
+
+#### Optimization Sensors (`sensor/optimization/`)
+- **`CoordinatorHeatingCurveOffsetSensor`** - **CORE OPTIMIZER** - optimal offset
+- **`CoordinatorOptimizedSupplyTemperatureSensor`** - Optimized supply temperature
+- **`CoordinatorHeatBufferSensor`** - Thermal buffer tracking
+
+#### COP Sensors (`sensor/cop/`)
+- **`CoordinatorQuadraticCopSensor`** - Heat pump COP calculation
+- **`CoordinatorCalculatedSupplyTemperatureSensor`** - Supply temp based on heating curve
+
+#### Diagnostics
+- **`CoordinatorDiagnosticsSensor`** - Complete system diagnostics
+
+**How to add a new sensor**:
+1. Create file in appropriate subfolder (e.g., `sensor/heat/new_sensor.py`)
+2. Import in `sensor/__init__.py`
+3. Add to entities list in `async_setup_entry`
+4. Add translations to `en.json` and `nl.json`
 
 ### `config_flow.py` - UI Configuration
 
@@ -532,61 +606,105 @@ def translation_key(self) -> str:
 
 ## Common Tasks
 
-### Adding a New Sensor
+### Adding a New Sensor (NEW MODULAR STRUCTURE)
 
-1. **Create sensor class** in `sensor.py`:
+**Example: Adding a new heat calculation sensor**
+
+1. **Create sensor file** in appropriate subfolder (e.g., `sensor/heat/new_heat_sensor.py`):
 ```python
-class NewSensor(BaseUtilitySensor):
-    """New sensor description."""
+"""New heat sensor description."""
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        """Initialize."""
-        super().__init__(hass, entry)
-        self._attr_unique_id = f"{entry.entry_id}_new_sensor"
-        self._attr_name = "New Sensor"
-        self._attr_native_unit_of_measurement = "unit"
-        self._attr_device_class = "measurement_type"
-        self._attr_state_class = "measurement"
+from __future__ import annotations
 
-    async def async_update(self) -> None:
-        """Update the sensor."""
-        # Implementation
-        self._attr_native_value = calculated_value
-        self._attr_available = True
+from typing import Any
+
+from homeassistant.components.sensor import SensorStateClass
+from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from ...entity import BaseUtilitySensor
+
+
+class CoordinatorNewHeatSensor(CoordinatorEntity, BaseUtilitySensor):
+    """New heat sensor using heat calculation coordinator."""
+
+    def __init__(
+        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
+    ):
+        """Initialize the sensor."""
+        CoordinatorEntity.__init__(self, coordinator)
+        BaseUtilitySensor.__init__(
+            self,
+            name=name,
+            unique_id=unique_id,
+            unit="kW",
+            device_class=None,
+            icon=icon,
+            visible=True,
+            device=device,
+            translation_key=name.lower().replace(" ", "_"),
+        )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_should_poll = False
+
+    @property
+    def native_value(self):
+        """Return sensor value."""
+        if not self.coordinator.data:
+            return None
+        return self.coordinator.data.get("new_heat_value")
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return (
+            self.coordinator.last_update_success and self.coordinator.data is not None
+        )
 ```
 
-2. **Add to `async_setup_entry`** in `sensor.py`:
+2. **Import in `sensor/__init__.py`**:
 ```python
-async def async_setup_entry(...):
-    ...
-    sensors.append(NewSensor(hass, entry))
-    ...
+from .heat.new_heat_sensor import CoordinatorNewHeatSensor
 ```
 
-3. **Add translations** to `en.json` and `nl.json`:
+3. **Add to entities list** in `sensor/__init__.py` → `async_setup_entry`:
+```python
+entities.append(
+    CoordinatorNewHeatSensor(
+        coordinator=heat_coordinator,
+        name="New Heat Sensor",
+        unique_id=f"{entry.entry_id}_new_heat_sensor",
+        icon="mdi:fire",
+        device=device,
+    )
+)
+```
+
+4. **Add translations** to `en.json` and `nl.json`:
 ```json
 {
   "entity": {
     "sensor": {
-      "new_sensor": {
-        "name": "New Sensor"
+      "new_heat_sensor": {
+        "name": "New Heat Sensor"
       }
     }
   }
 }
 ```
 
-4. **Create test file** `tests/test_new_sensor.py`:
+5. **Create test file** `tests/test_new_heat_sensor.py`:
 ```python
 @pytest.mark.asyncio
-async def test_new_sensor(hass):
-    """Test new sensor."""
+async def test_new_heat_sensor(hass):
+    """Test new heat sensor."""
     # Test implementation
 ```
 
-5. **Run tests**:
+6. **Run tests and pre-commit**:
 ```bash
-pytest tests/test_new_sensor.py -v
+pytest tests/test_new_heat_sensor.py -v
+pre-commit run --all-files
 ```
 
 ### Adding a Configuration Option
@@ -981,15 +1099,20 @@ else:
 
 ## Quick Reference
 
-### File Locations
+### File Locations (NEW MODULAR STRUCTURE)
 | Purpose | Location |
 |---------|----------|
-| Add sensor | `custom_components/heating_curve_optimizer/sensor.py` |
-| Add config option | `custom_components/heating_curve_optimizer/config_flow.py` + `const.py` |
-| Add constant | `custom_components/heating_curve_optimizer/const.py` |
-| Add translation | `custom_components/heating_curve_optimizer/translations/*.json` |
+| Add weather sensor | `sensor/weather/new_sensor.py` |
+| Add heat sensor | `sensor/heat/new_sensor.py` |
+| Add optimization sensor | `sensor/optimization/new_sensor.py` |
+| Add COP sensor | `sensor/cop/new_sensor.py` |
+| Register sensor | `sensor/__init__.py` (import + add to entities list) |
+| Add coordinator logic | `coordinator.py` (WeatherDataCoordinator, HeatCalculationCoordinator, OptimizationCoordinator) |
+| Modify optimization algorithm | `optimizer.py` (optimize_offsets function) |
+| Add config option | `config_flow.py` + `const.py` |
+| Add constant | `const.py` |
+| Add translation | `translations/*.json` |
 | Add test | `tests/test_*.py` |
-| Modify optimization | `sensor.py:1719-1836` (_optimize_offsets method) |
 
 ### Useful Commands
 ```bash
@@ -1053,6 +1176,36 @@ def translation_key(self) -> str
 
 ---
 
-**Last Updated**: 2025-11-15
-**Version**: 1.0.2
+## Architecture Changes (December 2023)
+
+### Major Refactoring: Modular Sensor Structure
+
+**What Changed**:
+- **BEFORE**: Single `sensor.py` file (3485 lines) with all 17 sensor implementations
+- **AFTER**: Modular structure with sensors organized in subfolders by function
+
+**Migration Summary**:
+1. Created `sensor/` directory with category subfolders (weather, heat, optimization, cop)
+2. Split all sensors into individual files (~60-120 lines each)
+3. Created `sensor/__init__.py` as platform entry point
+4. Removed legacy `sensor.py` and `coordinator_sensors.py` (backed up as `_*_legacy_backup.py`)
+5. Updated CLAUDE.md documentation to reflect new structure
+
+**Benefits**:
+- ✅ **Maintainability**: Each sensor in ~100 lines vs 3500-line monolith
+- ✅ **Discoverability**: Clear categorization by function
+- ✅ **Testing**: Better isolation for unit tests
+- ✅ **Collaboration**: Reduced merge conflicts
+- ✅ **IDE Performance**: Faster loading and navigation
+
+**Migration Path for Developers**:
+- All sensor imports now come from `sensor/` submodules
+- Coordinator pattern remains unchanged
+- Tests will need minor import path updates
+- No changes to configuration or user-facing functionality
+
+---
+
+**Last Updated**: 2023-12-23
+**Version**: 2.0.0 (post-modular-refactor)
 **Maintainer**: @bvweerd
