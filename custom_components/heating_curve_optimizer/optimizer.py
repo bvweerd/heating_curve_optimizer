@@ -32,6 +32,7 @@ def optimize_offsets(
     time_base: int = 60,
     outdoor_min: float = -20.0,
     outdoor_max: float = 15.0,
+    max_buffer_debt: float = 5.0,
 ) -> tuple[list[int], list[float]]:
     r"""Return cost optimized offsets for the given demand and prices.
 
@@ -44,6 +45,10 @@ def optimize_offsets(
     and the returned buffer evolution shows how this value changes with
     the chosen offsets.  After the planning window the buffer will be close
     to zero.
+
+    The ``max_buffer_debt`` parameter (default 5.0 kWh) allows the buffer
+    to go negative (heat debt), enabling cost optimization by reducing
+    heating during expensive hours and compensating during cheaper hours.
     """
     _LOGGER.debug(
         "Optimizing offsets demand=%s prices=%s base=%s k=%s comp=%s buffer=%s outdoor_temps=%s humidity=%s",
@@ -143,8 +148,8 @@ def optimize_offsets(
         buffer_kwh = (
             buffer + off * heat_demand * DEFAULT_THERMAL_STORAGE_EFFICIENCY * step_hours
         )
-        # Only allow states with non-negative buffer
-        if buffer_kwh >= 0:
+        # Allow negative buffer (heat debt) up to max_buffer_debt
+        if buffer_kwh >= -max_buffer_debt:
             dp[0][off] = {off: (cost, None, None, buffer_kwh)}
 
     for t in range(1, horizon):
@@ -170,8 +175,8 @@ def optimize_offsets(
                             * DEFAULT_THERMAL_STORAGE_EFFICIENCY
                             * step_hours
                         )
-                        # Only allow states with non-negative buffer
-                        if buffer_kwh >= 0:
+                        # Allow negative buffer (heat debt) up to max_buffer_debt
+                        if buffer_kwh >= -max_buffer_debt:
                             dp[t].setdefault(off, {})
                             cur = dp[t][off].get(new_sum)
                             if cur is None or total < cur[0]:
@@ -218,20 +223,33 @@ def optimize_offsets(
         last_off = prev_off
         last_sum = prev_sum
 
-    # Track cumulative offset sum (in °C) for constraint purposes
-    # Note: This is NOT energy - it tracks how far we've deviated from base temperature
-    # The actual thermal energy buffer is calculated separately by calculate_buffer_energy()
-    buffer_evolution: list[float] = []
-    cur = buffer
-    for off in result:
-        cur += off
-        buffer_evolution.append(cur)
+    # Calculate actual thermal energy buffer evolution from optimal path
+    # This uses the buffer_kwh values stored in the DP table
+    buffer_energy_evolution: list[float] = []
+    last_off = best_off
+    last_sum = best_sum
+
+    # Reconstruct buffer evolution from DP table
+    temp_buffer_list = []
+    for t in range(horizon - 1, -1, -1):
+        _, _, _, buffer_kwh = dp[t][last_off][last_sum]
+        temp_buffer_list.append(buffer_kwh)
+        if t > 0:
+            _, prev_off, prev_sum, _ = dp[t][last_off][last_sum]
+            assert prev_off is not None and prev_sum is not None
+            last_off = prev_off
+            last_sum = prev_sum
+
+    # Reverse to get chronological order
+    buffer_energy_evolution = list(reversed(temp_buffer_list))
 
     _LOGGER.debug(
-        "Optimized offsets result=%s buffer_evolution=%s", result, buffer_evolution
+        "Optimized offsets result=%s buffer_evolution=%s",
+        result,
+        buffer_energy_evolution,
     )
 
-    return result, buffer_evolution
+    return result, buffer_energy_evolution
 
 
 def calculate_buffer_energy(

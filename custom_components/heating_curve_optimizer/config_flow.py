@@ -47,11 +47,13 @@ from .const import (
     CONF_PV_TILT,
     CONF_VENTILATION_TYPE,
     CONF_CEILING_HEIGHT,
+    CONF_MAX_BUFFER_DEBT,
     DEFAULT_K_FACTOR,
     DEFAULT_PV_TILT,
     DEFAULT_COP_AT_35,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_COP_COMPENSATION_FACTOR,
+    DEFAULT_MAX_BUFFER_DEBT,
     DEFAULT_PLANNING_WINDOW,
     DEFAULT_TIME_BASE,
     DEFAULT_HEATING_CURVE_OFFSET,
@@ -109,6 +111,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.cop_compensation_factor: float = DEFAULT_COP_COMPENSATION_FACTOR
         self.planning_window: int = DEFAULT_PLANNING_WINDOW
         self.time_base: int = DEFAULT_TIME_BASE
+        self.max_buffer_debt: float = DEFAULT_MAX_BUFFER_DEBT
         self.heat_curve_min_outdoor: float = -20.0
         self.heat_curve_max_outdoor: float = 15.0
         self.heating_curve_offset: float = DEFAULT_HEATING_CURVE_OFFSET
@@ -180,6 +183,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_COP_COMPENSATION_FACTOR: self.cop_compensation_factor,
                         CONF_PLANNING_WINDOW: self.planning_window,
                         CONF_TIME_BASE: self.time_base,
+                        CONF_MAX_BUFFER_DEBT: self.max_buffer_debt,
                         CONF_HEAT_CURVE_MIN_OUTDOOR: self.heat_curve_min_outdoor,
                         CONF_HEAT_CURVE_MAX_OUTDOOR: self.heat_curve_max_outdoor,
                         CONF_HEATING_CURVE_OFFSET: self.heating_curve_offset,
@@ -349,6 +353,9 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 user_input.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
             )
             self.time_base = int(user_input.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
+            self.max_buffer_debt = float(
+                user_input.get(CONF_MAX_BUFFER_DEBT, DEFAULT_MAX_BUFFER_DEBT)
+            )
             self.heat_curve_min_outdoor = float(
                 user_input.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
             )
@@ -406,6 +413,10 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_TIME_BASE,
                     default=self.time_base or DEFAULT_TIME_BASE,
                 ): vol.Coerce(int),
+                vol.Optional(
+                    CONF_MAX_BUFFER_DEBT,
+                    default=self.max_buffer_debt or DEFAULT_MAX_BUFFER_DEBT,
+                ): vol.Coerce(float),
                 vol.Optional(
                     CONF_HEAT_CURVE_MIN_OUTDOOR,
                     default=self.heat_curve_min_outdoor,
@@ -674,6 +685,7 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
         )
         self.planning_window = _get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
         self.time_base = _get(CONF_TIME_BASE, DEFAULT_TIME_BASE)
+        self.max_buffer_debt = _get(CONF_MAX_BUFFER_DEBT, DEFAULT_MAX_BUFFER_DEBT)
         self.heat_curve_min_outdoor = _get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
         self.heat_curve_max_outdoor = _get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
         self.heating_curve_offset = _get(
@@ -795,6 +807,7 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_COP_COMPENSATION_FACTOR: self.cop_compensation_factor,
                         CONF_PLANNING_WINDOW: self.planning_window,
                         CONF_TIME_BASE: self.time_base,
+                        CONF_MAX_BUFFER_DEBT: self.max_buffer_debt,
                         CONF_HEAT_CURVE_MIN_OUTDOOR: self.heat_curve_min_outdoor,
                         CONF_HEAT_CURVE_MAX_OUTDOOR: self.heat_curve_max_outdoor,
                         CONF_HEATING_CURVE_OFFSET: self.heating_curve_offset,
@@ -960,6 +973,9 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                 user_input.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
             )
             self.time_base = int(user_input.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
+            self.max_buffer_debt = float(
+                user_input.get(CONF_MAX_BUFFER_DEBT, DEFAULT_MAX_BUFFER_DEBT)
+            )
             self.heat_curve_min_outdoor = float(
                 user_input.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
             )
@@ -1019,6 +1035,10 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
                     CONF_TIME_BASE,
                     default=self.time_base or DEFAULT_TIME_BASE,
                 ): vol.Coerce(int),
+                vol.Optional(
+                    CONF_MAX_BUFFER_DEBT,
+                    default=self.max_buffer_debt or DEFAULT_MAX_BUFFER_DEBT,
+                ): vol.Coerce(float),
                 vol.Optional(
                     CONF_HEAT_CURVE_MIN_OUTDOOR,
                     default=self.heat_curve_min_outdoor,

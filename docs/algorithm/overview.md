@@ -11,10 +11,10 @@ At its core, we're solving this problem:
 
     **Subject to**:
 
-    - Heat demand must be satisfied (or buffered for later)
+    - Heat demand must be satisfied (or buffered/deferred within limits)
     - Supply temperature stays within bounds
     - Offset changes are limited (±1°C per time step)
-    - Thermal buffer cannot go negative
+    - Thermal buffer constrained by heat debt limit (configurable)
 
 ## Key Concepts
 
@@ -232,12 +232,14 @@ if not (min_supply_temp <= supply_temp <= max_supply_temp):
 ```
 
 #### Buffer Constraint
-Thermal buffer cannot go negative:
+Thermal buffer constrained by heat debt limit:
 
 ```python
-if new_buffer < 0:
-    continue  # Cannot have "heat debt"
+if new_buffer < -max_buffer_debt:
+    continue  # Exceeds maximum allowed heat debt
 ```
+
+This allows the optimizer to reduce heating during expensive hours (creating "heat debt") and compensate during cheaper hours, enabling cost optimization through temporal load shifting.
 
 ## Output
 

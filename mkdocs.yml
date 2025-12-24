@@ -90,6 +90,7 @@ nav:
       - Heat Pump COP: algorithm/cop-calculation.md
       - Buffer System: algorithm/buffer-system.md
       - Optimization Strategy: algorithm/optimization.md
+      - Literature Validation: algorithm/literature-validation.md
   - Examples:
       - Scenario 1 - Price Optimization: examples/price-optimization.md
       - Scenario 2 - Solar Integration: examples/solar-integration.md

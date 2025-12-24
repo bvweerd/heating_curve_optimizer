@@ -16,10 +16,10 @@ Minimize total electricity cost while meeting heat demand.
 
 ### Constraints
 
-1. **Heat balance**: All heat demand must be satisfied (or buffered)
+1. **Heat balance**: All heat demand must be satisfied (or buffered/deferred)
 2. **Temperature bounds**: Supply temperature within limits
 3. **Rate limits**: Maximum ±1°C offset change per hour
-4. **Physical limits**: Buffer cannot be negative
+4. **Heat debt limit**: Buffer ≥ -max_buffer_debt (allows negative buffer)
 
 ### Implicit Objectives
 
@@ -29,20 +29,26 @@ Minimize total electricity cost while meeting heat demand.
 
 ## Optimization Strategies
 
-### 1. Temporal Shifting
+### 1. Temporal Shifting (Heat Debt Enabled)
 
-**Concept**: Heat when electricity is cheap, use building thermal mass during expensive periods.
+**Concept**: Heat when electricity is cheap, allow temperature reduction during expensive periods.
 
 **Mechanism**:
 
-- Pre-heat during low-price periods (+offset)
-- Coast during high-price periods (-offset)
-- Buffer stores excess heat for later use
+- Pre-heat during low-price periods (+offset, builds positive buffer)
+- Under-heat during high-price periods (-offset, creates heat debt)
+- Heat debt must be repaid within planning horizon
+
+**Two buffer states**:
+
+- **Positive buffer**: Excess heat from pre-heating or solar gain
+- **Negative buffer (heat debt)**: Allowed temperature reduction during expensive hours
 
 **Effectiveness**:
 
-- Higher benefit with dynamic pricing
-- Lower benefit with fixed pricing
+- **High** with dynamic pricing (15-30% savings possible)
+- **Low** with fixed pricing (only COP optimization)
+- Requires configurable `max_buffer_debt` (default: 5.0 kWh)
 
 ```mermaid
 graph LR
@@ -142,9 +148,18 @@ While minimizing cost, the optimizer respects comfort:
 
 - **Temperature bounds**: Prevent too-cold or too-hot supply temps
 - **Rate limits**: Avoid rapid temperature swings
-- **Buffer limits**: Never borrow heat from future (buffer ≥ 0)
+- **Heat debt limit**: Buffer ≥ -max_buffer_debt prevents excessive cooling
 
-These constraints may prevent reaching absolute minimum cost, but ensure comfort is maintained.
+The optimizer can create "heat debt" (negative buffer) up to the configured limit. This means:
+
+- **Indoor temperature may drop slightly** during expensive hours
+- **Temperature is restored** during cheaper hours
+- **Comfort impact**: Depends on `max_buffer_debt` setting
+  - 0 kWh = No debt, always meet demand immediately (conservative)
+  - 5.0 kWh = Default, moderate debt (~1-2°C variation possible)
+  - 10+ kWh = Aggressive, larger temperature swings
+
+**Recommendation**: Start with default (5.0 kWh) and monitor comfort. Reduce if too cold during expensive hours, increase if willing to accept more variation for higher savings.
 
 ### Forecast Horizon vs. Computation
 

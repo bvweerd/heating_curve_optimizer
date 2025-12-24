@@ -32,6 +32,7 @@ from .const import (
     CONF_CONSUMPTION_PRICE_SENSOR,
     CONF_PLANNING_WINDOW,
     CONF_TIME_BASE,
+    CONF_MAX_BUFFER_DEBT,
     CONF_HEAT_CURVE_MIN,
     CONF_HEAT_CURVE_MAX,
     CONF_HEAT_CURVE_MIN_OUTDOOR,
@@ -48,6 +49,7 @@ from .const import (
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_PLANNING_WINDOW,
     DEFAULT_TIME_BASE,
+    DEFAULT_MAX_BUFFER_DEBT,
     DEFAULT_VENTILATION_TYPE,
     DEFAULT_CEILING_HEIGHT,
     DEFAULT_PV_TILT,
@@ -489,6 +491,9 @@ class OptimizationCoordinator(DataUpdateCoordinator):
             self.config.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
         )
         time_base = int(self.config.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
+        max_buffer_debt = float(
+            self.config.get(CONF_MAX_BUFFER_DEBT, DEFAULT_MAX_BUFFER_DEBT)
+        )
         k_factor = float(self.config.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
         base_cop = float(self.config.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
         outdoor_temp_coefficient = float(
@@ -519,6 +524,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):
             temp_forecast,
             planning_window,
             time_base,
+            max_buffer_debt,
             price_interval,
             k_factor,
             base_cop,
@@ -545,6 +551,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         temp_forecast: list[float],
         planning_window: int,
         time_base: int,
+        max_buffer_debt: float,
         price_interval: int,
         k_factor: float,
         base_cop: float,
@@ -579,6 +586,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):
                 time_base=time_base,
                 outdoor_min=min_outdoor,
                 outdoor_max=max_outdoor,
+                max_buffer_debt=max_buffer_debt,  # Configurable heat debt limit
             )
 
             # Calculate future supply temperatures and COP for both baseline and optimized

@@ -96,25 +96,34 @@ The buffer is used before activating the heat pump.
 
 ### Buffer Constraints
 
-1. **Non-negativity**: $B(t) \geq 0$ (cannot have "heat debt")
+1. **Heat Debt Allowed**: $B(t) \geq -B_{debt}$ (configurable heat debt limit, default: 5.0 kWh)
+   - Allows negative buffer to reduce heating during expensive hours
+   - Debt must be repaid during cheaper hours within planning horizon
+   - Enables cost optimization through temporal load shifting
 2. **Bounded**: $B(t) \leq B_{max}$ (thermal mass capacity)
 
 In practice, $B_{max}$ is not explicitly enforced (thermal mass is large), but buffer rarely exceeds 10-15 kWh in real scenarios.
 
+!!! info "Heat Debt vs Solar Buffer"
+    - **Solar buffer** (positive): Excess energy from solar gain stored in thermal mass
+    - **Heat debt** (negative): Allowed temperature reduction during expensive hours, compensated later
+    - Both leverage building's thermal inertia for cost optimization
+
 ## Buffer Algorithm
 
 ```python
-def update_buffer(buffer, net_demand, time_step_hours):
+def update_buffer(buffer, net_demand, time_step_hours, max_debt=5.0):
     """
     Update thermal buffer based on net heat demand.
 
     Args:
-        buffer: Current buffer (kWh)
+        buffer: Current buffer (kWh) - can be negative (heat debt)
         net_demand: Net heat demand (kW)
         time_step_hours: Duration (hours)
+        max_debt: Maximum allowed heat debt (kWh, default: 5.0)
 
     Returns:
-        new_buffer: Updated buffer (kWh)
+        new_buffer: Updated buffer (kWh) - can be negative
         actual_demand: Heat pump demand after buffer (kWh)
     """
     if net_demand < 0:
@@ -123,17 +132,21 @@ def update_buffer(buffer, net_demand, time_step_hours):
         actual_demand = 0
 
     else:
-        # Need heat: use buffer first, then heat pump
+        # Need heat: use buffer first (can go negative), then heat pump
         energy_needed = net_demand * time_step_hours
 
-        if buffer >= energy_needed:
-            # Buffer sufficient
-            new_buffer = buffer - energy_needed
-            actual_demand = 0
+        # Calculate potential new buffer
+        new_buffer = buffer - energy_needed
+
+        # Check heat debt constraint
+        if new_buffer >= -max_debt:
+            # Within debt limit, reduce heating proportionally
+            # This allows lower heating during expensive hours
+            actual_demand = max(0, energy_needed - buffer) if buffer > 0 else energy_needed
         else:
-            # Buffer insufficient, use heat pump
-            new_buffer = 0
-            actual_demand = energy_needed - buffer
+            # Hit debt limit, must provide full heating
+            new_buffer = -max_debt
+            actual_demand = energy_needed - (buffer - new_buffer)
 
     return new_buffer, actual_demand
 ```

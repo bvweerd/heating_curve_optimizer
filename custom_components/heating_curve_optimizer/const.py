@@ -43,11 +43,13 @@ CONF_HEAT_CURVE_MIN = "heat_curve_min"
 CONF_HEAT_CURVE_MAX = "heat_curve_max"
 CONF_VENTILATION_TYPE = "ventilation_type"
 CONF_CEILING_HEIGHT = "ceiling_height"
+CONF_MAX_BUFFER_DEBT = "max_buffer_debt"
 
 # Default values for heating curve settings
 DEFAULT_HEATING_CURVE_OFFSET = 0.0
 DEFAULT_HEAT_CURVE_MIN = 20.0
 DEFAULT_HEAT_CURVE_MAX = 45.0
+DEFAULT_MAX_BUFFER_DEBT = 5.0  # kWh - allows heat debt for cost optimization
 
 # Default ventilation and building settings
 DEFAULT_VENTILATION_TYPE = "natural_standard"

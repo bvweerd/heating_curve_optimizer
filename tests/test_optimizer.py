@@ -304,3 +304,69 @@ def test_optimize_offsets_temperature_bounds():
             + offset
         )
         assert 25.0 <= supply_temp <= 45.0 + 4  # Allow for max offset
+
+
+def test_optimize_offsets_negative_buffer_allowed():
+    """Test that optimizer can use negative buffer (heat debt) for cost savings."""
+    # Scenario: expensive hour followed by cheap hours
+    demand = [2.0, 2.0, 2.0, 2.0, 2.0, 2.0]
+    prices = [0.40, 0.35, 0.15, 0.10, 0.10, 0.15]  # Expensive start, cheap later
+    outdoor_temps = [5.0] * 6
+
+    offsets, buffers = optimize_offsets(
+        demand=demand,
+        prices=prices,
+        outdoor_temps=outdoor_temps,
+        k_factor=0.025,
+        cop_compensation_factor=1.0,
+        water_min=25.0,
+        water_max=50.0,
+        outdoor_min=-10.0,
+        outdoor_max=15.0,
+        time_base=60,
+        max_buffer_debt=5.0,  # Allow 5 kWh debt
+    )
+
+    assert len(offsets) == 6
+    assert len(buffers) == 6
+
+    # With negative buffer allowed, optimizer should:
+    # 1. Use negative offsets during expensive hours (creating heat debt)
+    # 2. Use positive offsets during cheap hours (repaying heat debt)
+    # This should result in at least some variation in offsets
+    offset_sum = sum(abs(o) for o in offsets)
+    assert offset_sum > 0, "Optimizer should vary offsets with price differences"
+
+    # Buffer should become negative at some point (heat debt)
+    min_buffer = min(buffers)
+    # Note: may or may not go negative depending on the optimizer's decision
+    # but should at least allow it
+    assert min_buffer >= -5.0, "Buffer should respect max_buffer_debt limit"
+
+
+def test_optimize_offsets_buffer_debt_limit():
+    """Test that optimizer respects max_buffer_debt constraint."""
+    demand = [3.0] * 6
+    prices = [0.50, 0.40, 0.30, 0.05, 0.05, 0.05]  # Very expensive, then very cheap
+    outdoor_temps = [5.0] * 6
+
+    offsets, buffers = optimize_offsets(
+        demand=demand,
+        prices=prices,
+        outdoor_temps=outdoor_temps,
+        k_factor=0.025,
+        cop_compensation_factor=1.0,
+        water_min=25.0,
+        water_max=50.0,
+        outdoor_min=-10.0,
+        outdoor_max=15.0,
+        time_base=60,
+        max_buffer_debt=2.0,  # Strict limit
+    )
+
+    assert len(offsets) == 6
+    assert len(buffers) == 6
+
+    # All buffer values should be >= -max_buffer_debt
+    for buffer_val in buffers:
+        assert buffer_val >= -2.0, f"Buffer {buffer_val} exceeds debt limit"

@@ -49,7 +49,7 @@ This Home Assistant custom integration automatically adjusts your heating system
 ## Key Features
 
 ### Cost Optimization
-Dynamically adjusts heating curves to minimize electricity costs while meeting heat demand. The optimizer shifts heating load to periods with lower electricity prices when possible.
+Dynamically adjusts heating curves to minimize electricity costs while meeting heat demand. The optimizer shifts heating load to periods with lower electricity prices by using your building's thermal mass as a buffer - allowing temporary "heat debt" during expensive hours that is repaid during cheaper periods.
 
 ### Solar Integration
 Automatically accounts for solar gain through windows and solar production, creating a thermal buffer that reduces heating requirements during peak price periods.
@@ -192,7 +192,11 @@ Configure safe operating ranges:
   - Longer horizons provide better optimization but increase computation
 - **Time base**: Time step for optimization (default: 60 minutes)
   - Must match your price forecast interval
-- **Buffer efficiency**: Thermal mass storage efficiency (default: 0.5)
+- **Maximum heat debt**: Maximum allowed thermal energy debt (default: 5.0 kWh)
+  - Allows the optimizer to reduce heating during expensive hours and compensate later during cheaper hours
+  - Higher values allow more aggressive cost optimization but may affect comfort
+  - Lower values prioritize maintaining consistent temperature over cost savings
+  - Set to 0 to disable heat debt (always meet demand immediately)
 
 ## Sensors Created
 

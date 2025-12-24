@@ -41,11 +41,13 @@ Current heating curve offset adjustment
 - **Purpose**: Determines supply temperature and COP
 
 #### 2. Buffer (kWh)
-Accumulated thermal energy from solar gain
+Thermal energy balance - can be positive (solar gain) or negative (heat debt)
 
-- **Range**: [0, ∞)
-- **Granularity**: Continuous (rounded to 0.1 kWh for state space)
-- **Purpose**: Tracks stored heat that can offset future demand
+- **Range**: [-max_buffer_debt, ∞) (default: [-5.0, ∞))
+- **Granularity**: Continuous (exact tracking in DP table)
+- **Purpose**:
+  - **Positive**: Stored solar energy that can offset future demand
+  - **Negative**: "Heat debt" - allowed temperature reduction during expensive hours
 
 #### 3. Cumulative Offset Sum (°C·h)
 Running total of offsets over time
@@ -101,17 +103,29 @@ def transition(state_t, action, weather_t):
     solar_gain = calculate_solar_gain(solar_radiation)
     net_demand = heat_loss - solar_gain
 
-    # Update buffer
+    # Update buffer (can go negative for heat debt)
     if net_demand < 0:  # Excess solar
         next_buffer = buffer + abs(net_demand)
         actual_demand = 0
     else:  # Heat needed
-        if buffer >= net_demand:
-            next_buffer = buffer - net_demand
-            actual_demand = 0
-        else:
-            next_buffer = 0
-            actual_demand = net_demand - buffer
+        # Calculate energy change based on offset
+        # Negative offset reduces heating, creates heat debt
+        # Positive offset increases heating, repays debt
+        energy_delta = (
+            next_offset * net_demand *
+            thermal_storage_efficiency * time_step_hours
+        )
+        next_buffer = buffer + energy_delta
+
+        # Enforce heat debt constraint
+        if next_buffer < -max_buffer_debt:
+            # Cannot exceed debt limit - must provide heating
+            next_buffer = -max_buffer_debt
+
+        # Actual demand is original demand if offset=0
+        # Can be reduced if creating debt (negative offset)
+        # Or increased if repaying debt (positive offset)
+        actual_demand = max(0, net_demand)
 
     # Calculate electricity consumption
     electricity = actual_demand / cop  # kWh
@@ -286,16 +300,39 @@ if not (min_supply_temp <= supply_temp <= max_supply_temp):
     continue  # Skip this state transition
 ```
 
-### 3. Buffer Non-Negativity
+### 3. Heat Debt Constraint
 
-Thermal buffer cannot go negative:
+Buffer can be negative (heat debt) within limits:
 
 ```python
-if next_buffer < 0:
-    continue  # Cannot have heat debt
+if next_buffer < -max_buffer_debt:
+    continue  # Exceeds maximum allowed heat debt
 ```
 
-This ensures we don't "borrow" heat from the future.
+**Key changes**:
+
+- **Old**: Buffer ≥ 0 (no heat debt allowed)
+- **New**: Buffer ≥ -max_buffer_debt (configurable debt limit, default: 5.0 kWh)
+
+**Physical meaning**:
+
+- **Negative buffer**: Building temperature is allowed to drop slightly during expensive hours
+- **Debt repayment**: Must be compensated with extra heating during cheaper hours
+- **Constraint**: Total debt cannot exceed thermal mass capacity (prevents excessive cooling)
+
+**Example**:
+
+```python
+# Hour 1 (expensive electricity €0.40/kWh)
+# Demand: 6 kW, but optimizer chooses negative offset
+# → Reduced heating, buffer = -2.0 kWh (2°C cooler than target)
+
+# Hour 2-3 (cheap electricity €0.10/kWh)
+# Optimizer chooses positive offset
+# → Extra heating, buffer returns to 0 kWh (temperature restored)
+```
+
+This constraint enables **temporal load shifting** - the key mechanism for cost optimization.
 
 ## Computational Complexity
 
@@ -336,19 +373,32 @@ Not all states are reachable. For example:
 
 Pruning unreachable states reduces computation by ~30%.
 
-### 2. Buffer Discretization
+### 2. Exact Buffer Tracking
 
-Instead of tracking exact buffer values, we discretize:
+The implementation tracks exact buffer values (not discretized).
 
 ```python
-buffer_bins = [0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 10.0]
-
-def discretize_buffer(buffer):
-    """Round buffer to nearest bin."""
-    return min(buffer_bins, key=lambda x: abs(x - buffer))
+# Buffer is stored exactly in DP table
+dp[t][offset][cumulative_sum] = (cost, parent_state, buffer_kwh)
 ```
 
-This reduces state space while maintaining accuracy.
+**Why the change**:
+
+- **Precision**: Heat debt requires precise tracking to avoid constraint violations
+- **Simplicity**: Eliminates discretization errors and bin selection complexity
+- **Performance**: Negligible impact (buffer is just one float per state)
+
+**Buffer evolution extraction**:
+
+```python
+# Reconstruct buffer path from DP table
+buffer_energy_evolution = []
+for t in range(horizon):
+    _, _, _, buffer_kwh = dp[t][optimal_offset][optimal_sum]
+    buffer_energy_evolution.append(buffer_kwh)
+```
+
+This ensures the returned buffer values reflect actual thermal energy (kWh), not cumulative offset sums.
 
 ### 3. Lazy State Expansion
 

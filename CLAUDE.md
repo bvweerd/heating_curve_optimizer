@@ -108,9 +108,9 @@ Where:
 | `sensor/__init__.py` | ~180 | Sensor platform setup and entity registration |
 | `const.py` | 300+ | Configuration keys, defaults, energy label mappings |
 
-### Modular Sensor Architecture (NEW)
+### Modular Sensor Architecture
 
-**All sensors are now organized by function in separate files:**
+**All sensors are organized by function in separate files:**
 
 - **Weather**: `sensor/weather/outdoor_temperature.py` (~60 lines)
 - **Heat**: `sensor/heat/` (4 files, ~100 lines each)
@@ -207,7 +207,7 @@ All sensors inherit from this base class which provides:
 dp = {}  # (step, offset, cumulative_offset_sum) → (cost, parent_state, buffer)
 ```
 
-### `sensor/` - Modular Sensor Structure (NEW)
+### `sensor/` - Modular Sensor Structure
 
 **All sensors organized by category**:
 
@@ -606,7 +606,7 @@ def translation_key(self) -> str:
 
 ## Common Tasks
 
-### Adding a New Sensor (NEW MODULAR STRUCTURE)
+### Adding a New Sensor
 
 **Example: Adding a new heat calculation sensor**
 
@@ -767,7 +767,7 @@ for next_offset in range(max(-4, offset - 1), min(5, offset + 2)):
     # Existing constraints
     ...
 
-    # NEW: Comfort constraint - avoid too-cold supply temps during occupied hours
+    # Comfort constraint - avoid too-cold supply temps during occupied hours
     if hour in occupied_hours and supply_temp < comfort_min_temp:
         continue  # Skip this state
 
@@ -1014,17 +1014,31 @@ OptimizedSupplyTemperatureSensor
 
 ### Buffer System
 
-**Solar buffer** tracks excess heat from solar gain:
+The buffer system supports both positive (solar) buffer and negative (heat debt).
+
+**Two buffer mechanisms**:
+
+1. **Solar buffer (positive)**: Excess heat from solar gain stored in thermal mass
 ```python
 if demand < 0:  # Solar gain exceeds heat loss
     buffer += abs(demand)  # Store excess in buffer
-else:
-    if buffer > 0:
-        buffer -= min(buffer, demand)  # Use buffer to meet demand
-        demand -= min(buffer, demand)
 ```
 
-**Why?**: Allows optimization to reduce heating when solar buffer is available, improving cost efficiency.
+2. **Heat debt (negative)**: Allowed temperature reduction during expensive hours
+```python
+# Negative buffer allowed up to max_buffer_debt (default 5.0 kWh)
+if buffer >= -max_buffer_debt:
+    # Can reduce heating during expensive hours
+    # Debt must be repaid during cheaper hours
+```
+
+**Key changes**:
+- Buffer constraint changed from `buffer >= 0` to `buffer >= -max_buffer_debt`
+- Allows optimizer to create "heat debt" by reducing heating during high prices
+- Debt must be compensated within planning horizon (typically 6-12 hours)
+- Configurable via `max_buffer_debt` parameter (default: 5.0 kWh)
+
+**Why?**: Enables cost optimization through temporal load shifting. Building's thermal mass provides inertia allowing temporary under-heating during expensive hours without immediate comfort loss.
 
 ### Price Forecast Extraction
 
@@ -1099,7 +1113,7 @@ else:
 
 ## Quick Reference
 
-### File Locations (NEW MODULAR STRUCTURE)
+### File Locations
 | Purpose | Location |
 |---------|----------|
 | Add weather sensor | `sensor/weather/new_sensor.py` |
@@ -1143,6 +1157,9 @@ CONF_GLASS_EAST_M2 = "glass_east_m2"
 CONF_GLASS_WEST_M2 = "glass_west_m2"
 CONF_GLASS_SOUTH_M2 = "glass_south_m2"
 CONF_GLASS_U_VALUE = "glass_u_value"
+CONF_PLANNING_WINDOW = "planning_window"
+CONF_TIME_BASE = "time_base"
+CONF_MAX_BUFFER_DEBT = "max_buffer_debt"
 ```
 
 ### Critical Sensor Methods

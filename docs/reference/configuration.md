@@ -38,10 +38,26 @@ Quick reference for all configuration parameters.
 |-----------|------|-------|---------|-------------|
 | `planning_window_hours` | integer | 2-24 | 6 | Optimization planning horizon (hours) |
 | `time_base_minutes` | integer | 15-120 | 60 | Optimization time step (minutes) |
+| `max_buffer_debt` | float | 0-20 | 5.0 | Maximum heat debt (kWh) for cost optimization |
 | `min_supply_temp` | float | 20-45 | 25 | Minimum supply temperature (°C) |
 | `max_supply_temp` | float | 35-60 | 50 | Maximum supply temperature (°C) |
 | `min_outdoor_temp` | float | -20-5 | -10 | Minimum outdoor temperature for heating (°C) |
 | `max_outdoor_temp` | float | 5-20 | 18 | Maximum outdoor temperature for heating (°C) |
+
+### Maximum Heat Debt Explained
+
+The `max_buffer_debt` parameter controls how much the optimizer can reduce heating during expensive hours with the promise to compensate later:
+
+- **0 kWh**: No heat debt allowed - always meet demand immediately (conservative)
+- **5.0 kWh** (default): Moderate debt - good balance between cost savings and comfort
+- **10+ kWh**: Aggressive optimization - may affect comfort if not carefully monitored
+
+**How it works**:
+- During expensive hours: Reduce heating, creating "heat debt" (building cools slightly)
+- During cheap hours: Extra heating to repay debt (building warms back up)
+- Net result: Same total heat, lower electricity costs
+
+**Comfort impact**: Higher debt limits allow more temperature variation. Monitor closely!
 
 ## Energy Label to U-Value Mapping
 
