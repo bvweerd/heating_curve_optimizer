@@ -88,9 +88,7 @@ class TotalCostSavingsSensor(RestoreSensor, BaseUtilitySensor):
         if last_state and last_state.native_value is not None:
             self._total_savings = float(last_state.native_value)
             self._attr_native_value = self._total_savings
-            _LOGGER.debug(
-                "Restored total cost savings: €%.3f", self._total_savings
-            )
+            _LOGGER.debug("Restored total cost savings: €%.3f", self._total_savings)
 
         # Start periodic updates
         update_interval = timedelta(minutes=self.time_base)
@@ -111,9 +109,7 @@ class TotalCostSavingsSensor(RestoreSensor, BaseUtilitySensor):
         # Get current states
         offset_state = self.hass.states.get(self.offset_sensor)
         outdoor_state = self.hass.states.get(self.outdoor_sensor)
-        calculated_supply_state = self.hass.states.get(
-            self.calculated_supply_sensor
-        )
+        calculated_supply_state = self.hass.states.get(self.calculated_supply_sensor)
         price_state = self.hass.states.get(self.consumption_price_sensor)
         demand_state = self.hass.states.get(self.heat_demand_sensor)
 
