@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Buffer evolution calculation now correctly reflects thermal energy (not cumulative offsets)
 - Optimizer can now produce non-zero offsets when price variations exist
+- **Heat Generation Delta sensor** now correctly calculates buffer change rate instead of COP-based heat delta
+  - Formula changed from `heat × (COP_optimized / COP_baseline - 1)` to `offset × heat_demand × 0.15`
+  - Sensor now accurately shows how fast thermal buffer is charging/discharging (in kW)
+  - Helps users understand the relationship between offset, heat demand, and buffer changes
 
 ## [1.0.2] - 2024-12-24
 

@@ -20,6 +20,7 @@ from ..const import (
     DEFAULT_K_FACTOR,
     DEFAULT_COP_AT_35,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+    DEFAULT_THERMAL_STORAGE_EFFICIENCY,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -404,7 +405,18 @@ class CopEfficiencyDeltaSensor(BaseUtilitySensor):
 
 
 class HeatGenerationDeltaSensor(BaseUtilitySensor):
-    """Predict heat generation deltas based on future COPs."""
+    """Calculate buffer change rate based on offset and heat demand.
+
+    This sensor shows how much the thermal buffer is changing per hour (in kW)
+    based on the heating curve offset and current heat demand.
+
+    Formula: buffer_change_rate = offset × heat_demand × thermal_storage_efficiency
+
+    Where:
+    - offset: heating curve offset in °C
+    - heat_demand: net heat loss in kW
+    - thermal_storage_efficiency: 0.15 (15% of demand stored per °C offset)
+    """
 
     def __init__(
         self,
@@ -452,18 +464,22 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
-        for ent in (
-            self._resolve_entity_id(self.thermal_power_sensor),
-            self._resolve_entity_id(self.cop_sensor),
-            self._resolve_entity_id(self.offset_entity),
-            self._resolve_entity_id(self.outdoor_sensor),
-            self._resolve_entity_id(self.calculated_supply_sensor),
-        ):
-            if ent is None:
-                continue
+        # Track offset sensor for changes
+        offset_entity_id = self._resolve_entity_id(self.offset_entity)
+        if offset_entity_id:
             self.async_on_remove(
-                async_track_state_change_event(self.hass, ent, self._handle_change)
+                async_track_state_change_event(
+                    self.hass, offset_entity_id, self._handle_change
+                )
             )
+        # Track net heat loss sensor for changes
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass,
+                "sensor.heating_curve_optimizer_net_heat_loss",
+                self._handle_change,
+            )
+        )
 
     async def _handle_change(self, event):  # pragma: no cover - simple callback
         await self.async_update()
@@ -500,92 +516,110 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
         return state
 
     async def async_update(self):
-        power_state = self._get_state(self.thermal_power_sensor)
+        """Calculate buffer change rate based on offset and heat demand.
+
+        Buffer change rate = offset × heat_demand × thermal_storage_efficiency
+
+        This represents how much thermal energy is being stored (positive)
+        or released (negative) from the building's thermal mass per hour.
+        """
         offset_state = self._get_state(self.offset_entity)
-        outdoor_state = self._get_state(self.outdoor_sensor)
-        calculated_supply_state = self._get_state(self.calculated_supply_sensor)
 
-        if (
-            power_state is None
-            or offset_state is None
-            or outdoor_state is None
-            or calculated_supply_state is None
-            or power_state.state in ("unknown", "unavailable")
-            or outdoor_state.state in ("unknown", "unavailable")
-            or calculated_supply_state.state in ("unknown", "unavailable")
-        ):
+        if offset_state is None:
             self._attr_available = False
             return
 
-        try:
-            current_heat = float(power_state.state)
-            outdoor_temp = float(outdoor_state.state)
-            baseline_supply_temp = float(calculated_supply_state.state)
-        except ValueError:
-            self._attr_available = False
-            return
-
-        supply_temps = offset_state.attributes.get("future_supply_temperatures")
-        if not supply_temps:
-            self._attr_available = False
-            return
-
-        # Check current offset - if 0, delta should be 0
+        # Get current offset
         try:
             current_offset = float(offset_state.state)
         except (ValueError, TypeError):
-            current_offset = 0.0
+            self._attr_available = False
+            return
 
-        # Calculate baseline COP (without offset)
-        baseline_cop = (
-            self.base_cop
-            + self.outdoor_temp_coefficient * outdoor_temp
-            - self.k_factor * (baseline_supply_temp - 35)
-        ) * self.cop_compensation_factor
-        baseline_cop = max(0.5, baseline_cop)
-
-        # Calculate baseline heat generation (what heat would be without offset)
-        # We assume the same electrical power consumption, so heat = power * COP
-        # For baseline: we need to estimate electrical power from current heat and a COP estimate
-        # Simplification: assume current_heat represents heat at baseline COP
-        baseline_heat = current_heat
-
-        # If offset is 0, no optimization is active, so delta is 0
+        # If offset is 0, no thermal storage is happening
         if abs(current_offset) < 0.01:
             self._attr_native_value = 0.0
             self._extra_attrs = {
-                "future_heat_generation": [round(baseline_heat, 3)] * len(supply_temps),
-                "heat_deltas": [0.0] * len(supply_temps),
-                "baseline_heat_generation": round(baseline_heat, 3),
+                "buffer_change_rate": 0.0,
+                "future_buffer_change_rates": [],
+                "explanation": "No offset applied - no buffer change",
             }
             self._attr_available = True
             return
 
-        # Calculate predicted COPs with optimized supply temperatures
-        predicted_cops = [
-            max(
-                0.5,
-                (
-                    self.base_cop
-                    + self.outdoor_temp_coefficient * outdoor_temp
-                    - self.k_factor * (float(s_temp) - 35)
-                )
-                * self.cop_compensation_factor,
+        # Get heat demand forecast from optimization coordinator data
+        # We need to access the heating curve offset sensor's attributes
+        demand_forecast = offset_state.attributes.get("demand_forecast", [])
+        optimized_offsets = offset_state.attributes.get("optimized_offsets", [])
+
+        if not demand_forecast or not optimized_offsets:
+            # Fallback: try to get net heat loss from the net heat loss sensor
+            net_heat_loss_state = self.hass.states.get(
+                "sensor.heating_curve_optimizer_net_heat_loss"
             )
-            for s_temp in supply_temps
+            if (
+                net_heat_loss_state is None
+                or net_heat_loss_state.state in ("unknown", "unavailable")
+            ):
+                self._attr_available = False
+                return
+
+            try:
+                current_heat_demand = max(0.0, float(net_heat_loss_state.state))
+            except (ValueError, TypeError):
+                self._attr_available = False
+                return
+
+            # Calculate current buffer change rate
+            buffer_change_rate = (
+                current_offset * current_heat_demand * DEFAULT_THERMAL_STORAGE_EFFICIENCY
+            )
+
+            self._attr_native_value = round(buffer_change_rate, 3)
+            self._extra_attrs = {
+                "buffer_change_rate": round(buffer_change_rate, 3),
+                "current_offset": current_offset,
+                "current_heat_demand": round(current_heat_demand, 3),
+                "thermal_storage_efficiency": DEFAULT_THERMAL_STORAGE_EFFICIENCY,
+                "explanation": (
+                    f"Buffer changing at {buffer_change_rate:.3f} kW "
+                    f"(offset {current_offset}°C × demand {current_heat_demand:.3f} kW "
+                    f"× efficiency {DEFAULT_THERMAL_STORAGE_EFFICIENCY})"
+                ),
+            }
+            self._attr_available = True
+            return
+
+        # Calculate future buffer change rates from optimization data
+        future_buffer_change_rates = [
+            round(
+                offset * max(0.0, demand) * DEFAULT_THERMAL_STORAGE_EFFICIENCY,
+                3,
+            )
+            for offset, demand in zip(optimized_offsets, demand_forecast)
         ]
 
-        # Calculate predicted heat: heat_optimized = (COP_optimized / COP_baseline) * heat_baseline
-        predicted_heat = [
-            baseline_heat * (c / baseline_cop) if baseline_cop > 0 else baseline_heat
-            for c in predicted_cops
-        ]
-        heat_deltas = [round(h - baseline_heat, 3) for h in predicted_heat]
+        # Current buffer change rate
+        if demand_forecast:
+            current_heat_demand = max(0.0, demand_forecast[0])
+            buffer_change_rate = (
+                current_offset * current_heat_demand * DEFAULT_THERMAL_STORAGE_EFFICIENCY
+            )
+        else:
+            buffer_change_rate = 0.0
+            current_heat_demand = 0.0
+
+        self._attr_native_value = round(buffer_change_rate, 3)
         self._extra_attrs = {
-            "future_heat_generation": [round(h, 3) for h in predicted_heat],
-            "heat_deltas": heat_deltas,
-            "baseline_heat_generation": round(baseline_heat, 3),
-            "baseline_cop": round(baseline_cop, 3),
+            "buffer_change_rate": round(buffer_change_rate, 3),
+            "future_buffer_change_rates": future_buffer_change_rates,
+            "current_offset": current_offset,
+            "current_heat_demand": round(current_heat_demand, 3),
+            "thermal_storage_efficiency": DEFAULT_THERMAL_STORAGE_EFFICIENCY,
+            "explanation": (
+                f"Buffer changing at {buffer_change_rate:.3f} kW "
+                f"(offset {current_offset}°C × demand {current_heat_demand:.3f} kW "
+                f"× efficiency {DEFAULT_THERMAL_STORAGE_EFFICIENCY})"
+            ),
         }
-        self._attr_native_value = heat_deltas[0] if heat_deltas else 0.0
         self._attr_available = True
