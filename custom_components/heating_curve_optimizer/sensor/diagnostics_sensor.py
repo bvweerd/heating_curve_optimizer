@@ -46,14 +46,27 @@ class CoordinatorDiagnosticsSensor(CoordinatorEntity, BaseUtilitySensor):
 
     @property
     def native_value(self):
-        """Return OK if all coordinators are working."""
-        if (
-            self.weather_coordinator.last_update_success
-            and self.heat_coordinator.last_update_success
-            and self.optimization_coordinator.last_update_success
-        ):
+        """Return status based on coordinator states."""
+        # Count successful coordinators
+        success_count = sum(
+            [
+                self.weather_coordinator.last_update_success
+                and self.weather_coordinator.data is not None,
+                self.heat_coordinator.last_update_success
+                and self.heat_coordinator.data is not None,
+                self.optimization_coordinator.last_update_success
+                and self.optimization_coordinator.data is not None,
+            ]
+        )
+
+        if success_count == 3:
             return "OK"
-        return "ERROR"
+        elif success_count == 2:
+            return "PARTIAL"  # Optimization may still be loading
+        elif success_count == 1:
+            return "INITIALIZING"
+        else:
+            return "ERROR"
 
     @property
     def available(self) -> bool:
@@ -65,6 +78,20 @@ class CoordinatorDiagnosticsSensor(CoordinatorEntity, BaseUtilitySensor):
         """Return all coordinator data as diagnostics."""
         attrs = {}
 
+        # Coordinator status overview
+        attrs["weather_available"] = (
+            self.weather_coordinator.last_update_success
+            and self.weather_coordinator.data is not None
+        )
+        attrs["heat_available"] = (
+            self.heat_coordinator.last_update_success
+            and self.heat_coordinator.data is not None
+        )
+        attrs["optimization_available"] = (
+            self.optimization_coordinator.last_update_success
+            and self.optimization_coordinator.data is not None
+        )
+
         # Weather coordinator data
         if self.weather_coordinator.data:
             attrs["weather_last_update"] = str(
@@ -73,7 +100,8 @@ class CoordinatorDiagnosticsSensor(CoordinatorEntity, BaseUtilitySensor):
             attrs["outdoor_temperature"] = self.weather_coordinator.data.get(
                 "current_temperature"
             )
-            attrs["weather_success"] = self.weather_coordinator.last_update_success
+        else:
+            attrs["weather_status"] = "No data yet"
 
         # Heat coordinator data
         if self.heat_coordinator.data:
@@ -81,7 +109,8 @@ class CoordinatorDiagnosticsSensor(CoordinatorEntity, BaseUtilitySensor):
             attrs["heat_loss"] = self.heat_coordinator.data.get("heat_loss")
             attrs["solar_gain"] = self.heat_coordinator.data.get("solar_gain")
             attrs["net_heat_loss"] = self.heat_coordinator.data.get("net_heat_loss")
-            attrs["heat_success"] = self.heat_coordinator.last_update_success
+        else:
+            attrs["heat_status"] = "No data yet"
 
         # Optimization coordinator data
         if self.optimization_coordinator.data:
@@ -92,8 +121,15 @@ class CoordinatorDiagnosticsSensor(CoordinatorEntity, BaseUtilitySensor):
                 "optimized_offset"
             )
             attrs["total_cost"] = self.optimization_coordinator.data.get("total_cost")
-            attrs["optimization_success"] = (
-                self.optimization_coordinator.last_update_success
+            attrs["baseline_cost"] = self.optimization_coordinator.data.get(
+                "baseline_cost"
+            )
+            attrs["cost_savings"] = self.optimization_coordinator.data.get(
+                "cost_savings"
+            )
+        else:
+            attrs["optimization_status"] = (
+                "Waiting for first optimization run (starts within 5-10 seconds after startup)"
             )
 
         return attrs
