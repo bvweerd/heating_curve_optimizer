@@ -19,6 +19,9 @@ async def test_weather_coordinator_initialization(hass: HomeAssistant):
     assert coordinator.hass == hass
     assert coordinator.name == "Weather Data"
 
+    # Cleanup to prevent lingering threads
+    await coordinator.async_shutdown()
+
 
 @pytest.mark.asyncio
 async def test_heat_coordinator_initialization(hass: HomeAssistant):
