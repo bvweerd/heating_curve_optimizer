@@ -1,6 +1,5 @@
 """Test the optimizer module."""
 
-import pytest
 from custom_components.heating_curve_optimizer.optimizer import (
     optimize_offsets,
     calculate_buffer_energy,
@@ -294,11 +293,14 @@ def test_optimize_offsets_temperature_bounds():
     assert len(offsets) == 6
     # Verify all resulting supply temps are within bounds
     for offset in offsets:
-        supply_temp = calculate_supply_temperature(
-            outdoor_temps[0],
-            water_min=25.0,
-            water_max=45.0,
-            outdoor_min=-10.0,
-            outdoor_max=15.0,
-        ) + offset
+        supply_temp = (
+            calculate_supply_temperature(
+                outdoor_temps[0],
+                water_min=25.0,
+                water_max=45.0,
+                outdoor_min=-10.0,
+                outdoor_max=15.0,
+            )
+            + offset
+        )
         assert 25.0 <= supply_temp <= 45.0 + 4  # Allow for max offset

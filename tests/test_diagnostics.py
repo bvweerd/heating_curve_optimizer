@@ -1,11 +1,13 @@
 """Test the diagnostics module."""
 
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from homeassistant.core import HomeAssistant
 
-from custom_components.heating_curve_optimizer.diagnostics import async_get_config_entry_diagnostics
+from custom_components.heating_curve_optimizer.diagnostics import (
+    async_get_config_entry_diagnostics,
+)
 from custom_components.heating_curve_optimizer.const import DOMAIN
 
 

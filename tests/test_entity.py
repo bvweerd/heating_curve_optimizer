@@ -91,7 +91,9 @@ async def test_base_utility_sensor_no_restore_data(hass: HomeAssistant, device_i
 
 
 @pytest.mark.asyncio
-async def test_base_utility_sensor_invalid_restore_value(hass: HomeAssistant, device_info):
+async def test_base_utility_sensor_invalid_restore_value(
+    hass: HomeAssistant, device_info
+):
     """Test BaseUtilitySensor handles invalid restore value."""
     sensor = BaseUtilitySensor(
         name="Test Sensor",

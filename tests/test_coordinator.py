@@ -1,11 +1,8 @@
 """Test the coordinator module."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timedelta
+from unittest.mock import MagicMock
 from homeassistant.core import HomeAssistant
-from homeassistant.util import dt as dt_util
-import aiohttp
 
 from custom_components.heating_curve_optimizer.coordinator import (
     WeatherDataCoordinator,

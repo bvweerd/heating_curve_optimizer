@@ -1,6 +1,5 @@
 """Test the helpers module."""
 
-import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone
 from homeassistant.core import State
@@ -145,9 +144,7 @@ def test_extract_price_forecast_from_net_prices():
     }
     state.state = "0.25"
 
-    with patch(
-        "homeassistant.util.dt.utcnow"
-    ) as mock_now:
+    with patch("homeassistant.util.dt.utcnow") as mock_now:
         mock_now.return_value = datetime(2024, 1, 1, 11, 0, 0, tzinfo=timezone.utc)
         prices, interval = extract_price_forecast_with_interval(state)
         assert len(prices) > 0
@@ -339,7 +336,9 @@ def test_defrost_factor_range_check():
     """Test defrost factor is always in valid range."""
     for temp in range(-20, 20):
         for humidity in range(50, 100, 10):
-            factor = calculate_defrost_factor(outdoor_temp=float(temp), humidity=float(humidity))
+            factor = calculate_defrost_factor(
+                outdoor_temp=float(temp), humidity=float(humidity)
+            )
             assert 0.60 <= factor <= 1.0
 
 
@@ -365,9 +364,7 @@ def test_extract_price_forecast_with_dict_values():
 def test_extract_price_forecast_mixed_types():
     """Test extracting forecast with mixed value types."""
     state = MagicMock(spec=State)
-    state.attributes = {
-        "forecast_prices": [0.20, "0.25", {"value": 0.30}]
-    }
+    state.attributes = {"forecast_prices": [0.20, "0.25", {"value": 0.30}]}
     state.state = "0.25"
 
     prices, interval = extract_price_forecast_with_interval(state)
@@ -377,9 +374,7 @@ def test_extract_price_forecast_mixed_types():
 def test_extract_price_forecast_skips_invalid_values():
     """Test extracting forecast skips invalid values."""
     state = MagicMock(spec=State)
-    state.attributes = {
-        "forecast_prices": [0.20, "invalid", 0.30, None, 0.35]
-    }
+    state.attributes = {"forecast_prices": [0.20, "invalid", 0.30, None, 0.35]}
     state.state = "0.25"
 
     prices, interval = extract_price_forecast_with_interval(state)

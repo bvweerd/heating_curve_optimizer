@@ -1,6 +1,5 @@
 """Test the const module."""
 
-import pytest
 from custom_components.heating_curve_optimizer.const import (
     calculate_ventilation_htc,
     calculate_htc_from_energy_label,

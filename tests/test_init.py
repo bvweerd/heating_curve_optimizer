@@ -46,7 +46,6 @@ async def test_async_setup_entry(hass: HomeAssistant):
     ) as mock_heat, patch(
         "custom_components.heating_curve_optimizer.OptimizationCoordinator"
     ) as mock_opt:
-
         # Setup mock coordinators
         weather_instance = MagicMock()
         weather_instance.async_config_entry_first_refresh = AsyncMock()
@@ -66,7 +65,6 @@ async def test_async_setup_entry(hass: HomeAssistant):
         with patch.object(
             hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
         ) as mock_forward:
-
             result = await async_setup_entry(hass, entry)
 
             assert result is True
@@ -117,7 +115,6 @@ async def test_async_unload_entry(hass: HomeAssistant):
     with patch.object(
         hass.config_entries, "async_unload_platforms", new=AsyncMock(return_value=True)
     ) as mock_unload:
-
         result = await async_unload_entry(hass, entry)
 
         assert result is True
@@ -219,7 +216,6 @@ async def test_async_setup_entry_merges_options_and_data(hass: HomeAssistant):
     ) as mock_opt, patch.object(
         hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
     ):
-
         weather_instance = MagicMock()
         weather_instance.async_config_entry_first_refresh = AsyncMock()
         mock_weather.return_value = weather_instance
