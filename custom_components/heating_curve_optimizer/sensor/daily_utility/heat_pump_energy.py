@@ -13,7 +13,10 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.event import async_track_time_interval, async_track_state_change_event
+from homeassistant.helpers.event import (
+    async_track_time_interval,
+    async_track_state_change_event,
+)
 from homeassistant.util import dt as dt_util
 
 from ...entity import BaseUtilitySensor
@@ -70,7 +73,9 @@ class HeatPumpEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
         if last_state and last_state.native_value is not None:
             self._daily_total = float(last_state.native_value)
             self._attr_native_value = self._daily_total
-            _LOGGER.debug("Restored daily heat pump energy: %.3f kWh", self._daily_total)
+            _LOGGER.debug(
+                "Restored daily heat pump energy: %.3f kWh", self._daily_total
+            )
 
         # Check if we need to reset (new day)
         now = dt_util.utcnow()
@@ -78,7 +83,9 @@ class HeatPumpEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
             last_date = last_state.last_updated.date()
             current_date = now.date()
             if current_date > last_date:
-                _LOGGER.info("New day detected, resetting daily heat pump energy counter")
+                _LOGGER.info(
+                    "New day detected, resetting daily heat pump energy counter"
+                )
                 self._daily_total = 0.0
                 self._attr_native_value = 0.0
                 self._last_reset = now
@@ -129,7 +136,10 @@ class HeatPumpEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
 
         # Schedule the reset
         delta = next_midnight - now
-        self.hass.loop.call_later(delta.total_seconds(), lambda: self.hass.async_create_task(_reset_at_midnight(None)))
+        self.hass.loop.call_later(
+            delta.total_seconds(),
+            lambda: self.hass.async_create_task(_reset_at_midnight(None)),
+        )
 
     @callback
     async def _handle_state_change(self, event):
@@ -145,10 +155,7 @@ class HeatPumpEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
         thermal_state = self.hass.states.get(self.thermal_power_sensor)
 
         # Check if sensor is available
-        if (
-            not thermal_state
-            or thermal_state.state in ("unknown", "unavailable")
-        ):
+        if not thermal_state or thermal_state.state in ("unknown", "unavailable"):
             _LOGGER.debug("Thermal power sensor not available")
             return
 
@@ -160,12 +167,16 @@ class HeatPumpEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
 
         # Calculate energy since last update
         if self._last_update:
-            time_delta_hours = (current_time - self._last_update).total_seconds() / 3600.0
+            time_delta_hours = (
+                current_time - self._last_update
+            ).total_seconds() / 3600.0
             # Energy (kWh) = Power (kW) × Time (h)
             energy_delta = thermal_power_kw * time_delta_hours
 
             # Only add positive values
-            if energy_delta > 0 and time_delta_hours < 1.0:  # Sanity check: max 1 hour gap
+            if (
+                energy_delta > 0 and time_delta_hours < 1.0
+            ):  # Sanity check: max 1 hour gap
                 self._daily_total += energy_delta
                 self._attr_native_value = round(self._daily_total, 3)
 

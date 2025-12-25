@@ -13,7 +13,10 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.event import async_track_time_interval, async_track_state_change_event
+from homeassistant.helpers.event import (
+    async_track_time_interval,
+    async_track_state_change_event,
+)
 from homeassistant.util import dt as dt_util
 
 from ...entity import BaseUtilitySensor
@@ -129,7 +132,10 @@ class NetHeatLossEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
 
         # Schedule the reset
         delta = next_midnight - now
-        self.hass.loop.call_later(delta.total_seconds(), lambda: self.hass.async_create_task(_reset_at_midnight(None)))
+        self.hass.loop.call_later(
+            delta.total_seconds(),
+            lambda: self.hass.async_create_task(_reset_at_midnight(None)),
+        )
 
     @callback
     async def _handle_state_change(self, event):
@@ -145,10 +151,7 @@ class NetHeatLossEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
         heat_loss_state = self.hass.states.get(self.net_heat_loss_sensor)
 
         # Check if sensor is available
-        if (
-            not heat_loss_state
-            or heat_loss_state.state in ("unknown", "unavailable")
-        ):
+        if not heat_loss_state or heat_loss_state.state in ("unknown", "unavailable"):
             _LOGGER.debug("Net heat loss sensor not available")
             return
 
@@ -160,7 +163,9 @@ class NetHeatLossEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
 
         # Calculate energy since last update
         if self._last_update:
-            time_delta_hours = (current_time - self._last_update).total_seconds() / 3600.0
+            time_delta_hours = (
+                current_time - self._last_update
+            ).total_seconds() / 3600.0
             # Energy (kWh) = Power (kW) × Time (h)
             # Note: Net heat loss can be negative (solar gain > heat loss)
             # We only accumulate positive values (actual heat loss)
