@@ -78,9 +78,10 @@ class CalibrationSensor(BaseUtilitySensor):
         self.cop_sensor = cop_sensor
         self._extra_attrs: dict[str, Any] = {}
 
-        # Track last calculation time to update every 6 hours
+        # Track last calculation time to update every 1 hour (first run immediate)
         self._last_calculation: datetime | None = None
-        self._calculation_interval = timedelta(hours=6)
+        self._calculation_interval = timedelta(hours=1)
+        self._first_run = True  # Flag to force first run
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -91,19 +92,26 @@ class CalibrationSensor(BaseUtilitySensor):
         """Update the calibration sensor."""
         now = dt_util.utcnow()
 
-        # Only recalculate every 6 hours
-        if (
-            self._last_calculation
-            and now - self._last_calculation < self._calculation_interval
-        ):
-            return
+        # Force first run, then only recalculate every hour
+        if not self._first_run:
+            if (
+                self._last_calculation
+                and now - self._last_calculation < self._calculation_interval
+            ):
+                return
+        else:
+            self._first_run = False
 
         self._last_calculation = now
 
         try:
-            # Get 7 days of history for long-term analysis
-            start_time = now - timedelta(days=7)
-            short_term_start = now - timedelta(hours=24)
+            # Start with 24 hours of history for quick initial calibration
+            # Gradually increase lookback as more data becomes available
+            days_to_check = 1  # Start with 1 day for quick results
+            start_time = now - timedelta(days=days_to_check)
+            short_term_start = now - timedelta(
+                hours=6
+            )  # Even shorter for immediate feedback
 
             # Validate heat loss accuracy (short-term for quick feedback)
             heat_loss_accuracy = await self._validate_heat_loss(short_term_start, now)
@@ -197,7 +205,7 @@ class CalibrationSensor(BaseUtilitySensor):
                     else None
                 ),
                 "last_calibration": now.isoformat(),
-                "calibration_period_days": 7,
+                "calibration_period_days": days_to_check,
                 "status": self._get_status_message(
                     heat_loss_accuracy,
                     cop_accuracy,
@@ -529,7 +537,7 @@ class CalibrationSensor(BaseUtilitySensor):
                         }
                     )
 
-            if len(valid_days) < 3:
+            if len(valid_days) < 1:
                 _LOGGER.debug(
                     "Not enough valid days for graaddagen analysis: %d", len(valid_days)
                 )

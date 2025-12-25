@@ -56,7 +56,7 @@ class TotalCostSavingsSensor(RestoreSensor, BaseUtilitySensor):
             translation_key=name.lower().replace(" ", "_"),
         )
         self.hass = hass
-        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        self._attr_state_class = SensorStateClass.TOTAL
         self._attr_should_poll = False
         self._attr_native_value = 0.0
 

@@ -55,6 +55,10 @@ from .event_driven import (
     CopEfficiencyDeltaSensor,
     HeatGenerationDeltaSensor,
 )
+from .daily_utility import (
+    HeatPumpEnergyDailySensor,
+    NetHeatLossEnergyDailySensor,
+)
 from ..calibration_sensor import CalibrationSensor
 
 _LOGGER = logging.getLogger(__name__)
@@ -272,6 +276,9 @@ async def async_setup_entry(
         hass, entry, config, device, entities, weather_coordinator
     )
 
+    # Daily utility sensors (cumulative energy tracking)
+    _setup_daily_utility_sensors(hass, entry, config, device, entities)
+
     _LOGGER.debug("Adding %d sensor entities", len(entities))
     async_add_entities(entities)
 
@@ -404,3 +411,45 @@ def _setup_event_driven_sensors(
                     cop_compensation_factor=cop_compensation_factor,
                 )
             )
+
+
+def _setup_daily_utility_sensors(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    config: dict,
+    device,
+    entities: list,
+) -> None:
+    """Set up daily utility sensors that track cumulative energy (kWh)."""
+
+    # Find thermal power sensor
+    thermal_power_sensor_id = None
+    for entity in entities:
+        if isinstance(entity, HeatPumpThermalPowerSensor):
+            thermal_power_sensor_id = f"sensor.{DOMAIN}_heat_pump_thermal_power"
+            break
+
+    # Add daily heat pump energy sensor
+    if thermal_power_sensor_id:
+        entities.append(
+            HeatPumpEnergyDailySensor(
+                hass=hass,
+                name="Heat Pump Energy Daily",
+                unique_id=f"{entry.entry_id}_heat_pump_energy_daily",
+                icon="mdi:fire",
+                device=device,
+                thermal_power_sensor=thermal_power_sensor_id,
+            )
+        )
+
+    # Add daily net heat loss energy sensor
+    entities.append(
+        NetHeatLossEnergyDailySensor(
+            hass=hass,
+            name="Net Heat Loss Energy Daily",
+            unique_id=f"{entry.entry_id}_net_heat_loss_energy_daily",
+            icon="mdi:fire-off",
+            device=device,
+            net_heat_loss_sensor=f"sensor.{DOMAIN}_net_heat_loss",
+        )
+    )

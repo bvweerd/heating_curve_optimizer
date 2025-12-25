@@ -30,7 +30,7 @@ class CoordinatorCostSavingsSensor(CoordinatorEntity, BaseUtilitySensor):
             device=device,
             translation_key=name.lower().replace(" ", "_"),
         )
-        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_state_class = SensorStateClass.TOTAL
         self._attr_should_poll = False
 
     @property
