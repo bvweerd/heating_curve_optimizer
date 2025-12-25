@@ -557,9 +557,9 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
             net_heat_loss_state = self.hass.states.get(
                 "sensor.heating_curve_optimizer_net_heat_loss"
             )
-            if (
-                net_heat_loss_state is None
-                or net_heat_loss_state.state in ("unknown", "unavailable")
+            if net_heat_loss_state is None or net_heat_loss_state.state in (
+                "unknown",
+                "unavailable",
             ):
                 self._attr_available = False
                 return
@@ -572,7 +572,9 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
 
             # Calculate current buffer change rate
             buffer_change_rate = (
-                current_offset * current_heat_demand * DEFAULT_THERMAL_STORAGE_EFFICIENCY
+                current_offset
+                * current_heat_demand
+                * DEFAULT_THERMAL_STORAGE_EFFICIENCY
             )
 
             self._attr_native_value = round(buffer_change_rate, 3)
@@ -603,7 +605,9 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
         if demand_forecast:
             current_heat_demand = max(0.0, demand_forecast[0])
             buffer_change_rate = (
-                current_offset * current_heat_demand * DEFAULT_THERMAL_STORAGE_EFFICIENCY
+                current_offset
+                * current_heat_demand
+                * DEFAULT_THERMAL_STORAGE_EFFICIENCY
             )
         else:
             buffer_change_rate = 0.0
