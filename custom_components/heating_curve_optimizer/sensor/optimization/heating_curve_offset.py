@@ -14,6 +14,18 @@ from ...entity import BaseUtilitySensor
 class CoordinatorHeatingCurveOffsetSensor(CoordinatorEntity, BaseUtilitySensor):
     """Heating curve offset sensor using optimization coordinator."""
 
+    _unrecorded_attributes = frozenset({
+        "optimized_offsets",
+        "buffer_evolution",
+        "future_supply_temperatures",
+        "baseline_supply_temperatures",
+        "prices",
+        "demand_forecast",
+        "baseline_cop",
+        "optimized_cop",
+        "outdoor_forecast",
+    })
+
     def __init__(
         self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
     ):

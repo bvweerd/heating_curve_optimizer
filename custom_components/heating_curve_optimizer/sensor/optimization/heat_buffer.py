@@ -14,6 +14,8 @@ from ...entity import BaseUtilitySensor
 class CoordinatorHeatBufferSensor(CoordinatorEntity, BaseUtilitySensor):
     """Heat buffer sensor using optimization coordinator."""
 
+    _unrecorded_attributes = frozenset({"forecast"})
+
     def __init__(
         self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
     ):

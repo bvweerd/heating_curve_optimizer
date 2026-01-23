@@ -14,6 +14,8 @@ from ...entity import BaseUtilitySensor
 class CoordinatorNetHeatLossSensor(CoordinatorEntity, BaseUtilitySensor):
     """Net heat loss sensor using heat calculation coordinator."""
 
+    _unrecorded_attributes = frozenset({"forecast"})
+
     def __init__(
         self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
     ):

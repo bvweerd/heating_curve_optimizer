@@ -27,6 +27,8 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class CurrentElectricityPriceSensor(BaseUtilitySensor):
+    _unrecorded_attributes = frozenset({"forecast_prices"})
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -241,6 +243,8 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
 class CopEfficiencyDeltaSensor(BaseUtilitySensor):
     """Predict COP deltas for future offsets."""
 
+    _unrecorded_attributes = frozenset({"future_cop", "cop_deltas"})
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -417,6 +421,8 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
     - heat_demand: net heat loss in kW
     - thermal_storage_efficiency: 0.15 (15% of demand stored per °C offset)
     """
+
+    _unrecorded_attributes = frozenset({"future_buffer_change_rates"})
 
     def __init__(
         self,

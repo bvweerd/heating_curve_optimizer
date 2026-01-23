@@ -14,6 +14,8 @@ from ...entity import BaseUtilitySensor
 class CoordinatorPVProductionForecastSensor(CoordinatorEntity, BaseUtilitySensor):
     """PV production forecast sensor using heat calculation coordinator."""
 
+    _unrecorded_attributes = frozenset({"forecast"})
+
     def __init__(
         self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
     ):

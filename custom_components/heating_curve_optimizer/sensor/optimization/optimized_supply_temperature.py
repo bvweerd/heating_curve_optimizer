@@ -14,6 +14,8 @@ from ...entity import BaseUtilitySensor
 class CoordinatorOptimizedSupplyTemperatureSensor(CoordinatorEntity, BaseUtilitySensor):
     """Optimized supply temperature sensor using optimization coordinator."""
 
+    _unrecorded_attributes = frozenset({"optimized_offsets", "future_supply_temperatures"})
+
     def __init__(
         self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
     ):
