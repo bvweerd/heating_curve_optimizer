@@ -32,6 +32,11 @@
           "planning_window": "Planning window (hours)",
           "time_base": "Time base (minutes per step)",
           "max_buffer_debt": "Maximum heat debt (kWh)",
+          "target_indoor_temp": "Target indoor temperature (°C)",
+          "indoor_temp_hysteresis": "Indoor temperature hysteresis (°C)",
+          "indoor_temp_hysteresis_lower": "Lower hysteresis - heat pump ON (°C)",
+          "indoor_temp_hysteresis_upper": "Upper hysteresis - heat pump OFF (°C)",
+          "offset_delta_t": "Offset change speed (min/°C)",
           "heat_curve_min_outdoor": "Minimum outdoor temperature (°C)",
           "heat_curve_max_outdoor": "Maximum outdoor temperature (°C)",
           "heating_curve_offset": "Manual heating curve offset (°C)",
@@ -47,6 +52,11 @@
           "planning_window": "Optimization planning horizon in hours (default: 6)",
           "time_base": "Time interval for optimization in minutes (default: 60)",
           "max_buffer_debt": "Maximum allowed heat debt for cost optimization. Allows reducing heating during expensive hours and compensating later (default: 5.0 kWh)",
+          "target_indoor_temp": "Desired room temperature setpoint (default: 20°C)",
+          "indoor_temp_hysteresis": "Temperature band around setpoint where heating modulates (default: 0.5°C)",
+          "indoor_temp_hysteresis_lower": "How far below target temp before heat pump turns ON (default: 0.3°C)",
+          "indoor_temp_hysteresis_upper": "How far above target temp before heat pump turns OFF (default: 0.5°C)",
+          "offset_delta_t": "Minutes required per 1°C offset change. Lower = faster response (default: 10, range: 5-60)",
           "heat_curve_min_outdoor": "Minimum outdoor temperature for heating curve (default: -20°C)",
           "heat_curve_max_outdoor": "Maximum outdoor temperature for heating curve (default: 15°C)",
           "heating_curve_offset": "Manual offset to add to optimized heating curve (range: -4 to +4°C, default: 0)",
@@ -92,6 +102,18 @@
       },
       "heat_curve_max_outdoor": {
         "name": "Heating curve outdoor temp maximum"
+      },
+      "target_indoor_temperature": {
+        "name": "Target indoor temperature"
+      },
+      "indoor_temp_hysteresis": {
+        "name": "Indoor temperature hysteresis"
+      },
+      "indoor_temp_hysteresis_lower": {
+        "name": "Hysteresis below target (heat pump ON)"
+      },
+      "indoor_temp_hysteresis_upper": {
+        "name": "Hysteresis above target (heat pump OFF)"
       }
     },
     "sensor": {

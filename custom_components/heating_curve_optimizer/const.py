@@ -5,7 +5,7 @@ DOMAIN = "heating_curve_optimizer"
 DOMAIN_ABBREVIATION = "HCO"
 
 # Supported platforms for this integration
-PLATFORMS = ["sensor", "binary_sensor"]
+PLATFORMS = ["sensor", "binary_sensor", "number"]
 
 # Configuration keys
 CONF_SOURCE_TYPE = "source_type"
@@ -44,12 +44,26 @@ CONF_HEAT_CURVE_MAX = "heat_curve_max"
 CONF_VENTILATION_TYPE = "ventilation_type"
 CONF_CEILING_HEIGHT = "ceiling_height"
 CONF_MAX_BUFFER_DEBT = "max_buffer_debt"
+CONF_TARGET_INDOOR_TEMP = "target_indoor_temp"
+CONF_INDOOR_TEMP_HYSTERESIS = "indoor_temp_hysteresis"  # Legacy, kept for compatibility
+CONF_INDOOR_TEMP_HYSTERESIS_LOWER = "indoor_temp_hysteresis_lower"  # Below target
+CONF_INDOOR_TEMP_HYSTERESIS_UPPER = "indoor_temp_hysteresis_upper"  # Above target
+CONF_OFFSET_DELTA_T = "offset_delta_t"  # Minutes per 1°C offset change
 
 # Default values for heating curve settings
 DEFAULT_HEATING_CURVE_OFFSET = 0.0
 DEFAULT_HEAT_CURVE_MIN = 20.0
 DEFAULT_HEAT_CURVE_MAX = 45.0
 DEFAULT_MAX_BUFFER_DEBT = 5.0  # kWh - allows heat debt for cost optimization
+DEFAULT_TARGET_INDOOR_TEMP = 20.0  # °C - desired room temperature
+DEFAULT_INDOOR_TEMP_HYSTERESIS = 0.5  # °C - legacy hysteresis (symmetric)
+DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER = (
+    0.3  # °C - hysteresis below target (heat pump ON)
+)
+DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER = (
+    0.5  # °C - hysteresis above target (heat pump OFF)
+)
+DEFAULT_OFFSET_DELTA_T = 10  # Minutes per 1°C offset change (10 = fast, 60 = slow)
 
 # Default ventilation and building settings
 DEFAULT_VENTILATION_TYPE = "natural_standard"

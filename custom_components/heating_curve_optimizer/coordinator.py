@@ -25,12 +25,17 @@ from .const import (
     CONF_GLASS_U_VALUE,
     CONF_GLASS_WEST_M2,
     CONF_INDOOR_TEMPERATURE_SENSOR,
+    CONF_INDOOR_TEMP_HYSTERESIS,
+    CONF_INDOOR_TEMP_HYSTERESIS_LOWER,
+    CONF_INDOOR_TEMP_HYSTERESIS_UPPER,
     CONF_K_FACTOR,
+    CONF_OFFSET_DELTA_T,
     CONF_BASE_COP,
     CONF_COP_COMPENSATION_FACTOR,
     CONF_OUTDOOR_TEMP_COEFFICIENT,
     CONF_CONSUMPTION_PRICE_SENSOR,
     CONF_PLANNING_WINDOW,
+    CONF_TARGET_INDOOR_TEMP,
     CONF_TIME_BASE,
     CONF_MAX_BUFFER_DEBT,
     CONF_HEAT_CURVE_MIN,
@@ -44,15 +49,20 @@ from .const import (
     CONF_VENTILATION_TYPE,
     CONF_CEILING_HEIGHT,
     DEFAULT_COP_AT_35,
+    DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER,
+    DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER,
     DEFAULT_K_FACTOR,
+    DEFAULT_OFFSET_DELTA_T,
     DEFAULT_COP_COMPENSATION_FACTOR,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_PLANNING_WINDOW,
+    DEFAULT_TARGET_INDOOR_TEMP,
     DEFAULT_TIME_BASE,
     DEFAULT_MAX_BUFFER_DEBT,
     DEFAULT_VENTILATION_TYPE,
     DEFAULT_CEILING_HEIGHT,
     DEFAULT_PV_TILT,
+    DOMAIN,
     INDOOR_TEMPERATURE,
     calculate_htc_from_energy_label,
 )
@@ -60,6 +70,39 @@ from .helpers import extract_price_forecast_with_interval
 from .optimizer import optimize_offsets
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _calculate_supply_temp_from_curve(
+    outdoor_temp: float,
+    min_supply: float,
+    max_supply: float,
+    min_outdoor: float,
+    max_outdoor: float,
+) -> float:
+    """Calculate supply temperature from heating curve parameters."""
+    if outdoor_temp <= min_outdoor:
+        return max_supply
+    if outdoor_temp >= max_outdoor:
+        return min_supply
+    ratio = (outdoor_temp - min_outdoor) / (max_outdoor - min_outdoor)
+    return max_supply + (min_supply - max_supply) * ratio
+
+
+def _calculate_cop(
+    supply_temp: float,
+    outdoor_temp: float,
+    base_cop: float,
+    k_factor: float,
+    outdoor_temp_coefficient: float,
+    cop_compensation: float,
+) -> float:
+    """Calculate COP from supply and outdoor temperatures."""
+    cop = (
+        base_cop
+        + outdoor_temp_coefficient * outdoor_temp
+        - k_factor * (supply_temp - 35)
+    ) * cop_compensation
+    return max(0.5, cop)
 
 
 class WeatherDataCoordinator(DataUpdateCoordinator):
@@ -240,6 +283,55 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):
                 except (ValueError, TypeError):
                     pass
 
+        # Get target temperature and hysteresis from runtime data (number entities) or config
+        runtime = self.hass.data.get(DOMAIN, {}).get("runtime", {})
+        target_temp = runtime.get(
+            CONF_TARGET_INDOOR_TEMP,
+            self.config.get(CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP),
+        )
+
+        # Get separate lower and upper hysteresis values
+        # Lower hysteresis: how far below target before heat pump turns ON
+        # Upper hysteresis: how far above target before heat pump turns OFF
+        hysteresis_lower = runtime.get(
+            CONF_INDOOR_TEMP_HYSTERESIS_LOWER,
+            self.config.get(
+                CONF_INDOOR_TEMP_HYSTERESIS_LOWER,
+                # Fallback to legacy symmetric hysteresis
+                self.config.get(
+                    CONF_INDOOR_TEMP_HYSTERESIS, DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER
+                ),
+            ),
+        )
+        hysteresis_upper = runtime.get(
+            CONF_INDOOR_TEMP_HYSTERESIS_UPPER,
+            self.config.get(
+                CONF_INDOOR_TEMP_HYSTERESIS_UPPER,
+                # Fallback to legacy symmetric hysteresis
+                self.config.get(
+                    CONF_INDOOR_TEMP_HYSTERESIS, DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER
+                ),
+            ),
+        )
+
+        # Calculate heat demand factor based on indoor temp vs target
+        # Lower bound: target - lower_hysteresis (heat pump turns ON below this)
+        # Upper bound: target + upper_hysteresis (heat pump turns OFF above this)
+        lower_bound = target_temp - hysteresis_lower
+        upper_bound = target_temp + hysteresis_upper
+        total_band = hysteresis_lower + hysteresis_upper
+
+        if indoor_temp <= lower_bound:
+            # Room is cold, need full heating + extra to catch up
+            temp_deficit = lower_bound - indoor_temp
+            heat_demand_factor = 1.0 + (temp_deficit * 0.5)  # 50% extra per °C below
+        elif indoor_temp >= upper_bound:
+            # Room is warm enough, no heating needed (heat pump OFF)
+            heat_demand_factor = 0.0
+        else:
+            # In the hysteresis band, linear reduction from 1.0 to 0.0
+            heat_demand_factor = (upper_bound - indoor_temp) / total_band
+
         # Calculate HTC (Heat Transfer Coefficient)
         ventilation_type = self.config.get(
             CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE
@@ -255,13 +347,17 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):
             ceiling_height=ceiling_height,
         )
 
-        # Calculate current heat loss
+        # Calculate current heat loss (base calculation)
         outdoor_temp = weather_data["current_temperature"]
-        heat_loss = htc * (indoor_temp - outdoor_temp) / 1000  # Convert to kW
+        base_heat_loss = htc * (indoor_temp - outdoor_temp) / 1000  # Convert to kW
 
-        # Calculate heat loss forecast
+        # Apply heat demand factor based on target temperature
+        heat_loss = base_heat_loss * heat_demand_factor
+
+        # Calculate heat loss forecast (use target_temp for forecast, not current indoor_temp)
+        # This assumes the room will reach target temperature
         heat_loss_forecast = [
-            htc * (indoor_temp - t) / 1000 for t in weather_data["temperature_forecast"]
+            htc * (target_temp - t) / 1000 for t in weather_data["temperature_forecast"]
         ]
 
         # Calculate solar gain
@@ -280,8 +376,13 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):
         net_heat_loss = heat_loss - solar_gain
         net_forecast = [h - s for h, s in zip(heat_loss_forecast, solar_forecast)]
 
+        # Determine if heat pump should be ON based on heat demand factor
+        # Heat pump is ON when there's any positive demand
+        heat_pump_on = heat_demand_factor > 0.0
+
         result = {
             "heat_loss": round(heat_loss, 3),
+            "heat_loss_base": round(base_heat_loss, 3),
             "heat_loss_forecast": [round(v, 3) for v in heat_loss_forecast],
             "solar_gain": round(solar_gain, 3),
             "solar_gain_forecast": [round(v, 3) for v in solar_forecast],
@@ -290,14 +391,26 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):
             "net_heat_loss_forecast": [round(v, 3) for v in net_forecast],
             "outdoor_temperature": outdoor_temp,
             "indoor_temperature": indoor_temp,
+            "target_temperature": target_temp,
+            "heat_demand_factor": round(heat_demand_factor, 3),
+            "heat_pump_on": heat_pump_on,
+            "hysteresis_lower": hysteresis_lower,
+            "hysteresis_upper": hysteresis_upper,
+            "lower_bound": round(lower_bound, 2),
+            "upper_bound": round(upper_bound, 2),
             "timestamp": dt_util.utcnow(),
         }
 
         _LOGGER.debug(
-            "Heat calculations updated: loss=%.2f kW, solar=%.2f kW, net=%.2f kW",
+            "Heat calculations: loss=%.2f kW (base=%.2f, factor=%.2f), "
+            "solar=%.2f kW, net=%.2f kW, indoor=%.1f°C, target=%.1f°C",
             heat_loss,
+            base_heat_loss,
+            heat_demand_factor,
             solar_gain,
             net_heat_loss,
+            indoor_temp,
+            target_temp,
         )
 
         return result
@@ -412,6 +525,8 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         self._price_sensor = config.get(CONF_CONSUMPTION_PRICE_SENSOR)
         self._unsub = None
         self._last_price = None
+        self._current_buffer: float = 0.0  # Track actual buffer state
+        self._current_offset: int = 0  # Track current offset for change constraint
 
     async def async_setup(self) -> None:
         """Set up event tracking for price changes."""
@@ -457,7 +572,41 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         if not heat_data:
             raise UpdateFailed("No heat calculation data available")
 
-        demand_forecast = heat_data["net_heat_loss_forecast"]
+        demand_forecast = list(heat_data["net_heat_loss_forecast"])  # Make a copy
+
+        # Get heat pump status
+        heat_demand_factor = heat_data.get("heat_demand_factor", 1.0)
+        heat_pump_on = heat_data.get("heat_pump_on", True)
+        current_net_heat_loss = heat_data.get("net_heat_loss", 0.0)
+
+        # Get time base for buffer calculations
+        time_base = int(self.config.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
+        step_hours = time_base / 60.0
+
+        # Handle passive buffer changes when heat pump is OFF
+        # The building exchanges heat with environment regardless of optimizer
+        if not heat_pump_on:
+            # Passive heat exchange: buffer changes by -net_heat_loss * time
+            # net_heat_loss > 0: losing heat → buffer decreases
+            # net_heat_loss < 0: solar gain → buffer increases
+            passive_buffer_change = -current_net_heat_loss * step_hours
+            self._current_buffer += passive_buffer_change
+
+            _LOGGER.debug(
+                "Heat pump OFF: passive buffer change %.3f kWh "
+                "(net_loss=%.2f kW, buffer now=%.2f kWh)",
+                passive_buffer_change,
+                current_net_heat_loss,
+                self._current_buffer,
+            )
+
+            # Set current demand to 0 for optimizer (heat pump not running)
+            if demand_forecast:
+                demand_forecast[0] = 0.0
+
+        elif heat_demand_factor < 1.0 and demand_forecast:
+            # Heat pump ON but with reduced demand - apply factor
+            demand_forecast[0] = demand_forecast[0] * heat_demand_factor
 
         # Get outdoor temperature forecast from weather coordinator
         weather_data = self.heat_coordinator.weather_coordinator.data
@@ -491,6 +640,9 @@ class OptimizationCoordinator(DataUpdateCoordinator):
             self.config.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
         )
         time_base = int(self.config.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
+        offset_delta_t = int(
+            self.config.get(CONF_OFFSET_DELTA_T, DEFAULT_OFFSET_DELTA_T)
+        )
         max_buffer_debt = float(
             self.config.get(CONF_MAX_BUFFER_DEBT, DEFAULT_MAX_BUFFER_DEBT)
         )
@@ -515,7 +667,10 @@ class OptimizationCoordinator(DataUpdateCoordinator):
 
         # Run optimization in executor (CPU-intensive)
         _LOGGER.debug(
-            "Running optimization with %d demand points", len(demand_forecast)
+            "Running optimization with %d demand points, buffer=%.2f, offset=%d",
+            len(demand_forecast),
+            self._current_buffer,
+            self._current_offset,
         )
         result = await self.hass.async_add_executor_job(
             self._run_optimization,
@@ -524,6 +679,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):
             temp_forecast,
             planning_window,
             time_base,
+            offset_delta_t,
             max_buffer_debt,
             price_interval,
             k_factor,
@@ -534,13 +690,26 @@ class OptimizationCoordinator(DataUpdateCoordinator):
             max_supply,
             min_outdoor,
             max_outdoor,
+            self._current_buffer,
+            self._current_offset,
         )
 
+        # Update tracked state for next optimization run
+        new_offset = int(result.get("optimized_offset", 0))
+        buffer_evolution = result.get("buffer_evolution", [])
+        new_buffer = buffer_evolution[0] if buffer_evolution else self._current_buffer
+
         _LOGGER.debug(
-            "Optimization complete: offset=%.1f°C, cost=%.3f",
-            result["optimized_offset"],
+            "Optimization complete: offset=%d°C (was %d), buffer=%.2f kWh (was %.2f), cost=%.3f",
+            new_offset,
+            self._current_offset,
+            new_buffer,
+            self._current_buffer,
             result.get("total_cost", 0),
         )
+
+        self._current_offset = new_offset
+        self._current_buffer = new_buffer
 
         return result
 
@@ -551,6 +720,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         temp_forecast: list[float],
         planning_window: int,
         time_base: int,
+        offset_delta_t: int,
         max_buffer_debt: float,
         price_interval: int,
         k_factor: float,
@@ -561,6 +731,8 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         max_supply: float,
         min_outdoor: float,
         max_outdoor: float,
+        current_buffer: float,
+        current_offset: int,
     ) -> dict[str, Any]:
         """Run DP optimization (blocking call in executor)."""
         try:
@@ -577,7 +749,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):
                 base_temp=base_cop,
                 k_factor=k_factor,
                 cop_compensation_factor=cop_compensation,
-                buffer=0.0,  # Start with zero buffer
+                buffer=current_buffer,  # Use actual buffer state
                 water_min=min_supply,
                 water_max=max_supply,
                 outdoor_temps=temp_limited,
@@ -587,58 +759,59 @@ class OptimizationCoordinator(DataUpdateCoordinator):
                 outdoor_min=min_outdoor,
                 outdoor_max=max_outdoor,
                 max_buffer_debt=max_buffer_debt,  # Configurable heat debt limit
+                current_offset=current_offset,  # Constrain first step change
+                offset_delta_t=offset_delta_t,  # Minutes per 1°C offset change
             )
 
             # Calculate future supply temperatures and COP for both baseline and optimized
             future_supply_temps = []
             baseline_supply_temps = []
-            baseline_cop = []
-            optimized_cop = []
+            baseline_cop_list = []
+            optimized_cop_list = []
             step_hours = time_base / 60.0
 
-            for i in range(len(offsets)):
+            for i, offset in enumerate(offsets):
                 if i < len(temp_limited):
                     outdoor_temp = temp_limited[i]
-                    # Calculate base temp using heating curve
-                    if outdoor_temp <= min_outdoor:
-                        base_temp = max_supply
-                    elif outdoor_temp >= max_outdoor:
-                        base_temp = min_supply
-                    else:
-                        ratio = (outdoor_temp - min_outdoor) / (
-                            max_outdoor - min_outdoor
-                        )
-                        base_temp = max_supply + (min_supply - max_supply) * ratio
+                    base_temp = _calculate_supply_temp_from_curve(
+                        outdoor_temp, min_supply, max_supply, min_outdoor, max_outdoor
+                    )
+                    supply_temp = max(min(base_temp + offset, max_supply), min_supply)
 
                     baseline_supply_temps.append(round(base_temp, 1))
-
-                    # Add offset and clamp to limits
-                    supply_temp = max(
-                        min(base_temp + offsets[i], max_supply), min_supply
-                    )
                     future_supply_temps.append(round(supply_temp, 1))
-
-                    # Calculate COP for baseline (offset=0)
-                    cop_base = (
-                        base_cop
-                        + outdoor_temp_coefficient * outdoor_temp
-                        - k_factor * (base_temp - 35)
-                    ) * cop_compensation
-                    baseline_cop.append(round(max(0.5, cop_base), 3))
-
-                    # Calculate COP for optimized (with offset)
-                    cop_opt = (
-                        base_cop
-                        + outdoor_temp_coefficient * outdoor_temp
-                        - k_factor * (supply_temp - 35)
-                    ) * cop_compensation
-                    optimized_cop.append(round(max(0.5, cop_opt), 3))
+                    baseline_cop_list.append(
+                        round(
+                            _calculate_cop(
+                                base_temp,
+                                outdoor_temp,
+                                base_cop,
+                                k_factor,
+                                outdoor_temp_coefficient,
+                                cop_compensation,
+                            ),
+                            3,
+                        )
+                    )
+                    optimized_cop_list.append(
+                        round(
+                            _calculate_cop(
+                                supply_temp,
+                                outdoor_temp,
+                                base_cop,
+                                k_factor,
+                                outdoor_temp_coefficient,
+                                cop_compensation,
+                            ),
+                            3,
+                        )
+                    )
                 else:
                     # No temperature data, use min_supply as fallback
                     baseline_supply_temps.append(round(min_supply, 1))
                     future_supply_temps.append(round(min_supply, 1))
-                    baseline_cop.append(3.0)
-                    optimized_cop.append(3.0)
+                    baseline_cop_list.append(3.0)
+                    optimized_cop_list.append(3.0)
 
             # Calculate real costs: electricity cost = (heat_demand / COP) * time * price
             baseline_cost = 0.0
@@ -646,24 +819,15 @@ class OptimizationCoordinator(DataUpdateCoordinator):
 
             for i in range(len(offsets)):
                 if i < len(demand_limited) and i < len(price_limited):
-                    demand = max(0.0, demand_limited[i])  # kW
-                    price = price_limited[i]  # €/kWh
+                    demand = max(0.0, demand_limited[i])
+                    price = price_limited[i]
+                    b_cop = baseline_cop_list[i]
+                    o_cop = optimized_cop_list[i]
 
-                    # Baseline: electricity = (demand / baseline_cop) * step_hours
-                    baseline_electricity = (
-                        (demand / baseline_cop[i]) * step_hours
-                        if baseline_cop[i] > 0
-                        else 0.0
-                    )
-                    baseline_cost += baseline_electricity * price
-
-                    # Optimized: electricity = (demand / optimized_cop) * step_hours
-                    optimized_electricity = (
-                        (demand / optimized_cop[i]) * step_hours
-                        if optimized_cop[i] > 0
-                        else 0.0
-                    )
-                    optimized_cost += optimized_electricity * price
+                    if b_cop > 0:
+                        baseline_cost += (demand / b_cop) * step_hours * price
+                    if o_cop > 0:
+                        optimized_cost += (demand / o_cop) * step_hours * price
 
             cost_savings = baseline_cost - optimized_cost
 
@@ -671,10 +835,12 @@ class OptimizationCoordinator(DataUpdateCoordinator):
                 "optimized_offset": round(offsets[0], 1) if offsets else 0.0,
                 "optimized_offsets": [round(v, 1) for v in offsets],
                 "buffer_evolution": [round(v, 3) for v in buffer_evolution],
+                "initial_buffer": round(current_buffer, 3),
+                "previous_offset": current_offset,
                 "future_supply_temperatures": future_supply_temps,
                 "baseline_supply_temperatures": baseline_supply_temps,
-                "baseline_cop": baseline_cop,
-                "optimized_cop": optimized_cop,
+                "baseline_cop": baseline_cop_list,
+                "optimized_cop": optimized_cop_list,
                 "baseline_cost": round(baseline_cost, 3),
                 "total_cost": round(optimized_cost, 3),
                 "cost_savings": round(cost_savings, 3),

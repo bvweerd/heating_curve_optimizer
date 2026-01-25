@@ -521,6 +521,66 @@ threshold: 0  # kW
 
 ---
 
+## Number Entities (Controls)
+
+### Target Indoor Temperature
+**Entity ID**: `number.heating_curve_optimizer_target_indoor_temperature`
+
+**Description**: Target indoor temperature setpoint for heat demand modulation
+
+**Unit**: °C
+
+**Range**: 15.0 - 25.0 (step: 0.5)
+
+**Mode**: Slider
+
+**Icon**: `mdi:home-thermometer`
+
+**Behavior**:
+- Restores previous value on restart
+- Changes trigger heat demand recalculation
+- Stored in `hass.data[DOMAIN]["runtime"]` for coordinator access
+
+**Usage**: Set desired indoor temperature; heat demand adjusts proportionally based on difference between actual and target temperature.
+
+---
+
+### Indoor Temperature Hysteresis
+**Entity ID**: `number.heating_curve_optimizer_indoor_temp_hysteresis`
+
+**Description**: Hysteresis band for smooth heat demand control
+
+**Unit**: °C
+
+**Range**: 0.1 - 2.0 (step: 0.1)
+
+**Mode**: Slider
+
+**Icon**: `mdi:thermometer-lines`
+
+**Behavior**:
+- Defines the temperature band around target (target ± hysteresis)
+- Within band: heat demand modulates linearly
+- Outside band: full or zero demand
+
+**Heat Demand Factor Calculation**:
+```python
+lower_bound = target_temp - hysteresis
+upper_bound = target_temp + hysteresis
+
+if indoor_temp <= lower_bound:
+    # Below target: increase demand
+    heat_demand_factor = 1.0 + (lower_bound - indoor_temp) * 0.5
+elif indoor_temp >= upper_bound:
+    # Above target: no demand
+    heat_demand_factor = 0.0
+else:
+    # Within band: linear interpolation
+    heat_demand_factor = (upper_bound - indoor_temp) / (2 * hysteresis)
+```
+
+---
+
 ## Sensor Update Behavior
 
 ### Update Intervals

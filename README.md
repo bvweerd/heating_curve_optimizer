@@ -64,6 +64,9 @@ Uses a 6-hour planning horizon with dynamic programming to find the optimal heat
 ### Comfort Constraints
 Maintains supply temperature within configurable limits while respecting maximum rate-of-change constraints to prevent system stress.
 
+### Temperature Control
+Adjustable target indoor temperature with hysteresis band. Heat demand is automatically modulated based on the difference between actual and target temperature, providing smooth comfort control without aggressive on/off cycling.
+
 ## How It Works
 
 The integration continuously:
@@ -197,6 +200,10 @@ Configure safe operating ranges:
   - Higher values allow more aggressive cost optimization but may affect comfort
   - Lower values prioritize maintaining consistent temperature over cost savings
   - Set to 0 to disable heat debt (always meet demand immediately)
+- **Offset change speed** (offset_delta_t): Minutes required per 1°C offset change (default: 10)
+  - At time_base=60 and offset_delta_t=10: max 6°C change per step
+  - At time_base=60 and offset_delta_t=60: max 1°C change per step
+  - Lower values allow faster heating curve adjustments
 
 ## Sensors Created
 
@@ -227,6 +234,15 @@ The integration creates the following sensors:
 
 ### Calibration Sensor
 - `sensor.calibration` - Calibration recommendations
+
+### Number Entities (Controls)
+- `number.target_indoor_temperature` - Target indoor temperature setpoint (15-25°C)
+- `number.indoor_temp_hysteresis` - Hysteresis band for heat demand (0.1-2.0°C)
+
+**Heat Demand Modulation**: When an indoor temperature sensor is configured, the heat demand is automatically modulated based on the difference between actual and target indoor temperature:
+- Below target: Heat demand increases proportionally
+- At target: Normal heat demand
+- Above target: Heat demand reduced to zero
 
 ![Heating Curve Optimizer Sensors](heat%20curve%20optimizer.png)
 
@@ -340,7 +356,10 @@ sensor.calibration
 Attributes include:
 - `recommended_label`: Suggested energy label based on historical heat loss
 - `measured_u_value`: Calculated U-value from actual consumption
-- `confidence`: Confidence level of recommendation
+- `storage_efficiency_recommended`: Recommended thermal storage efficiency
+- `cop_accuracy_pct`: COP prediction accuracy percentage
+- `graaddagen_samples`: Number of degree-day samples collected
+- `graaddagen_correlation`: Correlation coefficient of heat loss model
 
 ## Troubleshooting
 

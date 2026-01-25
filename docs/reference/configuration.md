@@ -39,10 +39,42 @@ Quick reference for all configuration parameters.
 | `planning_window_hours` | integer | 2-24 | 6 | Optimization planning horizon (hours) |
 | `time_base_minutes` | integer | 15-120 | 60 | Optimization time step (minutes) |
 | `max_buffer_debt` | float | 0-20 | 5.0 | Maximum heat debt (kWh) for cost optimization |
+| `offset_delta_t` | integer | 10-60 | 10 | Minutes per °C offset change (controls change speed) |
 | `min_supply_temp` | float | 20-45 | 25 | Minimum supply temperature (°C) |
 | `max_supply_temp` | float | 35-60 | 50 | Maximum supply temperature (°C) |
 | `min_outdoor_temp` | float | -20-5 | -10 | Minimum outdoor temperature for heating (°C) |
 | `max_outdoor_temp` | float | 5-20 | 18 | Maximum outdoor temperature for heating (°C) |
+
+## Temperature Control Parameters
+
+| Parameter | Type | Range | Default | Description |
+|-----------|------|-------|---------|-------------|
+| `target_indoor_temp` | float | 15-25 | 20.0 | Target indoor temperature setpoint (°C) |
+| `indoor_temp_hysteresis` | float | 0.1-2.0 | 0.5 | Hysteresis band for heat demand modulation (°C) |
+
+### Offset Change Speed (offset_delta_t) Explained
+
+The `offset_delta_t` parameter controls how quickly the heating curve offset can change:
+
+- **10 min/°C** (default): Fast changes, max 6°C per hour (at 60-min time base)
+- **30 min/°C**: Moderate changes, max 2°C per hour
+- **60 min/°C**: Slow changes, max 1°C per hour
+
+**Formula**: `max_offset_change = time_base_minutes / offset_delta_t`
+
+**Use cases**:
+- **Lower values (10-20)**: Responsive to price changes, good for volatile markets
+- **Higher values (30-60)**: Smoother operation, reduces system stress
+
+### Heat Demand Modulation
+
+When `target_indoor_temp` and `indoor_temp_hysteresis` are configured with an indoor temperature sensor, heat demand is automatically modulated:
+
+| Indoor Temp Position | Heat Demand Factor |
+|---------------------|-------------------|
+| Below (target - hysteresis) | > 1.0 (increased proportionally) |
+| Within hysteresis band | 0.0 to 1.0 (linear interpolation) |
+| Above (target + hysteresis) | 0.0 (no heat demand) |
 
 ### Maximum Heat Debt Explained
 

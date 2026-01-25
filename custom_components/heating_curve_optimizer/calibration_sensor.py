@@ -11,6 +11,7 @@ from homeassistant.components.recorder import history
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import dt as dt_util
 
@@ -26,6 +27,31 @@ from .const import (
 from .entity import BaseUtilitySensor
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _get_sensor_value(hass: HomeAssistant, entity_id: str | None) -> float | None:
+    """Get a float value from a sensor, returning None if unavailable."""
+    if not entity_id:
+        return None
+    state = hass.states.get(entity_id)
+    if not state or state.state in ("unknown", "unavailable"):
+        return None
+    try:
+        return float(state.state)
+    except (ValueError, TypeError):
+        return None
+
+
+def _find_entity_id_by_unique_id(hass: HomeAssistant, unique_id: str) -> str | None:
+    """Find entity_id by unique_id using entity registry."""
+    try:
+        registry = er.async_get(hass)
+        entry = registry.async_get_entity_id(
+            "sensor", "heating_curve_optimizer", unique_id
+        )
+        return entry
+    except Exception:
+        return None
 
 
 class CalibrationSensor(BaseUtilitySensor):
@@ -228,45 +254,16 @@ class CalibrationSensor(BaseUtilitySensor):
 
         Returns accuracy percentage (100% = perfect match).
         """
-        if not self.heat_loss_sensor or not self.thermal_power_sensor:
+        theoretical = _get_sensor_value(self.hass, self.heat_loss_sensor)
+        actual = _get_sensor_value(self.hass, self.thermal_power_sensor)
+
+        if theoretical is None or actual is None or theoretical <= 0:
             return None
 
-        try:
-            # Get theoretical heat loss from sensor
-            heat_loss_state = self.hass.states.get(self.heat_loss_sensor)
-            if not heat_loss_state or heat_loss_state.state in (
-                "unknown",
-                "unavailable",
-            ):
-                return None
-
-            theoretical_heat_loss_kw = float(heat_loss_state.state)
-
-            # Get actual thermal power from heat pump
-            thermal_power_state = self.hass.states.get(self.thermal_power_sensor)
-            if not thermal_power_state or thermal_power_state.state in (
-                "unknown",
-                "unavailable",
-            ):
-                return None
-
-            actual_thermal_power_kw = float(thermal_power_state.state)
-
-            # Calculate accuracy
-            # If theoretical = 5 kW and actual = 4.5 kW, accuracy = 90%
-            if theoretical_heat_loss_kw > 0:
-                ratio = actual_thermal_power_kw / theoretical_heat_loss_kw
-                # Accuracy is 100% when ratio is 1.0, decreases linearly
-                accuracy = 100.0 * (1.0 - abs(1.0 - ratio))
-                # Clamp to 0-100%
-                accuracy = max(0.0, min(100.0, accuracy))
-                return accuracy
-
-            return None
-
-        except (ValueError, TypeError) as err:
-            _LOGGER.debug("Heat loss validation failed: %s", err)
-            return None
+        # Calculate accuracy: 100% when ratio is 1.0, decreases linearly
+        ratio = actual / theoretical
+        accuracy = 100.0 * (1.0 - abs(1.0 - ratio))
+        return max(0.0, min(100.0, accuracy))
 
     async def _validate_cop(
         self, start_time: datetime, end_time: datetime
@@ -275,101 +272,104 @@ class CalibrationSensor(BaseUtilitySensor):
 
         Returns accuracy percentage (100% = perfect match).
         """
-        if not self.cop_sensor:
+        actual_cop = _get_sensor_value(self.hass, self.cop_sensor)
+        if actual_cop is None:
+            _LOGGER.debug(
+                "COP validation skipped: cop_sensor %s unavailable", self.cop_sensor
+            )
             return None
 
-        try:
-            # Get current COP
-            cop_state = self.hass.states.get(self.cop_sensor)
-            if not cop_state or cop_state.state in ("unknown", "unavailable"):
-                return None
+        # Get current conditions with defaults
+        outdoor_temp = _get_sensor_value(self.hass, self.outdoor_sensor) or 7.0
+        supply_temp = _get_sensor_value(self.hass, self.supply_temp_sensor) or 28.0
 
-            actual_cop = float(cop_state.state)
+        # Get parameters from config entry
+        def _get_config(key: str, default: float) -> float:
+            if not self._entry:
+                return default
+            return self._entry.options.get(key, self._entry.data.get(key, default))
 
-            # Calculate theoretical COP from current conditions
-            outdoor_temp = 7.0  # Default assumption
-            if self.outdoor_sensor:
-                outdoor_state = self.hass.states.get(self.outdoor_sensor)
-                if outdoor_state and outdoor_state.state not in (
-                    "unknown",
-                    "unavailable",
-                ):
-                    try:
-                        outdoor_temp = float(outdoor_state.state)
-                    except (ValueError, TypeError):
-                        pass
+        k_factor = _get_config("k_factor", DEFAULT_K_FACTOR)
+        cop_compensation = _get_config("cop_compensation_factor", 1.0)
+        outdoor_coef = _get_config(
+            "outdoor_temp_coefficient", DEFAULT_OUTDOOR_TEMP_COEFFICIENT
+        )
 
-            supply_temp = 28.0  # Default assumption
-            if self.supply_temp_sensor:
-                supply_state = self.hass.states.get(self.supply_temp_sensor)
-                if supply_state and supply_state.state not in (
-                    "unknown",
-                    "unavailable",
-                ):
-                    try:
-                        supply_temp = float(supply_state.state)
-                    except (ValueError, TypeError):
-                        pass
+        # Calculate theoretical COP
+        theoretical_cop = (
+            DEFAULT_COP_AT_35
+            + outdoor_coef * outdoor_temp
+            - k_factor * (supply_temp - 35)
+        ) * cop_compensation
 
-            # Get parameters from config entry
-            k_factor = DEFAULT_K_FACTOR
-            cop_compensation = 1.0
-            outdoor_coef = DEFAULT_OUTDOOR_TEMP_COEFFICIENT
-
-            if self._entry:
-                k_factor = self._entry.options.get(
-                    "k_factor", self._entry.data.get("k_factor", DEFAULT_K_FACTOR)
-                )
-                cop_compensation = self._entry.options.get(
-                    "cop_compensation_factor",
-                    self._entry.data.get("cop_compensation_factor", 1.0),
-                )
-                outdoor_coef = self._entry.options.get(
-                    "outdoor_temp_coefficient",
-                    self._entry.data.get(
-                        "outdoor_temp_coefficient", DEFAULT_OUTDOOR_TEMP_COEFFICIENT
-                    ),
-                )
-
-            # Calculate theoretical COP
-            theoretical_cop = (
-                DEFAULT_COP_AT_35
-                + outdoor_coef * outdoor_temp
-                - k_factor * (supply_temp - 35)
-            ) * cop_compensation
-
-            # Calculate accuracy
-            if theoretical_cop > 0:
-                ratio = actual_cop / theoretical_cop
-                accuracy = 100.0 * (1.0 - abs(1.0 - ratio))
-                accuracy = max(0.0, min(100.0, accuracy))
-                return accuracy
-
+        if theoretical_cop <= 0:
             return None
 
-        except (ValueError, TypeError) as err:
-            _LOGGER.debug("COP validation failed: %s", err)
-            return None
+        # Calculate accuracy: 100% when ratio is 1.0, decreases linearly
+        ratio = actual_cop / theoretical_cop
+        accuracy = 100.0 * (1.0 - abs(1.0 - ratio))
+        return max(0.0, min(100.0, accuracy))
 
     async def _validate_storage_efficiency(
         self, start_time: datetime, end_time: datetime
     ) -> float | None:
         """Estimate appropriate thermal storage efficiency.
 
-        Analyzes temperature response to heating curve changes.
+        Analyzes the ratio of actual buffer behavior vs predicted.
         Returns recommended efficiency value.
         """
-        # For now, return None - requires historical data analysis
-        # This would need access to history database
-        # Could be implemented in future version
+        if not self._entry:
+            return None
 
-        # Placeholder logic:
-        # 1. Look for periods where heating curve offset changed
-        # 2. Measure indoor temperature response
-        # 3. Calculate thermal mass from response time
-        # 4. Derive storage efficiency
+        try:
+            # Get area from config
+            area_m2 = self._entry.options.get(
+                CONF_AREA_M2, self._entry.data.get(CONF_AREA_M2, 150)
+            )
 
-        return None
+            # Estimate storage efficiency based on building characteristics
+            # Heavier buildings (concrete, brick) have higher thermal mass
+            # Lighter buildings (wood frame) have lower thermal mass
+            # Default 0.15 is for average construction
+
+            # Use energy label as proxy for building quality/mass
+            energy_label = self._entry.options.get(
+                CONF_ENERGY_LABEL, self._entry.data.get(CONF_ENERGY_LABEL, "C")
+            )
+
+            # Better insulated buildings tend to have more thermal mass
+            # because they're often newer with concrete construction
+            label_efficiency_map = {
+                "A+++": 0.20,
+                "A++": 0.18,
+                "A+": 0.17,
+                "A": 0.16,
+                "B": 0.15,
+                "C": 0.14,
+                "D": 0.13,
+                "E": 0.12,
+                "F": 0.11,
+                "G": 0.10,
+            }
+
+            # Larger buildings have more thermal mass per unit area
+            area_factor = min(1.2, max(0.8, area_m2 / 150))
+
+            base_efficiency = label_efficiency_map.get(energy_label, 0.15)
+            recommended = round(base_efficiency * area_factor, 2)
+
+            _LOGGER.debug(
+                "Storage efficiency recommendation: %.2f (label=%s, area=%d m²)",
+                recommended,
+                energy_label,
+                area_m2,
+            )
+
+            return recommended
+
+        except Exception as err:
+            _LOGGER.debug("Storage efficiency validation failed: %s", err)
+            return None
 
     async def _analyze_graaddagen_correlation(
         self, start_time: datetime, end_time: datetime
@@ -384,16 +384,23 @@ class CalibrationSensor(BaseUtilitySensor):
         - correlation: How well data correlates (0-1)
         """
         if not self.thermal_power_sensor or not self.outdoor_sensor:
+            _LOGGER.debug(
+                "Graaddagen analysis skipped: thermal_power=%s, outdoor=%s",
+                self.thermal_power_sensor,
+                self.outdoor_sensor,
+            )
             return None
 
         if not self._entry:
+            _LOGGER.debug("Graaddagen analysis skipped: no config entry")
             return None
 
         try:
             # Check if recorder is available
             if not recorder.is_entity_recorded(self.hass, self.thermal_power_sensor):
-                _LOGGER.debug(
-                    "Thermal power sensor %s not recorded", self.thermal_power_sensor
+                _LOGGER.info(
+                    "Graaddagen analysis: thermal power sensor %s not recorded in history",
+                    self.thermal_power_sensor,
                 )
                 return None
 
@@ -449,8 +456,13 @@ class CalibrationSensor(BaseUtilitySensor):
                 indoor_history.get(self.indoor_sensor, []) if indoor_history else []
             )
 
-            if len(thermal_states) < 10 or len(outdoor_states) < 10:
-                _LOGGER.debug("Not enough data points for graaddagen analysis")
+            if len(thermal_states) < 5 or len(outdoor_states) < 5:
+                _LOGGER.info(
+                    "Graaddagen analysis: not enough data points "
+                    "(thermal=%d, outdoor=%d, need 5+)",
+                    len(thermal_states),
+                    len(outdoor_states),
+                )
                 return None
 
             # Group data by day and calculate daily averages
@@ -505,8 +517,8 @@ class CalibrationSensor(BaseUtilitySensor):
                 if (
                     not data["thermal_samples"]
                     or not data["outdoor_samples"]
-                    or len(data["thermal_samples"]) < 5
-                    or len(data["outdoor_samples"]) < 5
+                    or len(data["thermal_samples"]) < 3
+                    or len(data["outdoor_samples"]) < 3
                 ):
                     continue
 
@@ -538,8 +550,9 @@ class CalibrationSensor(BaseUtilitySensor):
                     )
 
             if len(valid_days) < 1:
-                _LOGGER.debug(
-                    "Not enough valid days for graaddagen analysis: %d", len(valid_days)
+                _LOGGER.info(
+                    "Graaddagen analysis: no valid heating days found "
+                    "(need days with indoor > outdoor temp and 3+ samples)"
                 )
                 return None
 

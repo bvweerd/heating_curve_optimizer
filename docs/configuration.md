@@ -146,6 +146,40 @@ Heat pump type guidelines:
 - **Default**: 60 minutes
 - **Impact**: Smaller steps = finer control but more computation
 
+#### **Offset Change Speed (offset_delta_t)**
+- **Description**: Minutes required per 1°C offset change
+- **Range**: 10 - 60 minutes
+- **Default**: 10 minutes
+- **Impact**: Controls how quickly the heating curve offset can change
+- **Formula**: Max change per step = time_base / offset_delta_t
+  - At 60 min time_base, 10 min delta: max 6°C/hour
+  - At 60 min time_base, 60 min delta: max 1°C/hour
+
+!!! tip "Choosing offset_delta_t"
+    - **Lower values (10-20)**: More responsive to price changes, good for volatile electricity markets
+    - **Higher values (30-60)**: Smoother operation, less stress on heating system
+
+### Temperature Control Settings
+
+#### **Target Indoor Temperature**
+- **Description**: Desired indoor temperature setpoint
+- **Range**: 15 - 25°C
+- **Default**: 20°C
+- **Impact**: Base temperature for heat demand calculation
+
+#### **Indoor Temperature Hysteresis**
+- **Description**: Temperature band around setpoint for smooth control
+- **Range**: 0.1 - 2.0°C
+- **Default**: 0.5°C
+- **Impact**: Prevents frequent on/off cycling
+
+!!! info "Heat Demand Modulation"
+    When configured with an indoor temperature sensor, heat demand is automatically adjusted:
+
+    - **Below (target - hysteresis)**: Demand increases proportionally
+    - **Within hysteresis band**: Linear reduction from 100% to 0%
+    - **Above (target + hysteresis)**: No heat demand
+
 !!! warning "Performance Consideration"
     Planning window of 24 hours with 15-minute time base creates 96 time steps, which may be computationally intensive.
 

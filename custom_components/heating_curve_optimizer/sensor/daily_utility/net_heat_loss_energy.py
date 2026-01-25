@@ -11,7 +11,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
     RestoreSensor,
 )
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.event import (
     async_track_time_interval,
@@ -119,7 +119,6 @@ class NetHeatLossEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
         tomorrow = now.date() + timedelta(days=1)
         next_midnight = dt_util.as_utc(datetime.combine(tomorrow, datetime.min.time()))
 
-        @callback
         async def _reset_at_midnight(_now):
             """Reset counter at midnight."""
             _LOGGER.info("Midnight reset: Daily net heat loss counter")
@@ -137,12 +136,10 @@ class NetHeatLossEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
             lambda: self.hass.async_create_task(_reset_at_midnight(None)),
         )
 
-    @callback
     async def _handle_state_change(self, event):
         """Handle state change of net heat loss sensor."""
         await self._async_update_energy()
 
-    @callback
     async def _async_update_energy(self, now: datetime | None = None) -> None:
         """Update cumulative energy periodically."""
         current_time = dt_util.utcnow()

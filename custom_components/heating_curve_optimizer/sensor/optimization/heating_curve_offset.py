@@ -4,46 +4,35 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.sensor import SensorStateClass
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from ...entity import BaseUtilitySensor
+from .base import BaseOptimizationSensor
 
 
-class CoordinatorHeatingCurveOffsetSensor(CoordinatorEntity, BaseUtilitySensor):
+class CoordinatorHeatingCurveOffsetSensor(BaseOptimizationSensor):
     """Heating curve offset sensor using optimization coordinator."""
 
-    _unrecorded_attributes = frozenset({
-        "optimized_offsets",
-        "buffer_evolution",
-        "future_supply_temperatures",
-        "baseline_supply_temperatures",
-        "prices",
-        "demand_forecast",
-        "baseline_cop",
-        "optimized_cop",
-        "outdoor_forecast",
-    })
+    _unrecorded_attributes = frozenset(
+        {
+            "optimized_offsets",
+            "buffer_evolution",
+            "future_supply_temperatures",
+            "baseline_supply_temperatures",
+            "prices",
+            "demand_forecast",
+            "baseline_cop",
+            "optimized_cop",
+            "outdoor_forecast",
+        }
+    )
 
     def __init__(
         self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
     ):
         """Initialize the sensor."""
-        CoordinatorEntity.__init__(self, coordinator)
-        BaseUtilitySensor.__init__(
-            self,
-            name=name,
-            unique_id=unique_id,
-            unit="°C",
-            device_class=None,
-            icon=icon,
-            visible=True,
-            device=device,
-            translation_key=name.lower().replace(" ", "_"),
+        super().__init__(
+            coordinator, name, unique_id, icon, device, unit="°C", device_class=None
         )
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_should_poll = False
 
     @property
     def native_value(self):
@@ -51,13 +40,6 @@ class CoordinatorHeatingCurveOffsetSensor(CoordinatorEntity, BaseUtilitySensor):
         if not self.coordinator.data:
             return None
         return self.coordinator.data.get("optimized_offset")
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return (
-            self.coordinator.last_update_success and self.coordinator.data is not None
-        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -69,6 +51,8 @@ class CoordinatorHeatingCurveOffsetSensor(CoordinatorEntity, BaseUtilitySensor):
         return {
             "optimized_offsets": data.get("optimized_offsets", []),
             "buffer_evolution": data.get("buffer_evolution", []),
+            "initial_buffer": data.get("initial_buffer", 0.0),
+            "previous_offset": data.get("previous_offset", 0),
             "future_supply_temperatures": data.get("future_supply_temperatures", []),
             "total_cost": data.get("total_cost", 0.0),
             "baseline_cost": data.get("baseline_cost", 0.0),

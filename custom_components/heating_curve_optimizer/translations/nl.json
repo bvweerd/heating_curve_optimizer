@@ -32,6 +32,11 @@
           "planning_window": "Planningsvenster (uren)",
           "time_base": "Tijdsbasis (minuten per stap)",
           "max_buffer_debt": "Maximale warmteschuld (kWh)",
+          "target_indoor_temp": "Gewenste kamertemperatuur (°C)",
+          "indoor_temp_hysteresis": "Kamertemperatuur hysterese (°C)",
+          "indoor_temp_hysteresis_lower": "Onderste hysterese - warmtepomp AAN (°C)",
+          "indoor_temp_hysteresis_upper": "Bovenste hysterese - warmtepomp UIT (°C)",
+          "offset_delta_t": "Offset wijzigingssnelheid (min/°C)",
           "heat_curve_min_outdoor": "Minimum buitentemperatuur (°C)",
           "heat_curve_max_outdoor": "Maximum buitentemperatuur (°C)",
           "heating_curve_offset": "Handmatige stooklijn offset (°C)",
@@ -47,6 +52,11 @@
           "planning_window": "Optimalisatie planningshorizon in uren (standaard: 6)",
           "time_base": "Tijdsinterval voor optimalisatie in minuten (standaard: 60)",
           "max_buffer_debt": "Maximale toegestane warmteschuld voor kostenoptimalisatie. Maakt het mogelijk om verwarming te verlagen tijdens dure uren en later te compenseren (standaard: 5,0 kWh)",
+          "target_indoor_temp": "Gewenste kamertemperatuur setpoint (standaard: 20°C)",
+          "indoor_temp_hysteresis": "Temperatuurband rond setpoint waarin verwarming moduleert (standaard: 0,5°C)",
+          "indoor_temp_hysteresis_lower": "Hoeveel graden onder setpoint voordat warmtepomp AAN gaat (standaard: 0,3°C)",
+          "indoor_temp_hysteresis_upper": "Hoeveel graden boven setpoint voordat warmtepomp UIT gaat (standaard: 0,5°C)",
+          "offset_delta_t": "Minuten nodig per 1°C offset verandering. Lager = snellere respons (standaard: 10, bereik: 5-60)",
           "heat_curve_min_outdoor": "Minimum buitentemperatuur voor stooklijn (standaard: -20°C)",
           "heat_curve_max_outdoor": "Maximum buitentemperatuur voor stooklijn (standaard: 15°C)",
           "heating_curve_offset": "Handmatige offset om toe te voegen aan geoptimaliseerde stooklijn (bereik: -4 tot +4°C, standaard: 0)",
@@ -92,6 +102,18 @@
       },
       "heat_curve_max_outdoor": {
         "name": "Stooklijn buitentemperatuur maximum"
+      },
+      "target_indoor_temperature": {
+        "name": "Gewenste kamertemperatuur"
+      },
+      "indoor_temp_hysteresis": {
+        "name": "Kamertemperatuur hysterese"
+      },
+      "indoor_temp_hysteresis_lower": {
+        "name": "Hysterese onder setpoint (warmtepomp AAN)"
+      },
+      "indoor_temp_hysteresis_upper": {
+        "name": "Hysterese boven setpoint (warmtepomp UIT)"
       }
     },
     "sensor": {

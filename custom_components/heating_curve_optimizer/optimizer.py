@@ -16,6 +16,17 @@ from .helpers import calculate_defrost_factor, calculate_supply_temperature
 _LOGGER = logging.getLogger(__name__)
 
 
+def _pad_forecast(data: list[float] | None, length: int, default: float) -> list[float]:
+    """Pad forecast data to the required length with a default value."""
+    if not data:
+        return [default] * length
+    if len(data) >= length:
+        return list(data[:length])
+    # Pad with the last value or default
+    last_value = data[-1] if data else default
+    return list(data) + [last_value] * (length - len(data))
+
+
 def optimize_offsets(
     demand: list[float],
     prices: list[float],
@@ -33,22 +44,32 @@ def optimize_offsets(
     outdoor_min: float = -20.0,
     outdoor_max: float = 15.0,
     max_buffer_debt: float = 5.0,
+    current_offset: int = 0,
+    offset_delta_t: int = 10,
 ) -> tuple[list[int], list[float]]:
     r"""Return cost optimized offsets for the given demand and prices.
 
     The ``demand`` list contains the net heat demand per hour.  The
     algorithm uses the total energy over the complete horizon and
     distributes that energy over the hours with a dynamic-programming
-    approach.  Offsets are restricted to ``\-4`` .. ``+4`` and may only
-    change by one degree per step.  The optional ``buffer`` parameter
-    represents the current heat surplus (positive) or deficit (negative)
-    and the returned buffer evolution shows how this value changes with
-    the chosen offsets.  After the planning window the buffer will be close
-    to zero.
+    approach.  Offsets are restricted to ``\-4`` .. ``+4`` and may
+    change by 1°C per 10 minutes (so up to 6°C per hour at time_base=60).
+    The optional ``buffer`` parameter represents the current heat surplus
+    (positive) or deficit (negative) and the returned buffer evolution
+    shows how this value changes with the chosen offsets.  After the
+    planning window the buffer will be close to zero.
 
     The ``max_buffer_debt`` parameter (default 5.0 kWh) allows the buffer
     to go negative (heat debt), enabling cost optimization by reducing
     heating during expensive hours and compensating during cheaper hours.
+
+    The ``current_offset`` parameter (default 0) specifies the current
+    offset value, used to constrain the first step's offset change.
+
+    The ``offset_delta_t`` parameter (default 10) specifies the number of
+    minutes per 1°C offset change. Lower values allow faster changes.
+    At time_base=60 and offset_delta_t=10: max 6°C change per step.
+    At time_base=60 and offset_delta_t=60: max 1°C change per step.
     """
     _LOGGER.debug(
         "Optimizing offsets demand=%s prices=%s base=%s k=%s comp=%s buffer=%s outdoor_temps=%s humidity=%s",
@@ -65,22 +86,24 @@ def optimize_offsets(
     if horizon == 0:
         return [], []
 
+    # Calculate max offset change per step based on offset_delta_t
+    # offset_delta_t = minutes per 1°C change
+    # At time_base=60 and offset_delta_t=10: max_change = 60/10 = 6°C per step
+    # At time_base=60 and offset_delta_t=60: max_change = 60/60 = 1°C per step
+    max_offset_change = max(1, time_base // max(1, offset_delta_t))
+
+    _LOGGER.debug(
+        "Offset change constraint: max %d°C per %d-min step "
+        "(delta_t=%d min/°C, current_offset=%d)",
+        max_offset_change,
+        time_base,
+        offset_delta_t,
+        current_offset,
+    )
+
     # Prepare outdoor temperature and humidity data for defrost modeling
-    # Use forecasts if available, otherwise use a default assumption
-    outdoor_temps_data = outdoor_temps if outdoor_temps else [5.0] * horizon
-    humidity_data = humidity_forecast if humidity_forecast else [80.0] * horizon
-
-    # Ensure we have enough data points
-    if len(outdoor_temps_data) < horizon:
-        # Pad with the last value if needed
-        last_temp = outdoor_temps_data[-1] if outdoor_temps_data else 5.0
-        outdoor_temps_data = list(outdoor_temps_data) + [last_temp] * (
-            horizon - len(outdoor_temps_data)
-        )
-
-    if len(humidity_data) < horizon:
-        # Pad with default humidity
-        humidity_data = list(humidity_data) + [80.0] * (horizon - len(humidity_data))
+    outdoor_temps_data = _pad_forecast(outdoor_temps, horizon, 5.0)
+    humidity_data = _pad_forecast(humidity_forecast, horizon, 80.0)
 
     # Calculate defrost factors for each time step
     defrost_factors = [
@@ -135,19 +158,35 @@ def optimize_offsets(
         {} for _ in range(horizon)
     ]
 
+    # First step: constrain offset change from current_offset
     for off in allowed_offsets:
+        # Check if offset is reachable from current_offset
+        if abs(off - current_offset) > max_offset_change:
+            continue
+
         cop = _calculate_cop(off, 0)
         # Cost = (thermal_demand / COP) * time * price = electrical_energy * price
+        # Only pay for positive demand (heating), not for solar charging
+        effective_demand = max(float(demand[0]), 0.0)
         cost = (
-            demand[0] * step_hours * prices[0] / cop
+            effective_demand * step_hours * prices[0] / cop
             if cop > 0
-            else demand[0] * step_hours * prices[0] * 10
+            else effective_demand * step_hours * prices[0] * 10
         )
         # Calculate initial buffer energy
-        heat_demand = max(float(demand[0]), 0.0)
-        buffer_kwh = (
-            buffer + off * heat_demand * DEFAULT_THERMAL_STORAGE_EFFICIENCY * step_hours
-        )
+        # Two mechanisms:
+        # 1. Active heating with offset: buffer += offset * demand * efficiency
+        # 2. Passive solar charging (demand < 0): buffer += -demand (direct charging)
+        if demand[0] >= 0:
+            # Active heating - offset determines buffer change
+            buffer_kwh = (
+                buffer
+                + off * demand[0] * DEFAULT_THERMAL_STORAGE_EFFICIENCY * step_hours
+            )
+        else:
+            # Solar gain exceeds heat loss - passive charging
+            # Buffer increases by the excess solar energy
+            buffer_kwh = buffer + abs(demand[0]) * step_hours
         # Allow negative buffer (heat debt) up to max_buffer_debt
         if buffer_kwh >= -max_buffer_debt:
             dp[0][off] = {off: (cost, None, None, buffer_kwh)}
@@ -156,25 +195,34 @@ def optimize_offsets(
         for off in allowed_offsets:
             cop = _calculate_cop(off, t)
             # Cost = (thermal_demand / COP) * time * price = electrical_energy * price
+            # Only pay for positive demand (heating), not for solar charging
+            effective_demand = max(float(demand[t]), 0.0)
             step_cost = (
-                demand[t] * step_hours * prices[t] / cop
+                effective_demand * step_hours * prices[t] / cop
                 if cop > 0
-                else demand[t] * step_hours * prices[t] * 10
+                else effective_demand * step_hours * prices[t] * 10
             )
             for prev_off, sums in dp[t - 1].items():
-                if abs(off - prev_off) <= 1:
+                if abs(off - prev_off) <= max_offset_change:
                     for prev_sum, (prev_cost, _, _, prev_buffer_kwh) in sums.items():
                         new_sum = prev_sum + off
                         total = prev_cost + step_cost
                         # Calculate new buffer energy
-                        heat_demand = max(float(demand[t]), 0.0)
-                        buffer_kwh = (
-                            prev_buffer_kwh
-                            + off
-                            * heat_demand
-                            * DEFAULT_THERMAL_STORAGE_EFFICIENCY
-                            * step_hours
-                        )
+                        # Two mechanisms:
+                        # 1. Active heating: buffer += offset * demand * efficiency
+                        # 2. Solar charging (demand < 0): buffer += -demand
+                        if demand[t] >= 0:
+                            # Active heating - offset determines buffer change
+                            buffer_kwh = (
+                                prev_buffer_kwh
+                                + off
+                                * demand[t]
+                                * DEFAULT_THERMAL_STORAGE_EFFICIENCY
+                                * step_hours
+                            )
+                        else:
+                            # Solar gain exceeds heat loss - passive charging
+                            buffer_kwh = prev_buffer_kwh + abs(demand[t]) * step_hours
                         # Allow negative buffer (heat debt) up to max_buffer_debt
                         if buffer_kwh >= -max_buffer_debt:
                             dp[t].setdefault(off, {})
@@ -294,16 +342,26 @@ def calculate_buffer_energy(
 
     for idx, offset in enumerate(offsets):
         if idx < len(demand):
-            heat_demand = max(float(demand[idx]), 0.0)
+            current_demand = float(demand[idx])
         else:
-            heat_demand = 0.0
+            current_demand = 0.0
 
         # Calculate energy stored/released in this time step
-        # Positive offset stores energy, negative offset uses stored energy
-        # Storage amount is proportional to demand (more demand = more thermal mass active)
-        energy_delta = (
-            offset * heat_demand * DEFAULT_THERMAL_STORAGE_EFFICIENCY * step_hours
-        )
+        # Two mechanisms:
+        # 1. Active heating (demand >= 0): offset determines buffer change
+        #    - Positive offset stores energy, negative offset uses stored energy
+        # 2. Solar charging (demand < 0): passive buffer increase from solar gain
+        if current_demand >= 0:
+            energy_delta = (
+                offset
+                * current_demand
+                * DEFAULT_THERMAL_STORAGE_EFFICIENCY
+                * step_hours
+            )
+        else:
+            # Solar gain - buffer increases by excess solar energy
+            energy_delta = abs(current_demand) * step_hours
+
         buffer_energy += energy_delta
         energy_evolution.append(round(buffer_energy, 3))
 

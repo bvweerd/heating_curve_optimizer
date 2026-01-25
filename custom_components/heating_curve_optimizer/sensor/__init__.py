@@ -253,6 +253,23 @@ async def async_setup_entry(
     # Requires power_sensor, supply_sensor for validation
     power_sensor = config.get(CONF_POWER_CONSUMPTION)
     if power_sensor and supply_sensor:
+        # Find entity IDs using entity registry (based on unique_ids we create)
+        from homeassistant.helpers import entity_registry as er
+
+        registry = er.async_get(hass)
+        heat_loss_entity = registry.async_get_entity_id(
+            "sensor", DOMAIN, f"{entry.entry_id}_heat_loss"
+        )
+        cop_entity = registry.async_get_entity_id(
+            "sensor", DOMAIN, f"{entry.entry_id}_quadratic_cop"
+        )
+
+        _LOGGER.debug(
+            "Calibration sensor entity lookup: heat_loss=%s, cop=%s",
+            heat_loss_entity,
+            cop_entity,
+        )
+
         entities.append(
             CalibrationSensor(
                 hass=hass,
@@ -260,14 +277,14 @@ async def async_setup_entry(
                 unique_id=f"{entry.entry_id}_calibration",
                 device=device,
                 entry=entry,
-                heat_loss_sensor=f"sensor.{DOMAIN}_heat_loss",
+                heat_loss_sensor=heat_loss_entity,
                 thermal_power_sensor=power_sensor,
                 outdoor_sensor=weather_coordinator.data.get("outdoor_sensor_id")
                 if weather_coordinator.data
                 else None,
                 indoor_sensor=config.get("indoor_temperature_sensor"),
                 supply_temp_sensor=supply_sensor,
-                cop_sensor=f"sensor.{DOMAIN}_quadratic_cop",
+                cop_sensor=cop_entity,
             )
         )
 

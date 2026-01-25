@@ -37,11 +37,14 @@ class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool:
-        """Return True if there is heat demand."""
+        """Return True if heat pump should be ON based on temperature hysteresis."""
         if not self.coordinator.data:
             return False
-        net_heat_loss = self.coordinator.data.get("net_heat_loss", 0.0)
-        return net_heat_loss > 0.0
+        # Use heat_pump_on state which considers temperature hysteresis
+        # Falls back to net_heat_loss > 0 for backward compatibility
+        return self.coordinator.data.get(
+            "heat_pump_on", self.coordinator.data.get("net_heat_loss", 0.0) > 0.0
+        )
 
     @property
     def available(self) -> bool:
@@ -51,13 +54,23 @@ class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity):
         )
 
     @property
-    def extra_state_attributes(self) -> dict[str, float]:
+    def extra_state_attributes(self) -> dict[str, float | bool]:
         """Return extra state attributes."""
         if not self.coordinator.data:
             return {}
-        return {
-            "net_heat_kW": round(self.coordinator.data.get("net_heat_loss", 0.0), 3),
+        data = self.coordinator.data
+        attrs = {
+            "net_heat_kW": round(data.get("net_heat_loss", 0.0), 3),
+            "heat_demand_factor": data.get("heat_demand_factor", 0.0),
+            "indoor_temperature": data.get("indoor_temperature"),
+            "target_temperature": data.get("target_temperature"),
         }
+        # Add hysteresis bounds if available
+        if "lower_bound" in data:
+            attrs["lower_bound"] = data["lower_bound"]
+        if "upper_bound" in data:
+            attrs["upper_bound"] = data["upper_bound"]
+        return attrs
 
 
 class HeatDemandBinarySensor(BinarySensorEntity):

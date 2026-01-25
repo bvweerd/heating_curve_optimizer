@@ -243,13 +243,20 @@ Buffer allows using lower supply temperatures (higher COP) during accumulation.
 
 ## Buffer State Tracking
 
-The integration exposes buffer state as a sensor:
+The integration exposes buffer state as a sensor and maintains **persistent state** between optimization runs:
 
 **Sensor**: `sensor.heating_curve_optimizer_heat_buffer`
 
+**State Persistence** (January 2025 update):
+- Buffer state is tracked continuously by `OptimizationCoordinator`
+- Each optimization run uses the actual buffer from the previous run (not reset to 0)
+- Current offset is also tracked for smooth transitions
+- Enables more accurate cost optimization over extended periods
+
 **Attributes**:
 
-- `state`: Current buffer (kWh)
+- `state`: Current buffer (kWh) - can be negative (heat debt)
+- `initial_buffer`: Buffer value at start of optimization window
 - `buffer_forecast`: Predicted buffer evolution (6-hour forecast)
 - `buffer_source`: What created the buffer ("solar", "pre-heating")
 

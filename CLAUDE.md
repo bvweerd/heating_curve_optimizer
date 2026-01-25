@@ -173,11 +173,13 @@ All sensors inherit from this base class which provides:
    - Calculates solar gain through windows
    - Calculates net heat loss (heat loss - solar gain)
    - Provides PV production forecast
+   - **Calculates heat demand factor** based on target indoor temp vs actual
 
 3. **`OptimizationCoordinator`** (depends on HeatCoordinator)
    - Runs dynamic programming optimization
    - Calculates optimal heating curve offsets
-   - Tracks heat buffer evolution
+   - **Tracks buffer state persistently** (not reset to 0 each run)
+   - **Tracks current offset** for smooth transitions
    - Provides cost savings analysis
 
 **Benefits of coordinator pattern**:
@@ -195,9 +197,12 @@ All sensors inherit from this base class which provides:
 - **State Space**: `(time_step, offset, cumulative_offset_sum)`
 - **Offsets**: -4°C to +4°C in 1°C increments
 - **Constraints**:
-  - Maximum offset change: ±1°C per time step
+  - Maximum offset change: **configurable via `offset_delta_t`**
+    - Default: 10 min/°C → max 6°C change per 60-min step
+    - Formula: `max_change = time_base // offset_delta_t`
   - Supply temperature must stay within min/max bounds
-  - Buffer cannot go negative (heat debt must be repaid)
+  - Buffer cannot go below `-max_buffer_debt` (heat debt limit)
+- **State persistence**: Uses actual buffer and offset from previous run
 - **Objective**: Minimize total electricity cost while meeting heat demand
 - **Output**: Optimal offset sequence and buffer evolution
 
@@ -254,15 +259,21 @@ dp = {}  # (step, offset, cumulative_offset_sum) → (cost, parent_state, buffer
 
 ### `number.py` - Manual Control Entities
 
-Five number entities for manual override:
-1. **`HeatingCurveOffsetNumber`**: Manual offset (-4 to +4°C)
-2. **`HeatCurveMinNumber`**: Min supply temp (20-45°C)
-3. **`HeatCurveMaxNumber`**: Max supply temp (35-60°C)
-4. **`HeatCurveMinOutdoorNumber`**: Min outdoor temp (-20 to 5°C)
-5. **`HeatCurveMaxOutdoorNumber`**: Max outdoor temp (5 to 20°C)
+Seven number entities for control and override:
+
+**Temperature Setpoint Control**:
+1. **`TargetIndoorTemperatureNumber`**: Target indoor temperature (15-25°C, step 0.5°C)
+2. **`IndoorTempHysteresisNumber`**: Hysteresis band for heat demand (0.1-2.0°C, step 0.1°C)
+
+**Heating Curve Override**:
+3. **`HeatingCurveOffsetNumber`**: Manual offset (-4 to +4°C)
+4. **`HeatCurveMinNumber`**: Min supply temp (20-45°C)
+5. **`HeatCurveMaxNumber`**: Max supply temp (35-60°C)
+6. **`HeatCurveMinOutdoorNumber`**: Min outdoor temp (-20 to 5°C)
+7. **`HeatCurveMaxOutdoorNumber`**: Max outdoor temp (5 to 20°C)
 
 All entities:
-- Restore state on restart
+- Restore state on restart via `RestoreEntity`
 - Sync to `hass.data[DOMAIN]["runtime"]`
 - Trigger sensor recalculation on change
 
@@ -1160,6 +1171,11 @@ CONF_GLASS_U_VALUE = "glass_u_value"
 CONF_PLANNING_WINDOW = "planning_window"
 CONF_TIME_BASE = "time_base"
 CONF_MAX_BUFFER_DEBT = "max_buffer_debt"
+
+# Temperature control (January 2025)
+CONF_TARGET_INDOOR_TEMP = "target_indoor_temp"      # Default: 20.0°C
+CONF_INDOOR_TEMP_HYSTERESIS = "indoor_temp_hysteresis"  # Default: 0.5°C
+CONF_OFFSET_DELTA_T = "offset_delta_t"              # Default: 10 min/°C
 ```
 
 ### Critical Sensor Methods
@@ -1223,6 +1239,96 @@ def translation_key(self) -> str
 
 ---
 
-**Last Updated**: 2023-12-23
-**Version**: 2.0.0 (post-modular-refactor)
+## Architecture Changes (January 2025)
+
+### New Features: Temperature Control and Optimizer Improvements
+
+**What Changed**:
+
+#### 1. Target Indoor Temperature Control
+- Added `TargetIndoorTemperatureNumber` entity (15-25°C, step 0.5°C)
+- Added `IndoorTempHysteresisNumber` entity (0.1-2.0°C, step 0.1°C)
+- Heat demand is now modulated based on actual vs target indoor temperature
+
+**Heat Demand Factor Calculation**:
+```python
+# In HeatCalculationCoordinator
+lower_bound = target_temp - hysteresis
+upper_bound = target_temp + hysteresis
+
+if indoor_temp <= lower_bound:
+    # Below target: increase demand proportionally
+    temp_deficit = lower_bound - indoor_temp
+    heat_demand_factor = 1.0 + (temp_deficit * 0.5)
+elif indoor_temp >= upper_bound:
+    # Above target: no heat demand
+    heat_demand_factor = 0.0
+else:
+    # Within hysteresis band: linear interpolation
+    heat_demand_factor = (upper_bound - indoor_temp) / (2 * hysteresis)
+```
+
+#### 2. Optimizer State Persistence
+- Buffer energy no longer resets to 0 each optimization run
+- `OptimizationCoordinator` now tracks `_current_buffer` and `_current_offset`
+- Enables better cost optimization through continuous state tracking
+
+```python
+# In OptimizationCoordinator
+self._current_buffer: float = 0.0  # Persists between runs
+self._current_offset: int = 0      # Persists between runs
+
+# After optimization, update state from results
+if optimized_offsets:
+    self._current_offset = optimized_offsets[0]
+if buffer_evolution:
+    self._current_buffer = buffer_evolution[0]
+```
+
+#### 3. Configurable Offset Change Speed
+- Added `offset_delta_t` config option (default: 10 minutes per °C change)
+- Formula: `max_offset_change = time_base // offset_delta_t`
+- At time_base=60 and offset_delta_t=10: max 6°C change per step
+- At time_base=60 and offset_delta_t=60: max 1°C change per step
+
+```python
+# In optimizer.py
+def optimize_offsets(
+    ...
+    current_offset: int = 0,
+    offset_delta_t: int = 10,
+) -> tuple[list[int], list[float]]:
+    max_offset_change = max(1, time_base // max(1, offset_delta_t))
+```
+
+#### 4. Calibration Sensor Improvements
+- Implemented `_validate_storage_efficiency()` (was placeholder returning None)
+- Uses entity registry lookup for correct entity IDs
+- Reduced data requirements (5+ samples instead of 10+)
+- Added comprehensive logging for debugging
+
+**Storage Efficiency Calculation**:
+```python
+label_efficiency_map = {
+    "A+++": 0.20, "A++": 0.18, "A+": 0.17, "A": 0.16,
+    "B": 0.15, "C": 0.14, "D": 0.13, "E": 0.12, "F": 0.11, "G": 0.10,
+}
+base_efficiency = label_efficiency_map.get(energy_label, 0.15)
+area_factor = min(1.2, max(0.8, area_m2 / 150))
+recommended_efficiency = round(base_efficiency * area_factor, 2)
+```
+
+**Files Modified**:
+- `optimizer.py` - Added `current_offset` and `offset_delta_t` parameters
+- `coordinator.py` - Buffer/offset state tracking, heat demand factor
+- `number.py` - NEW: Temperature control entities
+- `const.py` - New constants for temperature control
+- `config_flow.py` - New config options in both flows
+- `calibration_sensor.py` - Storage efficiency implementation
+- `translations/en.json` and `nl.json` - New translations
+
+---
+
+**Last Updated**: 2025-01-24
+**Version**: 2.1.0 (temperature-control-and-optimizer-improvements)
 **Maintainer**: @bvweerd
