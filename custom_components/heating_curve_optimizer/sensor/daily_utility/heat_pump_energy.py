@@ -69,9 +69,9 @@ class HeatPumpEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
         await super().async_added_to_hass()
 
         # Restore previous state
-        last_state = await self.async_get_last_sensor_data()
-        if last_state and last_state.native_value is not None:
-            self._daily_total = float(last_state.native_value)
+        last_sensor_data = await self.async_get_last_sensor_data()
+        if last_sensor_data and last_sensor_data.native_value is not None:
+            self._daily_total = float(last_sensor_data.native_value)
             self._attr_native_value = self._daily_total
             _LOGGER.debug(
                 "Restored daily heat pump energy: %.3f kWh", self._daily_total
@@ -79,6 +79,7 @@ class HeatPumpEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
 
         # Check if we need to reset (new day)
         now = dt_util.utcnow()
+        last_state = await self.async_get_last_state()
         if last_state and last_state.last_updated:
             last_date = last_state.last_updated.date()
             current_date = now.date()
