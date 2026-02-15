@@ -1,6 +1,7 @@
 {
   "domain": "heating_curve_optimizer",
   "name": "Heating Curve Optimizer",
+  "after_dependencies": ["recorder"],
   "codeowners": [
     "@bvweerd"
   ],
