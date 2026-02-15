@@ -1,7 +1,9 @@
 {
   "domain": "heating_curve_optimizer",
   "name": "Heating Curve Optimizer",
-  "codeowners": ["@bvweerd"],
+  "codeowners": [
+    "@bvweerd"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://www.github.com/bvweerd/heating_curve_optimizer",
@@ -9,7 +11,9 @@
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/bvweerd/heating_curve_optimizer/issues",
   "quality_scale": "silver",
-  "requirements": ["aiohttp"],
+  "requirements": [
+    "aiohttp"
+  ],
   "ssdp": [],
   "version": "1.0.2",
   "zeroconf": []
