@@ -1,0 +1,23 @@
+bug:
+  - changed-files:
+    - any-glob-to-any-file: []  # no file-based bug detection; use issue labels or manual
+
+enhancement:
+  - changed-files:
+    - any-glob-to-any-file:
+      - custom_components/heating_curve_optimizer/**
+
+documentation:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "*.md"
+      - docs/**
+      - custom_components/heating_curve_optimizer/translations/**
+      - custom_components/heating_curve_optimizer/strings.json
+
+dependencies:
+  - changed-files:
+    - any-glob-to-any-file:
+      - requirements*.txt
+      - custom_components/heating_curve_optimizer/manifest.json
+      - setup.cfg
