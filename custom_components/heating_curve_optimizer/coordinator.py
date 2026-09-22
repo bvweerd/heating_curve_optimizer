@@ -66,8 +66,11 @@ from .const import (
     INDOOR_TEMPERATURE,
     calculate_htc_from_energy_label,
 )
+from .building_model import BuildingConfig, EmitterConfig
+from .heatpump_model import HeatPumpConfig
 from .helpers import extract_price_forecast_with_interval
 from .optimizer import optimize_offsets
+from .thermal_optimizer import optimize_thermal_schedule
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -700,6 +703,36 @@ class OptimizationCoordinator(DataUpdateCoordinator):
             self._current_offset,
         )
 
+        # --- Shadow mode: redesigned thermal optimizer (fase 2) --------
+        # Runs alongside the legacy optimizer above, using the exact same
+        # forecasts, and is exposed only as a diagnostic sensor
+        # (sensor_thermal_shadow.py) - it never drives anything yet. See
+        # docs/redesign/REDESIGN.md fase 2/3 and docs/algorithm/
+        # redesign-thermal-model.md for what it does and why.
+        try:
+            thermal_v2_result = await self.hass.async_add_executor_job(
+                self._run_thermal_v2_optimization,
+                demand_forecast,
+                price_forecast,
+                temp_forecast,
+                heat_data.get("solar_gain_forecast", []),
+                heat_data.get("indoor_temperature", 20.0),
+                time_base,
+                offset_delta_t,
+                min_supply,
+                max_supply,
+                min_outdoor,
+                max_outdoor,
+                self._current_offset,
+            )
+        except Exception as err:  # belt-and-braces: shadow mode must never
+            # take the legacy result down with it, even on a dispatch-level
+            # failure the inner try/except couldn't catch.
+            _LOGGER.warning("Thermal v2 shadow optimization dispatch failed: %s", err)
+            thermal_v2_result = {"available": False, "error": str(err)}
+        thermal_v2_result["legacy_total_cost_eur"] = result.get("total_cost")
+        result["thermal_v2"] = thermal_v2_result
+
         # Update tracked state for next optimization run
         new_offset = int(result.get("optimized_offset", 0))
         buffer_evolution = result.get("buffer_evolution", [])
@@ -866,4 +899,100 @@ class OptimizationCoordinator(DataUpdateCoordinator):
                 "total_cost": 0.0,
                 "timestamp": dt_util.utcnow(),
                 "error": str(err),
+            }
+
+    def _run_thermal_v2_optimization(
+        self,
+        demand_forecast: list[float],
+        price_forecast: list[float],
+        temp_forecast: list[float],
+        solar_gain_forecast: list[float],
+        indoor_temperature: float,
+        time_base: int,
+        offset_delta_t: int,
+        min_supply: float,
+        max_supply: float,
+        min_outdoor: float,
+        max_outdoor: float,
+        current_offset: int,
+    ) -> dict[str, Any]:
+        """Run the redesigned thermal DP optimizer (blocking call, executor).
+
+        Shadow mode (docs/redesign/REDESIGN.md fase 2): runs alongside
+        `_run_optimization` above, against the exact same forecasts, but its
+        result only ever reaches a diagnostic sensor - never
+        `self._current_offset`/`self._current_buffer`. Any failure here
+        must never break the legacy optimization result this coordinator is
+        still driving, so every error is caught and reported as
+        `available: False` instead of propagating.
+        """
+        try:
+            building = BuildingConfig.from_config(self.config)
+            if building.area_m2 <= 0:
+                raise ValueError("area_m2 not configured")
+
+            emitter = EmitterConfig.sized_to_building(
+                building,
+                design_outdoor_temp=min_outdoor,
+                design_supply_temp=max_supply,
+            )
+            # No dedicated heat-pump-capacity config key exists yet (fase
+            # 5 territory). Sized with headroom above what the emitter can
+            # use at the design point, the way an installer would sanity
+            # check pump vs. radiator sizing, rather than block shadow
+            # mode on a new required field.
+            heatpump = HeatPumpConfig.from_config(
+                self.config, max_thermal_power_kw=emitter.nominal_power_kw * 1.3
+            )
+
+            horizon = min(len(demand_forecast), len(price_forecast), len(temp_forecast))
+            thermal_result = optimize_thermal_schedule(
+                building=building,
+                heatpump=heatpump,
+                emitter=emitter,
+                outdoor_temps=temp_forecast[:horizon],
+                prices=price_forecast[:horizon],
+                initial_indoor_temp=indoor_temperature,
+                solar_gain_kw=(
+                    solar_gain_forecast[:horizon] if solar_gain_forecast else None
+                ),
+                time_base=time_base,
+                offset_delta_t=offset_delta_t,
+                water_min=min_supply,
+                water_max=max_supply,
+                outdoor_min=min_outdoor,
+                outdoor_max=max_outdoor,
+                current_offset=current_offset,
+            )
+            return {
+                "available": True,
+                "offset": thermal_result.offsets[0] if thermal_result.offsets else 0,
+                "offsets": thermal_result.offsets,
+                "supply_temps": thermal_result.supply_temps,
+                "indoor_temps": thermal_result.indoor_temps,
+                "thermal_power_kw": thermal_result.thermal_power_kw,
+                "electrical_power_kw": thermal_result.electrical_power_kw,
+                "cost_eur": thermal_result.cost_eur,
+                "total_cost_eur": thermal_result.total_cost_eur,
+                "shadow_price_eur_per_kwh": thermal_result.shadow_price_eur_per_kwh,
+                "building_ua_w_per_k": round(building.ua_w_per_k, 1),
+                "building_thermal_mass_kwh_per_k": round(
+                    building.thermal_mass_kwh_per_k, 2
+                ),
+                "building_time_constant_hours": round(building.time_constant_hours, 1),
+                "emitter_nominal_power_kw": round(emitter.nominal_power_kw, 2),
+                "heatpump_max_thermal_power_kw": round(
+                    heatpump.max_thermal_power_kw, 2
+                ),
+                "timestamp": dt_util.utcnow(),
+            }
+        except Exception as err:
+            _LOGGER.warning(
+                "Thermal v2 shadow optimization failed (legacy optimizer unaffected): %s",
+                err,
+            )
+            return {
+                "available": False,
+                "error": str(err),
+                "timestamp": dt_util.utcnow(),
             }

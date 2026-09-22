@@ -163,6 +163,12 @@
       },
       "calibration": {
         "name": "Parameter Calibration"
+      },
+      "thermal_v2_offset": {
+        "name": "Thermal V2 offset (shadow mode, experimental)"
+      },
+      "thermal_v2_cost_comparison": {
+        "name": "Thermal V2 cost comparison (shadow mode, experimental)"
       }
     }
   },

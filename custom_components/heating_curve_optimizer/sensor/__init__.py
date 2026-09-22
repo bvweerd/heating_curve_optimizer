@@ -60,6 +60,10 @@ from .daily_utility import (
     NetHeatLossEnergyDailySensor,
 )
 from ..calibration_sensor import CalibrationSensor
+from ..sensor_thermal_shadow import (
+    ThermalShadowCostComparisonSensor,
+    ThermalShadowOffsetSensor,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -295,6 +299,26 @@ async def async_setup_entry(
 
     # Daily utility sensors (cumulative energy tracking)
     _setup_daily_utility_sensors(hass, entry, config, device, entities)
+
+    # Redesigned thermal optimizer - shadow mode (fase 2, diagnostic only)
+    entities.append(
+        ThermalShadowOffsetSensor(
+            coordinator=optimization_coordinator,
+            name="Thermal V2 Offset",
+            unique_id=f"{entry.entry_id}_thermal_v2_offset",
+            icon="mdi:chart-timeline-variant",
+            device=device,
+        )
+    )
+    entities.append(
+        ThermalShadowCostComparisonSensor(
+            coordinator=optimization_coordinator,
+            name="Thermal V2 Cost Comparison",
+            unique_id=f"{entry.entry_id}_thermal_v2_cost_comparison",
+            icon="mdi:scale-balance",
+            device=device,
+        )
+    )
 
     _LOGGER.debug("Adding %d sensor entities", len(entities))
     async_add_entities(entities)

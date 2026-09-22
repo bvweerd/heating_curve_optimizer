@@ -163,6 +163,12 @@
       },
       "calibration": {
         "name": "Parameter Kalibratie"
+      },
+      "thermal_v2_offset": {
+        "name": "Thermal V2 offset (schaduwmodus, experimenteel)"
+      },
+      "thermal_v2_cost_comparison": {
+        "name": "Thermal V2 kostenvergelijking (schaduwmodus, experimenteel)"
       }
     }
   },
