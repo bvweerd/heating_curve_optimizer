@@ -183,6 +183,11 @@
           "optimize_v2": "Redesigned optimizer (v2, experimental)"
         }
       }
+    },
+    "climate": {
+      "heating": {
+        "name": "Heating"
+      }
     }
   },
   "selector": {

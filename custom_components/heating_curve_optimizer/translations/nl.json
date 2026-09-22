@@ -183,6 +183,11 @@
           "optimize_v2": "Herontworpen optimizer (v2, experimenteel)"
         }
       }
+    },
+    "climate": {
+      "heating": {
+        "name": "Verwarming"
+      }
     }
   },
   "selector": {

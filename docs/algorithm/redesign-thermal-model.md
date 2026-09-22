@@ -208,9 +208,40 @@ vergelijkbaar met `CALIBRATION_ACCEPT_MIN/MAX` in battery_controller's
 `efficiency_calibration.py`. Persistente opslag via HA `Store`,
 resetbaar via de service `heating_curve_optimizer.reset_thermal_calibration`.
 
+## Fase 5 — oppervlak
+
+**PV-forecast en terugleverprijs** worden nu daadwerkelijk doorgegeven aan
+de nieuwe optimizer: `pv_production_forecast` (al berekend door
+`HeatCalculationCoordinator`) als `pv_surplus_kw`, en
+`CONF_PRODUCTION_PRICE_SENSOR` (bestond al als configuratieveld, maar werd
+nergens gelezen) als `feed_in_prices`. Bekende vereenvoudiging: er is geen
+verbruiksforecast in deze integratie, dus de volledige gemodelleerde
+PV-productie wordt behandeld als beschikbaar voor verwarming — een
+overschatting op dagen met gelijktijdig huishoudelijk verbruik. Verfijnen
+vereist een verbruiksforecast, die nog niet bestaat.
+
+**`climate.py`** (nieuw, standaard uitgeschakeld) geeft de bestaande
+doeltemperatuur een native HA climate-entiteit. Geen tweede, onafhankelijke
+setpoint: `async_set_temperature` roept de `number.set_value`-service aan
+op de bestaande `TargetIndoorTemperatureNumber`-entiteit (via de entity
+registry, op unique_id), zodat er precies één plek is waar die waarde leeft.
+
+**Bewust uitgesteld:**
+- **`realtime_controller.py`** (echte realtime PV-warmtedump): vereist een
+  gemeten, actuele PV-overschot (productie minus huishoudelijk verbruik),
+  niet alleen een forecast. Deze integratie leest nergens een live
+  productie- of netmeting; die sensorkoppeling bestaat niet en zou blind
+  gebouwd een onbetrouwbare regellus opleveren. De schaduwprijs
+  (`shadow_price_eur_per_kwh`, al beschikbaar sinds fase 1) is het
+  aanknopingspunt zodra die meting er is.
+- **Subentries voor meerdere zones/PV-arrays**: een substantiële
+  `config_flow.py`-uitbreiding (in battery_controller >800 regels) die de
+  meeste gebruikers met één verwarmingssysteem niet nodig hebben. Blijft
+  een open beslissing (zie REDESIGN.md §5).
+
 ## Status
 
-Fase 0 t/m 4 uit het redesignplan zijn geïmplementeerd en getest. Nog open:
-fase 5 (subentries voor meerdere zones, `climate`-entiteit,
-`realtime_controller.py` voor PV-warmtedump) en fase 6 (afronding:
-quality_scale, versiebump, laatste documentatieronde).
+Fase 0 t/m 5 uit het redesignplan zijn geïmplementeerd en getest, met de
+hierboven genoemde bewuste scope-uitsluitingen. Nog open: fase 6
+(afronding: quality_scale-onderbouwing, versiebump, laatste
+documentatieronde).

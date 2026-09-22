@@ -35,6 +35,7 @@ from .const import (
     CONF_COP_COMPENSATION_FACTOR,
     CONF_OUTDOOR_TEMP_COEFFICIENT,
     CONF_CONSUMPTION_PRICE_SENSOR,
+    CONF_PRODUCTION_PRICE_SENSOR,
     CONF_PLANNING_WINDOW,
     CONF_TARGET_INDOOR_TEMP,
     CONF_TIME_BASE,
@@ -716,6 +717,31 @@ class OptimizationCoordinator(DataUpdateCoordinator):
             except (ValueError, TypeError):
                 raise UpdateFailed("Cannot extract price data")
 
+        # Fase 5 (REDESIGN.md §2.1.G): production price, for pricing PV
+        # surplus used to cover heating at the feed-in rate rather than the
+        # consumption rate. Optional - CONF_PRODUCTION_PRICE_SENSOR was
+        # already a config key nothing read; a missing/unavailable sensor
+        # here just means thermal_optimizer falls back to its own fixed
+        # DEFAULT_FEED_IN_PRICE (never treats PV-covered heat as free -
+        # same rule as a missing feed-in price generally, see
+        # thermal_optimizer.py's module docstring).
+        feed_in_price_forecast: list[float] | None = None
+        production_price_sensor = self.config.get(CONF_PRODUCTION_PRICE_SENSOR)
+        if production_price_sensor:
+            production_price_state = self.hass.states.get(production_price_sensor)
+            if production_price_state and production_price_state.state not in (
+                "unknown",
+                "unavailable",
+            ):
+                feed_in_price_forecast, _ = extract_price_forecast_with_interval(
+                    production_price_state
+                )
+                if not feed_in_price_forecast:
+                    try:
+                        feed_in_price_forecast = [float(production_price_state.state)]
+                    except (ValueError, TypeError):
+                        feed_in_price_forecast = None
+
         # Get optimization parameters
         planning_window = int(
             self.config.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
@@ -796,6 +822,8 @@ class OptimizationCoordinator(DataUpdateCoordinator):
                 min_outdoor,
                 max_outdoor,
                 self._current_offset,
+                heat_data.get("pv_production_forecast", []),
+                feed_in_price_forecast,
             )
         except Exception as err:  # belt-and-braces: shadow mode must never
             # take the legacy result down with it, even on a dispatch-level
@@ -1185,6 +1213,8 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         min_outdoor: float,
         max_outdoor: float,
         current_offset: int,
+        pv_production_forecast: list[float] | None = None,
+        feed_in_price_forecast: list[float] | None = None,
     ) -> dict[str, Any]:
         """Run the redesigned thermal DP optimizer (blocking call, executor).
 
@@ -1195,6 +1225,14 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         must never break the legacy optimization result this coordinator is
         still driving, so every error is caught and reported as
         `available: False` instead of propagating.
+
+        `pv_production_forecast` (fase 5, REDESIGN.md §2.1.G) is passed
+        straight through as `pv_surplus_kw`: this integration has no
+        household consumption forecast to net production against, so the
+        full modelled PV production is treated as available for heating -
+        an overestimate of true surplus on days with concurrent household
+        load, documented here rather than silently assumed. Refining this
+        needs a consumption forecast, which does not exist yet.
         """
         try:
             building = BuildingConfig.from_config(self.config)
@@ -1238,6 +1276,12 @@ class OptimizationCoordinator(DataUpdateCoordinator):
                 initial_indoor_temp=indoor_temperature,
                 solar_gain_kw=(
                     solar_gain_forecast[:horizon] if solar_gain_forecast else None
+                ),
+                pv_surplus_kw=(
+                    pv_production_forecast[:horizon] if pv_production_forecast else None
+                ),
+                feed_in_prices=(
+                    feed_in_price_forecast[:horizon] if feed_in_price_forecast else None
                 ),
                 time_base=time_base,
                 offset_delta_t=offset_delta_t,
