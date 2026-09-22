@@ -261,16 +261,32 @@ rules:
   exception-translations:
     status: done
     comment: |
-      All 10 raise UpdateFailed(...) sites in coordinator.py (this
-      session) now use translation_domain=DOMAIN + translation_key (+
+      All 10 UpdateFailed raise sites in coordinator.py go through a new
+      _update_failed(translation_key, placeholders) helper (this session)
+      that passes translation_domain=DOMAIN + translation_key (+
       translation_placeholders where the message carries dynamic data:
       api_error/status, connection_error/error, price_sensor_unavailable
       and price_data_extraction_failed/sensor), matching
-      battery_controller's coordinator_*.py pattern exactly. strings.json
-      and translations/en.json + nl.json all carry a matching top-level
-      "exceptions" block, kept in sync (strings.json and translations/
-      en.json were already exact mirrors before this session; both were
-      updated together here too).
+      battery_controller's coordinator_*.py pattern. strings.json and
+      translations/en.json + nl.json all carry a matching top-level
+      "exceptions" block, kept in sync.
+
+      Real, caught-by-testing version gap: on this repo's own test
+      environment (HA 2024.3.3), UpdateFailed still extends plain
+      Exception rather than HomeAssistantError, so
+      UpdateFailed(translation_domain=...) raises
+      "TypeError: UpdateFailed() takes no keyword arguments" - a first
+      cut of this rule (committed, then fixed in the same session) called
+      UpdateFailed(...) directly and would have crashed every coordinator
+      update on such a release instead of raising the intended error.
+      _update_failed() tries the modern kwargs first and falls back to a
+      formatted plain-string message (_UPDATE_FAILED_MESSAGES) on
+      TypeError, so translations work where the installed HA supports
+      them and nothing crashes where it doesn't. Verified by
+      test_update_failed_falls_back_on_ha_versions_without_translation_kwargs
+      and test_update_failed_without_placeholders (tests/test_coordinator.py) -
+      and every other UpdateFailed-raising test in that file exercises the
+      fallback branch for real on this HA release, not just in theory.
   icon-translations:
     status: done
     comment: |
@@ -294,8 +310,20 @@ rules:
       session's scope covers - but the rule's intent (reconfigurable
       without deleting the entry) is met today.
   repair-issues:
-    status: todo
-    comment: No ir.async_create_issue usage found.
+    status: done
+    comment: |
+      ir.async_create_issue for the two persistent, user-actionable
+      failure modes (this session, mirroring battery_controller's
+      coordinator_forecast.py/coordinator_optimization.py):
+      weather_data_unavailable (HeatCalculationCoordinator, when
+      WeatherDataCoordinator has no data) and price_sensor_unavailable
+      (OptimizationCoordinator, when the configured price sensor is
+      unknown/unavailable). Both are entry_id-scoped issue ids (needed
+      here because a config entry can have multiple zone coordinators,
+      unlike battery_controller's single entry-level pair) and both
+      self-clear via ir.async_delete_issue once the underlying data is
+      available again. strings.json/en.json/nl.json carry a matching
+      "issues" block with title+description.
   stale-devices:
     status: exempt
     comment: Single fixed device per config entry; nothing to go stale.

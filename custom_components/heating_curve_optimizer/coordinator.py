@@ -9,7 +9,7 @@ from typing import Any
 
 import aiohttp
 from homeassistant.core import HomeAssistant, Event
-from homeassistant.helpers import storage
+from homeassistant.helpers import issue_registry as ir, storage
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
@@ -91,6 +91,48 @@ from .thermal_optimizer import optimize_thermal_schedule
 
 _LOGGER = logging.getLogger(__name__)
 
+# Plain-English fallback for each UpdateFailed translation_key, mirroring
+# strings.json's "exceptions" messages - used only on an HA release old
+# enough that UpdateFailed still extends plain Exception rather than
+# HomeAssistantError (confirmed the case for this repo's own test
+# environment, HA 2024.3.3: UpdateFailed(translation_domain=...) raises
+# TypeError there, "takes no keyword arguments"). On such a release the
+# translation_domain/translation_key/translation_placeholders kwargs
+# cannot be passed at all, so _update_failed() below falls back to a
+# formatted message instead of crashing setup with a TypeError.
+_UPDATE_FAILED_MESSAGES: dict[str, str] = {
+    "api_error": "Open-Meteo API returned status {status}.",
+    "connection_error": "Error fetching weather data from open-meteo.com: {error}.",
+    "no_forecast_data": "No forecast data in the open-Meteo API response.",
+    "no_weather_data": "Weather coordinator has no data yet.",
+    "missing_building_config": "Missing area or energy label configuration.",
+    "no_heat_data": "Heat calculation coordinator has no data yet.",
+    "no_weather_data_for_optimization": "No weather data available for optimization.",
+    "no_price_sensor": "No electricity price sensor is configured.",
+    "price_sensor_unavailable": "Price sensor {sensor} is unavailable.",
+    "price_data_extraction_failed": "Cannot extract price data from sensor {sensor}.",
+}
+
+
+def _update_failed(
+    translation_key: str, translation_placeholders: dict[str, str] | None = None
+) -> UpdateFailed:
+    """Build an UpdateFailed with translation support where the installed
+    HA's UpdateFailed accepts it, falling back to a formatted plain-string
+    message on an HA release old enough that it doesn't (see the module-
+    level comment above _UPDATE_FAILED_MESSAGES)."""
+    try:
+        return UpdateFailed(
+            translation_domain=DOMAIN,
+            translation_key=translation_key,
+            translation_placeholders=translation_placeholders,
+        )
+    except TypeError:
+        message = _UPDATE_FAILED_MESSAGES[translation_key].format(
+            **(translation_placeholders or {})
+        )
+        return UpdateFailed(message)
+
 
 def _calculate_supply_temp_from_curve(
     outdoor_temp: float,
@@ -159,16 +201,14 @@ class WeatherDataCoordinator(DataUpdateCoordinator):
                 url, timeout=aiohttp.ClientTimeout(total=10)
             ) as resp:
                 if resp.status != 200:
-                    raise UpdateFailed(
-                        translation_domain=DOMAIN,
-                        translation_key="api_error",
+                    raise _update_failed(
+                        "api_error",
                         translation_placeholders={"status": str(resp.status)},
                     )
                 data = await resp.json()
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-            raise UpdateFailed(
-                translation_domain=DOMAIN,
-                translation_key="connection_error",
+            raise _update_failed(
+                "connection_error",
                 translation_placeholders={"error": str(err)},
             ) from err
 
@@ -184,10 +224,7 @@ class WeatherDataCoordinator(DataUpdateCoordinator):
         radiation = hourly.get("shortwave_radiation", [])
 
         if not times or not temps:
-            raise UpdateFailed(
-                translation_domain=DOMAIN,
-                translation_key="no_forecast_data",
-            )
+            raise _update_failed("no_forecast_data")
 
         # Find current hour index
         now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
@@ -307,20 +344,29 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):
         # Get weather data from coordinator
         weather_data = self.weather_coordinator.data
         if not weather_data:
-            raise UpdateFailed(
-                translation_domain=DOMAIN,
-                translation_key="no_weather_data",
+            # A persistent, user-actionable problem (unlike a single failed
+            # refresh, which DataUpdateCoordinator already surfaces via
+            # entity unavailability) - surface it in Settings > Repairs too,
+            # mirroring battery_controller's ForecastCoordinator.
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                f"weather_data_unavailable_{self._entry_id}",
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="weather_data_unavailable",
             )
+            raise _update_failed("no_weather_data")
+        ir.async_delete_issue(
+            self.hass, DOMAIN, f"weather_data_unavailable_{self._entry_id}"
+        )
 
         # Get configuration
         area_m2 = self.config.get(CONF_AREA_M2)
         energy_label = self.config.get(CONF_ENERGY_LABEL)
 
         if not area_m2 or not energy_label:
-            raise UpdateFailed(
-                translation_domain=DOMAIN,
-                translation_key="missing_building_config",
-            )
+            raise _update_failed("missing_building_config")
 
         # Get indoor temperature
         indoor_temp = INDOOR_TEMPERATURE
@@ -794,10 +840,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         # Get heat demand forecast
         heat_data = self.heat_coordinator.data
         if not heat_data:
-            raise UpdateFailed(
-                translation_domain=DOMAIN,
-                translation_key="no_heat_data",
-            )
+            raise _update_failed("no_heat_data")
 
         demand_forecast = list(heat_data["net_heat_loss_forecast"])  # Make a copy
 
@@ -838,27 +881,36 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         # Get outdoor temperature forecast from weather coordinator
         weather_data = self.heat_coordinator.weather_coordinator.data
         if not weather_data:
-            raise UpdateFailed(
-                translation_domain=DOMAIN,
-                translation_key="no_weather_data_for_optimization",
-            )
+            raise _update_failed("no_weather_data_for_optimization")
 
         temp_forecast = weather_data["temperature_forecast"]
 
         # Get price forecast
         if not self._price_sensor:
-            raise UpdateFailed(
-                translation_domain=DOMAIN,
-                translation_key="no_price_sensor",
-            )
+            raise _update_failed("no_price_sensor")
 
         price_state = self.hass.states.get(self._price_sensor)
         if not price_state or price_state.state in ("unknown", "unavailable"):
-            raise UpdateFailed(
-                translation_domain=DOMAIN,
+            # Persistent, user-actionable (a misconfigured or broken price
+            # sensor means the optimizer cannot run at all) - surface it in
+            # Settings > Repairs too, mirroring battery_controller's
+            # OptimizationCoordinator.
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                f"price_sensor_unavailable_{self._entry_id}",
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
                 translation_key="price_sensor_unavailable",
                 translation_placeholders={"sensor": self._price_sensor},
             )
+            raise _update_failed(
+                "price_sensor_unavailable",
+                translation_placeholders={"sensor": self._price_sensor},
+            )
+        ir.async_delete_issue(
+            self.hass, DOMAIN, f"price_sensor_unavailable_{self._entry_id}"
+        )
 
         price_forecast, price_interval = extract_price_forecast_with_interval(
             price_state
@@ -870,9 +922,8 @@ class OptimizationCoordinator(DataUpdateCoordinator):
                 current_price = float(price_state.state)
                 price_forecast = [current_price]
             except (ValueError, TypeError) as err:
-                raise UpdateFailed(
-                    translation_domain=DOMAIN,
-                    translation_key="price_data_extraction_failed",
+                raise _update_failed(
+                    "price_data_extraction_failed",
                     translation_placeholders={"sensor": self._price_sensor},
                 ) from err
 

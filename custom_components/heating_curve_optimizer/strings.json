@@ -288,5 +288,15 @@
     "price_data_extraction_failed": {
       "message": "Cannot extract price data from sensor {sensor}."
     }
+  },
+  "issues": {
+    "weather_data_unavailable": {
+      "title": "Weather data unavailable (open-meteo)",
+      "description": "The integration cannot reach the open-meteo.com weather API, so heat loss, solar gain and optimization cannot be calculated. Check your internet connection or open-meteo.com service status."
+    },
+    "price_sensor_unavailable": {
+      "title": "Electricity price sensor unavailable",
+      "description": "The configured price sensor **{sensor}** is unavailable or unknown. The heating curve optimizer cannot run without price data. Check that the sensor exists and is working."
+    }
   }
 }

@@ -288,5 +288,15 @@
     "price_data_extraction_failed": {
       "message": "Kan geen prijsgegevens ophalen uit sensor {sensor}."
     }
+  },
+  "issues": {
+    "weather_data_unavailable": {
+      "title": "Weergegevens niet beschikbaar (open-meteo)",
+      "description": "De integratie kan de open-meteo.com weer-API niet bereiken, waardoor warmteverlies, zonnewinst en optimalisatie niet berekend kunnen worden. Controleer de internetverbinding of de status van open-meteo.com."
+    },
+    "price_sensor_unavailable": {
+      "title": "Elektriciteitsprijs-sensor niet beschikbaar",
+      "description": "De geconfigureerde prijssensor **{sensor}** is niet beschikbaar of onbekend. De stooklijnoptimalisatie kan niet draaien zonder prijsgegevens. Controleer of de sensor bestaat en werkt."
+    }
   }
 }
