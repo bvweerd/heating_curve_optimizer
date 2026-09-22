@@ -185,6 +185,27 @@
       },
       "realtime_offset_adjustment": {
         "name": "Realtime offset adjustment (PV surplus, experimental)"
+      },
+      "outdoor_temperature": {
+        "name": "Outdoor temperature"
+      },
+      "quadratic_cop": {
+        "name": "Quadratic COP"
+      },
+      "diagnostics": {
+        "name": "Diagnostics"
+      },
+      "current_electricity_price": {
+        "name": "Current electricity price"
+      },
+      "heat_pump_thermal_power": {
+        "name": "Heat pump thermal power"
+      },
+      "heat_pump_energy_daily": {
+        "name": "Heat pump energy daily"
+      },
+      "net_heat_loss_energy_daily": {
+        "name": "Net heat loss energy daily"
       }
     },
     "select": {

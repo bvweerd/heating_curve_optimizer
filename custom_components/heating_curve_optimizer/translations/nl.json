@@ -185,6 +185,27 @@
       },
       "realtime_offset_adjustment": {
         "name": "Realtime offset-aanpassing (PV-overschot, experimenteel)"
+      },
+      "outdoor_temperature": {
+        "name": "Buitentemperatuur"
+      },
+      "quadratic_cop": {
+        "name": "Kwadratische COP"
+      },
+      "diagnostics": {
+        "name": "Diagnostiek"
+      },
+      "current_electricity_price": {
+        "name": "Huidige elektriciteitsprijs"
+      },
+      "heat_pump_thermal_power": {
+        "name": "Thermisch vermogen warmtepomp"
+      },
+      "heat_pump_energy_daily": {
+        "name": "Warmtepomp energie per dag"
+      },
+      "net_heat_loss_energy_daily": {
+        "name": "Netto warmteverlies energie per dag"
       }
     },
     "select": {

@@ -176,8 +176,21 @@ rules:
     status: done
     comment: manifest.json codeowners - ["@bvweerd"].
   log-when-unavailable:
-    status: todo
-    comment: Not verified this session; DataUpdateCoordinator's default log-once behaviour applies, but no integration-specific handling was audited.
+    status: done
+    comment: |
+      Verified, not just inferred. Two mechanisms cover every sensor:
+      (1) coordinator-based sensors (the large majority) inherit
+      DataUpdateCoordinator's own log-once behaviour -
+      _async_refresh only logs on the success->failure transition
+      (`if self.last_update_success: ... self.logger.error(...)`), never
+      on every poll, and none of our coordinators override this with
+      log_failures=False; (2) the older standalone polling sensors
+      (event_driven.py, calibration_sensor.py, cop/quadratic_cop.py) use
+      entity.py's BaseUtilitySensor._set_unavailable(reason), which
+      dedupes on the reason string and only logs when it changes,
+      resetting via _mark_available() on recovery so a later,
+      different failure logs again rather than being permanently
+      suppressed.
   parallel-updates:
     status: done
     comment: |
@@ -252,12 +265,24 @@ rules:
       ThermalShadowCostComparisonSensor, ThermalCalibrationSensor,
       HeatingOptimizerClimate.
   entity-translations:
-    status: todo
+    status: done
     comment: |
-      Most entities have translation_key + en/nl translations (extended
-      this session for select.control_mode, the three new sensors and
-      climate.heating), but coverage across the pre-existing sensor/ tree
-      was not re-audited.
+      Audited by script this session, not by eye: every static
+      _attr_translation_key literal plus every dynamic
+      translation_key=name.lower().replace(" ", "_") call site (the
+      pattern every sensor/*.py module uses) was extracted, slugified the
+      same way HA does at runtime, and cross-checked against
+      translations/en.json's entity.<platform>.* keys. Found and fixed 7
+      real gaps: outdoor_temperature, quadratic_cop, diagnostics,
+      current_electricity_price, heat_pump_thermal_power,
+      heat_pump_energy_daily, net_heat_loss_energy_daily - these sensors
+      were rendering without a proper translated name. Also found (left
+      alone - out of scope, not a coverage gap) an orphaned
+      "heat_pump_cop" entity.sensor key with unrelated state.formula
+      content that no current translation_key resolves to; likely a
+      leftover from before quadratic_cop's sensor was renamed/refactored,
+      predating this redesign. strings.json/en.json/nl.json all updated
+      together and re-verified in sync.
   exception-translations:
     status: done
     comment: |
