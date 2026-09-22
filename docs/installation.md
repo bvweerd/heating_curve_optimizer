@@ -114,6 +114,15 @@ To remove the integration:
 5. **Optionally** remove the integration files from `custom_components/`
 6. **Restart** Home Assistant
 
+!!! note "Learned calibration data is not deleted automatically"
+    If thermal calibration (learned UA/thermal mass) was active, its data
+    lives in a separate file under `.storage/` named
+    `heating_curve_optimizer_<entry_id>_thermal_calibration` and is not
+    removed when you delete the integration through the UI. This is
+    harmless to leave behind - a fresh install starts uncalibrated
+    regardless - but if you want a completely clean HA installation,
+    delete that file from `.storage/` by hand after uninstalling.
+
 ---
 
 **Next**: [Configuration Guide](configuration.md) - Learn how to configure your building parameters

@@ -5,6 +5,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.update_coordinator import UpdateFailed
+
 from custom_components.heating_curve_optimizer import (
     HeatingCurveOptimizerData,
     async_setup,
@@ -104,6 +107,37 @@ async def test_async_setup_entry(hass: HomeAssistant):
 
             # Verify platforms were forwarded
             mock_forward.assert_called_once_with(entry, PLATFORMS)
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_raises_config_entry_not_ready_on_weather_failure(
+    hass: HomeAssistant,
+):
+    """quality_scale's test-before-setup rule: a coordinator failure during
+    first refresh must surface as ConfigEntryNotReady (which HA retries
+    later), not a raw exception or a silently broken entry.
+
+    WeatherDataCoordinator/HeatCalculationCoordinator are both set up with
+    `async_config_entry_first_refresh()`, which already converts an
+    `UpdateFailed` from `_async_update_data` into `ConfigEntryNotReady`
+    (homeassistant.helpers.update_coordinator, verified against the
+    installed HA release) - this test proves __init__.py lets that
+    exception propagate out of async_setup_entry rather than swallowing it.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"area_m2": 150, "energy_label": "C"},
+        options={},
+    )
+    entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.heating_curve_optimizer.coordinator."
+        "WeatherDataCoordinator._async_update_data",
+        new=AsyncMock(side_effect=UpdateFailed("simulated open-meteo.com outage")),
+    ):
+        with pytest.raises(ConfigEntryNotReady):
+            await async_setup_entry(hass, entry)
 
 
 @pytest.mark.asyncio

@@ -81,6 +81,14 @@
           "pv_tilt": "Tilt angle of PV panels (0=horizontal, 90=vertical, typical: 35°)"
         }
       }
+    },
+    "abort": {
+      "already_configured": "Device is already configured"
+    },
+    "error": {
+      "missing_basic": "Please fill in the basic settings (area and energy label) before finishing.",
+      "no_blocks": "Add at least one consumption or production source before finishing.",
+      "cannot_connect": "Could not reach open-meteo.com. Check the internet connection and try again."
     }
   },
   "entity": {
@@ -247,6 +255,38 @@
       "abort": {
         "reconfigure_successful": "Heating zone updated successfully."
       }
+    }
+  },
+  "exceptions": {
+    "api_error": {
+      "message": "Open-Meteo API returned status {status}."
+    },
+    "connection_error": {
+      "message": "Error fetching weather data from open-meteo.com: {error}."
+    },
+    "no_forecast_data": {
+      "message": "No forecast data in the open-Meteo API response."
+    },
+    "no_weather_data": {
+      "message": "Weather coordinator has no data yet."
+    },
+    "missing_building_config": {
+      "message": "Missing area or energy label configuration."
+    },
+    "no_heat_data": {
+      "message": "Heat calculation coordinator has no data yet."
+    },
+    "no_weather_data_for_optimization": {
+      "message": "No weather data available for optimization."
+    },
+    "no_price_sensor": {
+      "message": "No electricity price sensor is configured."
+    },
+    "price_sensor_unavailable": {
+      "message": "Price sensor {sensor} is unavailable."
+    },
+    "price_data_extraction_failed": {
+      "message": "Cannot extract price data from sensor {sensor}."
     }
   }
 }

@@ -159,10 +159,18 @@ class WeatherDataCoordinator(DataUpdateCoordinator):
                 url, timeout=aiohttp.ClientTimeout(total=10)
             ) as resp:
                 if resp.status != 200:
-                    raise UpdateFailed(f"API returned status {resp.status}")
+                    raise UpdateFailed(
+                        translation_domain=DOMAIN,
+                        translation_key="api_error",
+                        translation_placeholders={"status": str(resp.status)},
+                    )
                 data = await resp.json()
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-            raise UpdateFailed(f"Error fetching weather data: {err}")
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="connection_error",
+                translation_placeholders={"error": str(err)},
+            ) from err
 
         # Extract current weather
         current_weather = data.get("current_weather", {})
@@ -176,7 +184,10 @@ class WeatherDataCoordinator(DataUpdateCoordinator):
         radiation = hourly.get("shortwave_radiation", [])
 
         if not times or not temps:
-            raise UpdateFailed("No forecast data in API response")
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="no_forecast_data",
+            )
 
         # Find current hour index
         now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
@@ -296,14 +307,20 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):
         # Get weather data from coordinator
         weather_data = self.weather_coordinator.data
         if not weather_data:
-            raise UpdateFailed("No weather data available")
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="no_weather_data",
+            )
 
         # Get configuration
         area_m2 = self.config.get(CONF_AREA_M2)
         energy_label = self.config.get(CONF_ENERGY_LABEL)
 
         if not area_m2 or not energy_label:
-            raise UpdateFailed("Missing area or energy label configuration")
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="missing_building_config",
+            )
 
         # Get indoor temperature
         indoor_temp = INDOOR_TEMPERATURE
@@ -777,7 +794,10 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         # Get heat demand forecast
         heat_data = self.heat_coordinator.data
         if not heat_data:
-            raise UpdateFailed("No heat calculation data available")
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="no_heat_data",
+            )
 
         demand_forecast = list(heat_data["net_heat_loss_forecast"])  # Make a copy
 
@@ -818,17 +838,27 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         # Get outdoor temperature forecast from weather coordinator
         weather_data = self.heat_coordinator.weather_coordinator.data
         if not weather_data:
-            raise UpdateFailed("No weather data available for optimization")
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="no_weather_data_for_optimization",
+            )
 
         temp_forecast = weather_data["temperature_forecast"]
 
         # Get price forecast
         if not self._price_sensor:
-            raise UpdateFailed("No price sensor configured")
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="no_price_sensor",
+            )
 
         price_state = self.hass.states.get(self._price_sensor)
         if not price_state or price_state.state in ("unknown", "unavailable"):
-            raise UpdateFailed("Price sensor not available")
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="price_sensor_unavailable",
+                translation_placeholders={"sensor": self._price_sensor},
+            )
 
         price_forecast, price_interval = extract_price_forecast_with_interval(
             price_state
@@ -839,8 +869,12 @@ class OptimizationCoordinator(DataUpdateCoordinator):
             try:
                 current_price = float(price_state.state)
                 price_forecast = [current_price]
-            except (ValueError, TypeError):
-                raise UpdateFailed("Cannot extract price data")
+            except (ValueError, TypeError) as err:
+                raise UpdateFailed(
+                    translation_domain=DOMAIN,
+                    translation_key="price_data_extraction_failed",
+                    translation_placeholders={"sensor": self._price_sensor},
+                ) from err
 
         # Phase 5 (REDESIGN.md §2.1.G): production price, for pricing PV
         # surplus used to cover heating at the feed-in rate rather than the
@@ -1444,12 +1478,12 @@ class OptimizationCoordinator(DataUpdateCoordinator):
                 "heatpump_max_thermal_power_kw": round(
                     heatpump.max_thermal_power_kw, 2
                 ),
-                "calibration_applied": calibration.applied
-                if calibration is not None
-                else False,
-                "calibration_sample_count": calibration.sample_count
-                if calibration is not None
-                else 0,
+                "calibration_applied": (
+                    calibration.applied if calibration is not None else False
+                ),
+                "calibration_sample_count": (
+                    calibration.sample_count if calibration is not None else 0
+                ),
                 "timestamp": dt_util.utcnow(),
             }
         except Exception as err:

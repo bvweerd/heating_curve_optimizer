@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import copy
 from typing import Any
+from urllib.parse import urlencode
 
+import aiohttp
 from homeassistant import config_entries
 
 try:
@@ -16,7 +18,8 @@ except ImportError:
     ConfigFlowContext = dict  # type: ignore
     ConfigFlowResult = dict[str, Any]  # type: ignore
     SubentryFlowResult = dict[str, Any]  # type: ignore
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import selector
 import voluptuous as vol
 
@@ -87,6 +90,35 @@ STEP_SELECT_SOURCES = "select_sources"
 STEP_PRICE_SETTINGS = "price_settings"
 STEP_BASIC = "basic"
 STEP_HEATING_CURVE_SETTINGS = "heating_curve_settings"
+
+
+async def _test_api_connection(hass: HomeAssistant) -> str | None:
+    """Test reachability of open-meteo.com before creating the entry.
+
+    Every sensor this integration publishes ultimately depends on weather
+    data from this API (WeatherDataCoordinator) - creating an entry that
+    can never successfully refresh is a worse experience than catching it
+    here, at config-flow time. Ported from battery_controller's
+    config_flow.py (docs/redesign/REDESIGN.md), which checks the same API
+    for the same reason. Returns an error key for async_show_form, or None
+    on success.
+    """
+    session = async_get_clientsession(hass)
+    url = "https://api.open-meteo.com/v1/forecast?" + urlencode(
+        {
+            "latitude": hass.config.latitude,
+            "longitude": hass.config.longitude,
+            "hourly": "shortwave_radiation",
+            "forecast_days": "1",
+        }
+    )
+    try:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status != 200:
+                return "cannot_connect"
+    except (aiohttp.ClientError, TimeoutError):
+        return "cannot_connect"
+    return None
 
 
 def _build_zone_subentry_schema(
@@ -289,8 +321,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, str] | None = None
     ) -> ConfigFlowResult:
         await self.async_set_unique_id(DOMAIN)
-        if self._async_current_entries():
-            return self.async_abort(reason="already_configured")
+        self._abort_if_unique_id_configured()
         if user_input is not None:
             choice = user_input[CONF_SOURCE_TYPE]
             if choice == STEP_BASIC:
@@ -311,6 +342,13 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         step_id="user",
                         data_schema=self._schema_user(),
                         errors={"base": "no_blocks"},
+                    )
+                connection_error = await _test_api_connection(self.hass)
+                if connection_error:
+                    return self.async_show_form(
+                        step_id="user",
+                        data_schema=self._schema_user(),
+                        errors={"base": connection_error},
                     )
                 consumption_price_sensor = (
                     self.consumption_price_sensor

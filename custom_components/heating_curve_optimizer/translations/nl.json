@@ -81,6 +81,14 @@
           "pv_tilt": "Hellingshoek van PV-panelen (0=horizontaal, 90=verticaal, typisch: 35°)"
         }
       }
+    },
+    "abort": {
+      "already_configured": "Apparaat is al geconfigureerd"
+    },
+    "error": {
+      "missing_basic": "Vul de basisinstellingen in (oppervlakte en energielabel) voordat je afrondt.",
+      "no_blocks": "Voeg minstens één verbruiks- of productiebron toe voordat je afrondt.",
+      "cannot_connect": "Kon open-meteo.com niet bereiken. Controleer de internetverbinding en probeer het opnieuw."
     }
   },
   "entity": {
@@ -247,6 +255,38 @@
       "abort": {
         "reconfigure_successful": "Verwarmingszone bijgewerkt."
       }
+    }
+  },
+  "exceptions": {
+    "api_error": {
+      "message": "Open-Meteo API gaf status {status} terug."
+    },
+    "connection_error": {
+      "message": "Fout bij ophalen weergegevens van open-meteo.com: {error}."
+    },
+    "no_forecast_data": {
+      "message": "Geen prognosegegevens in het antwoord van de open-Meteo API."
+    },
+    "no_weather_data": {
+      "message": "Weer-coordinator heeft nog geen gegevens."
+    },
+    "missing_building_config": {
+      "message": "Oppervlakte of energielabel ontbreekt in de configuratie."
+    },
+    "no_heat_data": {
+      "message": "Warmteberekening-coordinator heeft nog geen gegevens."
+    },
+    "no_weather_data_for_optimization": {
+      "message": "Geen weergegevens beschikbaar voor optimalisatie."
+    },
+    "no_price_sensor": {
+      "message": "Er is geen elektriciteitsprijs-sensor geconfigureerd."
+    },
+    "price_sensor_unavailable": {
+      "message": "Prijssensor {sensor} is niet beschikbaar."
+    },
+    "price_data_extraction_failed": {
+      "message": "Kan geen prijsgegevens ophalen uit sensor {sensor}."
     }
   }
 }

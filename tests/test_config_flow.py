@@ -2,10 +2,11 @@ import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from custom_components.heating_curve_optimizer.const import (
     DOMAIN,
+    CONF_AREA_M2,
     CONF_SOURCE_TYPE,
     CONF_ENERGY_LABEL,
     CONF_CONSUMPTION_PRICE_SENSOR,
@@ -14,6 +15,8 @@ from custom_components.heating_curve_optimizer.const import (
 from custom_components.heating_curve_optimizer.config_flow import (
     STEP_BASIC,
     STEP_PRICE_SETTINGS,
+    HeatingCurveOptimizerConfigFlow,
+    _test_api_connection,
 )
 
 
@@ -35,7 +38,10 @@ async def test_show_user_form(hass: HomeAssistant):
 
 @pytest.mark.asyncio
 async def test_abort_if_configured(hass: HomeAssistant):
-    entry = MockConfigEntry(domain=DOMAIN, data={})
+    """An entry created by this flow always carries unique_id=DOMAIN (see
+    async_step_user's async_set_unique_id call), so a second attempt must
+    be caught by _abort_if_unique_id_configured()."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id=DOMAIN)
     entry.add_to_hass(hass)
     with patch(
         "homeassistant.config_entries._load_integration", return_value=None
@@ -127,3 +133,102 @@ async def test_price_settings_step_includes_consumption_and_production(hass):
     options = schema[CONF_CONSUMPTION_PRICE_SENSOR].config["options"]
     assert "sensor.price_consumption" in options
     assert "sensor.price_production" in options
+
+
+@pytest.mark.asyncio
+async def test_test_api_connection_success(hass: HomeAssistant):
+    """quality_scale's test-before-configure rule: open-meteo.com
+    reachability is checked (ported from battery_controller's
+    _test_api_connection) before the entry is created."""
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.__aenter__.return_value = mock_response
+    mock_response.__aexit__.return_value = None
+
+    mock_session = MagicMock()
+    mock_session.get.return_value = mock_response
+
+    with patch(
+        "custom_components.heating_curve_optimizer.config_flow.async_get_clientsession",
+        return_value=mock_session,
+    ):
+        error = await _test_api_connection(hass)
+
+    assert error is None
+
+
+@pytest.mark.asyncio
+async def test_test_api_connection_bad_status(hass: HomeAssistant):
+    mock_response = AsyncMock()
+    mock_response.status = 500
+    mock_response.__aenter__.return_value = mock_response
+    mock_response.__aexit__.return_value = None
+
+    mock_session = MagicMock()
+    mock_session.get.return_value = mock_response
+
+    with patch(
+        "custom_components.heating_curve_optimizer.config_flow.async_get_clientsession",
+        return_value=mock_session,
+    ):
+        error = await _test_api_connection(hass)
+
+    assert error == "cannot_connect"
+
+
+@pytest.mark.asyncio
+async def test_test_api_connection_client_error(hass: HomeAssistant):
+    import aiohttp
+
+    mock_session = MagicMock()
+    mock_session.get.side_effect = aiohttp.ClientError("boom")
+
+    with patch(
+        "custom_components.heating_curve_optimizer.config_flow.async_get_clientsession",
+        return_value=mock_session,
+    ):
+        error = await _test_api_connection(hass)
+
+    assert error == "cannot_connect"
+
+
+@pytest.mark.asyncio
+async def test_finish_step_shows_cannot_connect_error_on_api_failure(
+    hass: HomeAssistant,
+):
+    """The "finish" branch of async_step_user must reject a config whose
+    weather API can't be reached, rather than creating a dead entry."""
+    flow = HeatingCurveOptimizerConfigFlow()
+    flow.hass = hass
+    flow.area_m2 = 150.0
+    flow.configs = [{"source_type": "consumption", "entities": ["sensor.power"]}]
+
+    with patch(
+        "custom_components.heating_curve_optimizer.config_flow._test_api_connection",
+        new=AsyncMock(return_value="cannot_connect"),
+    ):
+        result = await flow.async_step_user({CONF_SOURCE_TYPE: "finish"})
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "user"
+    assert result["errors"] == {"base": "cannot_connect"}
+
+
+@pytest.mark.asyncio
+async def test_finish_step_creates_entry_when_api_reachable(hass: HomeAssistant):
+    """The "finish" branch proceeds to async_create_entry once the API
+    check passes, with the merged config still intact."""
+    flow = HeatingCurveOptimizerConfigFlow()
+    flow.hass = hass
+    flow.area_m2 = 150.0
+    flow.energy_label = "C"
+    flow.configs = [{"source_type": "consumption", "entities": ["sensor.power"]}]
+
+    with patch(
+        "custom_components.heating_curve_optimizer.config_flow._test_api_connection",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await flow.async_step_user({CONF_SOURCE_TYPE: "finish"})
+
+    assert result["type"] == "create_entry"
+    assert result["data"][CONF_AREA_M2] == 150.0
