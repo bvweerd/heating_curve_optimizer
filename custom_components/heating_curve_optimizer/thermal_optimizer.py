@@ -56,7 +56,10 @@ from dataclasses import dataclass, field
 
 from .building_model import BuildingConfig, EmitterConfig
 from .heatpump_model import HeatPumpConfig
-from .helpers import calculate_supply_temperature
+from .helpers import (
+    calculate_supply_temperature,
+    max_offset_change as _max_offset_change,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -160,7 +163,7 @@ def optimize_thermal_schedule(
         return ThermalOptimizationResult()
 
     step_hours = time_base / 60.0 if time_base > 0 else 1.0
-    max_offset_change = max(1, time_base // max(1, offset_delta_t))
+    max_offset_change = _max_offset_change(time_base, offset_delta_t)
 
     outdoor = _pad(outdoor_temps, horizon, outdoor_temps[-1] if outdoor_temps else 5.0)
     price = _pad(prices, horizon, prices[-1] if prices else 0.0)

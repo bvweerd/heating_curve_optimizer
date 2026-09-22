@@ -16,13 +16,14 @@ new sensors from here on are plain modules like battery_controller's
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .entity import BaseUtilitySensor
+from .helpers import coordinator_data_section
 
 
 class ThermalShadowOffsetSensor(CoordinatorEntity, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
@@ -70,9 +71,7 @@ class ThermalShadowOffsetSensor(CoordinatorEntity, BaseUtilitySensor):  # type: 
         self._attr_entity_registry_enabled_default = False  # opt-in diagnostic
 
     def _thermal_v2(self) -> dict[str, Any]:
-        if not self.coordinator.data:
-            return {}
-        return cast(dict[str, Any], self.coordinator.data.get("thermal_v2", {}))
+        return coordinator_data_section(self.coordinator, "thermal_v2")
 
     @property
     def available(self) -> bool:
@@ -151,9 +150,7 @@ class ThermalShadowCostComparisonSensor(CoordinatorEntity, BaseUtilitySensor):  
         self._attr_entity_registry_enabled_default = False
 
     def _thermal_v2(self) -> dict[str, Any]:
-        if not self.coordinator.data:
-            return {}
-        return cast(dict[str, Any], self.coordinator.data.get("thermal_v2", {}))
+        return coordinator_data_section(self.coordinator, "thermal_v2")
 
     @property
     def available(self) -> bool:

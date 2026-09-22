@@ -11,7 +11,11 @@ from .const import (
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_THERMAL_STORAGE_EFFICIENCY,
 )
-from .helpers import calculate_defrost_factor, calculate_supply_temperature
+from .helpers import (
+    calculate_defrost_factor,
+    calculate_supply_temperature,
+    max_offset_change as _max_offset_change,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,9 +92,7 @@ def optimize_offsets(
 
     # Calculate max offset change per step based on offset_delta_t
     # offset_delta_t = minutes per 1°C change
-    # At time_base=60 and offset_delta_t=10: max_change = 60/10 = 6°C per step
-    # At time_base=60 and offset_delta_t=60: max_change = 60/60 = 1°C per step
-    max_offset_change = max(1, time_base // max(1, offset_delta_t))
+    max_offset_change = _max_offset_change(time_base, offset_delta_t)
 
     _LOGGER.debug(
         "Offset change constraint: max %d°C per %d-min step "

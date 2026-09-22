@@ -11,7 +11,7 @@ calibrations.
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.helpers.entity import DeviceInfo
@@ -19,6 +19,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .calibration import MIN_SAMPLES_TO_APPLY
 from .entity import BaseUtilitySensor
+from .helpers import coordinator_data_section
 
 
 class ThermalCalibrationSensor(CoordinatorEntity, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
@@ -50,9 +51,7 @@ class ThermalCalibrationSensor(CoordinatorEntity, BaseUtilitySensor):  # type: i
         self._attr_entity_registry_enabled_default = False  # opt-in diagnostic
 
     def _thermal_v2(self) -> dict[str, Any]:
-        if not self.coordinator.data:
-            return {}
-        return cast(dict[str, Any], self.coordinator.data.get("thermal_v2", {}))
+        return coordinator_data_section(self.coordinator, "thermal_v2")
 
     @property
     def available(self) -> bool:

@@ -9,13 +9,14 @@ whenever the real-time loop has not produced anything yet.
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .entity import BaseUtilitySensor
+from .helpers import coordinator_data_section
 
 
 class RealtimeOffsetAdjustmentSensor(CoordinatorEntity, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
@@ -47,9 +48,7 @@ class RealtimeOffsetAdjustmentSensor(CoordinatorEntity, BaseUtilitySensor):  # t
         self._attr_entity_registry_enabled_default = False  # opt-in diagnostic
 
     def _realtime(self) -> dict[str, Any]:
-        if not self.coordinator.data:
-            return {}
-        return cast(dict[str, Any], self.coordinator.data.get("realtime", {}))
+        return coordinator_data_section(self.coordinator, "realtime")
 
     @property
     def available(self) -> bool:

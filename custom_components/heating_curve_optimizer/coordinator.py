@@ -86,7 +86,7 @@ from .building_model import BuildingConfig, EmitterConfig
 from .calibration import ThermalCalibrationState
 from .calibration import STORAGE_VERSION as CALIBRATION_STORAGE_VERSION
 from .heatpump_model import HeatPumpConfig
-from .helpers import extract_price_forecast_with_interval
+from .helpers import extract_price_forecast_with_interval, max_offset_change
 from .optimizer import calculate_buffer_energy, optimize_offsets
 from .realtime_controller import RealtimeController, create_realtime_controller
 from .thermal_optimizer import optimize_thermal_schedule
@@ -822,7 +822,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
         offset_delta_t = int(
             self.config.get(CONF_OFFSET_DELTA_T, DEFAULT_OFFSET_DELTA_T)
         )
-        max_adjustment = max(1, time_base // max(1, offset_delta_t))
+        max_adjustment = max_offset_change(time_base, offset_delta_t)
 
         planned_offsets = thermal_v2.get("offsets", [])
         planned_offset = planned_offsets[0] if planned_offsets else 0
