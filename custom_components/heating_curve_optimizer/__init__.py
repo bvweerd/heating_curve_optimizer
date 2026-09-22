@@ -10,7 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity import DeviceInfo
 
-from .const import DOMAIN, PLATFORMS
+from .const import CONF_CONTROL_MODE, DOMAIN, PLATFORMS
 from .coordinator import (
     WeatherDataCoordinator,
     HeatCalculationCoordinator,
@@ -21,6 +21,15 @@ _LOGGER = logging.getLogger(__name__)
 
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+# Options keys that update.py's select entity writes to entry.options and
+# that a live coordinator already picks up the moment it's set (see
+# select.py's async_select_option, which sets
+# `optimization_coordinator.control_mode` directly before persisting).
+# Reloading the whole entry for these would throw away in-flight state
+# (buffer, current offset) for no benefit - mirrors battery_controller's
+# `_NO_RELOAD_KEYS`.
+_NO_RELOAD_KEYS = frozenset({CONF_CONTROL_MODE})
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -85,6 +94,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "config": config,
         "entry": entry,
         "device": device,
+        # entry.options exactly as they stood at setup - _update_listener
+        # compares against this to tell a _NO_RELOAD_KEYS-only change from
+        # one that actually needs a reload.
+        "options_snapshot": dict(entry.options),
     }
 
     _LOGGER.debug("Coordinators initialized successfully")
@@ -99,7 +112,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options update by reloading the config entry."""
+    """Handle an options update - reload, unless only _NO_RELOAD_KEYS changed."""
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    previous_options = entry_data.get("options_snapshot", {}) if entry_data else {}
+    changed_keys = {
+        key
+        for key in set(previous_options) | set(entry.options)
+        if previous_options.get(key) != entry.options.get(key)
+    }
+
+    if entry_data is not None:
+        entry_data["options_snapshot"] = dict(entry.options)
+
+    if changed_keys and changed_keys.issubset(_NO_RELOAD_KEYS):
+        _LOGGER.debug(
+            "Entry %s options changed (%s) - no reload needed, already applied live",
+            entry.entry_id,
+            changed_keys,
+        )
+        return
+
     _LOGGER.debug("Reloading config entry %s", entry.entry_id)
     await hass.config_entries.async_reload(entry.entry_id)
 

@@ -170,6 +170,16 @@
       "thermal_v2_cost_comparison": {
         "name": "Thermal V2 cost comparison (shadow mode, experimental)"
       }
+    },
+    "select": {
+      "control_mode": {
+        "name": "Control mode",
+        "state": {
+          "legacy": "Legacy optimizer",
+          "follow_curve": "Follow curve (no optimization)",
+          "optimize_v2": "Redesigned optimizer (v2, experimental)"
+        }
+      }
     }
   },
   "selector": {

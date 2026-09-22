@@ -170,6 +170,16 @@
       "thermal_v2_cost_comparison": {
         "name": "Thermal V2 kostenvergelijking (schaduwmodus, experimenteel)"
       }
+    },
+    "select": {
+      "control_mode": {
+        "name": "Regelmodus",
+        "state": {
+          "legacy": "Bestaande optimizer",
+          "follow_curve": "Volg curve (geen optimalisatie)",
+          "optimize_v2": "Herontworpen optimizer (v2, experimenteel)"
+        }
+      }
     }
   },
   "selector": {

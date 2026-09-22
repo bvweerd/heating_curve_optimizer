@@ -48,6 +48,11 @@ from .const import (
     CONF_PV_TILT,
     CONF_VENTILATION_TYPE,
     CONF_CEILING_HEIGHT,
+    CONF_CONTROL_MODE,
+    CONTROL_MODES,
+    DEFAULT_CONTROL_MODE,
+    MODE_FOLLOW_CURVE,
+    MODE_OPTIMIZE_V2,
     DEFAULT_COP_AT_35,
     DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER,
     DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER,
@@ -69,7 +74,7 @@ from .const import (
 from .building_model import BuildingConfig, EmitterConfig
 from .heatpump_model import HeatPumpConfig
 from .helpers import extract_price_forecast_with_interval
-from .optimizer import optimize_offsets
+from .optimizer import calculate_buffer_energy, optimize_offsets
 from .thermal_optimizer import optimize_thermal_schedule
 
 _LOGGER = logging.getLogger(__name__)
@@ -536,6 +541,24 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         self._last_price = None
         self._current_buffer: float = 0.0  # Track actual buffer state
         self._current_offset: int = 0  # Track current offset for change constraint
+        # Which optimizer drives optimized_offset (fase 3, REDESIGN.md).
+        # Read from options first (select.py persists there, matching
+        # battery_controller's BatteryControlModeSelect), falling back to
+        # data, then the legacy default.
+        self._control_mode: str = config.get(CONF_CONTROL_MODE, DEFAULT_CONTROL_MODE)
+
+    @property
+    def control_mode(self) -> str:
+        """Return the active control mode (legacy/follow_curve/optimize_v2)."""
+        return self._control_mode
+
+    @control_mode.setter
+    def control_mode(self, value: str) -> None:
+        """Set the active control mode; takes effect on the next update."""
+        if value not in CONTROL_MODES:
+            _LOGGER.warning("Ignoring unknown control mode: %s", value)
+            return
+        self._control_mode = value
 
     async def async_setup(self) -> None:
         """Set up event tracking for price changes."""
@@ -733,7 +756,88 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         thermal_v2_result["legacy_total_cost_eur"] = result.get("total_cost")
         result["thermal_v2"] = thermal_v2_result
 
-        # Update tracked state for next optimization run
+        # --- Apply the active control mode (fase 3, REDESIGN.md) ---------
+        # Decides which engine's result actually reaches optimized_offset /
+        # optimized_offsets / future_supply_temperatures - i.e. what every
+        # downstream sensor, and any automation built on them, actually
+        # sees. Placed *before* the state-tracking block below, so
+        # self._current_offset/self._current_buffer always reflect what was
+        # really applied, whichever mode chose it - both engines read those
+        # as their own "previous offset" next cycle (see
+        # _run_thermal_v2_optimization's current_offset argument), so this
+        # is what keeps ramp-rate limiting physically correct across a mode
+        # switch instead of each engine drifting against its own private
+        # what-if history.
+        if self._control_mode == MODE_FOLLOW_CURVE:
+            horizon = len(result.get("optimized_offsets") or [0])
+            zero_offsets = [0] * max(horizon, 1)
+            result["optimized_offset"] = 0
+            result["optimized_offsets"] = zero_offsets
+            result["future_supply_temperatures"] = result.get(
+                "baseline_supply_temperatures", []
+            )
+            result["buffer_evolution"] = calculate_buffer_energy(
+                zero_offsets,
+                demand_forecast,
+                time_base=time_base,
+                buffer=self._current_buffer,
+            )
+            result["initial_buffer"] = round(self._current_buffer, 3)
+            result["total_cost"] = result.get("baseline_cost", 0.0)
+            result["cost_savings"] = 0.0
+
+        elif self._control_mode == MODE_OPTIMIZE_V2:
+            if thermal_v2_result.get("available"):
+                v2_offsets = thermal_v2_result.get("offsets", [])
+                v2_comfort_min = thermal_v2_result.get("building_comfort_min")
+                v2_mass = thermal_v2_result.get("building_thermal_mass_kwh_per_k")
+                v2_indoor_temps = thermal_v2_result.get("indoor_temps", [])
+                # Re-express the v2 indoor-temperature trajectory as
+                # "stored kWh above the comfort floor" so the existing
+                # heat_buffer sensor keeps the same physical meaning
+                # instead of going stale - see REDESIGN.md §2.1.B on why
+                # that floor-relative energy is the right equivalent of
+                # the legacy buffer, now backed by a real state variable.
+                if v2_comfort_min is not None and v2_mass is not None:
+                    v2_buffer = [
+                        round((t - v2_comfort_min) * v2_mass, 3)
+                        for t in v2_indoor_temps
+                    ]
+                else:
+                    v2_buffer = []
+
+                result["optimized_offset"] = v2_offsets[0] if v2_offsets else 0
+                result["optimized_offsets"] = v2_offsets
+                result["future_supply_temperatures"] = thermal_v2_result.get(
+                    "supply_temps", []
+                )
+                result["buffer_evolution"] = v2_buffer
+                result["initial_buffer"] = v2_buffer[0] if v2_buffer else 0.0
+                result["total_cost"] = thermal_v2_result.get("total_cost_eur", 0.0)
+                result["cost_savings"] = round(
+                    result.get("baseline_cost", 0.0)
+                    - thermal_v2_result.get("total_cost_eur", 0.0),
+                    3,
+                )
+            else:
+                _LOGGER.warning(
+                    "control_mode=optimize_v2 but the redesigned optimizer is "
+                    "unavailable (%s) - falling back to the legacy result this "
+                    "cycle so heating control is never left without a decision.",
+                    thermal_v2_result.get("error"),
+                )
+        # MODE_LEGACY (default): result is left exactly as _run_optimization
+        # produced it - zero behaviour change for every installation that
+        # has not explicitly switched control_mode.
+
+        # Update tracked state for next optimization run. Note: buffer_evolution's
+        # units/semantics depend on the active control mode (legacy debt/surplus
+        # vs. the v2 comfort-floor-relative kWh above) - switching control_mode
+        # therefore seeds the *other* mode's next run with a value computed
+        # under different physics for one cycle. Bounded by max_buffer_debt on
+        # the legacy side and self-corrects within a planning window; a real
+        # unit conversion between the two is a refinement for later, not a
+        # correctness issue while control_mode is left alone (the common case).
         new_offset = int(result.get("optimized_offset", 0))
         buffer_evolution = result.get("buffer_evolution", [])
         new_buffer = buffer_evolution[0] if buffer_evolution else self._current_buffer
@@ -979,6 +1083,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):
                 "building_thermal_mass_kwh_per_k": round(
                     building.thermal_mass_kwh_per_k, 2
                 ),
+                "building_comfort_min": building.comfort_min,
                 "building_time_constant_hours": round(building.time_constant_hours, 1),
                 "emitter_nominal_power_kw": round(emitter.nominal_power_kw, 2),
                 "heatpump_max_thermal_power_kw": round(

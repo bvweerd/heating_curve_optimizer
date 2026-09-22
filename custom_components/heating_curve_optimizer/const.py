@@ -5,7 +5,7 @@ DOMAIN = "heating_curve_optimizer"
 DOMAIN_ABBREVIATION = "HCO"
 
 # Supported platforms for this integration
-PLATFORMS = ["sensor", "binary_sensor", "number"]
+PLATFORMS = ["sensor", "binary_sensor", "number", "select"]
 
 # Configuration keys
 CONF_SOURCE_TYPE = "source_type"
@@ -333,6 +333,18 @@ EMITTER_EXPONENT_MAP = {
     "underfloor": 1.1,
     "fan_coil": 1.0,
 }
+
+# Which optimizer actually drives optimized_offset/optimized_supply_temperature
+# (fase 3, docs/redesign/REDESIGN.md). Default stays on the legacy DP: the
+# redesigned optimizer only has fase-2 shadow-mode diagnostics to judge it by
+# at this point, not field hours on real installations, so switching the
+# default now would change real heating behaviour on an unvalidated model.
+CONF_CONTROL_MODE = "control_mode"
+MODE_LEGACY = "legacy"
+MODE_FOLLOW_CURVE = "follow_curve"
+MODE_OPTIMIZE_V2 = "optimize_v2"
+CONTROL_MODES = [MODE_LEGACY, MODE_FOLLOW_CURVE, MODE_OPTIMIZE_V2]
+DEFAULT_CONTROL_MODE = MODE_LEGACY
 
 # Possible source types
 SOURCE_TYPE_CONSUMPTION = "Electricity consumption"
