@@ -6,6 +6,8 @@
           "energy_label": "Energy label",
           "ventilation_type": "Ventilation type",
           "ceiling_height": "Ceiling height (m)",
+          "thermal_mass_class": "Thermal mass class",
+          "emitter_type": "Heat emitter type",
           "pv_east_wp": "PV panels east (Wp)",
           "pv_south_wp": "PV panels south (Wp)",
           "pv_west_wp": "PV panels west (Wp)",
@@ -16,6 +18,8 @@
         "data_description": {
           "ventilation_type": "Type of ventilation system for calculating ventilation heat loss",
           "ceiling_height": "Average ceiling height for calculating building volume (default: 2.5m)",
+          "thermal_mass_class": "Construction weight class, used by the redesigned optimizer (optimize_v2) instead of the energy-label-derived estimate (default: medium)",
+          "emitter_type": "How emitter output falls off as supply temperature drops, used by the redesigned optimizer (optimize_v2) (default: radiator)",
           "pv_east_wp": "Total peak power of east-facing PV panels in Wp",
           "pv_south_wp": "Total peak power of south-facing PV panels in Wp",
           "pv_west_wp": "Total peak power of west-facing PV panels in Wp",
@@ -236,6 +240,20 @@
         "heat_recovery_50": "Heat recovery 50% efficiency",
         "heat_recovery_70": "Heat recovery 70% efficiency",
         "heat_recovery_90": "Heat recovery 90% efficiency"
+      }
+    },
+    "thermal_mass_class": {
+      "options": {
+        "light": "Light (timber frame)",
+        "medium": "Medium (cavity wall + concrete floor)",
+        "heavy": "Heavy (masonry/concrete throughout)"
+      }
+    },
+    "emitter_type": {
+      "options": {
+        "radiator": "Radiator",
+        "underfloor": "Underfloor heating",
+        "fan_coil": "Fan coil"
       }
     }
   },

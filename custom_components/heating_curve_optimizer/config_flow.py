@@ -61,6 +61,8 @@ from .const import (
     CONF_VENTILATION_TYPE,
     CONF_CEILING_HEIGHT,
     CONF_MAX_BUFFER_DEBT,
+    CONF_THERMAL_MASS_CLASS,
+    CONF_EMITTER_TYPE,
     DEFAULT_INDOOR_TEMP_HYSTERESIS,
     DEFAULT_K_FACTOR,
     DEFAULT_OFFSET_DELTA_T,
@@ -77,12 +79,16 @@ from .const import (
     DEFAULT_HEAT_CURVE_MAX,
     DEFAULT_VENTILATION_TYPE,
     DEFAULT_CEILING_HEIGHT,
+    DEFAULT_THERMAL_MASS_CLASS,
+    DEFAULT_EMITTER_TYPE,
     CONF_SOURCE_TYPE,
     CONF_SOURCES,
     DOMAIN,
     ENERGY_LABELS,
     SOURCE_TYPES,
     VENTILATION_TYPES,
+    THERMAL_MASS_WH_PER_M2_K,
+    EMITTER_EXPONENT_MAP,
     ZONE_SUBENTRY_TYPE,
 )
 
@@ -292,6 +298,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.glass_u_value: float | None = None
         self.ventilation_type: str = DEFAULT_VENTILATION_TYPE
         self.ceiling_height: float = DEFAULT_CEILING_HEIGHT
+        self.thermal_mass_class: str = DEFAULT_THERMAL_MASS_CLASS
+        self.emitter_type: str = DEFAULT_EMITTER_TYPE
         self.pv_east_wp: float | None = None
         self.pv_south_wp: float | None = None
         self.pv_west_wp: float | None = None
@@ -388,6 +396,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_GLASS_U_VALUE: self.glass_u_value,
             CONF_VENTILATION_TYPE: self.ventilation_type,
             CONF_CEILING_HEIGHT: self.ceiling_height,
+            CONF_THERMAL_MASS_CLASS: self.thermal_mass_class,
+            CONF_EMITTER_TYPE: self.emitter_type,
             CONF_PV_EAST_WP: self.pv_east_wp,
             CONF_PV_SOUTH_WP: self.pv_south_wp,
             CONF_PV_WEST_WP: self.pv_west_wp,
@@ -632,6 +642,10 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.ceiling_height = float(
             user_input.get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT)
         )
+        self.thermal_mass_class = user_input.get(
+            CONF_THERMAL_MASS_CLASS, DEFAULT_THERMAL_MASS_CLASS
+        )
+        self.emitter_type = user_input.get(CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE)
         self.pv_east_wp = float(user_input.get(CONF_PV_EAST_WP, 0))
         self.pv_south_wp = float(user_input.get(CONF_PV_SOUTH_WP, 0))
         self.pv_west_wp = float(user_input.get(CONF_PV_WEST_WP, 0))
@@ -700,6 +714,30 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_CEILING_HEIGHT,
                     default=self.ceiling_height or DEFAULT_CEILING_HEIGHT,
                 ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_THERMAL_MASS_CLASS,
+                    default=self.thermal_mass_class or DEFAULT_THERMAL_MASS_CLASS,
+                ): selector(
+                    {
+                        "select": {
+                            "options": list(THERMAL_MASS_WH_PER_M2_K.keys()),
+                            "mode": "dropdown",
+                            "translation_key": "thermal_mass_class",
+                        }
+                    }
+                ),
+                vol.Optional(
+                    CONF_EMITTER_TYPE,
+                    default=self.emitter_type or DEFAULT_EMITTER_TYPE,
+                ): selector(
+                    {
+                        "select": {
+                            "options": list(EMITTER_EXPONENT_MAP.keys()),
+                            "mode": "dropdown",
+                            "translation_key": "emitter_type",
+                        }
+                    }
+                ),
                 vol.Optional(
                     CONF_PV_EAST_WP, default=self.pv_east_wp or 0.0
                 ): vol.Coerce(float),
@@ -917,6 +955,10 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):  # ty
         self.glass_u_value = _get(CONF_GLASS_U_VALUE, 1.2)
         self.ventilation_type = _get(CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE)
         self.ceiling_height = _get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT)
+        self.thermal_mass_class = _get(
+            CONF_THERMAL_MASS_CLASS, DEFAULT_THERMAL_MASS_CLASS
+        )
+        self.emitter_type = _get(CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE)
         self.pv_east_wp = _get(CONF_PV_EAST_WP, 0)
         self.pv_south_wp = _get(CONF_PV_SOUTH_WP, 0)
         self.pv_west_wp = _get(CONF_PV_WEST_WP, 0)

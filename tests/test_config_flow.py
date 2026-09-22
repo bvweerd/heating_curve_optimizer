@@ -11,6 +11,8 @@ from custom_components.heating_curve_optimizer.const import (
     CONF_ENERGY_LABEL,
     CONF_CONSUMPTION_PRICE_SENSOR,
     CONF_PRODUCTION_PRICE_SENSOR,
+    CONF_THERMAL_MASS_CLASS,
+    CONF_EMITTER_TYPE,
 )
 from custom_components.heating_curve_optimizer.config_flow import (
     STEP_BASIC,
@@ -409,3 +411,90 @@ async def test_options_flow_finish_creates_entry_when_api_reachable(
 
     assert result2["type"] == "create_entry"
     assert result2["data"][CONF_AREA_M2] == 150.0
+
+
+@pytest.mark.asyncio
+async def test_basic_step_includes_thermal_mass_class_and_emitter_type_selectors(
+    hass: HomeAssistant,
+):
+    """thermal_mass_class/emitter_type must be asked for in the Basic
+    Settings step, not just read from config with no UI to set them."""
+    ctx1, ctx2 = _mock_hass_integration()
+    with ctx1, ctx2:
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_SOURCE_TYPE: STEP_BASIC}
+        )
+
+    schema = result2["data_schema"].schema
+    thermal_mass_field = schema[CONF_THERMAL_MASS_CLASS]
+    emitter_field = schema[CONF_EMITTER_TYPE]
+    assert set(thermal_mass_field.config["options"]) == {"light", "medium", "heavy"}
+    assert set(emitter_field.config["options"]) == {
+        "radiator",
+        "underfloor",
+        "fan_coil",
+    }
+
+
+@pytest.mark.asyncio
+async def test_apply_basic_input_sets_thermal_mass_class_and_emitter_type(
+    hass: HomeAssistant,
+):
+    """Submitting the basic step must flow thermal_mass_class/emitter_type
+    through to the created entry's data, same as area_m2/energy_label."""
+    flow = HeatingCurveOptimizerConfigFlow()
+    flow.hass = hass
+    flow.configs = [{"source_type": "consumption", "entities": ["sensor.power"]}]
+
+    with patch(
+        "custom_components.heating_curve_optimizer.config_flow._test_api_connection",
+        new=AsyncMock(return_value=None),
+    ):
+        await flow.async_step_basic(
+            {
+                CONF_AREA_M2: 150,
+                CONF_ENERGY_LABEL: "C",
+                CONF_THERMAL_MASS_CLASS: "heavy",
+                CONF_EMITTER_TYPE: "underfloor",
+            }
+        )
+        result = await flow.async_step_user({CONF_SOURCE_TYPE: "finish"})
+
+    assert result["type"] == "create_entry"
+    assert result["data"][CONF_THERMAL_MASS_CLASS] == "heavy"
+    assert result["data"][CONF_EMITTER_TYPE] == "underfloor"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_basic_step_prefills_thermal_mass_class_and_emitter_type(
+    hass: HomeAssistant,
+):
+    """Editing an existing entry must show its stored thermal_mass_class/
+    emitter_type as the field defaults, not the wizard's plain defaults."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "area_m2": 150,
+            "energy_label": "C",
+            CONF_THERMAL_MASS_CLASS: "light",
+            CONF_EMITTER_TYPE: "fan_coil",
+        },
+        unique_id=DOMAIN,
+    )
+    entry.add_to_hass(hass)
+
+    ctx1, ctx2 = _mock_hass_integration()
+    with ctx1, ctx2:
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result2 = await hass.config_entries.options.async_configure(
+            result["flow_id"], {CONF_SOURCE_TYPE: STEP_BASIC}
+        )
+
+    schema = result2["data_schema"].schema
+    thermal_mass_field = next(k for k in schema if str(k) == CONF_THERMAL_MASS_CLASS)
+    emitter_field = next(k for k in schema if str(k) == CONF_EMITTER_TYPE)
+    assert thermal_mass_field.default() == "light"
+    assert emitter_field.default() == "fan_coil"

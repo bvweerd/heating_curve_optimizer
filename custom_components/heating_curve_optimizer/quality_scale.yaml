@@ -180,22 +180,20 @@ rules:
     status: done
     comment: |
       docs/reference/configuration.md gained a "Redesigned Optimizer
-      (optimize_v2) Parameters" section (this session) covering
-      control_mode, grid_import_sensor, grid_export_sensor,
-      thermal_mass_class and emitter_type, including their value tables
-      and an explicit note on which ones are and are not yet exposed by
-      the UI wizard (see docs-installation-parameters below).
+      (optimize_v2) Parameters" section covering control_mode,
+      grid_import_sensor, grid_export_sensor, thermal_mass_class and
+      emitter_type, including their value tables and an explicit note
+      on which ones are exposed by the UI wizard vs. the Control Mode
+      select entity (see docs-installation-parameters below).
       docs/configuration.md links to it.
   docs-installation-parameters:
     status: done
     comment: |
       Verified against config_flow.py's actual field set this session.
-      grid_import_sensor/grid_export_sensor ARE asked for in the basic
-      options form (_build_basic_schema) - documented as such.
-      thermal_mass_class/emitter_type are read from config but not (yet)
-      asked for by config_flow.py at all - documented honestly as
-      "advanced, not yet in the setup wizard" rather than claiming UI
-      support that does not exist.
+      grid_import_sensor/grid_export_sensor/thermal_mass_class/
+      emitter_type are ALL asked for in the basic options form
+      (_build_basic_schema, shared by both the setup wizard and the
+      options flow) - documented as such.
   entity-unavailable:
     status: done
     comment: |

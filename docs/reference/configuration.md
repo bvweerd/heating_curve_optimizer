@@ -67,16 +67,15 @@ they are read but unused.
 | `thermal_mass_class` | select | `light`, `medium`, `heavy` | `medium` | Building thermal mass class, used instead of the energy-label-derived estimate when set. See the table below for the underlying Wh/m²K values. |
 | `emitter_type` | select | `radiator`, `underfloor`, `fan_coil` | `radiator` | Heat emitter type - controls how emitter output falls off as supply temperature drops (EN 442-style exponent). See the table below. |
 
-!!! note "Advanced parameters, not yet in the setup wizard"
+!!! note "Advanced parameters in the Basic Settings step"
     `thermal_mass_class`, `emitter_type` and `grid_import_sensor`/
-    `grid_export_sensor` are read from the config entry but are not (yet)
-    asked for by the UI setup flow or options flow. `grid_import_sensor`/
-    `grid_export_sensor` can be set from **Settings → Devices & Services →
-    Heating Curve Optimizer → Configure** (they are in that form);
-    `thermal_mass_class` and `emitter_type` currently require editing the
-    config entry's stored data directly (e.g. via
-    `homeassistant.update_config_entry`, see below) - a UI field for them
-    is a natural follow-up, not yet built.
+    `grid_export_sensor` are all asked for in the **Basic Settings** step of
+    the UI setup flow and options flow (`_build_basic_schema` in
+    `config_flow.py`), alongside area/energy label/glazing. `control_mode`
+    is the one exception: it is set via the **Control Mode** select entity
+    (Settings → Devices & Services → Heating Curve Optimizer), not the
+    setup wizard, since it is meant to be switched at runtime rather than
+    fixed at setup.
 
 ### Thermal Mass Class → Wh/m²K
 

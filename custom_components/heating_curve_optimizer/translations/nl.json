@@ -6,6 +6,8 @@
           "energy_label": "Energielabel",
           "ventilation_type": "Ventilatietype",
           "ceiling_height": "Plafondhoogte (m)",
+          "thermal_mass_class": "Thermische massa klasse",
+          "emitter_type": "Type warmteafgever",
           "pv_east_wp": "PV-panelen oost (Wp)",
           "pv_south_wp": "PV-panelen zuid (Wp)",
           "pv_west_wp": "PV-panelen west (Wp)",
@@ -16,6 +18,8 @@
         "data_description": {
           "ventilation_type": "Type ventilatiesysteem in de woning voor berekening van ventilatieverliezen",
           "ceiling_height": "Gemiddelde plafondhoogte voor berekening van gebouwvolume (standaard: 2,5m)",
+          "thermal_mass_class": "Bouwgewichtklasse, gebruikt door de herontworpen optimizer (optimize_v2) in plaats van de op het energielabel gebaseerde schatting (standaard: medium)",
+          "emitter_type": "Hoe het afgiftevermogen van de warmteafgever afneemt bij lagere aanvoertemperatuur, gebruikt door de herontworpen optimizer (optimize_v2) (standaard: radiator)",
           "pv_east_wp": "Totaal piekvermogen van op het oosten gerichte PV-panelen in Wp",
           "pv_south_wp": "Totaal piekvermogen van op het zuiden gerichte PV-panelen in Wp",
           "pv_west_wp": "Totaal piekvermogen van op het westen gerichte PV-panelen in Wp",
@@ -236,6 +240,20 @@
         "heat_recovery_50": "WTW 50% rendement",
         "heat_recovery_70": "WTW 70% rendement",
         "heat_recovery_90": "WTW 90% rendement"
+      }
+    },
+    "thermal_mass_class": {
+      "options": {
+        "light": "Licht (houtskeletbouw)",
+        "medium": "Middel (spouwmuur + betonvloer)",
+        "heavy": "Zwaar (metselwerk/beton door de hele woning)"
+      }
+    },
+    "emitter_type": {
+      "options": {
+        "radiator": "Radiator",
+        "underfloor": "Vloerverwarming",
+        "fan_coil": "Ventilatorconvector"
       }
     }
   },
