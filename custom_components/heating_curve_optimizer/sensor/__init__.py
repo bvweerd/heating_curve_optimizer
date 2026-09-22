@@ -80,13 +80,13 @@ async def async_setup_entry(
     """Set up sensors from a config entry."""
     _LOGGER.debug("Setting up sensors for entry %s", entry.entry_id)
 
-    # Get coordinators and config from hass.data
-    entry_data = hass.data[DOMAIN][entry.entry_id]
-    weather_coordinator = entry_data["weather_coordinator"]
-    heat_coordinator = entry_data["heat_coordinator"]
-    optimization_coordinator = entry_data["optimization_coordinator"]
-    device = entry_data["device"]
-    config = entry_data["config"]
+    # Get coordinators and config from the entry's runtime data
+    runtime_data = entry.runtime_data
+    weather_coordinator = runtime_data.weather_coordinator
+    heat_coordinator = runtime_data.heat_coordinator
+    optimization_coordinator = runtime_data.optimization_coordinator
+    device = runtime_data.device
+    config = runtime_data.config
 
     # Sensor list
     entities = []
@@ -289,9 +289,11 @@ async def async_setup_entry(
                 entry=entry,
                 heat_loss_sensor=heat_loss_entity,
                 thermal_power_sensor=power_sensor,
-                outdoor_sensor=weather_coordinator.data.get("outdoor_sensor_id")
-                if weather_coordinator.data
-                else None,
+                outdoor_sensor=(
+                    weather_coordinator.data.get("outdoor_sensor_id")
+                    if weather_coordinator.data
+                    else None
+                ),
                 indoor_sensor=config.get("indoor_temperature_sensor"),
                 supply_temp_sensor=supply_sensor,
                 cop_sensor=cop_entity,
@@ -353,7 +355,7 @@ async def async_setup_entry(
     # optimizer decide" sensors for a first cut - not the full catalog of
     # diagnostic/shadow/calibration sensors the main entry gets (see
     # docs/redesign/REDESIGN.md phase 5c).
-    for subentry_id, zone_data in entry_data.get("zones", {}).items():
+    for subentry_id, zone_data in runtime_data.zones.items():
         zone_optimization_coordinator = zone_data.get("optimization_coordinator")
         zone_heat_coordinator = zone_data.get("heat_coordinator")
         zone_device = zone_data.get("device")

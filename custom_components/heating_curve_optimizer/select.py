@@ -34,7 +34,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_CONTROL_MODE, CONTROL_MODES, DOMAIN
+from .const import CONF_CONTROL_MODE, CONTROL_MODES
 from .coordinator import OptimizationCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,11 +50,11 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up select entities from a config entry."""
-    entry_data = hass.data[DOMAIN][entry.entry_id]
-    optimization_coordinator: OptimizationCoordinator = entry_data[
-        "optimization_coordinator"
-    ]
-    device: DeviceInfo = entry_data["device"]
+    runtime_data = entry.runtime_data
+    optimization_coordinator: OptimizationCoordinator = (
+        runtime_data.optimization_coordinator
+    )
+    device: DeviceInfo = runtime_data.device
 
     async_add_entities(
         [HeatingControlModeSelect(hass, entry, device, optimization_coordinator)]

@@ -57,9 +57,9 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the climate entity from a config entry."""
-    entry_data = hass.data[DOMAIN][entry.entry_id]
-    heat_coordinator: HeatCalculationCoordinator = entry_data["heat_coordinator"]
-    device: DeviceInfo = entry_data["device"]
+    runtime_data = entry.runtime_data
+    heat_coordinator: HeatCalculationCoordinator = runtime_data.heat_coordinator
+    device: DeviceInfo = runtime_data.device
 
     async_add_entities([HeatingOptimizerClimate(hass, entry, device, heat_coordinator)])
 

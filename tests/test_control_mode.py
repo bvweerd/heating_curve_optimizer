@@ -8,6 +8,7 @@ switching control_mode skip a full entry reload.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -17,7 +18,6 @@ from custom_components.heating_curve_optimizer import _update_listener
 from custom_components.heating_curve_optimizer.const import (
     CONF_CONTROL_MODE,
     DEFAULT_CONTROL_MODE,
-    DOMAIN,
     MODE_FOLLOW_CURVE,
     MODE_LEGACY,
     MODE_OPTIMIZE_V2,
@@ -182,10 +182,8 @@ async def test_update_listener_skips_reload_for_control_mode_only_change(
     entry = MagicMock()
     entry.entry_id = "test_entry_reload"
     entry.options = {CONF_CONTROL_MODE: MODE_OPTIMIZE_V2}
+    entry.runtime_data = SimpleNamespace(options={CONF_CONTROL_MODE: MODE_LEGACY})
 
-    hass.data[DOMAIN] = {
-        entry.entry_id: {"options_snapshot": {CONF_CONTROL_MODE: MODE_LEGACY}}
-    }
     hass.config_entries.async_reload = MagicMock(
         side_effect=AssertionError(
             "should not reload for a _NO_RELOAD_KEYS-only change"
@@ -195,7 +193,9 @@ async def test_update_listener_skips_reload_for_control_mode_only_change(
     await _update_listener(hass, entry)
 
     hass.config_entries.async_reload.assert_not_called()
-    assert hass.data[DOMAIN][entry.entry_id]["options_snapshot"] == entry.options
+    # The snapshot on runtime_data is never mutated by the listener itself -
+    # only a reload (which rebuilds runtime_data from scratch) refreshes it.
+    assert entry.runtime_data.options == {CONF_CONTROL_MODE: MODE_LEGACY}
 
 
 @pytest.mark.asyncio
@@ -203,8 +203,8 @@ async def test_update_listener_reloads_for_other_option_changes(hass: HomeAssist
     entry = MagicMock()
     entry.entry_id = "test_entry_reload_2"
     entry.options = {"area_m2": 200}
+    entry.runtime_data = SimpleNamespace(options={"area_m2": 150})
 
-    hass.data[DOMAIN] = {entry.entry_id: {"options_snapshot": {"area_m2": 150}}}
     reload_calls = []
 
     async def _fake_reload(entry_id):

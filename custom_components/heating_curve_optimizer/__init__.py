@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +49,33 @@ SERVICE_ENTRY_ID = "entry_id"
 _SERVICE_RESET_SCHEMA = vol.Schema({vol.Optional(SERVICE_ENTRY_ID): cv.string})
 
 
+@dataclass
+class HeatingCurveOptimizerData:
+    """Runtime data stored on the config entry (`entry.runtime_data`).
+
+    Mirrors battery_controller's `BatteryControllerData` - a typed
+    dataclass on the entry itself instead of a loosely-typed dict nested
+    under `hass.data[DOMAIN][entry.entry_id]` (quality_scale's
+    `runtime-data` rule). `ConfigEntry` has no `__slots__` in every HA
+    release this integration has been tested against, so assigning this
+    attribute dynamically is safe even where `runtime_data` predates the
+    installed HA's own `ConfigEntry` class.
+    """
+
+    weather_coordinator: WeatherDataCoordinator
+    heat_coordinator: HeatCalculationCoordinator
+    optimization_coordinator: OptimizationCoordinator
+    config: dict[str, Any]
+    device: DeviceInfo
+    zones: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # entry.options exactly as they stood at setup - _update_listener compares
+    # the live entry.options against this (outside _NO_RELOAD_KEYS) to tell a
+    # runtime-only change from one that needs a reload. Never mutated after
+    # setup: a reload rebuilds this dataclass from scratch with a fresh
+    # snapshot, so there is nothing to keep in sync in between.
+    options: dict[str, Any] = field(default_factory=dict)
+
+
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the base integration (no YAML)."""
     hass.data.setdefault(DOMAIN, {})
@@ -65,12 +93,11 @@ async def _async_handle_reset_thermal_calibration(
     hand. Mirrors battery_controller's per-direction reset services.
     """
     requested_entry_id = call.data.get(SERVICE_ENTRY_ID)
-    entry_ids = list(hass.data.get(DOMAIN, {}).keys())
+    entries = hass.config_entries.async_entries(DOMAIN)
     matched = [
-        entry_id
-        for entry_id in entry_ids
-        if entry_id not in ("runtime", "entities")
-        and (requested_entry_id is None or entry_id == requested_entry_id)
+        entry
+        for entry in entries
+        if requested_entry_id is None or entry.entry_id == requested_entry_id
     ]
     if not matched:
         _LOGGER.warning(
@@ -79,14 +106,18 @@ async def _async_handle_reset_thermal_calibration(
         )
         return
 
-    for entry_id in matched:
-        entry_data = hass.data[DOMAIN].get(entry_id)
-        if not entry_data:
+    for entry in matched:
+        runtime_data: HeatingCurveOptimizerData | None = getattr(
+            entry, "runtime_data", None
+        )
+        if runtime_data is None:
+            _LOGGER.warning(
+                "Skipping thermal calibration reset for entry %s: "
+                "runtime_data missing",
+                entry.entry_id,
+            )
             continue
-        optimization_coordinator = entry_data.get("optimization_coordinator")
-        if optimization_coordinator is None:
-            continue
-        await optimization_coordinator.async_reset_thermal_calibration()
+        await runtime_data.optimization_coordinator.async_reset_thermal_calibration()
 
 
 def _async_register_services(hass: HomeAssistant) -> None:
@@ -211,20 +242,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         hass.async_create_task(_trigger_zone_first_optimization())
 
-    # Store coordinators and config in hass.data
-    hass.data[DOMAIN][entry.entry_id] = {
-        "weather_coordinator": weather_coordinator,
-        "heat_coordinator": heat_coordinator,
-        "optimization_coordinator": optimization_coordinator,
-        "config": config,
-        "entry": entry,
-        "device": device,
-        "zones": zones,
-        # entry.options exactly as they stood at setup - _update_listener
-        # compares against this to tell a _NO_RELOAD_KEYS-only change from
-        # one that actually needs a reload.
-        "options_snapshot": dict(entry.options),
-    }
+    # Store coordinators and config on the entry itself (quality_scale's
+    # runtime-data rule) rather than in hass.data[DOMAIN][entry.entry_id].
+    entry.runtime_data = HeatingCurveOptimizerData(
+        weather_coordinator=weather_coordinator,
+        heat_coordinator=heat_coordinator,
+        optimization_coordinator=optimization_coordinator,
+        config=config,
+        device=device,
+        zones=zones,
+        options=dict(entry.options),
+    )
 
     _LOGGER.debug("Coordinators initialized successfully")
 
@@ -240,23 +268,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle an options update - reload, unless only _NO_RELOAD_KEYS changed."""
-    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-    previous_options = entry_data.get("options_snapshot", {}) if entry_data else {}
-    changed_keys = {
-        key
-        for key in set(previous_options) | set(entry.options)
-        if previous_options.get(key) != entry.options.get(key)
-    }
+    """Handle an options update - reload, unless only _NO_RELOAD_KEYS changed.
 
-    if entry_data is not None:
-        entry_data["options_snapshot"] = dict(entry.options)
+    `entry.runtime_data.options` is the snapshot taken at setup, never
+    mutated afterwards (mirrors battery_controller's `_update_listener`): a
+    reload always rebuilds it fresh, so there is nothing to keep in sync
+    between reloads. `entry.runtime_data` is only unset for an entry whose
+    setup never finished (e.g. it errored before reaching the end of
+    `async_setup_entry`) - nothing to reload-guard for in that case either.
+    """
+    runtime_data: HeatingCurveOptimizerData | None = getattr(
+        entry, "runtime_data", None
+    )
+    if runtime_data is None:
+        return
 
-    if changed_keys and changed_keys.issubset(_NO_RELOAD_KEYS):
+    old_options = runtime_data.options
+    needs_reload = any(
+        old_options.get(key) != entry.options.get(key)
+        for key in (set(old_options) | set(entry.options)) - _NO_RELOAD_KEYS
+    )
+
+    if not needs_reload:
         _LOGGER.debug(
-            "Entry %s options changed (%s) - no reload needed, already applied live",
+            "Entry %s options changed but only in _NO_RELOAD_KEYS - "
+            "no reload needed, already applied live",
             entry.entry_id,
-            changed_keys,
         )
         return
 
@@ -269,17 +306,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.info("Unloading entry %s", entry.entry_id)
 
     # Shutdown coordinators
-    entry_data = hass.data[DOMAIN].get(entry.entry_id)
-    if entry_data:
-        heat_coordinator = entry_data.get("heat_coordinator")
-        if heat_coordinator:
-            await heat_coordinator.async_shutdown()
+    runtime_data: HeatingCurveOptimizerData | None = getattr(
+        entry, "runtime_data", None
+    )
+    if runtime_data is not None:
+        await runtime_data.heat_coordinator.async_shutdown()
+        await runtime_data.optimization_coordinator.async_shutdown()
 
-        optimization_coordinator = entry_data.get("optimization_coordinator")
-        if optimization_coordinator:
-            await optimization_coordinator.async_shutdown()
-
-        for zone_data in entry_data.get("zones", {}).values():
+        for zone_data in runtime_data.zones.values():
             zone_heat_coordinator = zone_data.get("heat_coordinator")
             if zone_heat_coordinator:
                 await zone_heat_coordinator.async_shutdown()
@@ -289,15 +323,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        hass.data[DOMAIN].pop("entities", None)
-        hass.data[DOMAIN].pop(entry.entry_id, None)
-        runtime = hass.data[DOMAIN].get("runtime")
+        runtime = hass.data.get(DOMAIN, {}).get("runtime")
         if runtime and entry.entry_id in runtime:
             runtime.pop(entry.entry_id, None)
             if not runtime:
                 hass.data[DOMAIN].pop("runtime")
         _LOGGER.debug("Successfully unloaded entry %s", entry.entry_id)
-        if not hass.data[DOMAIN]:
+        if DOMAIN in hass.data and not hass.data[DOMAIN]:
             hass.data.pop(DOMAIN)
     else:
         _LOGGER.warning("Failed to unload entry %s", entry.entry_id)

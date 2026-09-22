@@ -152,9 +152,9 @@ async def async_setup_entry(
         return
 
     # Check if coordinators are available
-    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-    heat_coordinator = entry_data.get("heat_coordinator")
-    device = entry_data.get("device")
+    runtime_data = getattr(entry, "runtime_data", None)
+    heat_coordinator = runtime_data.heat_coordinator if runtime_data else None
+    device = runtime_data.device if runtime_data else None
 
     if heat_coordinator and device:
         # Use coordinator-based binary sensor
@@ -172,7 +172,7 @@ async def async_setup_entry(
         # coordinator gets the same sensor, associated with its own
         # subentry/device via config_subentry_id (see __init__.py's zone
         # setup and battery_controller's per-battery/per-PV-array pattern).
-        for subentry_id, zone_data in entry_data.get("zones", {}).items():
+        for subentry_id, zone_data in runtime_data.zones.items():
             zone_heat_coordinator = zone_data.get("heat_coordinator")
             zone_device = zone_data.get("device")
             if not zone_heat_coordinator or not zone_device:

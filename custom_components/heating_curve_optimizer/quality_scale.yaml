@@ -81,13 +81,20 @@ rules:
       passes; number.py, select.py, binary_sensor.py and climate.py set it
       directly.
   runtime-data:
-    status: todo
+    status: done
     comment: |
-      Still hass.data[DOMAIN][entry.entry_id] = {...} rather than
-      entry.runtime_data. Deliberately deferred (docs/redesign/
-      REDESIGN.md phase 0) to keep this redesign's diff bounded; the dict
-      access pattern is used consistently throughout, so migrating is
-      mechanical but touches every platform file.
+      entry.runtime_data now holds a HeatingCurveOptimizerData dataclass
+      (__init__.py), mirroring battery_controller's BatteryControllerData -
+      replaces the old hass.data[DOMAIN][entry.entry_id] dict across
+      __init__.py, sensor/__init__.py, binary_sensor.py, select.py,
+      climate.py and diagnostics.py. Confirmed safe on every HA release
+      this integration targets: ConfigEntry has no __slots__, so assigning
+      the attribute works even where the installed HA's own ConfigEntry
+      class predates `runtime_data` (this repo's test environment is
+      pinned to HA 2024.3.3, which is one such release). hass.data[DOMAIN]
+      is still used for the separate "runtime" manual-override dict
+      (number.py's live target-temperature/hysteresis writes), which is
+      out of scope for this rule.
   test-before-configure:
     status: todo
     comment: config_flow.py does not verify sensor/API reachability before async_create_entry.
@@ -217,8 +224,11 @@ rules:
     status: todo
     comment: UpdateFailed calls use plain strings, not translation_domain/translation_key.
   icon-translations:
-    status: todo
-    comment: No icons.json.
+    status: done
+    comment: |
+      icons.json (fase 5c, this session) maps every entity's
+      translation_key to its mdi icon, cross-checked against each
+      platform's icon=/`_attr_icon` call sites and translation_key values.
   reconfiguration-flow:
     status: todo
     comment: Not verified this session.
