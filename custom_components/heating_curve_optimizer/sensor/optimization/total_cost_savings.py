@@ -81,7 +81,7 @@ class TotalCostSavingsSensor(RestoreSensor, BaseUtilitySensor):  # type: ignore[
 
     async def async_added_to_hass(self) -> None:
         """Restore state when added to hass."""
-        await super().async_added_to_hass()  # type: ignore[no-untyped-call]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
+        await super().async_added_to_hass()
 
         # Restore previous state
         last_state = await self.async_get_last_sensor_data()

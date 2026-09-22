@@ -11,7 +11,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
     RestoreSensor,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.event import (
     async_track_time_interval,
@@ -36,7 +36,7 @@ class HeatPumpEnergyDailySensor(RestoreSensor, BaseUtilitySensor):  # type: igno
         device: DeviceInfo,
         *,
         thermal_power_sensor: str,
-    ):
+    ) -> None:
         """Initialize the sensor."""
         BaseUtilitySensor.__init__(
             self,
@@ -117,14 +117,14 @@ class HeatPumpEnergyDailySensor(RestoreSensor, BaseUtilitySensor):  # type: igno
             self._unsub_state = None
         await super().async_will_remove_from_hass()
 
-    def _schedule_daily_reset(self):
+    def _schedule_daily_reset(self) -> None:
         """Schedule reset at midnight."""
         now = dt_util.utcnow()
         # Calculate next midnight
         tomorrow = now.date() + timedelta(days=1)
         next_midnight = dt_util.as_utc(datetime.combine(tomorrow, datetime.min.time()))
 
-        async def _reset_at_midnight(_now):
+        async def _reset_at_midnight(_now: datetime | None) -> None:
             """Reset counter at midnight."""
             _LOGGER.info("Midnight reset: Daily heat pump energy counter")
             self._daily_total = 0.0
@@ -141,7 +141,7 @@ class HeatPumpEnergyDailySensor(RestoreSensor, BaseUtilitySensor):  # type: igno
             lambda: self.hass.async_create_task(_reset_at_midnight(None)),
         )
 
-    async def _handle_state_change(self, event):
+    async def _handle_state_change(self, event: Event) -> None:
         """Handle state change of thermal power sensor."""
         await self._async_update_energy()
 
@@ -193,7 +193,7 @@ class HeatPumpEnergyDailySensor(RestoreSensor, BaseUtilitySensor):  # type: igno
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra state attributes."""
-        attrs = {}
+        attrs: dict[str, Any] = {}
         if self._last_update:
             attrs["last_update"] = self._last_update.isoformat()
         if self._last_reset:
