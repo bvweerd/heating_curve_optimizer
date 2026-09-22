@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from ..const import (
@@ -395,10 +397,10 @@ async def async_setup_entry(
 def _setup_event_driven_sensors(
     hass: HomeAssistant,
     entry: ConfigEntry,
-    config: dict,
-    device,
-    entities: list,
-    weather_coordinator,
+    config: dict[str, Any],
+    device: DeviceInfo,
+    entities: list[Any],
+    weather_coordinator: Any,
 ) -> None:
     """Set up event-driven sensors that track state changes in real-time."""
 
@@ -434,7 +436,10 @@ def _setup_event_driven_sensors(
         )
 
         # Find outdoor temperature sensor reference
-        outdoor_sensor_ref = None
+        # `: Any` - holds either a live entity reference or an entity_id
+        # string fallback (a common HA idiom for cross-referencing an
+        # entity that may or may not exist yet).
+        outdoor_sensor_ref: Any = None
         for entity in entities:
             if isinstance(entity, CoordinatorOutdoorTemperatureSensor):
                 outdoor_sensor_ref = entity
@@ -464,7 +469,7 @@ def _setup_event_driven_sensors(
                 break
 
         # Find heating curve offset sensor
-        offset_sensor = None
+        offset_sensor: Any = None
         for entity in entities:
             if isinstance(entity, CoordinatorHeatingCurveOffsetSensor):
                 offset_sensor = entity
@@ -473,7 +478,7 @@ def _setup_event_driven_sensors(
             offset_sensor = "sensor.heating_curve_optimizer_heating_curve_offset"
 
         # Find calculated supply temperature sensor
-        calculated_supply_sensor = None
+        calculated_supply_sensor: Any = None
         for entity in entities:
             if isinstance(entity, CoordinatorCalculatedSupplyTemperatureSensor):
                 calculated_supply_sensor = entity
@@ -525,9 +530,9 @@ def _setup_event_driven_sensors(
 def _setup_daily_utility_sensors(
     hass: HomeAssistant,
     entry: ConfigEntry,
-    config: dict,
-    device,
-    entities: list,
+    config: dict[str, Any],
+    device: DeviceInfo,
+    entities: list[Any],
 ) -> None:
     """Set up daily utility sensors that track cumulative energy (kWh)."""
 
