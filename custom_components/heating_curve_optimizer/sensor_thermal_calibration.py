@@ -21,7 +21,7 @@ from .calibration import MIN_SAMPLES_TO_APPLY
 from .entity import BaseUtilitySensor
 
 
-class ThermalCalibrationSensor(CoordinatorEntity, BaseUtilitySensor):
+class ThermalCalibrationSensor(CoordinatorEntity, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Sample count and status of the thermal calibration fit."""
 
     def __init__(

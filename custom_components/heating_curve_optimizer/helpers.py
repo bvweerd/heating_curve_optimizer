@@ -135,7 +135,7 @@ def extract_price_forecast_with_interval(state: State) -> tuple[list[float], int
 
     hour = now.hour
 
-    forecast: list[float] = []
+    forecast = []
     raw_today = state.attributes.get("raw_today")
     if isinstance(raw_today, list):
         for entry in raw_today[hour:]:

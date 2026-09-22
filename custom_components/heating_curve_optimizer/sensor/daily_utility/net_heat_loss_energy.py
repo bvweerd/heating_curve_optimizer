@@ -24,7 +24,7 @@ from ...entity import BaseUtilitySensor
 _LOGGER = logging.getLogger(__name__)
 
 
-class NetHeatLossEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
+class NetHeatLossEnergyDailySensor(RestoreSensor, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Daily utility sensor tracking net heat loss energy in kWh."""
 
     def __init__(

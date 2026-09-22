@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from ...entity import BaseUtilitySensor
 
 
-class CoordinatorOutdoorTemperatureSensor(CoordinatorEntity, BaseUtilitySensor):
+class CoordinatorOutdoorTemperatureSensor(CoordinatorEntity, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Outdoor temperature sensor using weather coordinator."""
 
     def __init__(self, coordinator, name: str, unique_id: str, device: DeviceInfo):

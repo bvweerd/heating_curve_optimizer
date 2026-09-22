@@ -24,7 +24,7 @@ from ...entity import BaseUtilitySensor
 _LOGGER = logging.getLogger(__name__)
 
 
-class HeatPumpEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
+class HeatPumpEnergyDailySensor(RestoreSensor, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Daily utility sensor tracking heat pump generated thermal energy in kWh."""
 
     def __init__(

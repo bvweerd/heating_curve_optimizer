@@ -76,7 +76,7 @@ class HeatingCurveOptimizerData:
     options: dict[str, Any] = field(default_factory=dict)
 
 
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     """Set up the base integration (no YAML)."""
     hass.data.setdefault(DOMAIN, {})
     _LOGGER.info("Initialized Heating Curve Optimizer")
@@ -168,7 +168,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Trigger first optimization async (don't block startup)
     # This allows sensors to be available immediately while optimization runs in background
-    async def _trigger_first_optimization():
+    async def _trigger_first_optimization() -> None:
         """Trigger first optimization after a short delay."""
         await asyncio.sleep(5)  # Give sensors time to initialize
         _LOGGER.info("Triggering first optimization run")
@@ -321,7 +321,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if zone_optimization_coordinator:
                 await zone_optimization_coordinator.async_shutdown()
 
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unload_ok = bool(await hass.config_entries.async_unload_platforms(entry, PLATFORMS))
     if unload_ok:
         runtime = hass.data.get(DOMAIN, {}).get("runtime")
         if runtime and entry.entry_id in runtime:

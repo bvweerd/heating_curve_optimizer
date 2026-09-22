@@ -88,7 +88,7 @@ DEFAULT_CEILING_HEIGHT = 2.5  # meters
 # Ventilation types and their effective Air Changes per Hour (ACH)
 # ACH represents the volume of air exchanged per hour
 # For heat recovery systems, effective ACH accounts for recovered heat
-VENTILATION_TYPES = {
+VENTILATION_TYPES: dict[str, dict[str, float | str]] = {
     "none": {"ach": 0.2, "name_nl": "Geen/minimaal", "name_en": "None/minimal"},
     "natural_low": {
         "ach": 0.5,
@@ -229,7 +229,7 @@ def calculate_ventilation_htc(
     if vent_data is None:
         # Fallback to standard natural ventilation
         vent_data = VENTILATION_TYPES[DEFAULT_VENTILATION_TYPE]
-    ach = vent_data["ach"]
+    ach = float(vent_data["ach"])
 
     # Calculate building volume
     volume = area_m2 * ceiling_height

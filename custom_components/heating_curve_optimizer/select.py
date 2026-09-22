@@ -62,7 +62,7 @@ async def async_setup_entry(
 
 
 class HeatingControlModeSelect(
-    CoordinatorEntity[OptimizationCoordinator], SelectEntity
+    CoordinatorEntity[OptimizationCoordinator], SelectEntity  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
 ):
     """Select entity choosing which optimizer drives the heating curve."""
 

@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from ...entity import BaseUtilitySensor
 
 
-class CoordinatorWindowSolarGainSensor(CoordinatorEntity, BaseUtilitySensor):
+class CoordinatorWindowSolarGainSensor(CoordinatorEntity, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Solar gain sensor using heat calculation coordinator."""
 
     def __init__(

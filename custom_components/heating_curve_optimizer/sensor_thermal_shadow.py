@@ -25,7 +25,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .entity import BaseUtilitySensor
 
 
-class ThermalShadowOffsetSensor(CoordinatorEntity, BaseUtilitySensor):
+class ThermalShadowOffsetSensor(CoordinatorEntity, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """What the redesigned optimizer would set the offset to right now.
 
     Diagnostic only - does not affect `sensor.heating_curve_offset` (the
@@ -111,7 +111,7 @@ class ThermalShadowOffsetSensor(CoordinatorEntity, BaseUtilitySensor):
         }
 
 
-class ThermalShadowCostComparisonSensor(CoordinatorEntity, BaseUtilitySensor):
+class ThermalShadowCostComparisonSensor(CoordinatorEntity, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Forecast cost of the redesigned optimizer's plan vs. the legacy one.
 
     Positive means the redesigned optimizer expects to be cheaper over the

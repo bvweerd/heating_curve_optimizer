@@ -206,7 +206,7 @@ class EmitterConfig:
         if delta_t <= 0 or self.nominal_delta_t <= 0:
             return 0.0
         ratio = delta_t / self.nominal_delta_t
-        return self.nominal_power_kw * ratio**self.exponent
+        return float(self.nominal_power_kw * ratio**self.exponent)
 
     @classmethod
     def sized_to_building(

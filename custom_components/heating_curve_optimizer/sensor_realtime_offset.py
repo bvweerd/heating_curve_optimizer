@@ -18,7 +18,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .entity import BaseUtilitySensor
 
 
-class RealtimeOffsetAdjustmentSensor(CoordinatorEntity, BaseUtilitySensor):
+class RealtimeOffsetAdjustmentSensor(CoordinatorEntity, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """The real-time controller's current adjustment to the planned offset."""
 
     def __init__(

@@ -88,7 +88,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class BaseTemperatureNumber(NumberEntity, RestoreEntity):
+class BaseTemperatureNumber(NumberEntity, RestoreEntity):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Base class for temperature-related number entities."""
 
     _attr_has_entity_name = True

@@ -27,19 +27,25 @@ class CoordinatorHeatingCurveOffsetSensor(BaseOptimizationSensor):
     )
 
     def __init__(
-        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
-    ):
+        self,
+        coordinator: Any,
+        name: str,
+        unique_id: str,
+        icon: str,
+        device: DeviceInfo,
+    ) -> None:
         """Initialize the sensor."""
         super().__init__(
             coordinator, name, unique_id, icon, device, unit="°C", device_class=None
         )
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | None:
         """Return optimized offset."""
         if not self.coordinator.data:
             return None
-        return self.coordinator.data.get("optimized_offset")
+        value = self.coordinator.data.get("optimized_offset")
+        return float(value) if value is not None else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

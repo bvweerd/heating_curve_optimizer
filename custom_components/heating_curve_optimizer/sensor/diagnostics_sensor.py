@@ -10,7 +10,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from ..entity import BaseUtilitySensor
 
 
-class CoordinatorDiagnosticsSensor(CoordinatorEntity, BaseUtilitySensor):
+class CoordinatorDiagnosticsSensor(CoordinatorEntity, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Diagnostics sensor with all coordinator data."""
 
     def __init__(

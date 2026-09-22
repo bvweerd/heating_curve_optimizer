@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from ...entity import BaseUtilitySensor
 
 
-class CoordinatorNetHeatLossSensor(CoordinatorEntity, BaseUtilitySensor):
+class CoordinatorNetHeatLossSensor(CoordinatorEntity, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Net heat loss sensor using heat calculation coordinator."""
 
     _unrecorded_attributes = frozenset({"forecast"})

@@ -15,7 +15,7 @@ import logging
 _LOGGER = logging.getLogger(__name__)
 
 
-class BaseUtilitySensor(SensorEntity, RestoreEntity):
+class BaseUtilitySensor(SensorEntity, RestoreEntity):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     def __init__(
         self,
         name: str | None,
@@ -45,7 +45,15 @@ class BaseUtilitySensor(SensorEntity, RestoreEntity):
         self._last_unavailable_reason: str | None = None
 
     @property
-    def native_value(self) -> float:
+    def native_value(self) -> float | None:
+        """Return the sensor's value.
+
+        Declared `float | None` (never actually None here - see below) so
+        that CoordinatorEntity subclasses overriding this property (which
+        genuinely do return None while coordinator data isn't available
+        yet, deferring to their own `available` property) don't violate
+        Liskov substitution under mypy --strict.
+        """
         return float(round(float(self._attr_native_value or 0.0), 8))
 
     async def async_added_to_hass(self):

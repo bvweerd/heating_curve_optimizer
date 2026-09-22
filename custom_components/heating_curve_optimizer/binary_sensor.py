@@ -23,7 +23,7 @@ _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
 
-class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity):
+class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Binary sensor that indicates heat demand using coordinator."""
 
     _attr_device_class = BinarySensorDeviceClass.HEAT
@@ -77,7 +77,7 @@ class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity):
         return attrs
 
 
-class HeatDemandBinarySensor(BinarySensorEntity):
+class HeatDemandBinarySensor(BinarySensorEntity):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Binary sensor that indicates whether the heat pump has demand."""
 
     _attr_device_class = BinarySensorDeviceClass.HEAT

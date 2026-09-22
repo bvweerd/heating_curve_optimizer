@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import aiohttp
 from homeassistant.core import HomeAssistant, Event
@@ -169,7 +169,7 @@ def _calculate_cop(
     return max(0.5, cop)
 
 
-class WeatherDataCoordinator(DataUpdateCoordinator):
+class WeatherDataCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Coordinator for weather and radiation data from open-meteo.com."""
 
     def __init__(self, hass: HomeAssistant):
@@ -268,7 +268,7 @@ class WeatherDataCoordinator(DataUpdateCoordinator):
         return result
 
 
-class HeatCalculationCoordinator(DataUpdateCoordinator):
+class HeatCalculationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Coordinator for heat loss, solar gain, and PV production calculations."""
 
     def __init__(
@@ -605,7 +605,7 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):
         return pv_forecast
 
 
-class OptimizationCoordinator(DataUpdateCoordinator):
+class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Coordinator for heating curve optimization using dynamic programming."""
 
     def __init__(
@@ -627,7 +627,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         self._entry_id = entry_id
         self._price_sensor = config.get(CONF_CONSUMPTION_PRICE_SENSOR)
         self._unsub = None
-        self._last_price = None
+        self._last_price: float | None = None
         self._current_buffer: float = 0.0  # Track actual buffer state
         self._current_offset: int = 0  # Track current offset for change constraint
         # Which optimizer drives optimized_offset (phase 3, REDESIGN.md).
@@ -1168,7 +1168,10 @@ class OptimizationCoordinator(DataUpdateCoordinator):
             # carried forward and silently compounding.
             self._realtime_controller.reset()
 
-        return result
+        # async_add_executor_job's return type is Any in this environment
+        # (HomeAssistant is untyped - no py.typed here); result is genuinely
+        # the dict[str, Any] _run_optimization declares.
+        return cast(dict[str, Any], result)
 
     def _run_optimization(
         self,
@@ -1460,12 +1463,22 @@ class OptimizationCoordinator(DataUpdateCoordinator):
 
             # Phase 4 (REDESIGN.md): once calibration has learned enough
             # from real operation, it overrides the label-based prior.
+            # `applied` already guarantees both learned_* fields are set
+            # (calibration.py); the is-not-None checks here just let mypy
+            # see that too, rather than trusting the property's own name.
             calibration = self._calibration
-            if calibration is not None and calibration.applied:
-                building.ua_w_per_k = calibration.learned_ua_w_per_k
-                building.thermal_mass_kwh_per_k = (
-                    calibration.learned_thermal_mass_kwh_per_k
-                )
+            learned_ua = calibration.learned_ua_w_per_k if calibration else None
+            learned_mass = (
+                calibration.learned_thermal_mass_kwh_per_k if calibration else None
+            )
+            if (
+                calibration is not None
+                and calibration.applied
+                and learned_ua is not None
+                and learned_mass is not None
+            ):
+                building.ua_w_per_k = learned_ua
+                building.thermal_mass_kwh_per_k = learned_mass
                 if building.ua_w_per_k > 0:
                     building.time_constant_hours = building.thermal_mass_kwh_per_k / (
                         building.ua_w_per_k / 1000.0

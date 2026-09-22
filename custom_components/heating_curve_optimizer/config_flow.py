@@ -255,7 +255,7 @@ else:
     HeatingZoneSubentryFlow = None  # type: ignore[assignment,misc]
 
 
-class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
+class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg, misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Handle a config flow for Heating Curve Optimizer."""
 
     VERSION = 1
@@ -886,7 +886,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return HeatingCurveOptimizerOptionsFlowHandler(config_entry)
 
 
-class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
+class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Handle updates to a config entry (options)."""
 
     def __init__(self, config_entry):
