@@ -6,11 +6,16 @@ from typing import Any
 from homeassistant import config_entries
 
 try:
-    from homeassistant.config_entries import ConfigFlowContext, ConfigFlowResult
+    from homeassistant.config_entries import (
+        ConfigFlowContext,
+        ConfigFlowResult,
+        SubentryFlowResult,
+    )
 except ImportError:
     # For older versions of Home Assistant that don't have these types
     ConfigFlowContext = dict  # type: ignore
     ConfigFlowResult = dict[str, Any]  # type: ignore
+    SubentryFlowResult = dict[str, Any]  # type: ignore
 from homeassistant.core import callback
 from homeassistant.helpers.selector import selector
 import voluptuous as vol
@@ -75,6 +80,7 @@ from .const import (
     ENERGY_LABELS,
     SOURCE_TYPES,
     VENTILATION_TYPES,
+    ZONE_SUBENTRY_TYPE,
 )
 
 STEP_SELECT_SOURCES = "select_sources"
@@ -83,10 +89,158 @@ STEP_BASIC = "basic"
 STEP_HEATING_CURVE_SETTINGS = "heating_curve_settings"
 
 
+def _build_zone_subentry_schema(
+    defaults: dict[str, Any] | None = None,
+) -> vol.Schema:
+    """Build the schema for a heating-zone subentry (phase 5c, REDESIGN.md).
+
+    Deliberately narrow: only what plausibly differs *between rooms* in the
+    same home (floor area, insulation, its own thermostat, its own target
+    temperature). Price sensor, heating curve limits and heat pump
+    parameters are shared from the main entry - see const.py's
+    ZONE_SUBENTRY_TYPE comment.
+    """
+    defaults = defaults or {}
+    return vol.Schema(
+        {
+            vol.Required("name", default=defaults.get("name")): str,
+            vol.Required(CONF_AREA_M2, default=defaults.get(CONF_AREA_M2)): vol.Coerce(
+                float
+            ),
+            vol.Required(
+                CONF_ENERGY_LABEL, default=defaults.get(CONF_ENERGY_LABEL)
+            ): selector(
+                {
+                    "select": {
+                        "options": ENERGY_LABELS,
+                        "mode": "dropdown",
+                        "custom_value": False,
+                    }
+                }
+            ),
+            vol.Optional(
+                CONF_TARGET_INDOOR_TEMP,
+                default=defaults.get(
+                    CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP
+                ),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_INDOOR_TEMPERATURE_SENSOR,
+                default=defaults.get(CONF_INDOOR_TEMPERATURE_SENSOR),
+            ): selector(
+                {"entity": {"domain": "sensor", "device_class": "temperature"}}
+            ),
+        }
+    )
+
+
+def _validate_zone_subentry(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Validate and normalize a heating-zone subentry's input."""
+    name = str(user_input["name"]).strip()
+    if not name:
+        raise vol.Invalid("name_required")
+    area_m2 = float(user_input[CONF_AREA_M2])
+    if area_m2 <= 0:
+        raise vol.Invalid("area_must_be_positive")
+    return {
+        "name": name,
+        CONF_AREA_M2: area_m2,
+        CONF_ENERGY_LABEL: user_input[CONF_ENERGY_LABEL],
+        CONF_TARGET_INDOOR_TEMP: float(
+            user_input.get(CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP)
+        ),
+        CONF_INDOOR_TEMPERATURE_SENSOR: user_input.get(CONF_INDOOR_TEMPERATURE_SENSOR),
+    }
+
+
+# ConfigSubentryFlow (and ConfigEntry.subentries) landed in HA well after
+# this integration's floor version, and is not available at all in the HA
+# release this repo's test environment can install (2024.3.x - a package-
+# index ceiling, not a real HA release date). Rather than hard-depend on
+# it and break setup entirely on any HA old enough to lack it, the zone-
+# subentry feature (phase 5c, REDESIGN.md) degrades to simply not being
+# offered: HeatingZoneSubentryFlow is only defined, and only registered in
+# async_get_supported_subentry_types below, when the base class exists.
+_ConfigSubentryFlow = getattr(config_entries, "ConfigSubentryFlow", None)
+
+if _ConfigSubentryFlow is not None:
+
+    class HeatingZoneSubentryFlow(_ConfigSubentryFlow):  # type: ignore[misc]
+        """Flow for adding or editing an additional heating-zone subentry.
+
+        Modelled directly on battery_controller's
+        BatteryControllerBatterySubentryFlow / BatteryControllerPVSubentryFlow
+        (docs/redesign/REDESIGN.md phase 5c) - verified against a live,
+        running battery_controller install's subentries (config_entry
+        diagnostics shared 2026-09-22), since this integration's own test
+        environment cannot install an HA release new enough to exercise
+        this class at all (see the comment above).
+        """
+
+        async def async_step_user(
+            self, user_input: dict[str, Any] | None = None
+        ) -> SubentryFlowResult:
+            """Handle adding a new heating zone."""
+            errors: dict[str, str] = {}
+            if user_input is not None:
+                try:
+                    data = _validate_zone_subentry(user_input)
+                except vol.Invalid:
+                    errors["base"] = "invalid_zone_input"
+                else:
+                    return self.async_create_entry(title=data["name"], data=data)
+            return self.async_show_form(
+                step_id="user",
+                data_schema=_build_zone_subentry_schema(),
+                errors=errors,
+            )
+
+        async def async_step_reconfigure(
+            self, user_input: dict[str, Any] | None = None
+        ) -> SubentryFlowResult:
+            """Handle editing an existing heating zone."""
+            errors: dict[str, str] = {}
+            entry = self._get_entry()
+            subentry = self._get_reconfigure_subentry()
+            current_data = dict(subentry.data)
+
+            if user_input is not None:
+                try:
+                    data = _validate_zone_subentry(user_input)
+                except vol.Invalid:
+                    errors["base"] = "invalid_zone_input"
+                else:
+                    return self.async_update_and_abort(
+                        entry, subentry, title=data["name"], data=data
+                    )
+            return self.async_show_form(
+                step_id="reconfigure",
+                data_schema=_build_zone_subentry_schema(current_data),
+                errors=errors,
+            )
+
+else:
+    HeatingZoneSubentryFlow = None  # type: ignore[assignment,misc]
+
+
 class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     """Handle a config flow for Heating Curve Optimizer."""
 
     VERSION = 1
+
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(
+        cls, config_entry: config_entries.ConfigEntry
+    ) -> dict[str, type]:
+        """Return supported subentry types (phase 5c, REDESIGN.md).
+
+        Empty on an HA release too old to have ConfigSubentryFlow at all -
+        see HeatingZoneSubentryFlow's definition above.
+        """
+        if HeatingZoneSubentryFlow is None:
+            return {}
+        return {ZONE_SUBENTRY_TYPE: HeatingZoneSubentryFlow}
 
     def __init__(self) -> None:
         super().__init__()

@@ -1,0 +1,45 @@
+{
+  "entity": {
+    "sensor": {
+      "outdoor_temperature": { "default": "mdi:thermometer" },
+      "heat_loss": { "default": "mdi:fire" },
+      "window_solar_gain": { "default": "mdi:white-balance-sunny" },
+      "pv_production_forecast": { "default": "mdi:solar-power" },
+      "net_heat_loss": { "default": "mdi:fire-off" },
+      "heating_curve_offset": { "default": "mdi:chart-line" },
+      "optimized_supply_temperature": { "default": "mdi:thermometer-chevron-up" },
+      "heat_buffer": { "default": "mdi:battery-medium" },
+      "cost_savings_forecast": { "default": "mdi:chart-line-variant" },
+      "total_cost_savings": { "default": "mdi:piggy-bank" },
+      "calculated_supply_temperature": { "default": "mdi:thermometer" },
+      "quadratic_cop": { "default": "mdi:alpha-c-circle" },
+      "diagnostics": { "default": "mdi:information-outline" },
+      "calibration": { "default": "mdi:tune" },
+      "current_electricity_price": { "default": "mdi:currency-eur" },
+      "heat_pump_energy_daily": { "default": "mdi:fire" },
+      "net_heat_loss_energy_daily": { "default": "mdi:fire-off" },
+      "thermal_v2_offset": { "default": "mdi:chart-timeline-variant" },
+      "thermal_v2_cost_comparison": { "default": "mdi:scale-balance" },
+      "thermal_calibration": { "default": "mdi:tune" },
+      "realtime_offset_adjustment": { "default": "mdi:solar-power-variant" }
+    },
+    "number": {
+      "target_indoor_temperature": { "default": "mdi:home-thermometer" },
+      "indoor_temp_hysteresis_lower": { "default": "mdi:thermometer-chevron-down" },
+      "indoor_temp_hysteresis_upper": { "default": "mdi:thermometer-chevron-up" }
+    },
+    "binary_sensor": {
+      "heat_pump_demand": { "default": "mdi:radiator" }
+    },
+    "select": {
+      "control_mode": {
+        "default": "mdi:cog-transfer",
+        "state": {
+          "legacy": "mdi:calculator-variant",
+          "follow_curve": "mdi:chart-bell-curve",
+          "optimize_v2": "mdi:chart-timeline-variant"
+        }
+      }
+    }
+  }
+}

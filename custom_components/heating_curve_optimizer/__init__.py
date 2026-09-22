@@ -14,7 +14,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity import DeviceInfo
 
-from .const import CONF_CONTROL_MODE, DOMAIN, PLATFORMS
+from .const import CONF_CONTROL_MODE, DOMAIN, PLATFORMS, ZONE_SUBENTRY_TYPE
 from .coordinator import (
     WeatherDataCoordinator,
     HeatCalculationCoordinator,
@@ -154,6 +154,63 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         sw_version=_MANIFEST.get("version", "unknown"),
     )
 
+    # 4. Additional heating-zone subentries (phase 5c, REDESIGN.md), modelled
+    # on battery_controller's per-battery/per-PV-array subentry devices. Each
+    # zone gets its own HeatCalculationCoordinator/OptimizationCoordinator
+    # pair and device, sharing the main entry's price sensor, heating curve
+    # limits and heat pump parameters (only area/energy label/indoor sensor/
+    # target temperature are per-zone - see ZONE_SUBENTRY_TYPE's comment).
+    zones: dict[str, dict[str, Any]] = {}
+    # getattr guards HA releases old enough to predate ConfigEntry.subentries
+    # entirely (see config_flow.py's HeatingZoneSubentryFlow comment) -
+    # setup must not fail for installations with no zones configured just
+    # because their HA is too old to have the attribute at all.
+    for subentry_id, subentry in getattr(entry, "subentries", {}).items():
+        if subentry.subentry_type != ZONE_SUBENTRY_TYPE:
+            continue
+
+        zone_config = {**config, **subentry.data}
+        zone_entry_id = f"{entry.entry_id}_{subentry_id}"
+
+        zone_heat_coordinator = HeatCalculationCoordinator(
+            hass, weather_coordinator, zone_config, zone_entry_id
+        )
+        await zone_heat_coordinator.async_setup()
+        await zone_heat_coordinator.async_config_entry_first_refresh()
+
+        zone_optimization_coordinator = OptimizationCoordinator(
+            hass, zone_heat_coordinator, zone_config, zone_entry_id
+        )
+        await zone_optimization_coordinator.async_setup()
+
+        zone_device = DeviceInfo(
+            identifiers={(DOMAIN, zone_entry_id)},
+            name=subentry.title,
+            manufacturer="Custom",
+            model="Heating Zone",
+            sw_version=_MANIFEST.get("version", "unknown"),
+            via_device=(DOMAIN, entry.entry_id),
+        )
+
+        zones[subentry_id] = {
+            "heat_coordinator": zone_heat_coordinator,
+            "optimization_coordinator": zone_optimization_coordinator,
+            "config": zone_config,
+            "device": zone_device,
+            "name": subentry.title,
+        }
+
+        async def _trigger_zone_first_optimization(
+            coordinator: OptimizationCoordinator = zone_optimization_coordinator,
+            zone_name: str = subentry.title,
+        ) -> None:
+            """Trigger a zone's first optimization after a short delay."""
+            await asyncio.sleep(5)
+            _LOGGER.info("Triggering first optimization run for zone %s", zone_name)
+            await coordinator.async_request_refresh()
+
+        hass.async_create_task(_trigger_zone_first_optimization())
+
     # Store coordinators and config in hass.data
     hass.data[DOMAIN][entry.entry_id] = {
         "weather_coordinator": weather_coordinator,
@@ -162,6 +219,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "config": config,
         "entry": entry,
         "device": device,
+        "zones": zones,
         # entry.options exactly as they stood at setup - _update_listener
         # compares against this to tell a _NO_RELOAD_KEYS-only change from
         # one that actually needs a reload.
@@ -220,6 +278,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         optimization_coordinator = entry_data.get("optimization_coordinator")
         if optimization_coordinator:
             await optimization_coordinator.async_shutdown()
+
+        for zone_data in entry_data.get("zones", {}).values():
+            zone_heat_coordinator = zone_data.get("heat_coordinator")
+            if zone_heat_coordinator:
+                await zone_heat_coordinator.async_shutdown()
+            zone_optimization_coordinator = zone_data.get("optimization_coordinator")
+            if zone_optimization_coordinator:
+                await zone_optimization_coordinator.async_shutdown()
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:

@@ -167,6 +167,27 @@ async def async_setup_entry(
             ],
             True,
         )
+
+        # Per-zone heat demand (phase 5c, REDESIGN.md): each zone's own
+        # coordinator gets the same sensor, associated with its own
+        # subentry/device via config_subentry_id (see __init__.py's zone
+        # setup and battery_controller's per-battery/per-PV-array pattern).
+        for subentry_id, zone_data in entry_data.get("zones", {}).items():
+            zone_heat_coordinator = zone_data.get("heat_coordinator")
+            zone_device = zone_data.get("device")
+            if not zone_heat_coordinator or not zone_device:
+                continue
+            async_add_entities(
+                [
+                    CoordinatorHeatDemandBinarySensor(
+                        zone_heat_coordinator,
+                        f"{entry.entry_id}_{subentry_id}",
+                        zone_device,
+                    )
+                ],
+                True,
+                config_subentry_id=subentry_id,
+            )
     else:
         # Fallback to legacy
         _LOGGER.warning(

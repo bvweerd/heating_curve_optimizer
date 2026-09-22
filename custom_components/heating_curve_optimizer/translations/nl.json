@@ -209,5 +209,44 @@
         "heat_recovery_90": "WTW 90% rendement"
       }
     }
+  },
+  "config_subentries": {
+    "heating_zone": {
+      "entry_type": "Verwarmingszone",
+      "flow_title": "Verwarmingszone",
+      "initiate_flow": {
+        "user": "Verwarmingszone toevoegen"
+      },
+      "step": {
+        "user": {
+          "title": "Verwarmingszone toevoegen",
+          "description": "Configureer een extra ruimte of verwarmingscircuit. Prijssensor, curvegrenzen en warmtepompparameters worden gedeeld met de hoofdconfiguratie - hier stel je alleen in wat per ruimte verschilt.",
+          "data": {
+            "name": "Zonenaam",
+            "area_m2": "Vloeroppervlak (m²)",
+            "energy_label": "Energielabel",
+            "target_indoor_temp": "Gewenste binnentemperatuur (°C)",
+            "indoor_temperature_sensor": "Binnentemperatuursensor (optioneel)"
+          }
+        },
+        "reconfigure": {
+          "title": "Verwarmingszone bewerken",
+          "description": "Werk de configuratie van deze zone bij.",
+          "data": {
+            "name": "Zonenaam",
+            "area_m2": "Vloeroppervlak (m²)",
+            "energy_label": "Energielabel",
+            "target_indoor_temp": "Gewenste binnentemperatuur (°C)",
+            "indoor_temperature_sensor": "Binnentemperatuursensor (optioneel)"
+          }
+        }
+      },
+      "error": {
+        "invalid_zone_input": "Ongeldige zoneconfiguratie. Controleer de naam en het vloeroppervlak."
+      },
+      "abort": {
+        "reconfigure_successful": "Verwarmingszone bijgewerkt."
+      }
+    }
   }
 }

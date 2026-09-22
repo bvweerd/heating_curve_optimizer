@@ -347,6 +347,48 @@ async def async_setup_entry(
     _LOGGER.debug("Adding %d sensor entities", len(entities))
     async_add_entities(entities)
 
+    # Per-zone core sensors (phase 5c, REDESIGN.md): each zone's own
+    # optimizer output, associated with its own subentry/device via
+    # config_subentry_id. Scoped to the core "what did this zone's own
+    # optimizer decide" sensors for a first cut - not the full catalog of
+    # diagnostic/shadow/calibration sensors the main entry gets (see
+    # docs/redesign/REDESIGN.md phase 5c).
+    for subentry_id, zone_data in entry_data.get("zones", {}).items():
+        zone_optimization_coordinator = zone_data.get("optimization_coordinator")
+        zone_heat_coordinator = zone_data.get("heat_coordinator")
+        zone_device = zone_data.get("device")
+        if not (
+            zone_optimization_coordinator and zone_heat_coordinator and zone_device
+        ):
+            continue
+        zone_entry_id = f"{entry.entry_id}_{subentry_id}"
+        async_add_entities(
+            [
+                CoordinatorHeatingCurveOffsetSensor(
+                    coordinator=zone_optimization_coordinator,
+                    name="Heating Curve Offset",
+                    unique_id=f"{zone_entry_id}_heating_curve_offset",
+                    icon="mdi:chart-line",
+                    device=zone_device,
+                ),
+                CoordinatorOptimizedSupplyTemperatureSensor(
+                    coordinator=zone_optimization_coordinator,
+                    name="Optimized Supply Temperature",
+                    unique_id=f"{zone_entry_id}_optimized_supply_temperature",
+                    icon="mdi:thermometer-chevron-up",
+                    device=zone_device,
+                ),
+                CoordinatorNetHeatLossSensor(
+                    coordinator=zone_heat_coordinator,
+                    name="Net Heat Loss",
+                    unique_id=f"{zone_entry_id}_net_heat_loss",
+                    icon="mdi:fire-off",
+                    device=zone_device,
+                ),
+            ],
+            config_subentry_id=subentry_id,
+        )
+
 
 def _setup_event_driven_sensors(
     hass: HomeAssistant,

@@ -32,6 +32,15 @@ CONF_GLASS_U_VALUE = "glass_u_value"
 CONF_POWER_CONSUMPTION = "power_consumption"
 CONF_INDOOR_TEMPERATURE_SENSOR = "indoor_temperature_sensor"
 CONF_SUPPLY_TEMPERATURE_SENSOR = "supply_temperature_sensor"
+# Additional heating zones, as config subentries (phase 5c,
+# docs/redesign/REDESIGN.md) - modelled directly on battery_controller's
+# BATTERY_SUBENTRY_TYPE/PV_SUBENTRY_TYPE pattern. A zone gets its own
+# device, its own HeatCalculationCoordinator/OptimizationCoordinator pair
+# (see __init__.py), and shares the main entry's price sensor, heating
+# curve limits and heat pump parameters - only what plausibly differs
+# between rooms (area, insulation, its own thermostat) is per-zone.
+ZONE_SUBENTRY_TYPE = "heating_zone"
+
 # Real-time grid power (phase 5b, docs/redesign/REDESIGN.md): positive =
 # import, negative = export. Optional - the realtime_controller.py loop is
 # inactive unless at least one of these is configured, mirroring how

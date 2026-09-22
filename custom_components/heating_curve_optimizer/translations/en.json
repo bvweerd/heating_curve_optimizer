@@ -209,5 +209,44 @@
         "heat_recovery_90": "Heat recovery 90% efficiency"
       }
     }
+  },
+  "config_subentries": {
+    "heating_zone": {
+      "entry_type": "Heating Zone",
+      "flow_title": "Heating zone",
+      "initiate_flow": {
+        "user": "Add heating zone"
+      },
+      "step": {
+        "user": {
+          "title": "Add heating zone",
+          "description": "Configure an additional room or heating circuit. Price sensor, heating curve limits and heat pump parameters are shared from the main configuration - only what differs between rooms is set here.",
+          "data": {
+            "name": "Zone name",
+            "area_m2": "Floor area (m²)",
+            "energy_label": "Energy label",
+            "target_indoor_temp": "Target indoor temperature (°C)",
+            "indoor_temperature_sensor": "Indoor temperature sensor (optional)"
+          }
+        },
+        "reconfigure": {
+          "title": "Edit heating zone",
+          "description": "Update this zone's configuration.",
+          "data": {
+            "name": "Zone name",
+            "area_m2": "Floor area (m²)",
+            "energy_label": "Energy label",
+            "target_indoor_temp": "Target indoor temperature (°C)",
+            "indoor_temperature_sensor": "Indoor temperature sensor (optional)"
+          }
+        }
+      },
+      "error": {
+        "invalid_zone_input": "Invalid zone configuration. Check the name and floor area."
+      },
+      "abort": {
+        "reconfigure_successful": "Heating zone updated successfully."
+      }
+    }
   }
 }
