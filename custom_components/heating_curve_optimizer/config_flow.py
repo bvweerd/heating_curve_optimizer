@@ -31,6 +31,8 @@ from .const import (
     CONF_TIME_BASE,
     CONF_POWER_CONSUMPTION,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
+    CONF_GRID_IMPORT_SENSOR,
+    CONF_GRID_EXPORT_SENSOR,
     CONF_K_FACTOR,
     CONF_BASE_COP,
     CONF_OUTDOOR_TEMP_COEFFICIENT,
@@ -111,6 +113,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.power_consumption: str | None = None
         self.indoor_temperature_sensor: str | None = None
         self.supply_temperature_sensor: str | None = None
+        self.grid_import_sensor: str | None = None
+        self.grid_export_sensor: str | None = None
         self.k_factor: float | None = None
         self.base_cop: float = DEFAULT_COP_AT_35
         self.outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT
@@ -199,6 +203,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_INDOOR_TEMPERATURE_SENSOR: self.indoor_temperature_sensor,
             CONF_POWER_CONSUMPTION: self.power_consumption,
             CONF_SUPPLY_TEMPERATURE_SENSOR: self.supply_temperature_sensor,
+            CONF_GRID_IMPORT_SENSOR: self.grid_import_sensor,
+            CONF_GRID_EXPORT_SENSOR: self.grid_export_sensor,
             CONF_K_FACTOR: self.k_factor,
             CONF_BASE_COP: self.base_cop,
             CONF_OUTDOOR_TEMP_COEFFICIENT: self.outdoor_temp_coefficient,
@@ -436,6 +442,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.pv_tilt = float(user_input.get(CONF_PV_TILT, DEFAULT_PV_TILT))
         self.indoor_temperature_sensor = user_input.get(CONF_INDOOR_TEMPERATURE_SENSOR)
         self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
+        self.grid_import_sensor = user_input.get(CONF_GRID_IMPORT_SENSOR)
+        self.grid_export_sensor = user_input.get(CONF_GRID_EXPORT_SENSOR)
 
     def _build_basic_schema(
         self,
@@ -522,6 +530,30 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ),
                 vol.Optional(
                     CONF_POWER_CONSUMPTION, default=self.power_consumption
+                ): selector(
+                    {
+                        "select": {
+                            "options": power_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                # Real-time PV-surplus controller (phase 5b, REDESIGN.md) -
+                # optional, only used when control_mode is optimize_v2.
+                vol.Optional(
+                    CONF_GRID_IMPORT_SENSOR, default=self.grid_import_sensor
+                ): selector(
+                    {
+                        "select": {
+                            "options": power_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Optional(
+                    CONF_GRID_EXPORT_SENSOR, default=self.grid_export_sensor
                 ): selector(
                     {
                         "select": {
@@ -690,6 +722,8 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
         self.indoor_temperature_sensor = _get(CONF_INDOOR_TEMPERATURE_SENSOR)
         self.power_consumption = _get(CONF_POWER_CONSUMPTION)
         self.supply_temperature_sensor = _get(CONF_SUPPLY_TEMPERATURE_SENSOR)
+        self.grid_import_sensor = _get(CONF_GRID_IMPORT_SENSOR)
+        self.grid_export_sensor = _get(CONF_GRID_EXPORT_SENSOR)
         self.k_factor = _get(CONF_K_FACTOR)
         self.base_cop = _get(CONF_BASE_COP, DEFAULT_COP_AT_35)
         self.outdoor_temp_coefficient = _get(

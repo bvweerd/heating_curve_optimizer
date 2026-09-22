@@ -32,6 +32,13 @@ CONF_GLASS_U_VALUE = "glass_u_value"
 CONF_POWER_CONSUMPTION = "power_consumption"
 CONF_INDOOR_TEMPERATURE_SENSOR = "indoor_temperature_sensor"
 CONF_SUPPLY_TEMPERATURE_SENSOR = "supply_temperature_sensor"
+# Real-time grid power (phase 5b, docs/redesign/REDESIGN.md): positive =
+# import, negative = export. Optional - the realtime_controller.py loop is
+# inactive unless at least one of these is configured, mirroring how
+# battery_controller's zero_grid_controller.py needs CONF_GRID_IMPORT_SENSORS/
+# CONF_GRID_EXPORT_SENSORS to run at all.
+CONF_GRID_IMPORT_SENSOR = "grid_import_sensor"
+CONF_GRID_EXPORT_SENSOR = "grid_export_sensor"
 CONF_K_FACTOR = "k_factor"
 CONF_BASE_COP = "base_cop"
 CONF_COP_COMPENSATION_FACTOR = "cop_compensation_factor"
@@ -345,6 +352,20 @@ MODE_FOLLOW_CURVE = "follow_curve"
 MODE_OPTIMIZE_V2 = "optimize_v2"
 CONTROL_MODES = [MODE_LEGACY, MODE_FOLLOW_CURVE, MODE_OPTIMIZE_V2]
 DEFAULT_CONTROL_MODE = MODE_LEGACY
+
+# Real-time PV-surplus controller (phase 5b, docs/redesign/REDESIGN.md),
+# modelled on battery_controller's zero_grid_controller.py but right-sized
+# for heating's whole-degree offset steps and slower thermal time constants:
+# a deadbanded step controller, not a continuous-power integrator. Only
+# runs when control_mode is optimize_v2 (it needs the shadow price, which
+# only thermal_optimizer.py computes) and at least one grid sensor is set.
+CONF_REALTIME_DEADBAND_W = "realtime_deadband_w"
+DEFAULT_REALTIME_DEADBAND_W = 300.0  # W - looser than a battery's ~50 W:
+# heating's actuator is a whole-degree curve offset, not a continuous power
+# setpoint, so chasing small fluctuations only adds wear for no benefit.
+DEFAULT_REALTIME_INTERVAL_S = 60  # much slower than battery_controller's
+# ~10 s: a heat pump's weather-compensation curve has nothing to gain from
+# being re-commanded faster than its own control loop settles.
 
 # Possible source types
 SOURCE_TYPE_CONSUMPTION = "Electricity consumption"

@@ -65,6 +65,7 @@ from ..sensor_thermal_shadow import (
     ThermalShadowOffsetSensor,
 )
 from ..sensor_thermal_calibration import ThermalCalibrationSensor
+from ..sensor_realtime_offset import RealtimeOffsetAdjustmentSensor
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -330,6 +331,15 @@ async def async_setup_entry(
             name="Thermal Calibration",
             unique_id=f"{entry.entry_id}_thermal_calibration",
             icon="mdi:tune",
+            device=device,
+        )
+    )
+    entities.append(
+        RealtimeOffsetAdjustmentSensor(
+            coordinator=optimization_coordinator,
+            name="Realtime Offset Adjustment",
+            unique_id=f"{entry.entry_id}_realtime_offset_adjustment",
+            icon="mdi:solar-power-variant",
             device=device,
         )
     )

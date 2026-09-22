@@ -9,7 +9,9 @@
           "pv_east_wp": "PV panels east (Wp)",
           "pv_south_wp": "PV panels south (Wp)",
           "pv_west_wp": "PV panels west (Wp)",
-          "pv_tilt": "PV panel tilt angle (degrees)"
+          "pv_tilt": "PV panel tilt angle (degrees)",
+          "grid_import_sensor": "Grid import power sensor (W or kW, real-time PV-surplus control)",
+          "grid_export_sensor": "Grid export power sensor (W or kW, real-time PV-surplus control)"
         },
         "data_description": {
           "ventilation_type": "Type of ventilation system for calculating ventilation heat loss",
@@ -172,6 +174,9 @@
       },
       "thermal_calibration": {
         "name": "Thermal calibration (experimental)"
+      },
+      "realtime_offset_adjustment": {
+        "name": "Realtime offset adjustment (PV surplus, experimental)"
       }
     },
     "select": {

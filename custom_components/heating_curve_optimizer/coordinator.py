@@ -15,7 +15,10 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
 )
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import (
+    async_track_state_change_event,
+    async_track_time_interval,
+)
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -56,6 +59,9 @@ from .const import (
     DEFAULT_CONTROL_MODE,
     MODE_FOLLOW_CURVE,
     MODE_OPTIMIZE_V2,
+    CONF_GRID_IMPORT_SENSOR,
+    CONF_GRID_EXPORT_SENSOR,
+    DEFAULT_REALTIME_INTERVAL_S,
     DEFAULT_COP_AT_35,
     DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER,
     DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER,
@@ -80,6 +86,7 @@ from .calibration import STORAGE_VERSION as CALIBRATION_STORAGE_VERSION
 from .heatpump_model import HeatPumpConfig
 from .helpers import extract_price_forecast_with_interval
 from .optimizer import calculate_buffer_energy, optimize_offsets
+from .realtime_controller import RealtimeController, create_realtime_controller
 from .thermal_optimizer import optimize_thermal_schedule
 
 _LOGGER = logging.getLogger(__name__)
@@ -569,6 +576,12 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         # async_setup, simply get no calibration, same as _unsub above.
         self._calibration: ThermalCalibrationState | None = None
         self._last_calibration_snapshot: dict[str, Any] | None = None
+        # Real-time PV-surplus controller (phase 5b, REDESIGN.md). Only set
+        # up in async_setup() when at least one grid sensor is configured -
+        # otherwise the timer loop below never starts, so there is zero
+        # overhead for the majority of installations that have not opted in.
+        self._realtime_controller: RealtimeController | None = None
+        self._unsub_realtime = None
 
     @property
     def control_mode(self) -> str:
@@ -620,6 +633,21 @@ class OptimizationCoordinator(DataUpdateCoordinator):
             )
             await self._calibration.async_load()
 
+        if self.config.get(CONF_GRID_IMPORT_SENSOR) or self.config.get(
+            CONF_GRID_EXPORT_SENSOR
+        ):
+            self._realtime_controller = create_realtime_controller(self.config)
+            self._unsub_realtime = async_track_time_interval(
+                self.hass,
+                self._handle_realtime_update,
+                timedelta(seconds=DEFAULT_REALTIME_INTERVAL_S),
+            )
+            _LOGGER.debug(
+                "Real-time PV-surplus controller active (import=%s, export=%s)",
+                self.config.get(CONF_GRID_IMPORT_SENSOR),
+                self.config.get(CONF_GRID_EXPORT_SENSOR),
+            )
+
     async def _handle_price_change(self, event: Event) -> None:
         """Handle significant price changes."""
         new_state = event.data.get("new_state")
@@ -646,6 +674,103 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         if self._unsub:
             self._unsub()
             self._unsub = None
+        if self._unsub_realtime:
+            self._unsub_realtime()
+            self._unsub_realtime = None
+
+    def _read_grid_power_sensor_w(self, sensor_id: str) -> float | None:
+        """Read one power sensor and convert its value to W.
+
+        Sensors without a unit attribute are assumed to report W. An
+        unrecognized power unit is skipped rather than guessed at -
+        mirrors _read_power_consumption_kw's reasoning in calibration.py
+        and battery_controller's _read_power_sensor_w.
+        """
+        state = self.hass.states.get(sensor_id)
+        if not state or state.state in ("unknown", "unavailable"):
+            return None
+        try:
+            value = float(state.state)
+        except (ValueError, TypeError):
+            return None
+        unit = state.attributes.get("unit_of_measurement", "W")
+        if unit in ("W", ""):
+            return value
+        if unit == "kW":
+            return value * 1000.0
+        _LOGGER.debug(
+            "Cannot use %s for the real-time controller: unrecognized power unit %r",
+            sensor_id,
+            unit,
+        )
+        return None
+
+    def _get_realtime_grid_w(self) -> float | None:
+        """Read current grid power: positive = import, negative = export.
+
+        Returns None if neither sensor is configured, or neither has a
+        usable reading - the caller must then skip this cycle rather than
+        act on a fictitious 0 W.
+        """
+        import_sensor = self.config.get(CONF_GRID_IMPORT_SENSOR)
+        export_sensor = self.config.get(CONF_GRID_EXPORT_SENSOR)
+        if not import_sensor and not export_sensor:
+            return None
+
+        import_w = (
+            self._read_grid_power_sensor_w(import_sensor) if import_sensor else None
+        )
+        export_w = (
+            self._read_grid_power_sensor_w(export_sensor) if export_sensor else None
+        )
+        if import_w is None and export_w is None:
+            return None
+
+        return (import_w or 0.0) - (export_w or 0.0)
+
+    async def _handle_realtime_update(self, now: datetime) -> None:
+        """Periodic real-time update for the PV-surplus controller.
+
+        Runs every DEFAULT_REALTIME_INTERVAL_S seconds. Only active while
+        control_mode is optimize_v2 (the shadow price it needs only exists
+        there) and a full DP cycle has already published a thermal_v2
+        result this session - otherwise there is no planned offset or
+        shadow price to adjust around yet.
+        """
+        if self._realtime_controller is None:
+            return
+        if self._control_mode != MODE_OPTIMIZE_V2:
+            return
+        if self.data is None:
+            return
+
+        thermal_v2 = self.data.get("thermal_v2", {})
+        if not thermal_v2.get("available"):
+            return
+
+        current_grid_w = self._get_realtime_grid_w()
+        if current_grid_w is None:
+            _LOGGER.debug("Grid power sensor(s) unavailable; real-time update skipped")
+            return
+
+        time_base = int(self.config.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
+        offset_delta_t = int(
+            self.config.get(CONF_OFFSET_DELTA_T, DEFAULT_OFFSET_DELTA_T)
+        )
+        max_adjustment = max(1, time_base // max(1, offset_delta_t))
+
+        planned_offsets = thermal_v2.get("offsets", [])
+        planned_offset = planned_offsets[0] if planned_offsets else 0
+        shadow_price = thermal_v2.get("shadow_price_eur_per_kwh", 0.0)
+
+        action = self._realtime_controller.get_control_action(
+            current_grid_w=current_grid_w,
+            shadow_price_eur_per_kwh=shadow_price,
+            planned_offset=planned_offset,
+            max_adjustment=max_adjustment,
+        )
+
+        self.async_set_updated_data({**self.data, "realtime": action})
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Run heating curve optimization."""
@@ -948,6 +1073,13 @@ class OptimizationCoordinator(DataUpdateCoordinator):
 
         self._current_offset = new_offset
         self._current_buffer = new_buffer
+
+        if self._realtime_controller is not None:
+            # A full DP cycle just established a new planned-offset baseline;
+            # the real-time layer adjusts *around* that, so stale adjustment
+            # memory from the previous baseline is discarded rather than
+            # carried forward and silently compounding.
+            self._realtime_controller.reset()
 
         return result
 

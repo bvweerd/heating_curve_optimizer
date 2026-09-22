@@ -9,7 +9,9 @@
           "pv_east_wp": "PV-panelen oost (Wp)",
           "pv_south_wp": "PV-panelen zuid (Wp)",
           "pv_west_wp": "PV-panelen west (Wp)",
-          "pv_tilt": "PV-panelen hellingshoek (graden)"
+          "pv_tilt": "PV-panelen hellingshoek (graden)",
+          "grid_import_sensor": "Netafname vermogen sensor (W of kW, realtime PV-overschot regeling)",
+          "grid_export_sensor": "Netteruglevering vermogen sensor (W of kW, realtime PV-overschot regeling)"
         },
         "data_description": {
           "ventilation_type": "Type ventilatiesysteem in de woning voor berekening van ventilatieverliezen",
@@ -172,6 +174,9 @@
       },
       "thermal_calibration": {
         "name": "Thermische kalibratie (experimenteel)"
+      },
+      "realtime_offset_adjustment": {
+        "name": "Realtime offset-aanpassing (PV-overschot, experimenteel)"
       }
     },
     "select": {
