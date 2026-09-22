@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.core import HomeAssistant
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.helpers.entity import DeviceInfo
@@ -21,7 +23,7 @@ class CoordinatorQuadraticCopSensor(BaseUtilitySensor):
     def __init__(
         self,
         hass: HomeAssistant,
-        weather_coordinator,
+        weather_coordinator: Any,
         name: str,
         unique_id: str,
         supply_sensor: str,
@@ -30,7 +32,7 @@ class CoordinatorQuadraticCopSensor(BaseUtilitySensor):
         base_cop: float = DEFAULT_COP_AT_35,
         outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
         cop_compensation_factor: float = DEFAULT_COP_COMPENSATION_FACTOR,
-    ):
+    ) -> None:
         """Initialize the COP sensor."""
         super().__init__(
             name=name,
@@ -51,7 +53,7 @@ class CoordinatorQuadraticCopSensor(BaseUtilitySensor):
         self.cop_compensation_factor = cop_compensation_factor
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update COP based on supply and outdoor temperature."""
         # Get supply temperature
         s_state = self.hass.states.get(self.supply_sensor)

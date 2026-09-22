@@ -11,12 +11,17 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from ...entity import BaseUtilitySensor
 
 
-class CoordinatorWindowSolarGainSensor(CoordinatorEntity, BaseUtilitySensor):
+class CoordinatorWindowSolarGainSensor(CoordinatorEntity, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Solar gain sensor using heat calculation coordinator."""
 
     def __init__(
-        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
-    ):
+        self,
+        coordinator: Any,
+        name: str,
+        unique_id: str,
+        icon: str,
+        device: DeviceInfo,
+    ) -> None:
         """Initialize the sensor."""
         CoordinatorEntity.__init__(self, coordinator)
         BaseUtilitySensor.__init__(
@@ -34,11 +39,12 @@ class CoordinatorWindowSolarGainSensor(CoordinatorEntity, BaseUtilitySensor):
         self._attr_should_poll = False
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | None:
         """Return solar gain."""
         if not self.coordinator.data:
             return None
-        return self.coordinator.data.get("solar_gain")
+        value = self.coordinator.data.get("solar_gain")
+        return float(value) if value is not None else None
 
     @property
     def available(self) -> bool:

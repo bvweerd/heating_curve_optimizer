@@ -14,8 +14,13 @@ class CoordinatorCostSavingsSensor(BaseOptimizationSensor):
     """Cost savings forecast sensor showing predicted optimization savings in EUR."""
 
     def __init__(
-        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
-    ):
+        self,
+        coordinator: Any,
+        name: str,
+        unique_id: str,
+        icon: str,
+        device: DeviceInfo,
+    ) -> None:
         """Initialize the sensor."""
         super().__init__(
             coordinator,
@@ -29,11 +34,11 @@ class CoordinatorCostSavingsSensor(BaseOptimizationSensor):
         )
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | None:
         """Return cost savings in EUR."""
         if not self.coordinator.data:
             return None
-        return self.coordinator.data.get("cost_savings", 0.0)
+        return float(self.coordinator.data.get("cost_savings", 0.0))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

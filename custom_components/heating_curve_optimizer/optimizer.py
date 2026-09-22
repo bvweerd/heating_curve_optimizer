@@ -11,7 +11,11 @@ from .const import (
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_THERMAL_STORAGE_EFFICIENCY,
 )
-from .helpers import calculate_defrost_factor, calculate_supply_temperature
+from .helpers import (
+    calculate_defrost_factor,
+    calculate_supply_temperature,
+    max_offset_change as _max_offset_change,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,9 +92,7 @@ def optimize_offsets(
 
     # Calculate max offset change per step based on offset_delta_t
     # offset_delta_t = minutes per 1°C change
-    # At time_base=60 and offset_delta_t=10: max_change = 60/10 = 6°C per step
-    # At time_base=60 and offset_delta_t=60: max_change = 60/60 = 1°C per step
-    max_offset_change = max(1, time_base // max(1, offset_delta_t))
+    max_offset_change = _max_offset_change(time_base, offset_delta_t)
 
     _LOGGER.debug(
         "Offset change constraint: max %d°C per %d-min step "
@@ -264,12 +266,17 @@ def optimize_offsets(
     last_off = best_off
     last_sum = best_sum
     result[-1] = last_off
+    # Distinct names from the forward-pass loop variables above
+    # (`for prev_off, sums in dp[t - 1].items()`, plain int keys, never
+    # None): reusing "prev_off"/"prev_sum" here, where the unpacked value
+    # is `int | None`, made mypy pin the name's type from one use and flag
+    # the other as an incompatible re-assignment.
     for t in range(horizon - 1, 0, -1):
-        _, prev_off, prev_sum, _ = dp[t][last_off][last_sum]
-        assert prev_off is not None and prev_sum is not None
-        result[t - 1] = prev_off
-        last_off = prev_off
-        last_sum = prev_sum
+        _, back_prev_off, back_prev_sum, _ = dp[t][last_off][last_sum]
+        assert back_prev_off is not None and back_prev_sum is not None
+        result[t - 1] = back_prev_off
+        last_off = back_prev_off
+        last_sum = back_prev_sum
 
     # Calculate actual thermal energy buffer evolution from optimal path
     # This uses the buffer_kwh values stored in the DP table
@@ -283,10 +290,10 @@ def optimize_offsets(
         _, _, _, buffer_kwh = dp[t][last_off][last_sum]
         temp_buffer_list.append(buffer_kwh)
         if t > 0:
-            _, prev_off, prev_sum, _ = dp[t][last_off][last_sum]
-            assert prev_off is not None and prev_sum is not None
-            last_off = prev_off
-            last_sum = prev_sum
+            _, buf_prev_off, buf_prev_sum, _ = dp[t][last_off][last_sum]
+            assert buf_prev_off is not None and buf_prev_sum is not None
+            last_off = buf_prev_off
+            last_sum = buf_prev_sum
 
     # Reverse to get chronological order
     buffer_energy_evolution = list(reversed(temp_buffer_list))

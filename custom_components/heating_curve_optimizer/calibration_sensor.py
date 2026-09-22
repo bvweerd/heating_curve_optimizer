@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from homeassistant.components import recorder
@@ -49,7 +49,7 @@ def _find_entity_id_by_unique_id(hass: HomeAssistant, unique_id: str) -> str | N
         entry = registry.async_get_entity_id(
             "sensor", "heating_curve_optimizer", unique_id
         )
-        return entry
+        return str(entry) if entry is not None else None
     except Exception:
         return None
 
@@ -287,7 +287,9 @@ class CalibrationSensor(BaseUtilitySensor):
         def _get_config(key: str, default: float) -> float:
             if not self._entry:
                 return default
-            return self._entry.options.get(key, self._entry.data.get(key, default))
+            return float(
+                self._entry.options.get(key, self._entry.data.get(key, default))
+            )
 
         k_factor = _get_config("k_factor", DEFAULT_K_FACTOR)
         cop_compensation = _get_config("cop_compensation_factor", 1.0)
@@ -365,7 +367,7 @@ class CalibrationSensor(BaseUtilitySensor):
                 area_m2,
             )
 
-            return recommended
+            return float(recommended)
 
         except Exception as err:
             _LOGGER.debug("Storage efficiency validation failed: %s", err)
@@ -466,7 +468,7 @@ class CalibrationSensor(BaseUtilitySensor):
                 return None
 
             # Group data by day and calculate daily averages
-            daily_data = {}  # date -> {thermal_kwh, outdoor_temp, indoor_temp}
+            daily_data: dict[date, dict[str, list[float]]] = {}
 
             # Process thermal data (kW -> kWh per day)
             for state in thermal_states:
@@ -512,7 +514,9 @@ class CalibrationSensor(BaseUtilitySensor):
                         continue
 
             # Calculate daily averages and graaddagen
-            valid_days = []
+            # dict[str, Any]: genuinely heterogeneous (date, float fields
+            # mixed) - narrower per-field access is cast explicitly below.
+            valid_days: list[dict[str, Any]] = []
             for date_key, data in daily_data.items():
                 if (
                     not data["thermal_samples"]

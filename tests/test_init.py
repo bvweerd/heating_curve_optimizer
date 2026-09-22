@@ -5,13 +5,37 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.update_coordinator import UpdateFailed
+
 from custom_components.heating_curve_optimizer import (
+    HeatingCurveOptimizerData,
     async_setup,
     async_setup_entry,
     async_unload_entry,
     _update_listener,
 )
 from custom_components.heating_curve_optimizer.const import DOMAIN, PLATFORMS
+
+
+def _mock_coordinator() -> MagicMock:
+    coordinator = MagicMock()
+    coordinator.async_shutdown = AsyncMock()
+    return coordinator
+
+
+def _make_runtime_data(**overrides) -> HeatingCurveOptimizerData:
+    """Build a minimal HeatingCurveOptimizerData for tests that only care
+    about a subset of its fields."""
+    defaults = dict(
+        weather_coordinator=_mock_coordinator(),
+        heat_coordinator=_mock_coordinator(),
+        optimization_coordinator=_mock_coordinator(),
+        config={},
+        device=MagicMock(),
+    )
+    defaults.update(overrides)
+    return HeatingCurveOptimizerData(**defaults)
 
 
 @pytest.mark.asyncio
@@ -68,13 +92,12 @@ async def test_async_setup_entry(hass: HomeAssistant):
             result = await async_setup_entry(hass, entry)
 
             assert result is True
-            assert entry.entry_id in hass.data[DOMAIN]
-            assert "weather_coordinator" in hass.data[DOMAIN][entry.entry_id]
-            assert "heat_coordinator" in hass.data[DOMAIN][entry.entry_id]
-            assert "optimization_coordinator" in hass.data[DOMAIN][entry.entry_id]
-            assert "config" in hass.data[DOMAIN][entry.entry_id]
-            assert "entry" in hass.data[DOMAIN][entry.entry_id]
-            assert "device" in hass.data[DOMAIN][entry.entry_id]
+            runtime_data = entry.runtime_data
+            assert runtime_data.weather_coordinator is weather_instance
+            assert runtime_data.heat_coordinator is heat_instance
+            assert runtime_data.optimization_coordinator is opt_instance
+            assert runtime_data.config == {**entry.data, **entry.options}
+            assert runtime_data.device is not None
 
             # Verify coordinators were initialized
             weather_instance.async_config_entry_first_refresh.assert_called_once()
@@ -84,6 +107,37 @@ async def test_async_setup_entry(hass: HomeAssistant):
 
             # Verify platforms were forwarded
             mock_forward.assert_called_once_with(entry, PLATFORMS)
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_raises_config_entry_not_ready_on_weather_failure(
+    hass: HomeAssistant,
+):
+    """quality_scale's test-before-setup rule: a coordinator failure during
+    first refresh must surface as ConfigEntryNotReady (which HA retries
+    later), not a raw exception or a silently broken entry.
+
+    WeatherDataCoordinator/HeatCalculationCoordinator are both set up with
+    `async_config_entry_first_refresh()`, which already converts an
+    `UpdateFailed` from `_async_update_data` into `ConfigEntryNotReady`
+    (homeassistant.helpers.update_coordinator, verified against the
+    installed HA release) - this test proves __init__.py lets that
+    exception propagate out of async_setup_entry rather than swallowing it.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"area_m2": 150, "energy_label": "C"},
+        options={},
+    )
+    entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.heating_curve_optimizer.coordinator."
+        "WeatherDataCoordinator._async_update_data",
+        new=AsyncMock(side_effect=UpdateFailed("simulated open-meteo.com outage")),
+    ):
+        with pytest.raises(ConfigEntryNotReady):
+            await async_setup_entry(hass, entry)
 
 
 @pytest.mark.asyncio
@@ -103,13 +157,11 @@ async def test_async_unload_entry(hass: HomeAssistant):
     mock_opt_coordinator = MagicMock()
     mock_opt_coordinator.async_shutdown = AsyncMock()
 
-    hass.data[DOMAIN] = {
-        entry.entry_id: {
-            "heat_coordinator": mock_heat_coordinator,
-            "optimization_coordinator": mock_opt_coordinator,
-        },
-        "runtime": {entry.entry_id: {}},
-    }
+    entry.runtime_data = _make_runtime_data(
+        heat_coordinator=mock_heat_coordinator,
+        optimization_coordinator=mock_opt_coordinator,
+    )
+    hass.data[DOMAIN] = {"runtime": {entry.entry_id: {}}}
 
     # Mock platform unloading
     with patch.object(
@@ -121,10 +173,9 @@ async def test_async_unload_entry(hass: HomeAssistant):
         mock_heat_coordinator.async_shutdown.assert_called_once()
         mock_opt_coordinator.async_shutdown.assert_called_once()
         mock_unload.assert_called_once_with(entry, PLATFORMS)
-        # After successful unload with runtime data, DOMAIN may still exist
-        # Check that entry_id is removed
+        # The "runtime" manual-override dict is popped for this entry_id too.
         if DOMAIN in hass.data:
-            assert entry.entry_id not in hass.data[DOMAIN]
+            assert entry.entry_id not in hass.data[DOMAIN].get("runtime", {})
 
 
 @pytest.mark.asyncio
@@ -138,7 +189,8 @@ async def test_async_unload_entry_cleanup(hass: HomeAssistant):
     entry.add_to_hass(hass)
 
     # Setup minimal data
-    hass.data[DOMAIN] = {entry.entry_id: {}}
+    entry.runtime_data = _make_runtime_data()
+    hass.data[DOMAIN] = {}
 
     # Mock platform unloading
     with patch.object(
@@ -161,7 +213,8 @@ async def test_async_unload_entry_failure(hass: HomeAssistant):
     )
     entry.add_to_hass(hass)
 
-    hass.data[DOMAIN] = {entry.entry_id: {}}
+    entry.runtime_data = _make_runtime_data()
+    hass.data[DOMAIN] = {}
 
     # Mock platform unloading failure
     with patch.object(
@@ -170,8 +223,8 @@ async def test_async_unload_entry_failure(hass: HomeAssistant):
         result = await async_unload_entry(hass, entry)
 
         assert result is False
-        # Data should still be there on failure
-        assert entry.entry_id in hass.data[DOMAIN]
+        # runtime_data should still be there on failure
+        assert entry.runtime_data is not None
 
 
 @pytest.mark.asyncio
@@ -180,9 +233,10 @@ async def test_update_listener(hass: HomeAssistant):
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={},
-        options={},
+        options={"area_m2": 150},
     )
     entry.add_to_hass(hass)
+    entry.runtime_data = _make_runtime_data(options={"area_m2": 100})
 
     with patch.object(
         hass.config_entries, "async_reload", new=AsyncMock()
@@ -232,14 +286,14 @@ async def test_async_setup_entry_merges_options_and_data(hass: HomeAssistant):
         await async_setup_entry(hass, entry)
 
         # Verify merged config
-        config = hass.data[DOMAIN][entry.entry_id]["config"]
+        config = entry.runtime_data.config
         assert config["area_m2"] == 150  # From options
         assert config["energy_label"] == "A"  # From data
 
 
 @pytest.mark.asyncio
-async def test_async_unload_entry_with_entities(hass: HomeAssistant):
-    """Test unload removes entities key."""
+async def test_async_unload_entry_clears_runtime_override(hass: HomeAssistant):
+    """Test unload removes this entry's manual-override runtime dict."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={},
@@ -247,15 +301,12 @@ async def test_async_unload_entry_with_entities(hass: HomeAssistant):
     )
     entry.add_to_hass(hass)
 
-    hass.data[DOMAIN] = {
-        entry.entry_id: {},
-        "entities": {"some": "data"},
-    }
+    entry.runtime_data = _make_runtime_data()
+    hass.data[DOMAIN] = {"runtime": {entry.entry_id: {"target_indoor_temp": 20.0}}}
 
     with patch.object(
         hass.config_entries, "async_unload_platforms", new=AsyncMock(return_value=True)
     ):
         await async_unload_entry(hass, entry)
 
-        # entities should be removed
-        assert "entities" not in hass.data.get(DOMAIN, {})
+        assert entry.entry_id not in hass.data.get(DOMAIN, {}).get("runtime", {})

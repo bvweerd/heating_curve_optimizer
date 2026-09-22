@@ -17,8 +17,13 @@ class CoordinatorOptimizedSupplyTemperatureSensor(BaseOptimizationSensor):
     )
 
     def __init__(
-        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
-    ):
+        self,
+        coordinator: Any,
+        name: str,
+        unique_id: str,
+        icon: str,
+        device: DeviceInfo,
+    ) -> None:
         """Initialize the sensor."""
         super().__init__(
             coordinator,
@@ -31,7 +36,7 @@ class CoordinatorOptimizedSupplyTemperatureSensor(BaseOptimizationSensor):
         )
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | None:
         """Return optimized supply temperature."""
         if not self.coordinator.data:
             return None
@@ -41,7 +46,7 @@ class CoordinatorOptimizedSupplyTemperatureSensor(BaseOptimizationSensor):
             return None
 
         # Return first future supply temperature (current optimized temperature)
-        return future_temps[0]
+        return float(future_temps[0])
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

@@ -5,7 +5,7 @@ DOMAIN = "heating_curve_optimizer"
 DOMAIN_ABBREVIATION = "HCO"
 
 # Supported platforms for this integration
-PLATFORMS = ["sensor", "binary_sensor", "number"]
+PLATFORMS = ["sensor", "binary_sensor", "number", "select", "climate"]
 
 # Configuration keys
 CONF_SOURCE_TYPE = "source_type"
@@ -32,6 +32,22 @@ CONF_GLASS_U_VALUE = "glass_u_value"
 CONF_POWER_CONSUMPTION = "power_consumption"
 CONF_INDOOR_TEMPERATURE_SENSOR = "indoor_temperature_sensor"
 CONF_SUPPLY_TEMPERATURE_SENSOR = "supply_temperature_sensor"
+# Additional heating zones, as config subentries (phase 5c,
+# docs/redesign/REDESIGN.md) - modelled directly on battery_controller's
+# BATTERY_SUBENTRY_TYPE/PV_SUBENTRY_TYPE pattern. A zone gets its own
+# device, its own HeatCalculationCoordinator/OptimizationCoordinator pair
+# (see __init__.py), and shares the main entry's price sensor, heating
+# curve limits and heat pump parameters - only what plausibly differs
+# between rooms (area, insulation, its own thermostat) is per-zone.
+ZONE_SUBENTRY_TYPE = "heating_zone"
+
+# Real-time grid power (phase 5b, docs/redesign/REDESIGN.md): positive =
+# import, negative = export. Optional - the realtime_controller.py loop is
+# inactive unless at least one of these is configured, mirroring how
+# battery_controller's zero_grid_controller.py needs CONF_GRID_IMPORT_SENSORS/
+# CONF_GRID_EXPORT_SENSORS to run at all.
+CONF_GRID_IMPORT_SENSOR = "grid_import_sensor"
+CONF_GRID_EXPORT_SENSOR = "grid_export_sensor"
 CONF_K_FACTOR = "k_factor"
 CONF_BASE_COP = "base_cop"
 CONF_COP_COMPENSATION_FACTOR = "cop_compensation_factor"
@@ -72,7 +88,7 @@ DEFAULT_CEILING_HEIGHT = 2.5  # meters
 # Ventilation types and their effective Air Changes per Hour (ACH)
 # ACH represents the volume of air exchanged per hour
 # For heat recovery systems, effective ACH accounts for recovered heat
-VENTILATION_TYPES = {
+VENTILATION_TYPES: dict[str, dict[str, float | str]] = {
     "none": {"ach": 0.2, "name_nl": "Geen/minimaal", "name_en": "None/minimal"},
     "natural_low": {
         "ach": 0.5,
@@ -213,7 +229,7 @@ def calculate_ventilation_htc(
     if vent_data is None:
         # Fallback to standard natural ventilation
         vent_data = VENTILATION_TYPES[DEFAULT_VENTILATION_TYPE]
-    ach = vent_data["ach"]
+    ach = float(vent_data["ach"])
 
     # Calculate building volume
     volume = area_m2 * ceiling_height
@@ -303,7 +319,62 @@ DEFAULT_COP_COMPENSATION_FACTOR = 1.0
 # When offset is -1°C, building uses stored thermal energy
 # Value of 0.15 means 15% of current heat demand is stored/released per °C offset
 # This represents the thermal inertia of building materials (concrete, brick, etc.)
+# Superseded by building_model.BuildingConfig's explicit thermal mass (kWh/K)
+# for the redesigned optimizer (see docs/redesign/REDESIGN.md); kept for the
+# legacy optimizer.optimize_offsets() until phase 3 removes it.
 DEFAULT_THERMAL_STORAGE_EFFICIENCY = 0.15
+
+# --- Redesigned thermal model (building_model.py / heatpump_model.py) ------
+#
+# Thermal mass per m² floor area, in Wh/(m2*K), by construction weight class.
+# Rule-of-thumb starting values (light timber-frame vs. heavy masonry/
+# concrete construction), used until calibration.py (phase 4) learns the real
+# value for a specific home from its measured heating/cool-down curves.
+CONF_THERMAL_MASS_CLASS = "thermal_mass_class"
+DEFAULT_THERMAL_MASS_CLASS = "medium"
+THERMAL_MASS_WH_PER_M2_K = {
+    "light": 40.0,  # timber frame, light interior finishes
+    "medium": 90.0,  # standard Dutch cavity wall + concrete floor
+    "heavy": 165.0,  # masonry/concrete throughout, exposed screed or floor
+}
+
+# Heat emitter type: how much thermal power an emitter can push into the
+# room for a given (supply_temp - indoor_temp), relative to its power at
+# the design point. exponent follows the standard EN 442 radiator exponent
+# (~1.3) vs. the flatter underfloor/fan-coil curves.
+CONF_EMITTER_TYPE = "emitter_type"
+DEFAULT_EMITTER_TYPE = "radiator"
+EMITTER_EXPONENT_MAP = {
+    "radiator": 1.3,
+    "underfloor": 1.1,
+    "fan_coil": 1.0,
+}
+
+# Which optimizer actually drives optimized_offset/optimized_supply_temperature
+# (phase 3, docs/redesign/REDESIGN.md). Default stays on the legacy DP: the
+# redesigned optimizer only has phase-2 shadow-mode diagnostics to judge it by
+# at this point, not field hours on real installations, so switching the
+# default now would change real heating behaviour on an unvalidated model.
+CONF_CONTROL_MODE = "control_mode"
+MODE_LEGACY = "legacy"
+MODE_FOLLOW_CURVE = "follow_curve"
+MODE_OPTIMIZE_V2 = "optimize_v2"
+CONTROL_MODES = [MODE_LEGACY, MODE_FOLLOW_CURVE, MODE_OPTIMIZE_V2]
+DEFAULT_CONTROL_MODE = MODE_LEGACY
+
+# Real-time PV-surplus controller (phase 5b, docs/redesign/REDESIGN.md),
+# modelled on battery_controller's zero_grid_controller.py but right-sized
+# for heating's whole-degree offset steps and slower thermal time constants:
+# a deadbanded step controller, not a continuous-power integrator. Only
+# runs when control_mode is optimize_v2 (it needs the shadow price, which
+# only thermal_optimizer.py computes) and at least one grid sensor is set.
+CONF_REALTIME_DEADBAND_W = "realtime_deadband_w"
+DEFAULT_REALTIME_DEADBAND_W = 300.0  # W - looser than a battery's ~50 W:
+# heating's actuator is a whole-degree curve offset, not a continuous power
+# setpoint, so chasing small fluctuations only adds wear for no benefit.
+DEFAULT_REALTIME_INTERVAL_S = 60  # much slower than battery_controller's
+# ~10 s: a heat pump's weather-compensation curve has nothing to gain from
+# being re-commanded faster than its own control loop settles.
 
 # Possible source types
 SOURCE_TYPE_CONSUMPTION = "Electricity consumption"

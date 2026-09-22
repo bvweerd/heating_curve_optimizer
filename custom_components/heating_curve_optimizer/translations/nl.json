@@ -6,14 +6,20 @@
           "energy_label": "Energielabel",
           "ventilation_type": "Ventilatietype",
           "ceiling_height": "Plafondhoogte (m)",
+          "thermal_mass_class": "Thermische massa klasse",
+          "emitter_type": "Type warmteafgever",
           "pv_east_wp": "PV-panelen oost (Wp)",
           "pv_south_wp": "PV-panelen zuid (Wp)",
           "pv_west_wp": "PV-panelen west (Wp)",
-          "pv_tilt": "PV-panelen hellingshoek (graden)"
+          "pv_tilt": "PV-panelen hellingshoek (graden)",
+          "grid_import_sensor": "Netafname vermogen sensor (W of kW, realtime PV-overschot regeling)",
+          "grid_export_sensor": "Netteruglevering vermogen sensor (W of kW, realtime PV-overschot regeling)"
         },
         "data_description": {
           "ventilation_type": "Type ventilatiesysteem in de woning voor berekening van ventilatieverliezen",
           "ceiling_height": "Gemiddelde plafondhoogte voor berekening van gebouwvolume (standaard: 2,5m)",
+          "thermal_mass_class": "Bouwgewichtklasse, gebruikt door de herontworpen optimizer (optimize_v2) in plaats van de op het energielabel gebaseerde schatting (standaard: medium)",
+          "emitter_type": "Hoe het afgiftevermogen van de warmteafgever afneemt bij lagere aanvoertemperatuur, gebruikt door de herontworpen optimizer (optimize_v2) (standaard: radiator)",
           "pv_east_wp": "Totaal piekvermogen van op het oosten gerichte PV-panelen in Wp",
           "pv_south_wp": "Totaal piekvermogen van op het zuiden gerichte PV-panelen in Wp",
           "pv_west_wp": "Totaal piekvermogen van op het westen gerichte PV-panelen in Wp",
@@ -79,6 +85,14 @@
           "pv_tilt": "Hellingshoek van PV-panelen (0=horizontaal, 90=verticaal, typisch: 35°)"
         }
       }
+    },
+    "abort": {
+      "already_configured": "Apparaat is al geconfigureerd"
+    },
+    "error": {
+      "missing_basic": "Vul de basisinstellingen in (oppervlakte en energielabel) voordat je afrondt.",
+      "no_blocks": "Voeg minstens één verbruiks- of productiebron toe voordat je afrondt.",
+      "cannot_connect": "Kon open-meteo.com niet bereiken. Controleer de internetverbinding en probeer het opnieuw."
     }
   },
   "entity": {
@@ -163,6 +177,54 @@
       },
       "calibration": {
         "name": "Parameter Kalibratie"
+      },
+      "thermal_v2_offset": {
+        "name": "Thermal V2 offset (schaduwmodus, experimenteel)"
+      },
+      "thermal_v2_cost_comparison": {
+        "name": "Thermal V2 kostenvergelijking (schaduwmodus, experimenteel)"
+      },
+      "thermal_calibration": {
+        "name": "Thermische kalibratie (experimenteel)"
+      },
+      "realtime_offset_adjustment": {
+        "name": "Realtime offset-aanpassing (PV-overschot, experimenteel)"
+      },
+      "outdoor_temperature": {
+        "name": "Buitentemperatuur"
+      },
+      "quadratic_cop": {
+        "name": "Kwadratische COP"
+      },
+      "diagnostics": {
+        "name": "Diagnostiek"
+      },
+      "current_electricity_price": {
+        "name": "Huidige elektriciteitsprijs"
+      },
+      "heat_pump_thermal_power": {
+        "name": "Thermisch vermogen warmtepomp"
+      },
+      "heat_pump_energy_daily": {
+        "name": "Warmtepomp energie per dag"
+      },
+      "net_heat_loss_energy_daily": {
+        "name": "Netto warmteverlies energie per dag"
+      }
+    },
+    "select": {
+      "control_mode": {
+        "name": "Regelmodus",
+        "state": {
+          "legacy": "Bestaande optimizer",
+          "follow_curve": "Volg curve (geen optimalisatie)",
+          "optimize_v2": "Herontworpen optimizer (v2, experimenteel)"
+        }
+      }
+    },
+    "climate": {
+      "heating": {
+        "name": "Verwarming"
       }
     }
   },
@@ -179,6 +241,101 @@
         "heat_recovery_70": "WTW 70% rendement",
         "heat_recovery_90": "WTW 90% rendement"
       }
+    },
+    "thermal_mass_class": {
+      "options": {
+        "light": "Licht (houtskeletbouw)",
+        "medium": "Middel (spouwmuur + betonvloer)",
+        "heavy": "Zwaar (metselwerk/beton door de hele woning)"
+      }
+    },
+    "emitter_type": {
+      "options": {
+        "radiator": "Radiator",
+        "underfloor": "Vloerverwarming",
+        "fan_coil": "Ventilatorconvector"
+      }
+    }
+  },
+  "config_subentries": {
+    "heating_zone": {
+      "entry_type": "Verwarmingszone",
+      "flow_title": "Verwarmingszone",
+      "initiate_flow": {
+        "user": "Verwarmingszone toevoegen"
+      },
+      "step": {
+        "user": {
+          "title": "Verwarmingszone toevoegen",
+          "description": "Configureer een extra ruimte of verwarmingscircuit. Prijssensor, curvegrenzen en warmtepompparameters worden gedeeld met de hoofdconfiguratie - hier stel je alleen in wat per ruimte verschilt.",
+          "data": {
+            "name": "Zonenaam",
+            "area_m2": "Vloeroppervlak (m²)",
+            "energy_label": "Energielabel",
+            "target_indoor_temp": "Gewenste binnentemperatuur (°C)",
+            "indoor_temperature_sensor": "Binnentemperatuursensor (optioneel)"
+          }
+        },
+        "reconfigure": {
+          "title": "Verwarmingszone bewerken",
+          "description": "Werk de configuratie van deze zone bij.",
+          "data": {
+            "name": "Zonenaam",
+            "area_m2": "Vloeroppervlak (m²)",
+            "energy_label": "Energielabel",
+            "target_indoor_temp": "Gewenste binnentemperatuur (°C)",
+            "indoor_temperature_sensor": "Binnentemperatuursensor (optioneel)"
+          }
+        }
+      },
+      "error": {
+        "invalid_zone_input": "Ongeldige zoneconfiguratie. Controleer de naam en het vloeroppervlak."
+      },
+      "abort": {
+        "reconfigure_successful": "Verwarmingszone bijgewerkt."
+      }
+    }
+  },
+  "exceptions": {
+    "api_error": {
+      "message": "Open-Meteo API gaf status {status} terug."
+    },
+    "connection_error": {
+      "message": "Fout bij ophalen weergegevens van open-meteo.com: {error}."
+    },
+    "no_forecast_data": {
+      "message": "Geen prognosegegevens in het antwoord van de open-Meteo API."
+    },
+    "no_weather_data": {
+      "message": "Weer-coordinator heeft nog geen gegevens."
+    },
+    "missing_building_config": {
+      "message": "Oppervlakte of energielabel ontbreekt in de configuratie."
+    },
+    "no_heat_data": {
+      "message": "Warmteberekening-coordinator heeft nog geen gegevens."
+    },
+    "no_weather_data_for_optimization": {
+      "message": "Geen weergegevens beschikbaar voor optimalisatie."
+    },
+    "no_price_sensor": {
+      "message": "Er is geen elektriciteitsprijs-sensor geconfigureerd."
+    },
+    "price_sensor_unavailable": {
+      "message": "Prijssensor {sensor} is niet beschikbaar."
+    },
+    "price_data_extraction_failed": {
+      "message": "Kan geen prijsgegevens ophalen uit sensor {sensor}."
+    }
+  },
+  "issues": {
+    "weather_data_unavailable": {
+      "title": "Weergegevens niet beschikbaar (open-meteo)",
+      "description": "De integratie kan de open-meteo.com weer-API niet bereiken, waardoor warmteverlies, zonnewinst en optimalisatie niet berekend kunnen worden. Controleer de internetverbinding of de status van open-meteo.com."
+    },
+    "price_sensor_unavailable": {
+      "title": "Elektriciteitsprijs-sensor niet beschikbaar",
+      "description": "De geconfigureerde prijssensor **{sensor}** is niet beschikbaar of onbekend. De stooklijnoptimalisatie kan niet draaien zonder prijsgegevens. Controleer of de sensor bestaat en werkt."
     }
   }
 }
