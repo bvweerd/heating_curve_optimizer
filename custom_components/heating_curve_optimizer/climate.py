@@ -106,14 +106,16 @@ class HeatingOptimizerClimate(
         """Return the current indoor temperature, if a real sensor is configured."""
         if not self.coordinator.data or not self.coordinator.has_real_indoor_sensor:
             return None
-        return self.coordinator.data.get("indoor_temperature")
+        value = self.coordinator.data.get("indoor_temperature")
+        return float(value) if value is not None else None
 
     @property
     def target_temperature(self) -> float | None:
         """Return the target indoor temperature (same value number.py manages)."""
         if not self.coordinator.data:
             return None
-        return self.coordinator.data.get("target_temperature")
+        value = self.coordinator.data.get("target_temperature")
+        return float(value) if value is not None else None
 
     @property
     def hvac_mode(self) -> HVACMode:

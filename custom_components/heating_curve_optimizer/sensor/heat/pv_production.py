@@ -17,8 +17,13 @@ class CoordinatorPVProductionForecastSensor(CoordinatorEntity, BaseUtilitySensor
     _unrecorded_attributes = frozenset({"forecast"})
 
     def __init__(
-        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
-    ):
+        self,
+        coordinator: Any,
+        name: str,
+        unique_id: str,
+        icon: str,
+        device: DeviceInfo,
+    ) -> None:
         """Initialize the sensor."""
         CoordinatorEntity.__init__(self, coordinator)
         BaseUtilitySensor.__init__(
@@ -36,12 +41,12 @@ class CoordinatorPVProductionForecastSensor(CoordinatorEntity, BaseUtilitySensor
         self._attr_should_poll = False
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | None:
         """Return current PV production forecast."""
         if not self.coordinator.data:
             return None
         forecast = self.coordinator.data.get("pv_production_forecast", [])
-        return forecast[0] if forecast else None
+        return float(forecast[0]) if forecast else None
 
     @property
     def available(self) -> bool:

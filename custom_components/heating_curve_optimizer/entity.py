@@ -20,7 +20,7 @@ class BaseUtilitySensor(SensorEntity, RestoreEntity):  # type: ignore[misc]  # H
         self,
         name: str | None,
         unique_id: str,
-        unit: str,
+        unit: str | None,
         device_class: SensorDeviceClass | str | None,
         icon: str,
         visible: bool,
@@ -45,18 +45,22 @@ class BaseUtilitySensor(SensorEntity, RestoreEntity):  # type: ignore[misc]  # H
         self._last_unavailable_reason: str | None = None
 
     @property
-    def native_value(self) -> float | None:
+    def native_value(self) -> float | str | None:
         """Return the sensor's value.
 
-        Declared `float | None` (never actually None here - see below) so
-        that CoordinatorEntity subclasses overriding this property (which
-        genuinely do return None while coordinator data isn't available
-        yet, deferring to their own `available` property) don't violate
-        Liskov substitution under mypy --strict.
+        Declared `float | str | None` (this base implementation only ever
+        returns a plain float - see below) so that subclasses overriding
+        this property don't violate Liskov substitution under
+        mypy --strict: CoordinatorEntity subclasses genuinely return None
+        while coordinator data isn't available yet (deferring to their own
+        `available` property), and CoordinatorDiagnosticsSensor genuinely
+        reports a string status ("OK"/"PARTIAL"/...), matching real HA
+        SensorEntity.native_value's own StateType contract, which is
+        broader than plain `float` to begin with.
         """
         return float(round(float(self._attr_native_value or 0.0), 8))
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         last_state = await self.async_get_last_state()
         if last_state is not None and last_state.state not in (
             "unknown",
@@ -67,11 +71,11 @@ class BaseUtilitySensor(SensorEntity, RestoreEntity):  # type: ignore[misc]  # H
             except ValueError:
                 self._attr_native_value = 0.0
 
-    def reset(self):
+    def reset(self) -> None:
         self._attr_native_value = 0.0
         self.async_write_ha_state()
 
-    def set_value(self, value: float):
+    def set_value(self, value: float) -> None:
         self._attr_native_value = round(value, 8)
         self.async_write_ha_state()
 

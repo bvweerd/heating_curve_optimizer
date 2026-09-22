@@ -17,8 +17,13 @@ class CoordinatorNetHeatLossSensor(CoordinatorEntity, BaseUtilitySensor):  # typ
     _unrecorded_attributes = frozenset({"forecast"})
 
     def __init__(
-        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
-    ):
+        self,
+        coordinator: Any,
+        name: str,
+        unique_id: str,
+        icon: str,
+        device: DeviceInfo,
+    ) -> None:
         """Initialize the sensor."""
         CoordinatorEntity.__init__(self, coordinator)
         BaseUtilitySensor.__init__(
@@ -36,11 +41,12 @@ class CoordinatorNetHeatLossSensor(CoordinatorEntity, BaseUtilitySensor):  # typ
         self._attr_should_poll = False
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | None:
         """Return net heat loss."""
         if not self.coordinator.data:
             return None
-        return self.coordinator.data.get("net_heat_loss")
+        value = self.coordinator.data.get("net_heat_loss")
+        return float(value) if value is not None else None
 
     @property
     def available(self) -> bool:

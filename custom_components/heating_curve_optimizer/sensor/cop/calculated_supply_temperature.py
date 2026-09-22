@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -16,7 +18,7 @@ class CoordinatorCalculatedSupplyTemperatureSensor(
 
     def __init__(
         self,
-        coordinator,
+        coordinator: Any,
         name: str,
         unique_id: str,
         device: DeviceInfo,
@@ -24,7 +26,7 @@ class CoordinatorCalculatedSupplyTemperatureSensor(
         max_temp: float = 45.0,
         min_outdoor: float = -20.0,
         max_outdoor: float = 15.0,
-    ):
+    ) -> None:
         """Initialize the sensor."""
         CoordinatorEntity.__init__(self, coordinator)
         BaseUtilitySensor.__init__(
@@ -46,15 +48,16 @@ class CoordinatorCalculatedSupplyTemperatureSensor(
         self.max_outdoor = max_outdoor
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | None:
         """Calculate supply temperature from heating curve."""
         if not self.coordinator.data:
             return None
 
         # Get outdoor temperature
-        outdoor_temp = self.coordinator.data.get("current_temperature")
-        if outdoor_temp is None:
+        raw_outdoor_temp = self.coordinator.data.get("current_temperature")
+        if raw_outdoor_temp is None:
             return None
+        outdoor_temp = float(raw_outdoor_temp)
 
         # Calculate supply temperature using heating curve
         # Linear interpolation between min/max temps based on outdoor temp
@@ -70,7 +73,7 @@ class CoordinatorCalculatedSupplyTemperatureSensor(
                 (outdoor_temp - self.min_outdoor) / outdoor_range * temp_range
             )
 
-        return round(supply_temp, 1)
+        return float(round(supply_temp, 1))
 
     @property
     def available(self) -> bool:

@@ -14,7 +14,9 @@ from ...entity import BaseUtilitySensor
 class CoordinatorOutdoorTemperatureSensor(CoordinatorEntity, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Outdoor temperature sensor using weather coordinator."""
 
-    def __init__(self, coordinator, name: str, unique_id: str, device: DeviceInfo):
+    def __init__(
+        self, coordinator: Any, name: str, unique_id: str, device: DeviceInfo
+    ) -> None:
         """Initialize the sensor."""
         CoordinatorEntity.__init__(self, coordinator)
         BaseUtilitySensor.__init__(
@@ -32,11 +34,12 @@ class CoordinatorOutdoorTemperatureSensor(CoordinatorEntity, BaseUtilitySensor):
         self._attr_should_poll = False
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | None:
         """Return current temperature."""
         if not self.coordinator.data:
             return None
-        return self.coordinator.data.get("current_temperature")
+        value = self.coordinator.data.get("current_temperature")
+        return float(value) if value is not None else None
 
     @property
     def available(self) -> bool:

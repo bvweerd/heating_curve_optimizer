@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -29,7 +30,7 @@ class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity): 
     _attr_device_class = BinarySensorDeviceClass.HEAT
     _attr_should_poll = False
 
-    def __init__(self, coordinator, entry_id: str, device: DeviceInfo) -> None:
+    def __init__(self, coordinator: Any, entry_id: str, device: DeviceInfo) -> None:
         """Initialize the binary sensor."""
         super().__init__(coordinator)
         self._entry_id = entry_id
@@ -46,8 +47,10 @@ class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity): 
             return False
         # Use heat_pump_on state which considers temperature hysteresis
         # Falls back to net_heat_loss > 0 for backward compatibility
-        return self.coordinator.data.get(
-            "heat_pump_on", self.coordinator.data.get("net_heat_loss", 0.0) > 0.0
+        return bool(
+            self.coordinator.data.get(
+                "heat_pump_on", self.coordinator.data.get("net_heat_loss", 0.0) > 0.0
+            )
         )
 
     @property
@@ -118,23 +121,23 @@ class HeatDemandBinarySensor(BinarySensorEntity):  # type: ignore[misc]  # HA ba
             self._extra_attrs = {}
             return
 
-        state = self.hass.states.get(entity_id)
+        state = self.hass.states.get(str(entity_id))
         if state is None or state.state in ("unknown", "unavailable"):
             self._attr_available = False
-            self._extra_attrs = {"net_heat_entity_id": entity_id}
+            self._extra_attrs = {"net_heat_entity_id": str(entity_id)}
             return
 
         try:
             net_heat = float(state.state)
         except (TypeError, ValueError):
             self._attr_available = False
-            self._extra_attrs = {"net_heat_entity_id": entity_id}
+            self._extra_attrs = {"net_heat_entity_id": str(entity_id)}
             return
 
         self._attr_available = True
         self._attr_is_on = net_heat > 0.0
         self._extra_attrs = {
-            "net_heat_entity_id": entity_id,
+            "net_heat_entity_id": str(entity_id),
             "net_heat_kW": round(net_heat, 3),
         }
 
@@ -156,7 +159,7 @@ async def async_setup_entry(
     heat_coordinator = runtime_data.heat_coordinator if runtime_data else None
     device = runtime_data.device if runtime_data else None
 
-    if heat_coordinator and device:
+    if heat_coordinator and device and runtime_data is not None:
         # Use coordinator-based binary sensor
         _LOGGER.info("Setting up coordinator-based heat demand binary sensor")
         async_add_entities(

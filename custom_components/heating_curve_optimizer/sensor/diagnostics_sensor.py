@@ -15,13 +15,13 @@ class CoordinatorDiagnosticsSensor(CoordinatorEntity, BaseUtilitySensor):  # typ
 
     def __init__(
         self,
-        weather_coordinator,
-        heat_coordinator,
-        optimization_coordinator,
+        weather_coordinator: Any,
+        heat_coordinator: Any,
+        optimization_coordinator: Any,
         name: str,
         unique_id: str,
         device: DeviceInfo,
-    ):
+    ) -> None:
         """Initialize the diagnostics sensor."""
         # Use weather coordinator as primary
         CoordinatorEntity.__init__(self, weather_coordinator)
@@ -45,7 +45,7 @@ class CoordinatorDiagnosticsSensor(CoordinatorEntity, BaseUtilitySensor):  # typ
         self.optimization_coordinator = optimization_coordinator
 
     @property
-    def native_value(self):
+    def native_value(self) -> str:
         """Return status based on coordinator states."""
         # Count successful coordinators
         success_count = sum(
