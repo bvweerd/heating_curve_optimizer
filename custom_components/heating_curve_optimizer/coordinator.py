@@ -206,6 +206,7 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):
         hass: HomeAssistant,
         weather_coordinator: WeatherDataCoordinator,
         config: dict[str, Any],
+        entry_id: str,
     ):
         """Initialize the heat calculation coordinator."""
         super().__init__(
@@ -216,6 +217,7 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):
         )
         self.weather_coordinator = weather_coordinator
         self.config = config
+        self._entry_id = entry_id
         self._indoor_temp_sensor = config.get(CONF_INDOOR_TEMPERATURE_SENSOR)
         self._unsub = None
 
@@ -283,8 +285,12 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):
                 except (ValueError, TypeError):
                     pass
 
-        # Get target temperature and hysteresis from runtime data (number entities) or config
-        runtime = self.hass.data.get(DOMAIN, {}).get("runtime", {})
+        # Get target temperature and hysteresis from runtime data (number entities) or
+        # config. Runtime data is keyed per entry_id (see number.py) so multiple config
+        # entries don't share one target temperature.
+        runtime = self.hass.data.get(DOMAIN, {}).get("runtime", {}).get(
+            self._entry_id, {}
+        )
         target_temp = runtime.get(
             CONF_TARGET_INDOOR_TEMP,
             self.config.get(CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP),

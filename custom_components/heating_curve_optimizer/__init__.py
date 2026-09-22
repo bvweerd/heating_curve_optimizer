@@ -48,7 +48,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await weather_coordinator.async_config_entry_first_refresh()
 
     # 2. Heat calculation coordinator (depends on weather coordinator)
-    heat_coordinator = HeatCalculationCoordinator(hass, weather_coordinator, config)
+    heat_coordinator = HeatCalculationCoordinator(
+        hass, weather_coordinator, config, entry.entry_id
+    )
     await heat_coordinator.async_setup()
     await heat_coordinator.async_config_entry_first_refresh()
 

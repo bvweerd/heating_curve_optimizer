@@ -28,7 +28,9 @@ async def test_heat_coordinator_initialization(hass: HomeAssistant):
         "glass_u_value": 1.2,
     }
 
-    coordinator = HeatCalculationCoordinator(hass, weather_coordinator, config)
+    coordinator = HeatCalculationCoordinator(
+        hass, weather_coordinator, config, "test_entry"
+    )
 
     assert coordinator.weather_coordinator == weather_coordinator
     assert coordinator.config == config
@@ -61,7 +63,9 @@ async def test_heat_coordinator_shutdown(hass: HomeAssistant):
     weather_coordinator = MagicMock()
     config = {"area_m2": 150, "energy_label": "C"}
 
-    coordinator = HeatCalculationCoordinator(hass, weather_coordinator, config)
+    coordinator = HeatCalculationCoordinator(
+        hass, weather_coordinator, config, "test_entry"
+    )
     await coordinator.async_setup()
 
     # Should complete without error
