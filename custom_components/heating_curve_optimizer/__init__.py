@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from homeassistant.core import HomeAssistant
+import voluptuous as vol
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity import DeviceInfo
@@ -31,12 +32,66 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 # `_NO_RELOAD_KEYS`.
 _NO_RELOAD_KEYS = frozenset({CONF_CONTROL_MODE})
 
+SERVICE_RESET_THERMAL_CALIBRATION = "reset_thermal_calibration"
+SERVICE_ENTRY_ID = "entry_id"
+_SERVICE_RESET_SCHEMA = vol.Schema({vol.Optional(SERVICE_ENTRY_ID): cv.string})
+
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the base integration (no YAML)."""
     hass.data.setdefault(DOMAIN, {})
     _LOGGER.info("Initialized Heating Curve Optimizer")
     return True
+
+
+async def _async_handle_reset_thermal_calibration(
+    hass: HomeAssistant, call: ServiceCall
+) -> None:
+    """Reset thermal calibration (calibration.py) for one or all entries.
+
+    The escape hatch a bad fit needs: without it, a wrong learned UA/
+    thermal-mass could otherwise only be cleared by editing `.storage` by
+    hand. Mirrors battery_controller's per-direction reset services.
+    """
+    requested_entry_id = call.data.get(SERVICE_ENTRY_ID)
+    entry_ids = list(hass.data.get(DOMAIN, {}).keys())
+    matched = [
+        entry_id
+        for entry_id in entry_ids
+        if entry_id not in ("runtime", "entities")
+        and (requested_entry_id is None or entry_id == requested_entry_id)
+    ]
+    if not matched:
+        _LOGGER.warning(
+            "Thermal calibration reset requested for unknown entry_id=%s",
+            requested_entry_id,
+        )
+        return
+
+    for entry_id in matched:
+        entry_data = hass.data[DOMAIN].get(entry_id)
+        if not entry_data:
+            continue
+        optimization_coordinator = entry_data.get("optimization_coordinator")
+        if optimization_coordinator is None:
+            continue
+        await optimization_coordinator.async_reset_thermal_calibration()
+
+
+def _async_register_services(hass: HomeAssistant) -> None:
+    """Register domain services once."""
+    if hass.services.has_service(DOMAIN, SERVICE_RESET_THERMAL_CALIBRATION):
+        return
+
+    async def _handle(call: ServiceCall) -> None:
+        await _async_handle_reset_thermal_calibration(hass, call)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_RESET_THERMAL_CALIBRATION,
+        _handle,
+        schema=_SERVICE_RESET_SCHEMA,
+    )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -64,7 +119,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await heat_coordinator.async_config_entry_first_refresh()
 
     # 3. Optimization coordinator (depends on heat coordinator)
-    optimization_coordinator = OptimizationCoordinator(hass, heat_coordinator, config)
+    optimization_coordinator = OptimizationCoordinator(
+        hass, heat_coordinator, config, entry.entry_id
+    )
     await optimization_coordinator.async_setup()
 
     # Trigger first optimization async (don't block startup)
@@ -101,6 +158,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     _LOGGER.debug("Coordinators initialized successfully")
+
+    _async_register_services(hass)
 
     entry.async_on_unload(entry.add_update_listener(_update_listener))
 

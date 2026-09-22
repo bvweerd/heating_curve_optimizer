@@ -64,6 +64,7 @@ from ..sensor_thermal_shadow import (
     ThermalShadowCostComparisonSensor,
     ThermalShadowOffsetSensor,
 )
+from ..sensor_thermal_calibration import ThermalCalibrationSensor
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -316,6 +317,15 @@ async def async_setup_entry(
             name="Thermal V2 Cost Comparison",
             unique_id=f"{entry.entry_id}_thermal_v2_cost_comparison",
             icon="mdi:scale-balance",
+            device=device,
+        )
+    )
+    entities.append(
+        ThermalCalibrationSensor(
+            coordinator=optimization_coordinator,
+            name="Thermal Calibration",
+            unique_id=f"{entry.entry_id}_thermal_calibration",
+            icon="mdi:tune",
             device=device,
         )
     )

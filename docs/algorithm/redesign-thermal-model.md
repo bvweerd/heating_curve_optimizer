@@ -147,9 +147,70 @@ realtime PV-dump-regeling in fase 5 (`realtime_controller.py`).
     globale optimum vindt, naar het voorbeeld van battery_controller's
     `simulate/brute_force_step0.py`.
 
+## Fase 2 — schaduwmodus
+
+`OptimizationCoordinator` draait de nieuwe optimizer elke cyclus mee naast
+de bestaande DP, met dezelfde forecasts. Het resultaat komt alleen terecht
+in twee standaard-uitgeschakelde diagnostische sensoren
+(`sensor_thermal_shadow.py`): welke offset de nieuwe optimizer zou kiezen,
+en hoeveel goedkoper (of duurder) dat naar schatting is dan wat de
+bestaande optimizer nu echt doet. Een fout in de nieuwe berekening wordt
+dubbel geïsoleerd (in de methode zelf en op de aanroepplek) zodat hij nooit
+het echte, sturende resultaat kan raken.
+
+## Fase 3 — control_mode
+
+`select.control_mode` (`legacy` / `follow_curve` / `optimize_v2`) bepaalt
+welke motor `optimized_offset` daadwerkelijk levert. Default blijft
+`legacy` — de fase-2 schaduwdiagnostiek heeft nog geen enkel uur op een
+echte installatie gedraaid, dus de default omzetten zou echt stookgedrag
+laten sturen door een ongevalideerd model. `follow_curve` is een nieuwe
+mogelijkheid op zich: offset altijd 0, een schone nulmeting. Bij
+`optimize_v2` valt de coordinator terug op het legacy-resultaat zodra de
+nieuwe optimizer een cyclus faalt — er is nooit een cyclus zonder beslissing.
+
+## Fase 4 — kalibratie
+
+`calibration.py` leert `ua_w_per_k` en `thermal_mass_kwh_per_k` uit echte
+bedrijfsdata, in plaats van ze vast te houden op de label-schatting.
+
+**De fit.** Elke stap levert één waarneming:
+`T_in` voor en na, `T_buiten`, en de warmte- plus zoninstroom over die stap.
+Het 1R1C-model herschreven met `rate = ΔT_in/step_hours` en
+`delta_t = T_in - T_buiten`:
+
+```
+thermal_mass_kwh_per_k * rate + (ua_w_per_k/1000) * delta_t = heat_in_kw + solar_kw
+```
+
+Dit is lineair in de twee onbekenden, dus over ≥2 waarnemingen een gewone
+kleinste-kwadratenfit in gesloten vorm (`fit_ua_and_thermal_mass`) — geen
+externe numerieke afhankelijkheid nodig.
+
+**Onafhankelijkheid van de prior.** `heat_in_kw` berekenen uit de huidige
+UA-schatting zou circulair zijn — de regressie zou dan zijn eigen prior
+herontdekken. In plaats daarvan komt de warmte-input uit de echte
+stroommeter (`CONF_POWER_CONSUMPTION`), omgerekend naar thermisch vermogen
+via de COP-curve (`HeatPumpConfig.cop_at`) — die hangt af van `k_factor`,
+`base_cop` en temperaturen, nooit van UA of thermische massa.
+
+**Wanneer een sample telt.** Alleen als een echte binnentemperatuursensor
+is geconfigureerd (`has_real_indoor_sensor`), de stroommeter een herkende
+eenheid heeft (`kW`/`W` — nooit geraden), en het tijdsverschil tussen twee
+cycli plausibel is (0,05–3 uur; een herstart of netwerkuitval slaat de
+waarneming over in plaats van een zinloze rate te leren).
+
+**Vertrouwen.** Een fit wordt pas toegepast na `MIN_SAMPLES_TO_APPLY = 30`
+waarnemingen, en alleen als hij binnen `PLAUSIBLE_RATIO_BOUNDS` (0,3×–3×)
+van de label-gebaseerde prior valt — een uitschieter (sensorstoring,
+ontdooicyclus) wordt in het venster opgenomen maar niet toegepast,
+vergelijkbaar met `CALIBRATION_ACCEPT_MIN/MAX` in battery_controller's
+`efficiency_calibration.py`. Persistente opslag via HA `Store`,
+resetbaar via de service `heating_curve_optimizer.reset_thermal_calibration`.
+
 ## Status
 
-Dit is fase 1 uit het redesignplan: de fysica-kern staat, is getest, maar
-draait nog **niet** aangesloten op de coordinators of sensors. Fase 2
-(schaduwmodus) sluit hem aan als diagnostische sensor naast de bestaande
-optimizer, vóórdat hij in fase 3 daadwerkelijk stuurgedrag overneemt.
+Fase 0 t/m 4 uit het redesignplan zijn geïmplementeerd en getest. Nog open:
+fase 5 (subentries voor meerdere zones, `climate`-entiteit,
+`realtime_controller.py` voor PV-warmtedump) en fase 6 (afronding:
+quality_scale, versiebump, laatste documentatieronde).

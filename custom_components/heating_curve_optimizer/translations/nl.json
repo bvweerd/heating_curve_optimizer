@@ -169,6 +169,9 @@
       },
       "thermal_v2_cost_comparison": {
         "name": "Thermal V2 kostenvergelijking (schaduwmodus, experimenteel)"
+      },
+      "thermal_calibration": {
+        "name": "Thermische kalibratie (experimenteel)"
       }
     },
     "select": {

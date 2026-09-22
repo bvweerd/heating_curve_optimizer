@@ -9,6 +9,7 @@ from typing import Any
 
 import aiohttp
 from homeassistant.core import HomeAssistant, Event
+from homeassistant.helpers import storage
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
@@ -46,6 +47,7 @@ from .const import (
     CONF_PV_SOUTH_WP,
     CONF_PV_WEST_WP,
     CONF_PV_TILT,
+    CONF_POWER_CONSUMPTION,
     CONF_VENTILATION_TYPE,
     CONF_CEILING_HEIGHT,
     CONF_CONTROL_MODE,
@@ -72,6 +74,8 @@ from .const import (
     calculate_htc_from_energy_label,
 )
 from .building_model import BuildingConfig, EmitterConfig
+from .calibration import ThermalCalibrationState
+from .calibration import STORAGE_VERSION as CALIBRATION_STORAGE_VERSION
 from .heatpump_model import HeatPumpConfig
 from .helpers import extract_price_forecast_with_interval
 from .optimizer import calculate_buffer_energy, optimize_offsets
@@ -228,6 +232,16 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):
         self._entry_id = entry_id
         self._indoor_temp_sensor = config.get(CONF_INDOOR_TEMPERATURE_SENSOR)
         self._unsub = None
+
+    @property
+    def has_real_indoor_sensor(self) -> bool:
+        """Whether a real indoor-temperature sensor is configured.
+
+        Without one, `data["indoor_temperature"]` is the fixed
+        `INDOOR_TEMPERATURE` fallback, not a real measurement - calibration
+        (calibration.py) must never treat that fallback as ground truth.
+        """
+        return bool(self._indoor_temp_sensor)
 
     async def async_setup(self) -> None:
         """Set up event tracking for indoor temperature changes."""
@@ -526,6 +540,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         hass: HomeAssistant,
         heat_coordinator: HeatCalculationCoordinator,
         config: dict[str, Any],
+        entry_id: str = "",
     ):
         """Initialize the optimization coordinator."""
         super().__init__(
@@ -536,6 +551,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         )
         self.heat_coordinator = heat_coordinator
         self.config = config
+        self._entry_id = entry_id
         self._price_sensor = config.get(CONF_CONSUMPTION_PRICE_SENSOR)
         self._unsub = None
         self._last_price = None
@@ -546,6 +562,12 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         # battery_controller's BatteryControlModeSelect), falling back to
         # data, then the legacy default.
         self._control_mode: str = config.get(CONF_CONTROL_MODE, DEFAULT_CONTROL_MODE)
+        # Thermal calibration (fase 4, REDESIGN.md). Only set up when
+        # entry_id is known (async_setup loads it from Store) - tests that
+        # construct a coordinator without one, or without calling
+        # async_setup, simply get no calibration, same as _unsub above.
+        self._calibration: ThermalCalibrationState | None = None
+        self._last_calibration_snapshot: dict[str, Any] | None = None
 
     @property
     def control_mode(self) -> str:
@@ -560,8 +582,25 @@ class OptimizationCoordinator(DataUpdateCoordinator):
             return
         self._control_mode = value
 
+    @property
+    def thermal_calibration(self) -> ThermalCalibrationState | None:
+        """Return the thermal calibration state, if async_setup has run."""
+        return self._calibration
+
+    async def async_reset_thermal_calibration(self) -> None:
+        """Reset thermal calibration to the label-based prior (service handler)."""
+        if self._calibration is None:
+            _LOGGER.warning(
+                "Cannot reset thermal calibration: not set up (entry_id missing "
+                "or async_setup not called)"
+            )
+            return
+        await self._calibration.async_reset()
+        self._last_calibration_snapshot = None
+        await self.async_request_refresh()
+
     async def async_setup(self) -> None:
-        """Set up event tracking for price changes."""
+        """Set up event tracking for price changes and load thermal calibration."""
         if self._price_sensor:
             self._unsub = async_track_state_change_event(
                 self.hass,
@@ -569,6 +608,16 @@ class OptimizationCoordinator(DataUpdateCoordinator):
                 self._handle_price_change,
             )
             _LOGGER.debug("Tracking price sensor: %s", self._price_sensor)
+
+        if self._entry_id:
+            self._calibration = ThermalCalibrationState(
+                store=storage.Store(
+                    self.hass,
+                    CALIBRATION_STORAGE_VERSION,
+                    f"{DOMAIN}_{self._entry_id}_thermal_calibration",
+                )
+            )
+            await self._calibration.async_load()
 
     async def _handle_price_change(self, event: Event) -> None:
         """Handle significant price changes."""
@@ -830,6 +879,24 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         # produced it - zero behaviour change for every installation that
         # has not explicitly switched control_mode.
 
+        # Fase 4 (REDESIGN.md): feed one real observation into thermal
+        # calibration, using whatever `result` now says was actually
+        # applied (post mode-override, so the sample reflects reality
+        # regardless of which engine is currently driving).
+        await self._maybe_record_calibration_sample(
+            indoor_temp=heat_data.get("indoor_temperature", INDOOR_TEMPERATURE),
+            outdoor_temp=weather_data.get(
+                "current_temperature", temp_forecast[0] if temp_forecast else 5.0
+            ),
+            solar_gain_kw=heat_data.get("solar_gain", 0.0),
+            supply_temp=(
+                result["future_supply_temperatures"][0]
+                if result.get("future_supply_temperatures")
+                else max(min_supply, min(max_supply, 35.0))
+            ),
+            heat_pump_on=heat_pump_on,
+        )
+
         # Update tracked state for next optimization run. Note: buffer_evolution's
         # units/semantics depend on the active control mode (legacy debt/surplus
         # vs. the v2 comfort-floor-relative kWh above) - switching control_mode
@@ -1005,6 +1072,105 @@ class OptimizationCoordinator(DataUpdateCoordinator):
                 "error": str(err),
             }
 
+    def _read_power_consumption_kw(self) -> float | None:
+        """Read the configured heat-pump electricity meter, in kW.
+
+        Returns None if not configured, unavailable, or its unit can't be
+        determined - calibration.py's independence from the UA/thermal-mass
+        prior depends on this being a real, correctly-scaled measurement,
+        so a guessed unit (e.g. "big number must be Watts") is worse than
+        no sample at all.
+        """
+        sensor_id = self.config.get(CONF_POWER_CONSUMPTION)
+        if not sensor_id:
+            return None
+        state = self.hass.states.get(sensor_id)
+        if not state or state.state in ("unknown", "unavailable"):
+            return None
+        try:
+            value = float(state.state)
+        except (ValueError, TypeError):
+            return None
+        unit = state.attributes.get("unit_of_measurement", "")
+        if unit == "kW":
+            return value
+        if unit == "W":
+            return value / 1000.0
+        _LOGGER.debug(
+            "Cannot use %s for thermal calibration: unrecognized power unit %r",
+            sensor_id,
+            unit,
+        )
+        return None
+
+    async def _maybe_record_calibration_sample(
+        self,
+        *,
+        indoor_temp: float,
+        outdoor_temp: float,
+        solar_gain_kw: float,
+        supply_temp: float,
+        heat_pump_on: bool,
+    ) -> None:
+        """Feed one real observation into thermal calibration, if eligible.
+
+        Sequencing: this cycle records what it believes was delivered
+        (electricity meter x COP - independent of UA/thermal_mass, see
+        calibration.py's module docstring); the *next* cycle compares the
+        real indoor-temperature change since now against that belief. So
+        the snapshot taken this cycle only completes next cycle's sample,
+        never this one's - `self._last_calibration_snapshot` carries it
+        forward.
+        """
+        if (
+            self._calibration is None
+            or not self.heat_coordinator.has_real_indoor_sensor
+        ):
+            return
+
+        now = dt_util.utcnow()
+        power_kw = self._read_power_consumption_kw()
+        thermal_power_kw = None
+        if power_kw is not None and heat_pump_on:
+            heatpump = HeatPumpConfig.from_config(self.config)
+            thermal_power_kw = power_kw * heatpump.cop_at(
+                supply_temp=supply_temp, outdoor_temp=outdoor_temp
+            )
+
+        previous = self._last_calibration_snapshot
+        if previous is not None and previous.get("heat_and_solar_kw") is not None:
+            elapsed_hours = (now - previous["timestamp"]).total_seconds() / 3600.0
+            # Skip startup gaps (near-zero elapsed) and long outages (HA
+            # restart, network loss) - both make the observed rate
+            # meaningless rather than merely noisy.
+            if 0.05 <= elapsed_hours <= 3.0:
+                building = BuildingConfig.from_config(self.config)
+                if building.area_m2 > 0:
+                    delta_t = previous["indoor_temp"] - previous["outdoor_temp"]
+                    rate_c_per_h = (
+                        indoor_temp - previous["indoor_temp"]
+                    ) / elapsed_hours
+                    self._calibration.record_sample(
+                        delta_t=delta_t,
+                        heat_and_solar_kw=previous["heat_and_solar_kw"],
+                        rate_c_per_h=rate_c_per_h,
+                        prior_ua_w_per_k=building.ua_w_per_k,
+                        prior_thermal_mass_kwh_per_k=building.thermal_mass_kwh_per_k,
+                    )
+                    await self._calibration.async_save()
+
+        heat_and_solar_kw = (
+            None
+            if thermal_power_kw is None
+            else thermal_power_kw + max(0.0, solar_gain_kw)
+        )
+        self._last_calibration_snapshot = {
+            "timestamp": now,
+            "indoor_temp": indoor_temp,
+            "outdoor_temp": outdoor_temp,
+            "heat_and_solar_kw": heat_and_solar_kw,
+        }
+
     def _run_thermal_v2_optimization(
         self,
         demand_forecast: list[float],
@@ -1034,6 +1200,19 @@ class OptimizationCoordinator(DataUpdateCoordinator):
             building = BuildingConfig.from_config(self.config)
             if building.area_m2 <= 0:
                 raise ValueError("area_m2 not configured")
+
+            # Fase 4 (REDESIGN.md): once calibration has learned enough
+            # from real operation, it overrides the label-based prior.
+            calibration = self._calibration
+            if calibration is not None and calibration.applied:
+                building.ua_w_per_k = calibration.learned_ua_w_per_k
+                building.thermal_mass_kwh_per_k = (
+                    calibration.learned_thermal_mass_kwh_per_k
+                )
+                if building.ua_w_per_k > 0:
+                    building.time_constant_hours = building.thermal_mass_kwh_per_k / (
+                        building.ua_w_per_k / 1000.0
+                    )
 
             emitter = EmitterConfig.sized_to_building(
                 building,
@@ -1089,6 +1268,12 @@ class OptimizationCoordinator(DataUpdateCoordinator):
                 "heatpump_max_thermal_power_kw": round(
                     heatpump.max_thermal_power_kw, 2
                 ),
+                "calibration_applied": calibration.applied
+                if calibration is not None
+                else False,
+                "calibration_sample_count": calibration.sample_count
+                if calibration is not None
+                else 0,
                 "timestamp": dt_util.utcnow(),
             }
         except Exception as err:
