@@ -72,10 +72,13 @@ rules:
       is served by Home Assistant core via async_get_clientsession, never
       installed standalone.
   docs-actions:
-    status: todo
+    status: done
     comment: |
-      services.yaml describes reset_thermal_calibration, but no docs/
-      page covers it yet.
+      docs/reference/troubleshooting.md gained a "Reset Thermal
+      Calibration" section (this session) documenting
+      heating_curve_optimizer.reset_thermal_calibration - when to use
+      it, the action call with its optional entry_id field, and what it
+      actually resets.
   docs-conditions:
     status: exempt
     comment: No condition platform; the integration provides no conditions.

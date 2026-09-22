@@ -512,6 +512,25 @@ sensor.heating_curve_optimizer_heat_buffer:
   last_state: 3.2  # Should match pre-restart value
 ```
 
+### Reset Thermal Calibration
+
+If [thermal calibration](../configuration.md#advanced-redesigned-optimizer-settings)
+has learned an implausible UA or thermal mass (for example after a
+sensor placement change, or a period of bad data), reset it back to the
+label-based estimate:
+
+**Developer Tools → Actions**, action `heating_curve_optimizer.reset_thermal_calibration`:
+
+```yaml
+action: heating_curve_optimizer.reset_thermal_calibration
+data:
+  entry_id: "01KK4RJJQZBD9C3FMEVYAB0VAB"  # optional - omit to reset every entry
+```
+
+This clears all calibration samples and the learned UA/thermal-mass
+values; the redesigned optimizer immediately falls back to the
+energy-label-based estimate and starts learning again from scratch.
+
 ---
 
 ## Known Limitations
