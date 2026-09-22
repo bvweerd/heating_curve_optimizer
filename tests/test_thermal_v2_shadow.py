@@ -8,11 +8,12 @@ can never break it, even when its own inputs are bad.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
 
+from custom_components.heating_curve_optimizer.building_model import EmitterConfig
 from custom_components.heating_curve_optimizer.coordinator import (
     HeatCalculationCoordinator,
     OptimizationCoordinator,
@@ -64,6 +65,38 @@ async def test_thermal_v2_returns_available_result_for_valid_config(
     assert result["total_cost_eur"] >= 0.0
     assert result["building_ua_w_per_k"] > 0
     assert result["emitter_nominal_power_kw"] > 0
+
+
+@pytest.mark.asyncio
+async def test_thermal_v2_forwards_configured_emitter_type(hass: HomeAssistant):
+    """CONF_EMITTER_TYPE (const.py) must actually reach
+    EmitterConfig.sized_to_building - it was defined and read by
+    building_model.py's EMITTER_EXPONENT_MAP but never forwarded from
+    coordinator.py's config dict until this session, so the config key was
+    silently ignored no matter what it was set to."""
+    heat_coordinator = MagicMock()
+    config = {**VALID_CONFIG, "emitter_type": "underfloor"}
+    coordinator = OptimizationCoordinator(hass, heat_coordinator, config)
+
+    with patch.object(
+        EmitterConfig, "sized_to_building", wraps=EmitterConfig.sized_to_building
+    ) as mock_sized:
+        coordinator._run_thermal_v2_optimization(
+            demand_forecast=[1.0] * 12,
+            price_forecast=[0.10] * 12,
+            temp_forecast=[2.0] * 12,
+            solar_gain_forecast=[],
+            indoor_temperature=20.0,
+            time_base=60,
+            offset_delta_t=10,
+            min_supply=20.0,
+            max_supply=45.0,
+            min_outdoor=-10.0,
+            max_outdoor=15.0,
+            current_offset=0,
+        )
+
+    assert mock_sized.call_args.kwargs["emitter_type"] == "underfloor"
 
 
 @pytest.mark.asyncio

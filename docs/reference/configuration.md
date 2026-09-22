@@ -52,6 +52,54 @@ Quick reference for all configuration parameters.
 | `target_indoor_temp` | float | 15-25 | 20.0 | Target indoor temperature setpoint (°C) |
 | `indoor_temp_hysteresis` | float | 0.1-2.0 | 0.5 | Hysteresis band for heat demand modulation (°C) |
 
+## Redesigned Optimizer (`optimize_v2`) Parameters
+
+These control the redesigned thermal optimizer (`building_model.py` /
+`heatpump_model.py` / `thermal_optimizer.py`). They only affect anything once
+`control_mode` (below) is set to `optimize_v2`; on `legacy` (the default)
+they are read but unused.
+
+| Parameter | Type | Values | Default | Description |
+|-----------|------|--------|---------|-------------|
+| `control_mode` | select | `legacy`, `follow_curve`, `optimize_v2` | `legacy` | Which engine drives `optimized_offset` - see [`select.control_mode`](sensors.md). Configured via the **Control Mode** select entity (Settings → Devices & Services → Heating Curve Optimizer), not the setup wizard. |
+| `grid_import_sensor` | entity_id | - | none | Real household grid import power sensor (W), positive = importing. Enables the real-time PV-surplus controller (`realtime_controller.py`) when set. |
+| `grid_export_sensor` | entity_id | - | none | Real household grid export power sensor (W). Used alongside `grid_import_sensor` for the same real-time controller. |
+| `thermal_mass_class` | select | `light`, `medium`, `heavy` | `medium` | Building thermal mass class, used instead of the energy-label-derived estimate when set. See the table below for the underlying Wh/m²K values. |
+| `emitter_type` | select | `radiator`, `underfloor`, `fan_coil` | `radiator` | Heat emitter type - controls how emitter output falls off as supply temperature drops (EN 442-style exponent). See the table below. |
+
+!!! note "Advanced parameters, not yet in the setup wizard"
+    `thermal_mass_class`, `emitter_type` and `grid_import_sensor`/
+    `grid_export_sensor` are read from the config entry but are not (yet)
+    asked for by the UI setup flow or options flow. `grid_import_sensor`/
+    `grid_export_sensor` can be set from **Settings → Devices & Services →
+    Heating Curve Optimizer → Configure** (they are in that form);
+    `thermal_mass_class` and `emitter_type` currently require editing the
+    config entry's stored data directly (e.g. via
+    `homeassistant.update_config_entry`, see below) - a UI field for them
+    is a natural follow-up, not yet built.
+
+### Thermal Mass Class → Wh/m²K
+
+| `thermal_mass_class` | Wh/m²K | Typical construction |
+|-----------------------|--------|------------------------|
+| `light` | 40 | Timber frame, light interior finishes |
+| `medium` (default) | 90 | Standard cavity wall + concrete floor |
+| `heavy` | 165 | Masonry/concrete throughout, exposed screed or floor |
+
+### Emitter Type → EN 442 Exponent
+
+| `emitter_type` | Exponent | Notes |
+|-----------------|----------|-------|
+| `radiator` (default) | 1.3 | Standard panel/column radiators |
+| `underfloor` | 1.1 | Underfloor heating, flatter output curve |
+| `fan_coil` | 1.0 | Fan coils / forced-air emitters, flattest curve |
+
+Higher exponents mean output falls off faster as supply temperature drops
+toward the emitter's design ΔT - this only shapes how the optimizer models
+available heat output at each candidate supply temperature, it does not
+change the sized nominal power itself (still derived automatically from
+your building's peak loss at the heating curve's design point).
+
 ### Offset Change Speed (offset_delta_t) Explained
 
 The `offset_delta_t` parameter controls how quickly the heating curve offset can change:

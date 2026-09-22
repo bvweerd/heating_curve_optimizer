@@ -61,6 +61,8 @@ from .const import (
     MODE_OPTIMIZE_V2,
     CONF_GRID_IMPORT_SENSOR,
     CONF_GRID_EXPORT_SENSOR,
+    CONF_EMITTER_TYPE,
+    DEFAULT_EMITTER_TYPE,
     DEFAULT_REALTIME_INTERVAL_S,
     DEFAULT_COP_AT_35,
     DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER,
@@ -1473,6 +1475,9 @@ class OptimizationCoordinator(DataUpdateCoordinator):
                 building,
                 design_outdoor_temp=min_outdoor,
                 design_supply_temp=max_supply,
+                emitter_type=str(
+                    self.config.get(CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE)
+                ),
             )
             # No dedicated heat-pump-capacity config key exists yet (phase
             # 5 territory). Sized with headroom above what the emitter can

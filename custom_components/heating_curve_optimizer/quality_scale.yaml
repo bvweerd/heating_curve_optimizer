@@ -160,11 +160,25 @@ rules:
       async_unload_entry shuts down both coordinators and delegates
       platform unload to async_unload_platforms.
   docs-configuration-parameters:
-    status: todo
-    comment: docs/configuration.md exists but was not updated for this redesign's new keys (thermal_mass_class, emitter_type, control_mode).
+    status: done
+    comment: |
+      docs/reference/configuration.md gained a "Redesigned Optimizer
+      (optimize_v2) Parameters" section (this session) covering
+      control_mode, grid_import_sensor, grid_export_sensor,
+      thermal_mass_class and emitter_type, including their value tables
+      and an explicit note on which ones are and are not yet exposed by
+      the UI wizard (see docs-installation-parameters below).
+      docs/configuration.md links to it.
   docs-installation-parameters:
-    status: todo
-    comment: Not verified against the current config_flow.py field set this session.
+    status: done
+    comment: |
+      Verified against config_flow.py's actual field set this session.
+      grid_import_sensor/grid_export_sensor ARE asked for in the basic
+      options form (_build_basic_schema) - documented as such.
+      thermal_mass_class/emitter_type are read from config but not (yet)
+      asked for by config_flow.py at all - documented honestly as
+      "advanced, not yet in the setup wizard" rather than claiming UI
+      support that does not exist.
   entity-unavailable:
     status: done
     comment: |
@@ -227,27 +241,55 @@ rules:
     status: exempt
     comment: No device discovery applicable; integration reads HA sensors and open-meteo.com.
   docs-data-update:
-    status: todo
-    comment: No docs page describes the coordinator cascade/update intervals explicitly.
-  docs-examples:
-    status: todo
-  docs-known-limitations:
-    status: todo
+    status: done
     comment: |
-      docs/redesign/REDESIGN.md documents known simplifications in detail
-      (PV surplus not netted against consumption, no DHW handling,
-      realtime_controller deferred), but this is a design document, not
-      user-facing docs.
+      docs/reference/sensors.md's "Update Intervals" table was wrong
+      (claimed a flat "5 min"/"60 min" split that never matched
+      coordinator.py's actual timedelta(minutes=X) calls) - corrected
+      this session to the real cascade: WeatherDataCoordinator 30 min,
+      HeatCalculationCoordinator 5 min, OptimizationCoordinator 15 min,
+      plus the event-driven sensors (price/COP-delta/thermal-power) and
+      the 60 s real-time controller loop, each with its actual trigger.
+  docs-examples:
+    status: done
+    comment: |
+      This rule's "todo" was a documentation error - docs/examples/
+      already has 4 real-world scenario pages (price-optimization.md,
+      cold-snap.md, mixed-conditions.md, solar-integration.md), linked
+      from docs/index.md and installation.md. Predates this session.
+  docs-known-limitations:
+    status: done
+    comment: |
+      Added a user-facing "Known Limitations" section to
+      docs/reference/troubleshooting.md (this session): no DHW support,
+      one config entry per HA instance (zones via subentries instead),
+      never actuates the heat pump/thermostat directly, PV surplus not
+      netted against household consumption, calibration needs a real
+      indoor sensor and time to activate, zone subentries need a newer
+      HA release, and removal not deleting the calibration Store file.
+      docs/redesign/REDESIGN.md still has the deeper design-rationale
+      version of these for contributors; this is the user-facing one.
   docs-supported-devices:
     status: exempt
     comment: Software-only integration; works with any heat pump via HA automations.
   docs-supported-functions:
-    status: todo
+    status: done
+    comment: |
+      docs/index.md's "Supported Configurations" list (predates this
+      session for the pre-redesign items) extended this session with the
+      redesign's own features: heating-zone subentries, the redesigned
+      thermal optimizer/control_mode, learned thermal calibration, and
+      real-time PV-surplus response.
   docs-troubleshooting:
     status: done
     comment: docs/troubleshooting.md, docs/quick-start.md.
   docs-use-cases:
-    status: todo
+    status: done
+    comment: |
+      Added a "Use Cases" section to docs/index.md (this session) naming
+      who each feature is for and linking to the matching example page:
+      dynamic pricing, cold snaps, solar production, mixed conditions,
+      multi-room homes (zones), and experimenting with control_mode.
   dynamic-devices:
     status: exempt
     comment: Single fixed device per config entry; no dynamically added sub-devices.

@@ -58,24 +58,35 @@ After installation and restart:
 
 ## Verifying Installation
 
-After configuration, you should see 17 new sensors and 5 number entities:
+After configuration, you should see a device with several sensors, a
+binary sensor, number entities, a select entity, and a disabled-by-default
+climate entity. The exact sensor count depends on your configuration -
+some sensors (COP, calibration, event-driven price/COP-delta sensors)
+only appear once a supply temperature sensor and/or a power sensor are
+configured.
 
-### Sensors
+### Core Sensors (always present)
 
 - `sensor.heating_curve_optimizer_outdoor_temperature`
 - `sensor.heating_curve_optimizer_heat_loss`
 - `sensor.heating_curve_optimizer_window_solar_gain`
 - `sensor.heating_curve_optimizer_net_heat_loss`
 - `sensor.heating_curve_optimizer_heating_curve_offset` (main optimization output)
-- And 12 more...
+- `sensor.heating_curve_optimizer_optimized_supply_temperature`
+- `sensor.heating_curve_optimizer_heat_buffer`
+- `sensor.heating_curve_optimizer_cost_savings_forecast`
+- `sensor.heating_curve_optimizer_diagnostics`
+- Several more diagnostic/redesign sensors (thermal v2, calibration) - most
+  disabled by default; see [Sensor Reference](reference/sensors.md) for
+  the complete, current list.
 
-### Number Entities (Manual Controls)
+### Other Entities (always present)
 
-- `number.heating_curve_optimizer_offset` - Manual offset override
-- `number.heating_curve_optimizer_min_supply_temp`
-- `number.heating_curve_optimizer_max_supply_temp`
-- `number.heating_curve_optimizer_min_outdoor_temp`
-- `number.heating_curve_optimizer_max_outdoor_temp`
+- `binary_sensor.heating_curve_optimizer_heat_pump_demand`
+- `number.heating_curve_optimizer_target_indoor_temperature` - target setpoint
+- `number.heating_curve_optimizer_indoor_temp_hysteresis_lower` / `_upper` - hysteresis band
+- `select.heating_curve_optimizer_control_mode` - `legacy`/`follow_curve`/`optimize_v2`
+- `climate.heating_curve_optimizer_heating` - disabled by default, same setpoint as the number entity above
 
 !!! tip "Check Sensor States"
     After a few minutes, check that the sensors show actual values (not "unavailable"). If sensors are unavailable, check the [Troubleshooting Guide](reference/troubleshooting.md).
