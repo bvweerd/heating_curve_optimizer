@@ -1,0 +1,245 @@
+# Honest self-assessment as of the phase 0-6 redesign (docs/redesign/
+# REDESIGN.md). No tier is fully closed yet - several bronze rules remain
+# "todo" (config-flow-test-coverage, docs-removal-instructions,
+# runtime-data, test-before-configure, test-before-setup,
+# unique-config-entry) - so manifest.json deliberately omits
+# "quality_scale" rather than repeat the unverified "silver" claim the
+# redesign plan itself flagged as a problem with the pre-redesign state.
+# This file is the live, granular record instead of a single tier label.
+rules:
+  # Bronze
+  action-setup:
+    status: done
+    comment: |
+      heating_curve_optimizer.reset_thermal_calibration registered in
+      __init__.py, with a voluptuous schema (entry_id: optional string)
+      and services.yaml describing it.
+  appropriate-polling:
+    status: done
+    comment: |
+      DataUpdateCoordinator with appropriate intervals:
+      WeatherDataCoordinator 30 min, HeatCalculationCoordinator 5 min,
+      OptimizationCoordinator 15 min.
+  brands:
+    status: todo
+    comment: No custom_components/heating_curve_optimizer/brand/ or icons/ directory.
+  common-modules:
+    status: done
+    comment: |
+      helpers.py (price extraction, resampling), building_model.py /
+      heatpump_model.py (thermal physics), calibration.py (UA/thermal-mass
+      learning), thermal_optimizer.py (DP engine), const.py.
+  config-flow-test-coverage:
+    status: todo
+    comment: |
+      tests/test_config_flow.py exists (129 lines) but coverage of
+      config_flow.py itself is 28% (measured this session) - most of the
+      options flow and later steps are untested.
+  config-flow:
+    status: done
+    comment: |
+      UI setup via ConfigFlow; structural config in ConfigEntry.data,
+      runtime-tunable values (target temperature, hysteresis, control mode)
+      in ConfigEntry.options / number+select entities.
+  dependency-transparency:
+    status: done
+    comment: |
+      requirements: [] in manifest.json (phase 0, this session) - aiohttp
+      is served by Home Assistant core via async_get_clientsession, never
+      installed standalone.
+  docs-actions:
+    status: todo
+    comment: |
+      services.yaml describes reset_thermal_calibration, but no docs/
+      page covers it yet.
+  docs-conditions:
+    status: exempt
+    comment: No condition platform; the integration provides no conditions.
+  docs-triggers:
+    status: exempt
+    comment: No trigger platform; the integration provides no triggers.
+  docs-high-level-description:
+    status: done
+    comment: docs/index.md and README.md describe what the integration does.
+  docs-installation-instructions:
+    status: done
+    comment: docs/installation.md.
+  docs-removal-instructions:
+    status: todo
+    comment: docs/installation.md does not cover removal/uninstallation steps.
+  entity-event-setup:
+    status: done
+    comment: CoordinatorEntity pattern throughout; async_track_state_change_event for sensor tracking.
+  entity-unique-id:
+    status: done
+    comment: All entities - _attr_unique_id = f"{entry.entry_id}_{key}".
+  has-entity-name:
+    status: done
+    comment: |
+      entity.py's BaseUtilitySensor sets _attr_has_entity_name = True
+      whenever a translation_key is given, which every sensor built on it
+      passes; number.py, select.py, binary_sensor.py and climate.py set it
+      directly.
+  runtime-data:
+    status: todo
+    comment: |
+      Still hass.data[DOMAIN][entry.entry_id] = {...} rather than
+      entry.runtime_data. Deliberately deferred (docs/redesign/
+      REDESIGN.md phase 0) to keep this redesign's diff bounded; the dict
+      access pattern is used consistently throughout, so migrating is
+      mechanical but touches every platform file.
+  test-before-configure:
+    status: todo
+    comment: config_flow.py does not verify sensor/API reachability before async_create_entry.
+  test-before-setup:
+    status: todo
+    comment: |
+      async_setup_entry does not raise ConfigEntryNotReady on first-refresh
+      failure for the weather coordinator; open-meteo.com being briefly
+      unreachable at startup is not handled specially.
+  unique-config-entry:
+    status: todo
+    comment: config_flow.py does not call async_set_unique_id / _abort_if_unique_id_configured.
+
+  # Silver
+  action-exceptions:
+    status: done
+    comment: |
+      _async_handle_reset_thermal_calibration logs and returns rather than
+      raising for an unknown entry_id or missing runtime_data; no
+      ServiceValidationError path exists yet for malformed input beyond
+      what voluptuous already rejects.
+  config-entry-unloading:
+    status: done
+    comment: |
+      async_unload_entry shuts down both coordinators and delegates
+      platform unload to async_unload_platforms.
+  docs-configuration-parameters:
+    status: todo
+    comment: docs/configuration.md exists but was not updated for this redesign's new keys (thermal_mass_class, emitter_type, control_mode).
+  docs-installation-parameters:
+    status: todo
+    comment: Not verified against the current config_flow.py field set this session.
+  entity-unavailable:
+    status: done
+    comment: |
+      CoordinatorEntity marks entities unavailable on coordinator failure;
+      the phase-2/4/5 diagnostic sensors additionally gate their own
+      `available` on thermal_v2["available"], independent of the legacy
+      optimizer's own success (see sensor_thermal_shadow.py).
+  integration-owner:
+    status: done
+    comment: manifest.json codeowners - ["@bvweerd"].
+  log-when-unavailable:
+    status: todo
+    comment: Not verified this session; DataUpdateCoordinator's default log-once behaviour applies, but no integration-specific handling was audited.
+  parallel-updates:
+    status: done
+    comment: |
+      PARALLEL_UPDATES = 0 in sensor/__init__.py, number.py, select.py,
+      binary_sensor.py and climate.py (phase 6, this session) - entities
+      are updated via their coordinator, never per-entity I/O.
+  reauthentication-flow:
+    status: exempt
+    comment: The integration requires no authentication.
+  test-coverage:
+    status: todo
+    comment: |
+      Total coverage 59.5% (214 tests) as of this session, floor enforced
+      at 45% via fail_under in setup.cfg (also fixed this session - it
+      previously measured tests/ instead of the integration, always
+      reporting near 100%). The new phase 0-5 modules
+      (building_model/heatpump_model/thermal_optimizer/calibration/
+      sensor_thermal_shadow/sensor_thermal_calibration/climate) are all
+      individually well above 90%; the gap is concentrated in
+      config_flow.py (28%), coordinator.py's legacy DP path, and several
+      of the pre-existing sensor/ modules that predate this redesign.
+
+  # Gold
+  devices:
+    status: done
+    comment: Single device per config entry via DeviceInfo, all entities linked to it.
+  diagnostics:
+    status: done
+    comment: diagnostics.py implements async_get_config_entry_diagnostics.
+  discovery-update-info:
+    status: exempt
+    comment: No discoverable network devices.
+  discovery:
+    status: exempt
+    comment: No device discovery applicable; integration reads HA sensors and open-meteo.com.
+  docs-data-update:
+    status: todo
+    comment: No docs page describes the coordinator cascade/update intervals explicitly.
+  docs-examples:
+    status: todo
+  docs-known-limitations:
+    status: todo
+    comment: |
+      docs/redesign/REDESIGN.md documents known simplifications in detail
+      (PV surplus not netted against consumption, no DHW handling,
+      realtime_controller deferred), but this is a design document, not
+      user-facing docs.
+  docs-supported-devices:
+    status: exempt
+    comment: Software-only integration; works with any heat pump via HA automations.
+  docs-supported-functions:
+    status: todo
+  docs-troubleshooting:
+    status: done
+    comment: docs/troubleshooting.md, docs/quick-start.md.
+  docs-use-cases:
+    status: todo
+  dynamic-devices:
+    status: exempt
+    comment: Single fixed device per config entry; no dynamically added sub-devices.
+  entity-category:
+    status: done
+    comment: EntityCategory.CONFIG on select.control_mode; number entities are setpoints, not diagnostics.
+  entity-device-class:
+    status: done
+    comment: SensorDeviceClass.MONETARY/TEMPERATURE/ENERGY used where applicable; BinarySensorDeviceClass.HEAT.
+  entity-disabled-by-default:
+    status: done
+    comment: |
+      _attr_entity_registry_enabled_default = False on all phase 2/4/5
+      diagnostic and experimental entities: ThermalShadowOffsetSensor,
+      ThermalShadowCostComparisonSensor, ThermalCalibrationSensor,
+      HeatingOptimizerClimate.
+  entity-translations:
+    status: todo
+    comment: |
+      Most entities have translation_key + en/nl translations (extended
+      this session for select.control_mode, the three new sensors and
+      climate.heating), but coverage across the pre-existing sensor/ tree
+      was not re-audited.
+  exception-translations:
+    status: todo
+    comment: UpdateFailed calls use plain strings, not translation_domain/translation_key.
+  icon-translations:
+    status: todo
+    comment: No icons.json.
+  reconfiguration-flow:
+    status: todo
+    comment: Not verified this session.
+  repair-issues:
+    status: todo
+    comment: No ir.async_create_issue usage found.
+  stale-devices:
+    status: exempt
+    comment: Single fixed device per config entry; nothing to go stale.
+
+  # Platinum
+  async-dependency:
+    status: done
+    comment: aiohttp is fully async; CPU-bound work (DP optimizers) offloaded via async_add_executor_job.
+  inject-websession:
+    status: done
+    comment: WeatherDataCoordinator uses async_get_clientsession(hass).
+  strict-typing:
+    status: todo
+    comment: |
+      mypy strict is off (setup.cfg, documented reason: ~5500 lines of
+      pre-existing code would need fixing in one pass). The phase 0-5
+      modules this redesign added were written strict-clean but this has
+      not been verified with `strict = true` actually turned on.

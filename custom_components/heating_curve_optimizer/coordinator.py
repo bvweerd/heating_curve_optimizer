@@ -558,12 +558,12 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         self._last_price = None
         self._current_buffer: float = 0.0  # Track actual buffer state
         self._current_offset: int = 0  # Track current offset for change constraint
-        # Which optimizer drives optimized_offset (fase 3, REDESIGN.md).
+        # Which optimizer drives optimized_offset (phase 3, REDESIGN.md).
         # Read from options first (select.py persists there, matching
         # battery_controller's BatteryControlModeSelect), falling back to
         # data, then the legacy default.
         self._control_mode: str = config.get(CONF_CONTROL_MODE, DEFAULT_CONTROL_MODE)
-        # Thermal calibration (fase 4, REDESIGN.md). Only set up when
+        # Thermal calibration (phase 4, REDESIGN.md). Only set up when
         # entry_id is known (async_setup loads it from Store) - tests that
         # construct a coordinator without one, or without calling
         # async_setup, simply get no calibration, same as _unsub above.
@@ -717,7 +717,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):
             except (ValueError, TypeError):
                 raise UpdateFailed("Cannot extract price data")
 
-        # Fase 5 (REDESIGN.md §2.1.G): production price, for pricing PV
+        # Phase 5 (REDESIGN.md §2.1.G): production price, for pricing PV
         # surplus used to cover heating at the feed-in rate rather than the
         # consumption rate. Optional - CONF_PRODUCTION_PRICE_SENSOR was
         # already a config key nothing read; a missing/unavailable sensor
@@ -801,11 +801,11 @@ class OptimizationCoordinator(DataUpdateCoordinator):
             self._current_offset,
         )
 
-        # --- Shadow mode: redesigned thermal optimizer (fase 2) --------
+        # --- Shadow mode: redesigned thermal optimizer (phase 2) --------
         # Runs alongside the legacy optimizer above, using the exact same
         # forecasts, and is exposed only as a diagnostic sensor
         # (sensor_thermal_shadow.py) - it never drives anything yet. See
-        # docs/redesign/REDESIGN.md fase 2/3 and docs/algorithm/
+        # docs/redesign/REDESIGN.md phase 2/3 and docs/algorithm/
         # redesign-thermal-model.md for what it does and why.
         try:
             thermal_v2_result = await self.hass.async_add_executor_job(
@@ -833,7 +833,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         thermal_v2_result["legacy_total_cost_eur"] = result.get("total_cost")
         result["thermal_v2"] = thermal_v2_result
 
-        # --- Apply the active control mode (fase 3, REDESIGN.md) ---------
+        # --- Apply the active control mode (phase 3, REDESIGN.md) ---------
         # Decides which engine's result actually reaches optimized_offset /
         # optimized_offsets / future_supply_temperatures - i.e. what every
         # downstream sensor, and any automation built on them, actually
@@ -907,7 +907,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         # produced it - zero behaviour change for every installation that
         # has not explicitly switched control_mode.
 
-        # Fase 4 (REDESIGN.md): feed one real observation into thermal
+        # Phase 4 (REDESIGN.md): feed one real observation into thermal
         # calibration, using whatever `result` now says was actually
         # applied (post mode-override, so the sample reflects reality
         # regardless of which engine is currently driving).
@@ -1218,7 +1218,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):
     ) -> dict[str, Any]:
         """Run the redesigned thermal DP optimizer (blocking call, executor).
 
-        Shadow mode (docs/redesign/REDESIGN.md fase 2): runs alongside
+        Shadow mode (docs/redesign/REDESIGN.md phase 2): runs alongside
         `_run_optimization` above, against the exact same forecasts, but its
         result only ever reaches a diagnostic sensor - never
         `self._current_offset`/`self._current_buffer`. Any failure here
@@ -1226,7 +1226,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):
         still driving, so every error is caught and reported as
         `available: False` instead of propagating.
 
-        `pv_production_forecast` (fase 5, REDESIGN.md §2.1.G) is passed
+        `pv_production_forecast` (phase 5, REDESIGN.md §2.1.G) is passed
         straight through as `pv_surplus_kw`: this integration has no
         household consumption forecast to net production against, so the
         full modelled PV production is treated as available for heating -
@@ -1239,7 +1239,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):
             if building.area_m2 <= 0:
                 raise ValueError("area_m2 not configured")
 
-            # Fase 4 (REDESIGN.md): once calibration has learned enough
+            # Phase 4 (REDESIGN.md): once calibration has learned enough
             # from real operation, it overrides the label-based prior.
             calibration = self._calibration
             if calibration is not None and calibration.applied:
@@ -1257,7 +1257,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):
                 design_outdoor_temp=min_outdoor,
                 design_supply_temp=max_supply,
             )
-            # No dedicated heat-pump-capacity config key exists yet (fase
+            # No dedicated heat-pump-capacity config key exists yet (phase
             # 5 territory). Sized with headroom above what the emitter can
             # use at the design point, the way an installer would sanity
             # check pump vs. radiator sizing, rather than block shadow

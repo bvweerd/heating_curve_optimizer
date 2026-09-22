@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from pathlib import Path
+from typing import Any
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -22,6 +25,14 @@ _LOGGER = logging.getLogger(__name__)
 
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+# Load version once at module import time (blocking I/O at module level is
+# fine - manifest.json is small and local). Single source of truth: before
+# this, DeviceInfo.sw_version was a hardcoded "2.0.0" that had drifted from
+# manifest.json's actual "1.0.2" - phase 6 (docs/redesign/REDESIGN.md).
+_MANIFEST: dict[str, Any] = json.loads(
+    (Path(__file__).parent / "manifest.json").read_text(encoding="utf-8")
+)
 
 # Options keys that update.py's select entity writes to entry.options and
 # that a live coordinator already picks up the moment it's set (see
@@ -140,7 +151,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         name="Heating Curve Optimizer",
         manufacturer="Custom",
         model="Dynamic Heating Optimizer",
-        sw_version="2.0.0",
+        sw_version=_MANIFEST.get("version", "unknown"),
     )
 
     # Store coordinators and config in hass.data

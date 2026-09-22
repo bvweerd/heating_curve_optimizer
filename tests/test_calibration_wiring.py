@@ -1,4 +1,4 @@
-"""Coordinator-level tests for fase 4 calibration wiring
+"""Coordinator-level tests for phase 4 calibration wiring
 (OptimizationCoordinator._maybe_record_calibration_sample /
 async_reset_thermal_calibration), as distinct from the pure-math tests in
 test_calibration.py.

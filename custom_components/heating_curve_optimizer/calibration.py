@@ -1,6 +1,6 @@
 """Thermal calibration: learn UA and thermal mass from real operation.
 
-Fase 4 of docs/redesign/REDESIGN.md. `building_model.BuildingConfig`'s
+Phase 4 of docs/redesign/REDESIGN.md. `building_model.BuildingConfig`'s
 `ua_w_per_k` and `thermal_mass_kwh_per_k` start as rule-of-thumb estimates
 (energy label, construction weight class). This module learns the real
 values for a specific home from how its actual indoor temperature responds

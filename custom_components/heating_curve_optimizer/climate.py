@@ -1,4 +1,4 @@
-"""Climate platform for Heating Curve Optimizer (fase 5, REDESIGN.md).
+"""Climate platform for Heating Curve Optimizer (phase 5, REDESIGN.md).
 
 A native HA climate entity for the same target-temperature control the
 `number.TargetIndoorTemperatureNumber` entity already exposes - not a
@@ -41,6 +41,10 @@ from .const import DOMAIN
 from .coordinator import HeatCalculationCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+# Entities are updated via their coordinator, never by per-entity I/O,
+# so there is no reason to serialize updates against each other.
+PARALLEL_UPDATES = 0
 
 TARGET_TEMP_MIN = 15.0
 TARGET_TEMP_MAX = 25.0

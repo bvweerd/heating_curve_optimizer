@@ -1,4 +1,4 @@
-"""Tests for fase 5's PV surplus / feed-in price wiring into the thermal
+"""Tests for phase 5's PV surplus / feed-in price wiring into the thermal
 v2 shadow optimizer (docs/redesign/REDESIGN.md §2.1.G).
 """
 

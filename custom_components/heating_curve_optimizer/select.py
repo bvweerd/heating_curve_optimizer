@@ -1,6 +1,6 @@
 """Select platform for Heating Curve Optimizer.
 
-Fase 3 of docs/redesign/REDESIGN.md: `control_mode` decides which engine
+Phase 3 of docs/redesign/REDESIGN.md: `control_mode` decides which engine
 actually drives `optimized_offset` (and therefore every sensor and
 automation built on it):
 
@@ -38,6 +38,10 @@ from .const import CONF_CONTROL_MODE, CONTROL_MODES, DOMAIN
 from .coordinator import OptimizationCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+# Entities are updated via their coordinator, never by per-entity I/O,
+# so there is no reason to serialize updates against each other.
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(

@@ -26,6 +26,10 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Entities are updated via their coordinator, never by per-entity I/O,
+# so there is no reason to serialize updates against each other.
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,

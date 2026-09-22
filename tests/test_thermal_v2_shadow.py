@@ -1,7 +1,7 @@
-"""Tests for the fase-2 shadow-mode wiring: OptimizationCoordinator's
+"""Tests for the phase-2 shadow-mode wiring: OptimizationCoordinator's
 `_run_thermal_v2_optimization` and the diagnostic sensors that read it.
 
-The point of this suite is the fase-2 promise from docs/redesign/
+The point of this suite is the phase-2 promise from docs/redesign/
 REDESIGN.md: the redesigned optimizer runs alongside the legacy one but
 can never break it, even when its own inputs are bad.
 """

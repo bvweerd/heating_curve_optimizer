@@ -1,4 +1,4 @@
-"""Tests for calibration.py (fase 4, docs/redesign/REDESIGN.md)."""
+"""Tests for calibration.py (phase 4, docs/redesign/REDESIGN.md)."""
 
 from __future__ import annotations
 

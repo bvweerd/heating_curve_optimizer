@@ -1,4 +1,4 @@
-"""Tests for fase 3 (docs/redesign/REDESIGN.md): control_mode switchover.
+"""Tests for phase 3 (docs/redesign/REDESIGN.md): control_mode switchover.
 
 Covers the three modes' effect on OptimizationCoordinator's published
 result, the default staying "legacy" for backward compatibility, the

@@ -1,12 +1,12 @@
 """Shadow-mode diagnostic sensor for the redesigned thermal optimizer.
 
-Fase 2 of docs/redesign/REDESIGN.md: exposes `OptimizationCoordinator.data
+Phase 2 of docs/redesign/REDESIGN.md: exposes `OptimizationCoordinator.data
 ["thermal_v2"]` (produced by `_run_thermal_v2_optimization`, see
 coordinator.py) purely as a diagnostic entity. It reports what the
 redesigned optimizer (building_model.py / heatpump_model.py /
 thermal_optimizer.py) *would* choose and what it estimates that would cost,
 so the new model can be compared against the legacy optimizer's real
-behaviour on real data before fase 3 lets it drive anything.
+behaviour on real data before phase 3 lets it drive anything.
 
 This file lives at the package root rather than under `sensor/`, following
 the flat-module convention adopted for the redesign (see REDESIGN.md §3.3) -
@@ -29,7 +29,7 @@ class ThermalShadowOffsetSensor(CoordinatorEntity, BaseUtilitySensor):
     """What the redesigned optimizer would set the offset to right now.
 
     Diagnostic only - does not affect `sensor.heating_curve_offset` (the
-    legacy optimizer, still in control until fase 3) or any number/runtime
+    legacy optimizer, still in control until phase 3) or any number/runtime
     state.
     """
 
@@ -115,8 +115,8 @@ class ThermalShadowCostComparisonSensor(CoordinatorEntity, BaseUtilitySensor):
     """Forecast cost of the redesigned optimizer's plan vs. the legacy one.
 
     Positive means the redesigned optimizer expects to be cheaper over the
-    same planning window - the headline number for judging fase 2 before
-    fase 3 switches control over.
+    same planning window - the headline number for judging phase 2 before
+    phase 3 switches control over.
     """
 
     def __init__(

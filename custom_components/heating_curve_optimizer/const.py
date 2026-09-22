@@ -305,14 +305,14 @@ DEFAULT_COP_COMPENSATION_FACTOR = 1.0
 # This represents the thermal inertia of building materials (concrete, brick, etc.)
 # Superseded by building_model.BuildingConfig's explicit thermal mass (kWh/K)
 # for the redesigned optimizer (see docs/redesign/REDESIGN.md); kept for the
-# legacy optimizer.optimize_offsets() until fase 3 removes it.
+# legacy optimizer.optimize_offsets() until phase 3 removes it.
 DEFAULT_THERMAL_STORAGE_EFFICIENCY = 0.15
 
 # --- Redesigned thermal model (building_model.py / heatpump_model.py) ------
 #
 # Thermal mass per m² floor area, in Wh/(m2*K), by construction weight class.
 # Rule-of-thumb starting values (light timber-frame vs. heavy masonry/
-# concrete construction), used until calibration.py (fase 4) learns the real
+# concrete construction), used until calibration.py (phase 4) learns the real
 # value for a specific home from its measured heating/cool-down curves.
 CONF_THERMAL_MASS_CLASS = "thermal_mass_class"
 DEFAULT_THERMAL_MASS_CLASS = "medium"
@@ -335,8 +335,8 @@ EMITTER_EXPONENT_MAP = {
 }
 
 # Which optimizer actually drives optimized_offset/optimized_supply_temperature
-# (fase 3, docs/redesign/REDESIGN.md). Default stays on the legacy DP: the
-# redesigned optimizer only has fase-2 shadow-mode diagnostics to judge it by
+# (phase 3, docs/redesign/REDESIGN.md). Default stays on the legacy DP: the
+# redesigned optimizer only has phase-2 shadow-mode diagnostics to judge it by
 # at this point, not field hours on real installations, so switching the
 # default now would change real heating behaviour on an unvalidated model.
 CONF_CONTROL_MODE = "control_mode"

@@ -68,6 +68,10 @@ from ..sensor_thermal_calibration import ThermalCalibrationSensor
 
 _LOGGER = logging.getLogger(__name__)
 
+# Entities are updated via their coordinator, never by per-entity I/O,
+# so there is no reason to serialize updates against each other.
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
@@ -301,7 +305,7 @@ async def async_setup_entry(
     # Daily utility sensors (cumulative energy tracking)
     _setup_daily_utility_sensors(hass, entry, config, device, entities)
 
-    # Redesigned thermal optimizer - shadow mode (fase 2, diagnostic only)
+    # Redesigned thermal optimizer - shadow mode (phase 2, diagnostic only)
     entities.append(
         ThermalShadowOffsetSensor(
             coordinator=optimization_coordinator,

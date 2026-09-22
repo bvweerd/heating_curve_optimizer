@@ -18,6 +18,10 @@ from .const import CONF_AREA_M2, CONF_ENERGY_LABEL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+# Entities are updated via their coordinator, never by per-entity I/O,
+# so there is no reason to serialize updates against each other.
+PARALLEL_UPDATES = 0
+
 
 class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Binary sensor that indicates heat demand using coordinator."""

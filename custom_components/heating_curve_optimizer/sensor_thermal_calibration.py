@@ -1,4 +1,4 @@
-"""Thermal calibration diagnostic sensor (fase 4, docs/redesign/REDESIGN.md).
+"""Thermal calibration diagnostic sensor (phase 4, docs/redesign/REDESIGN.md).
 
 Reports what calibration.py has learned about this specific building's UA
 and thermal mass from real operation - sample count, whether it is trusted
