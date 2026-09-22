@@ -423,7 +423,27 @@ rules:
   strict-typing:
     status: todo
     comment: |
-      mypy strict is off (setup.cfg, documented reason: ~5500 lines of
-      pre-existing code would need fixing in one pass). The phase 0-5
-      modules this redesign added were written strict-clean but this has
-      not been verified with `strict = true` actually turned on.
+      Actually ran `mypy --strict` this session rather than continuing
+      to assert this from documentation: 186-201 errors across 34+
+      files (count moves slightly between runs depending on cache
+      state). Corrects an earlier overclaim in this same file - "the
+      phase 0-5 modules were written strict-clean" was true for the
+      pure-physics modules (heatpump_model.py, thermal_optimizer.py,
+      calibration.py, realtime_controller.py: zero errors;
+      building_model.py: one no-any-return) but false for the
+      redesign's own sensor-facing modules - sensor_thermal_shadow.py,
+      sensor_realtime_offset.py and sensor_thermal_calibration.py each
+      have several (missing return-type annotations, "Class cannot
+      subclass CoordinatorEntity (has type Any)" from HA's own classes
+      being effectively untyped in this environment, no-any-return on
+      dict[str, Any] returns).
+
+      Not attempted in this session: fixing 180+ errors across the
+      integration correctly - not just silencing them with blanket
+      `# type: ignore` - needs care per call site (real return-type
+      annotations, narrowing Any-typed HA base-class attributes,
+      resolving genuine float|None vs float mismatches like
+      coordinator.py:1465/1467) to avoid trading a mypy-strict pass for
+      newly-introduced behavior bugs done in a rush. That is a properly
+      scoped follow-up session's work, not something to force through
+      the remainder of this one.
