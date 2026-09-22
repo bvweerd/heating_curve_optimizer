@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
-from homeassistant.core import HomeAssistant, State
+from homeassistant.core import Event, HomeAssistant, State
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.event import async_track_state_change_event
@@ -39,7 +39,7 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
         price_settings: dict[str, float],
         icon: str,
         device: DeviceInfo,
-    ):
+    ) -> None:
         unit = "€/kWh"
         super().__init__(
             name=name,
@@ -62,7 +62,7 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         return self._extra_attrs
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         state = self.hass.states.get(self.price_sensor)
         if state is None or state.state in ("unknown", "unavailable"):
             self._attr_available = False
@@ -85,7 +85,7 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
             attrs["forecast_prices"] = forecast
         self._extra_attrs = attrs
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         self.async_on_remove(
             async_track_state_change_event(
@@ -95,10 +95,10 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
             )
         )
 
-    async def async_will_remove_from_hass(self):
+    async def async_will_remove_from_hass(self) -> None:
         await super().async_will_remove_from_hass()
 
-    async def _handle_price_change(self, event):
+    async def _handle_price_change(self, event: Event) -> None:
         new_state = event.data.get("new_state")
         if new_state is None or new_state.state in ("unknown", "unavailable"):
             self._attr_available = False
@@ -147,7 +147,7 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
         self.k_factor = k_factor
         self.base_cop = base_cop
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         p_state = self.hass.states.get(self.power_sensor)
         if p_state is None:
             self._set_unavailable(
@@ -287,7 +287,7 @@ class CopEfficiencyDeltaSensor(BaseUtilitySensor):
     def extra_state_attributes(self) -> dict[str, list[float] | float]:
         return self._extra_attrs
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         for ent in (
             self._resolve_entity_id(self.cop_sensor),
@@ -301,7 +301,9 @@ class CopEfficiencyDeltaSensor(BaseUtilitySensor):
                 async_track_state_change_event(self.hass, ent, self._handle_change)
             )
 
-    async def _handle_change(self, event):  # pragma: no cover - simple callback
+    async def _handle_change(
+        self, event: Event
+    ) -> None:  # pragma: no cover - simple callback
         await self.async_update()
         self.async_write_ha_state()
 
@@ -319,7 +321,7 @@ class CopEfficiencyDeltaSensor(BaseUtilitySensor):
                     self.outdoor_sensor = entity_id
                 elif entity_ref is self.calculated_supply_sensor:
                     self.calculated_supply_sensor = entity_id
-            return entity_id
+            return str(entity_id) if entity_id is not None else None
         return cast(str, entity_ref)
 
     def _get_state(self, entity_ref: str | SensorEntity) -> State | None:
@@ -333,7 +335,7 @@ class CopEfficiencyDeltaSensor(BaseUtilitySensor):
             return None
         return state
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         offset_state = self._get_state(self.offset_entity)
         outdoor_state = self._get_state(self.outdoor_sensor)
         calculated_supply_state = self._get_state(self.calculated_supply_sensor)
@@ -462,13 +464,13 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
         self.base_cop = base_cop
         self.outdoor_temp_coefficient = outdoor_temp_coefficient
         self.cop_compensation_factor = cop_compensation_factor
-        self._extra_attrs: dict[str, list[float] | float] = {}
+        self._extra_attrs: dict[str, list[float] | float | str] = {}
 
     @property
-    def extra_state_attributes(self) -> dict[str, list[float] | float]:
+    def extra_state_attributes(self) -> dict[str, list[float] | float | str]:
         return self._extra_attrs
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         # Track offset sensor for changes
         offset_entity_id = self._resolve_entity_id(self.offset_entity)
@@ -487,7 +489,9 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
             )
         )
 
-    async def _handle_change(self, event):  # pragma: no cover - simple callback
+    async def _handle_change(
+        self, event: Event
+    ) -> None:  # pragma: no cover - simple callback
         await self.async_update()
         self.async_write_ha_state()
 
@@ -507,7 +511,7 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
                     self.outdoor_sensor = entity_id
                 elif entity_ref is self.calculated_supply_sensor:
                     self.calculated_supply_sensor = entity_id
-            return entity_id
+            return str(entity_id) if entity_id is not None else None
         return cast(str, entity_ref)
 
     def _get_state(self, entity_ref: str | SensorEntity) -> State | None:
@@ -521,7 +525,7 @@ class HeatGenerationDeltaSensor(BaseUtilitySensor):
             return None
         return state
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Calculate buffer change rate based on offset and heat demand.
 
         Buffer change rate = offset × heat_demand × thermal_storage_efficiency

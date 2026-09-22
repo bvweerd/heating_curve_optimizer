@@ -16,8 +16,13 @@ class CoordinatorHeatBufferSensor(BaseOptimizationSensor):
     _unrecorded_attributes = frozenset({"forecast"})
 
     def __init__(
-        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
-    ):
+        self,
+        coordinator: Any,
+        name: str,
+        unique_id: str,
+        icon: str,
+        device: DeviceInfo,
+    ) -> None:
         """Initialize the sensor."""
         # For energy device_class, state_class must be 'total' not 'measurement'
         super().__init__(
@@ -32,7 +37,7 @@ class CoordinatorHeatBufferSensor(BaseOptimizationSensor):
         )
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | None:
         """Return current buffer level."""
         if not self.coordinator.data:
             return None

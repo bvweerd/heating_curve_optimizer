@@ -11,14 +11,19 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from ...entity import BaseUtilitySensor
 
 
-class CoordinatorHeatLossSensor(CoordinatorEntity, BaseUtilitySensor):
+class CoordinatorHeatLossSensor(CoordinatorEntity, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Heat loss sensor using heat calculation coordinator."""
 
     _unrecorded_attributes = frozenset({"forecast"})
 
     def __init__(
-        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
-    ):
+        self,
+        coordinator: Any,
+        name: str,
+        unique_id: str,
+        icon: str,
+        device: DeviceInfo,
+    ) -> None:
         """Initialize the sensor."""
         CoordinatorEntity.__init__(self, coordinator)
         BaseUtilitySensor.__init__(
@@ -36,11 +41,12 @@ class CoordinatorHeatLossSensor(CoordinatorEntity, BaseUtilitySensor):
         self._attr_should_poll = False
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | None:
         """Return heat loss."""
         if not self.coordinator.data:
             return None
-        return self.coordinator.data.get("heat_loss")
+        value = self.coordinator.data.get("heat_loss")
+        return float(value) if value is not None else None
 
     @property
     def available(self) -> bool:

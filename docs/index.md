@@ -154,7 +154,28 @@ When you have solar panels or other production:
 - :white_check_mark: Dynamic electricity pricing
 - :white_check_mark: Fixed electricity pricing
 - :white_check_mark: Solar production integration
-- :white_check_mark: Multi-zone buildings (with appropriate configuration)
+- :white_check_mark: Multi-room heating zones, via heating-zone subentries on one config entry
+- :white_check_mark: A redesigned thermal optimizer (1R1C building model + backward-induction DP), selectable per-installation via the `control_mode` select entity without losing today's behavior as the default
+- :white_check_mark: Learned thermal calibration (UA / thermal mass) from real operation, when an indoor-temperature sensor is configured
+- :white_check_mark: Real-time PV-surplus response, when household grid import/export sensors are configured
+
+## Use Cases
+
+- **Dynamic electricity pricing** - shift heating load to your cheapest
+  hours automatically. See [Price Optimization](examples/price-optimization.md).
+- **Cold snaps** - keep comfort while prices spike, using thermal buffer
+  built up beforehand. See [Cold Snap](examples/cold-snap.md).
+- **Homes with solar production** - use PV surplus for heating instead of
+  exporting it at a low feed-in rate. See [Solar Integration](examples/solar-integration.md).
+- **Mixed/variable conditions** - a realistic day combining price swings,
+  weather changes and solar gain together. See [Mixed Conditions](examples/mixed-conditions.md).
+- **Multi-room homes** - track and optimize heat demand per room via
+  heating-zone subentries, sharing one price sensor and heat pump
+  configuration. See [Configuration Guide](configuration.md).
+- **Experimenting with the redesigned optimizer** - switch `control_mode`
+  to `optimize_v2` on a live installation to compare it against the
+  proven legacy optimizer, with `legacy` remaining the safe default and
+  one click away to revert.
 
 ## Documentation Structure
 

@@ -2,16 +2,24 @@ from __future__ import annotations
 
 import copy
 from typing import Any
+from urllib.parse import urlencode
 
+import aiohttp
 from homeassistant import config_entries
 
 try:
-    from homeassistant.config_entries import ConfigFlowContext, ConfigFlowResult
+    from homeassistant.config_entries import (
+        ConfigFlowContext,
+        ConfigFlowResult,
+        SubentryFlowResult,
+    )
 except ImportError:
     # For older versions of Home Assistant that don't have these types
-    ConfigFlowContext = dict  # type: ignore
-    ConfigFlowResult = dict[str, Any]  # type: ignore
-from homeassistant.core import callback
+    ConfigFlowContext = dict
+    ConfigFlowResult = dict[str, Any]
+    SubentryFlowResult = dict[str, Any]
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import selector
 import voluptuous as vol
 
@@ -31,6 +39,8 @@ from .const import (
     CONF_TIME_BASE,
     CONF_POWER_CONSUMPTION,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
+    CONF_GRID_IMPORT_SENSOR,
+    CONF_GRID_EXPORT_SENSOR,
     CONF_K_FACTOR,
     CONF_BASE_COP,
     CONF_OUTDOOR_TEMP_COEFFICIENT,
@@ -51,6 +61,8 @@ from .const import (
     CONF_VENTILATION_TYPE,
     CONF_CEILING_HEIGHT,
     CONF_MAX_BUFFER_DEBT,
+    CONF_THERMAL_MASS_CLASS,
+    CONF_EMITTER_TYPE,
     DEFAULT_INDOOR_TEMP_HYSTERESIS,
     DEFAULT_K_FACTOR,
     DEFAULT_OFFSET_DELTA_T,
@@ -67,12 +79,17 @@ from .const import (
     DEFAULT_HEAT_CURVE_MAX,
     DEFAULT_VENTILATION_TYPE,
     DEFAULT_CEILING_HEIGHT,
+    DEFAULT_THERMAL_MASS_CLASS,
+    DEFAULT_EMITTER_TYPE,
     CONF_SOURCE_TYPE,
     CONF_SOURCES,
     DOMAIN,
     ENERGY_LABELS,
     SOURCE_TYPES,
     VENTILATION_TYPES,
+    THERMAL_MASS_WH_PER_M2_K,
+    EMITTER_EXPONENT_MAP,
+    ZONE_SUBENTRY_TYPE,
 )
 
 STEP_SELECT_SOURCES = "select_sources"
@@ -81,16 +98,193 @@ STEP_BASIC = "basic"
 STEP_HEATING_CURVE_SETTINGS = "heating_curve_settings"
 
 
-class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
+async def _test_api_connection(hass: HomeAssistant) -> str | None:
+    """Test reachability of open-meteo.com before creating the entry.
+
+    Every sensor this integration publishes ultimately depends on weather
+    data from this API (WeatherDataCoordinator) - creating an entry that
+    can never successfully refresh is a worse experience than catching it
+    here, at config-flow time. Ported from battery_controller's
+    config_flow.py (docs/redesign/REDESIGN.md), which checks the same API
+    for the same reason. Returns an error key for async_show_form, or None
+    on success.
+    """
+    session = async_get_clientsession(hass)
+    url = "https://api.open-meteo.com/v1/forecast?" + urlencode(
+        {
+            "latitude": hass.config.latitude,
+            "longitude": hass.config.longitude,
+            "hourly": "shortwave_radiation",
+            "forecast_days": "1",
+        }
+    )
+    try:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status != 200:
+                return "cannot_connect"
+    except (aiohttp.ClientError, TimeoutError):
+        return "cannot_connect"
+    return None
+
+
+def _build_zone_subentry_schema(
+    defaults: dict[str, Any] | None = None,
+) -> vol.Schema:
+    """Build the schema for a heating-zone subentry (phase 5c, REDESIGN.md).
+
+    Deliberately narrow: only what plausibly differs *between rooms* in the
+    same home (floor area, insulation, its own thermostat, its own target
+    temperature). Price sensor, heating curve limits and heat pump
+    parameters are shared from the main entry - see const.py's
+    ZONE_SUBENTRY_TYPE comment.
+    """
+    defaults = defaults or {}
+    return vol.Schema(
+        {
+            vol.Required("name", default=defaults.get("name")): str,
+            vol.Required(CONF_AREA_M2, default=defaults.get(CONF_AREA_M2)): vol.Coerce(
+                float
+            ),
+            vol.Required(
+                CONF_ENERGY_LABEL, default=defaults.get(CONF_ENERGY_LABEL)
+            ): selector(
+                {
+                    "select": {
+                        "options": ENERGY_LABELS,
+                        "mode": "dropdown",
+                        "custom_value": False,
+                    }
+                }
+            ),
+            vol.Optional(
+                CONF_TARGET_INDOOR_TEMP,
+                default=defaults.get(
+                    CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP
+                ),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_INDOOR_TEMPERATURE_SENSOR,
+                default=defaults.get(CONF_INDOOR_TEMPERATURE_SENSOR),
+            ): selector(
+                {"entity": {"domain": "sensor", "device_class": "temperature"}}
+            ),
+        }
+    )
+
+
+def _validate_zone_subentry(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Validate and normalize a heating-zone subentry's input."""
+    name = str(user_input["name"]).strip()
+    if not name:
+        raise vol.Invalid("name_required")
+    area_m2 = float(user_input[CONF_AREA_M2])
+    if area_m2 <= 0:
+        raise vol.Invalid("area_must_be_positive")
+    return {
+        "name": name,
+        CONF_AREA_M2: area_m2,
+        CONF_ENERGY_LABEL: user_input[CONF_ENERGY_LABEL],
+        CONF_TARGET_INDOOR_TEMP: float(
+            user_input.get(CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP)
+        ),
+        CONF_INDOOR_TEMPERATURE_SENSOR: user_input.get(CONF_INDOOR_TEMPERATURE_SENSOR),
+    }
+
+
+# ConfigSubentryFlow (and ConfigEntry.subentries) landed in HA well after
+# this integration's floor version, and is not available at all in the HA
+# release this repo's test environment can install (2024.3.x - a package-
+# index ceiling, not a real HA release date). Rather than hard-depend on
+# it and break setup entirely on any HA old enough to lack it, the zone-
+# subentry feature (phase 5c, REDESIGN.md) degrades to simply not being
+# offered: HeatingZoneSubentryFlow is only defined, and only registered in
+# async_get_supported_subentry_types below, when the base class exists.
+_ConfigSubentryFlow = getattr(config_entries, "ConfigSubentryFlow", None)
+
+if _ConfigSubentryFlow is not None:
+
+    class HeatingZoneSubentryFlow(_ConfigSubentryFlow):  # type: ignore[misc, valid-type]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
+        """Flow for adding or editing an additional heating-zone subentry.
+
+        Modelled directly on battery_controller's
+        BatteryControllerBatterySubentryFlow / BatteryControllerPVSubentryFlow
+        (docs/redesign/REDESIGN.md phase 5c) - verified against a live,
+        running battery_controller install's subentries (config_entry
+        diagnostics shared 2026-09-22), since this integration's own test
+        environment cannot install an HA release new enough to exercise
+        this class at all (see the comment above).
+        """
+
+        async def async_step_user(
+            self, user_input: dict[str, Any] | None = None
+        ) -> SubentryFlowResult:
+            """Handle adding a new heating zone."""
+            errors: dict[str, str] = {}
+            if user_input is not None:
+                try:
+                    data = _validate_zone_subentry(user_input)
+                except vol.Invalid:
+                    errors["base"] = "invalid_zone_input"
+                else:
+                    return self.async_create_entry(title=data["name"], data=data)
+            return self.async_show_form(
+                step_id="user",
+                data_schema=_build_zone_subentry_schema(),
+                errors=errors,
+            )
+
+        async def async_step_reconfigure(
+            self, user_input: dict[str, Any] | None = None
+        ) -> SubentryFlowResult:
+            """Handle editing an existing heating zone."""
+            errors: dict[str, str] = {}
+            entry = self._get_entry()
+            subentry = self._get_reconfigure_subentry()
+            current_data = dict(subentry.data)
+
+            if user_input is not None:
+                try:
+                    data = _validate_zone_subentry(user_input)
+                except vol.Invalid:
+                    errors["base"] = "invalid_zone_input"
+                else:
+                    return self.async_update_and_abort(
+                        entry, subentry, title=data["name"], data=data
+                    )
+            return self.async_show_form(
+                step_id="reconfigure",
+                data_schema=_build_zone_subentry_schema(current_data),
+                errors=errors,
+            )
+
+else:
+    HeatingZoneSubentryFlow = None  # type: ignore[assignment,misc]
+
+
+class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg, misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Handle a config flow for Heating Curve Optimizer."""
 
     VERSION = 1
+
+    @classmethod
+    @callback  # type: ignore[untyped-decorator]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
+    def async_get_supported_subentry_types(
+        cls, config_entry: config_entries.ConfigEntry
+    ) -> dict[str, type]:
+        """Return supported subentry types (phase 5c, REDESIGN.md).
+
+        Empty on an HA release too old to have ConfigSubentryFlow at all -
+        see HeatingZoneSubentryFlow's definition above.
+        """
+        if HeatingZoneSubentryFlow is None:
+            return {}
+        return {ZONE_SUBENTRY_TYPE: HeatingZoneSubentryFlow}
 
     def __init__(self) -> None:
         super().__init__()
 
         self.context: ConfigFlowContext = {}
-        self.configs: list[dict] = []
+        self.configs: list[dict[str, Any]] = []
         self.source_type: str | None = None
         self.sources: list[str] | None = None
         self.price_settings: dict[str, Any] = {}
@@ -104,6 +298,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.glass_u_value: float | None = None
         self.ventilation_type: str = DEFAULT_VENTILATION_TYPE
         self.ceiling_height: float = DEFAULT_CEILING_HEIGHT
+        self.thermal_mass_class: str = DEFAULT_THERMAL_MASS_CLASS
+        self.emitter_type: str = DEFAULT_EMITTER_TYPE
         self.pv_east_wp: float | None = None
         self.pv_south_wp: float | None = None
         self.pv_west_wp: float | None = None
@@ -111,6 +307,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.power_consumption: str | None = None
         self.indoor_temperature_sensor: str | None = None
         self.supply_temperature_sensor: str | None = None
+        self.grid_import_sensor: str | None = None
+        self.grid_export_sensor: str | None = None
         self.k_factor: float | None = None
         self.base_cop: float = DEFAULT_COP_AT_35
         self.outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT
@@ -131,8 +329,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, str] | None = None
     ) -> ConfigFlowResult:
         await self.async_set_unique_id(DOMAIN)
-        if self._async_current_entries():
-            return self.async_abort(reason="already_configured")
+        self._abort_if_unique_id_configured()
         if user_input is not None:
             choice = user_input[CONF_SOURCE_TYPE]
             if choice == STEP_BASIC:
@@ -153,6 +350,13 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         step_id="user",
                         data_schema=self._schema_user(),
                         errors={"base": "no_blocks"},
+                    )
+                connection_error = await _test_api_connection(self.hass)
+                if connection_error:
+                    return self.async_show_form(
+                        step_id="user",
+                        data_schema=self._schema_user(),
+                        errors={"base": connection_error},
                     )
                 consumption_price_sensor = (
                     self.consumption_price_sensor
@@ -192,6 +396,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_GLASS_U_VALUE: self.glass_u_value,
             CONF_VENTILATION_TYPE: self.ventilation_type,
             CONF_CEILING_HEIGHT: self.ceiling_height,
+            CONF_THERMAL_MASS_CLASS: self.thermal_mass_class,
+            CONF_EMITTER_TYPE: self.emitter_type,
             CONF_PV_EAST_WP: self.pv_east_wp,
             CONF_PV_SOUTH_WP: self.pv_south_wp,
             CONF_PV_WEST_WP: self.pv_west_wp,
@@ -199,6 +405,8 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_INDOOR_TEMPERATURE_SENSOR: self.indoor_temperature_sensor,
             CONF_POWER_CONSUMPTION: self.power_consumption,
             CONF_SUPPLY_TEMPERATURE_SENSOR: self.supply_temperature_sensor,
+            CONF_GRID_IMPORT_SENSOR: self.grid_import_sensor,
+            CONF_GRID_EXPORT_SENSOR: self.grid_export_sensor,
             CONF_K_FACTOR: self.k_factor,
             CONF_BASE_COP: self.base_cop,
             CONF_OUTDOOR_TEMP_COEFFICIENT: self.outdoor_temp_coefficient,
@@ -273,11 +481,13 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             or state.attributes.get("unit_of_measurement") == "€/kWh"
         ]
 
-    async def async_step_basic_options(self, user_input=None):
+    async def async_step_basic_options(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """Redirect to async_step_basic for backward compatibility."""
         return await self.async_step_basic(user_input)
 
-    def _apply_heating_curve_input(self, user_input: dict) -> None:
+    def _apply_heating_curve_input(self, user_input: dict[str, Any]) -> None:
         """Apply heating curve settings from user input."""
         self.supply_temperature_sensor = user_input.get(CONF_SUPPLY_TEMPERATURE_SENSOR)
         self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
@@ -404,7 +614,9 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
 
-    async def async_step_heating_curve_settings(self, user_input=None):
+    async def async_step_heating_curve_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         if user_input is not None:
             self._apply_heating_curve_input(user_input)
             return await self.async_step_user()
@@ -416,7 +628,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id=STEP_HEATING_CURVE_SETTINGS, data_schema=schema
         )
 
-    def _apply_basic_input(self, user_input: dict) -> None:
+    def _apply_basic_input(self, user_input: dict[str, Any]) -> None:
         """Apply basic settings from user input."""
         self.area_m2 = float(user_input[CONF_AREA_M2])
         self.energy_label = user_input[CONF_ENERGY_LABEL]
@@ -430,12 +642,18 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.ceiling_height = float(
             user_input.get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT)
         )
+        self.thermal_mass_class = user_input.get(
+            CONF_THERMAL_MASS_CLASS, DEFAULT_THERMAL_MASS_CLASS
+        )
+        self.emitter_type = user_input.get(CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE)
         self.pv_east_wp = float(user_input.get(CONF_PV_EAST_WP, 0))
         self.pv_south_wp = float(user_input.get(CONF_PV_SOUTH_WP, 0))
         self.pv_west_wp = float(user_input.get(CONF_PV_WEST_WP, 0))
         self.pv_tilt = float(user_input.get(CONF_PV_TILT, DEFAULT_PV_TILT))
         self.indoor_temperature_sensor = user_input.get(CONF_INDOOR_TEMPERATURE_SENSOR)
         self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
+        self.grid_import_sensor = user_input.get(CONF_GRID_IMPORT_SENSOR)
+        self.grid_export_sensor = user_input.get(CONF_GRID_EXPORT_SENSOR)
 
     def _build_basic_schema(
         self,
@@ -497,6 +715,30 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     default=self.ceiling_height or DEFAULT_CEILING_HEIGHT,
                 ): vol.Coerce(float),
                 vol.Optional(
+                    CONF_THERMAL_MASS_CLASS,
+                    default=self.thermal_mass_class or DEFAULT_THERMAL_MASS_CLASS,
+                ): selector(
+                    {
+                        "select": {
+                            "options": list(THERMAL_MASS_WH_PER_M2_K.keys()),
+                            "mode": "dropdown",
+                            "translation_key": "thermal_mass_class",
+                        }
+                    }
+                ),
+                vol.Optional(
+                    CONF_EMITTER_TYPE,
+                    default=self.emitter_type or DEFAULT_EMITTER_TYPE,
+                ): selector(
+                    {
+                        "select": {
+                            "options": list(EMITTER_EXPONENT_MAP.keys()),
+                            "mode": "dropdown",
+                            "translation_key": "emitter_type",
+                        }
+                    }
+                ),
+                vol.Optional(
                     CONF_PV_EAST_WP, default=self.pv_east_wp or 0.0
                 ): vol.Coerce(float),
                 vol.Optional(
@@ -531,10 +773,36 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         }
                     }
                 ),
+                # Real-time PV-surplus controller (phase 5b, REDESIGN.md) -
+                # optional, only used when control_mode is optimize_v2.
+                vol.Optional(
+                    CONF_GRID_IMPORT_SENSOR, default=self.grid_import_sensor
+                ): selector(
+                    {
+                        "select": {
+                            "options": power_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
+                vol.Optional(
+                    CONF_GRID_EXPORT_SENSOR, default=self.grid_export_sensor
+                ): selector(
+                    {
+                        "select": {
+                            "options": power_sensors,
+                            "multiple": False,
+                            "mode": "dropdown",
+                        }
+                    }
+                ),
             }
         )
 
-    async def async_step_basic(self, user_input=None):
+    async def async_step_basic(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         if user_input is not None:
             self._apply_basic_input(user_input)
             return await self.async_step_user()
@@ -566,10 +834,12 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Get default sources for current source type."""
         for block in reversed(self.configs):
             if block[CONF_SOURCE_TYPE] == self.source_type:
-                return block[CONF_SOURCES]
+                return list(block[CONF_SOURCES])
         return []
 
-    async def async_step_select_sources(self, user_input=None) -> ConfigFlowResult:
+    async def async_step_select_sources(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         if user_input is not None:
             self._update_source_config(user_input[CONF_SOURCES])
             return await self.async_step_user()
@@ -639,7 +909,9 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
 
-    async def async_step_price_settings(self, user_input=None) -> ConfigFlowResult:
+    async def async_step_price_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         if user_input is not None:
             self.consumption_price_sensor = user_input[CONF_CONSUMPTION_PRICE_SENSOR]
             self.production_price_sensor = user_input[CONF_PRODUCTION_PRICE_SENSOR]
@@ -655,24 +927,24 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     @staticmethod
-    @callback
+    @callback  # type: ignore[untyped-decorator]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
         return HeatingCurveOptimizerOptionsFlowHandler(config_entry)
 
 
-class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
+class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Handle updates to a config entry (options)."""
 
-    def __init__(self, config_entry):
-        self.configs = list(
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        self.configs: list[dict[str, Any]] = list(
             config_entry.options.get(
                 CONF_CONFIGS, config_entry.data.get(CONF_CONFIGS, [])
             )
         )
 
-        def _get(key: str, default=None):
+        def _get(key: str, default: Any = None) -> Any:
             return config_entry.options.get(key, config_entry.data.get(key, default))
 
         self.area_m2 = _get(CONF_AREA_M2)
@@ -683,6 +955,10 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
         self.glass_u_value = _get(CONF_GLASS_U_VALUE, 1.2)
         self.ventilation_type = _get(CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE)
         self.ceiling_height = _get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT)
+        self.thermal_mass_class = _get(
+            CONF_THERMAL_MASS_CLASS, DEFAULT_THERMAL_MASS_CLASS
+        )
+        self.emitter_type = _get(CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE)
         self.pv_east_wp = _get(CONF_PV_EAST_WP, 0)
         self.pv_south_wp = _get(CONF_PV_SOUTH_WP, 0)
         self.pv_west_wp = _get(CONF_PV_WEST_WP, 0)
@@ -690,6 +966,8 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
         self.indoor_temperature_sensor = _get(CONF_INDOOR_TEMPERATURE_SENSOR)
         self.power_consumption = _get(CONF_POWER_CONSUMPTION)
         self.supply_temperature_sensor = _get(CONF_SUPPLY_TEMPERATURE_SENSOR)
+        self.grid_import_sensor = _get(CONF_GRID_IMPORT_SENSOR)
+        self.grid_export_sensor = _get(CONF_GRID_EXPORT_SENSOR)
         self.k_factor = _get(CONF_K_FACTOR)
         self.base_cop = _get(CONF_BASE_COP, DEFAULT_COP_AT_35)
         self.outdoor_temp_coefficient = _get(
@@ -768,10 +1046,14 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
     _get_default_sources = HeatingCurveOptimizerConfigFlow._get_default_sources
     _build_entry_data = HeatingCurveOptimizerConfigFlow._build_entry_data
 
-    async def async_step_init(self, user_input=None):
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         return await self.async_step_user()
 
-    async def async_step_user(self, user_input=None):
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         if user_input and CONF_SOURCE_TYPE in user_input:
             choice = user_input[CONF_SOURCE_TYPE]
             if choice == STEP_BASIC:
@@ -837,7 +1119,9 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             }
         )
 
-    async def async_step_basic(self, user_input=None):
+    async def async_step_basic(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         if user_input is not None:
             self._apply_basic_input(user_input)
             return await self.async_step_user()
@@ -850,7 +1134,9 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
 
         return self.async_show_form(step_id=STEP_BASIC, data_schema=schema)
 
-    async def async_step_heating_curve_settings(self, user_input=None):
+    async def async_step_heating_curve_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         if user_input is not None:
             self._apply_heating_curve_input(user_input)
             return await self.async_step_user()
@@ -862,7 +1148,9 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             step_id=STEP_HEATING_CURVE_SETTINGS, data_schema=schema
         )
 
-    async def async_step_select_sources(self, user_input=None):
+    async def async_step_select_sources(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         if user_input and CONF_SOURCES in user_input:
             self._update_source_config(user_input[CONF_SOURCES])
             return await self.async_step_user()
@@ -887,7 +1175,9 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):
             ),
         )
 
-    async def async_step_price_settings(self, user_input=None):
+    async def async_step_price_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         if user_input is not None:
             self.consumption_price_sensor = user_input[CONF_CONSUMPTION_PRICE_SENSOR]
             self.production_price_sensor = user_input[CONF_PRODUCTION_PRICE_SENSOR]

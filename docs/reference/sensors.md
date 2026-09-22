@@ -546,7 +546,11 @@ threshold: 0  # kW
 ---
 
 ### Indoor Temperature Hysteresis
-**Entity ID**: `number.heating_curve_optimizer_indoor_temp_hysteresis`
+**Entity IDs**: `number.heating_curve_optimizer_indoor_temp_hysteresis_lower` and `number.heating_curve_optimizer_indoor_temp_hysteresis_upper`
+
+Two separate entities (how far below target the heat pump turns ON, how
+far above target it turns OFF), replacing an earlier single symmetric
+`indoor_temp_hysteresis` value.
 
 **Description**: Hysteresis band for smooth heat demand control
 
@@ -585,16 +589,19 @@ else:
 
 ### Update Intervals
 
-| Sensor | Update Frequency | Trigger |
-|--------|------------------|---------|
-| Outdoor Temperature | 5 min | Time interval |
-| Heat Loss | 5 min | Outdoor temp change |
-| Solar Gain | 5 min | Solar radiation change |
-| Net Heat Loss | 5 min | Heat loss or solar gain change |
-| Heating Curve Offset | 60 min | Time interval + price change |
-| COP | Real-time | Supply/outdoor temp change |
-| Buffer | 60 min | Offset optimization |
-| Prices | Varies | Price sensor update |
+Three `DataUpdateCoordinator`s cascade into each other
+(`WeatherDataCoordinator` → `HeatCalculationCoordinator` →
+`OptimizationCoordinator`), each on its own fixed interval, plus a
+handful of standalone sensors that update on state-change events instead
+of polling:
+
+| Coordinator / Sensor | Update Frequency | Trigger |
+|-----------------------|-------------------|---------|
+| `WeatherDataCoordinator` (Outdoor Temperature) | 30 min | Time interval |
+| `HeatCalculationCoordinator` (Heat Loss, Solar Gain, Net Heat Loss, PV Production Forecast) | 5 min | Time interval, depends on weather coordinator's latest data |
+| `OptimizationCoordinator` (Heating Curve Offset, Optimized Supply Temperature, Heat Buffer, Cost Savings, thermal v2/calibration/realtime diagnostic sensors) | 15 min | Time interval, depends on heat coordinator's latest data; also refreshed immediately after a `control_mode` change |
+| Current Electricity Price, COP Delta, Heat Generation Delta, Heat Pump Thermal Power | Event-driven | Fires on the underlying price/power/supply-temperature sensor's own state change, not on a timer |
+| Real-time offset controller (`realtime_controller.py`) | 60 s | Time interval, only active when `grid_import_sensor`/`grid_export_sensor` are configured and `control_mode` is `optimize_v2` |
 
 ### Availability
 

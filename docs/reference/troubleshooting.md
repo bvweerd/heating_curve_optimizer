@@ -512,7 +512,66 @@ sensor.heating_curve_optimizer_heat_buffer:
   last_state: 3.2  # Should match pre-restart value
 ```
 
+### Reset Thermal Calibration
+
+If [thermal calibration](../configuration.md#advanced-redesigned-optimizer-settings)
+has learned an implausible UA or thermal mass (for example after a
+sensor placement change, or a period of bad data), reset it back to the
+label-based estimate:
+
+**Developer Tools → Actions**, action `heating_curve_optimizer.reset_thermal_calibration`:
+
+```yaml
+action: heating_curve_optimizer.reset_thermal_calibration
+data:
+  entry_id: "01KK4RJJQZBD9C3FMEVYAB0VAB"  # optional - omit to reset every entry
+```
+
+This clears all calibration samples and the learned UA/thermal-mass
+values; the redesigned optimizer immediately falls back to the
+energy-label-based estimate and starts learning again from scratch.
+
 ---
+
+## Known Limitations
+
+These are deliberate design boundaries, not bugs - documented here so
+you know what to expect rather than filing an issue for expected
+behavior.
+
+- **No domestic hot water (DHW) support.** This integration only
+  optimizes space heating. DHW cycles are not modelled and are not
+  netted against the optimizer's heat demand forecast.
+- **One config entry per Home Assistant instance.** A second attempt to
+  add the integration is blocked (`already_configured`). Multiple rooms
+  or zones within one home are modelled as **heating-zone subentries**
+  (`+ Add Zone` on the entry's device page, where your HA release
+  supports it), not as separate top-level entries - see
+  [Configuration Guide](../configuration.md).
+- **Never actuates your heat pump or thermostat directly.** The
+  integration only publishes sensors (offset, supply temperature) for
+  you to consume in your own automations; the disabled-by-default
+  `climate.heating` entity is a read/write view of the target
+  temperature setpoint, not a thermostat controlling real hardware.
+- **PV surplus is not netted against household consumption.** The
+  optimizer treats the full modelled PV production forecast as
+  available for heating (`pv_surplus_kw`), which overestimates true
+  surplus on days with concurrent household load - refining this
+  requires a consumption forecast, which does not exist yet.
+- **Thermal calibration needs a real indoor-temperature sensor and
+  time.** Without `indoor_temperature_sensor` configured, UA/thermal-mass
+  calibration never activates and the building model instead uses the
+  energy-label-based estimate (still fully functional, just less
+  precise). Even with a sensor configured, calibration needs dozens of
+  samples across varying conditions before it applies - it is not
+  instant.
+- **Heating-zone subentries require a newer Home Assistant release**
+  than this integration's own floor version. On an HA release too old
+  to support `ConfigSubentryFlow`, the "+ Add Zone" option simply does
+  not appear; every other feature works normally.
+- **Removing the integration does not delete learned calibration data.**
+  See [Installation Guide](../installation.md#uninstallation) for how to
+  clean that up by hand if you want a completely fresh reinstall.
 
 ## Getting Help
 

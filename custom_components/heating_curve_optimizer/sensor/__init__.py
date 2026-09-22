@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from ..const import (
@@ -60,8 +62,18 @@ from .daily_utility import (
     NetHeatLossEnergyDailySensor,
 )
 from ..calibration_sensor import CalibrationSensor
+from ..sensor_thermal_shadow import (
+    ThermalShadowCostComparisonSensor,
+    ThermalShadowOffsetSensor,
+)
+from ..sensor_thermal_calibration import ThermalCalibrationSensor
+from ..sensor_realtime_offset import RealtimeOffsetAdjustmentSensor
 
 _LOGGER = logging.getLogger(__name__)
+
+# Entities are updated via their coordinator, never by per-entity I/O,
+# so there is no reason to serialize updates against each other.
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
@@ -70,13 +82,13 @@ async def async_setup_entry(
     """Set up sensors from a config entry."""
     _LOGGER.debug("Setting up sensors for entry %s", entry.entry_id)
 
-    # Get coordinators and config from hass.data
-    entry_data = hass.data[DOMAIN][entry.entry_id]
-    weather_coordinator = entry_data["weather_coordinator"]
-    heat_coordinator = entry_data["heat_coordinator"]
-    optimization_coordinator = entry_data["optimization_coordinator"]
-    device = entry_data["device"]
-    config = entry_data["config"]
+    # Get coordinators and config from the entry's runtime data
+    runtime_data = entry.runtime_data
+    weather_coordinator = runtime_data.weather_coordinator
+    heat_coordinator = runtime_data.heat_coordinator
+    optimization_coordinator = runtime_data.optimization_coordinator
+    device = runtime_data.device
+    config = runtime_data.config
 
     # Sensor list
     entities = []
@@ -279,9 +291,11 @@ async def async_setup_entry(
                 entry=entry,
                 heat_loss_sensor=heat_loss_entity,
                 thermal_power_sensor=power_sensor,
-                outdoor_sensor=weather_coordinator.data.get("outdoor_sensor_id")
-                if weather_coordinator.data
-                else None,
+                outdoor_sensor=(
+                    weather_coordinator.data.get("outdoor_sensor_id")
+                    if weather_coordinator.data
+                    else None
+                ),
                 indoor_sensor=config.get("indoor_temperature_sensor"),
                 supply_temp_sensor=supply_sensor,
                 cop_sensor=cop_entity,
@@ -296,17 +310,97 @@ async def async_setup_entry(
     # Daily utility sensors (cumulative energy tracking)
     _setup_daily_utility_sensors(hass, entry, config, device, entities)
 
+    # Redesigned thermal optimizer - shadow mode (phase 2, diagnostic only)
+    entities.append(
+        ThermalShadowOffsetSensor(
+            coordinator=optimization_coordinator,
+            name="Thermal V2 Offset",
+            unique_id=f"{entry.entry_id}_thermal_v2_offset",
+            icon="mdi:chart-timeline-variant",
+            device=device,
+        )
+    )
+    entities.append(
+        ThermalShadowCostComparisonSensor(
+            coordinator=optimization_coordinator,
+            name="Thermal V2 Cost Comparison",
+            unique_id=f"{entry.entry_id}_thermal_v2_cost_comparison",
+            icon="mdi:scale-balance",
+            device=device,
+        )
+    )
+    entities.append(
+        ThermalCalibrationSensor(
+            coordinator=optimization_coordinator,
+            name="Thermal Calibration",
+            unique_id=f"{entry.entry_id}_thermal_calibration",
+            icon="mdi:tune",
+            device=device,
+        )
+    )
+    entities.append(
+        RealtimeOffsetAdjustmentSensor(
+            coordinator=optimization_coordinator,
+            name="Realtime Offset Adjustment",
+            unique_id=f"{entry.entry_id}_realtime_offset_adjustment",
+            icon="mdi:solar-power-variant",
+            device=device,
+        )
+    )
+
     _LOGGER.debug("Adding %d sensor entities", len(entities))
     async_add_entities(entities)
+
+    # Per-zone core sensors (phase 5c, REDESIGN.md): each zone's own
+    # optimizer output, associated with its own subentry/device via
+    # config_subentry_id. Scoped to the core "what did this zone's own
+    # optimizer decide" sensors for a first cut - not the full catalog of
+    # diagnostic/shadow/calibration sensors the main entry gets (see
+    # docs/redesign/REDESIGN.md phase 5c).
+    for subentry_id, zone_data in runtime_data.zones.items():
+        zone_optimization_coordinator = zone_data.get("optimization_coordinator")
+        zone_heat_coordinator = zone_data.get("heat_coordinator")
+        zone_device = zone_data.get("device")
+        if not (
+            zone_optimization_coordinator and zone_heat_coordinator and zone_device
+        ):
+            continue
+        zone_entry_id = f"{entry.entry_id}_{subentry_id}"
+        async_add_entities(
+            [
+                CoordinatorHeatingCurveOffsetSensor(
+                    coordinator=zone_optimization_coordinator,
+                    name="Heating Curve Offset",
+                    unique_id=f"{zone_entry_id}_heating_curve_offset",
+                    icon="mdi:chart-line",
+                    device=zone_device,
+                ),
+                CoordinatorOptimizedSupplyTemperatureSensor(
+                    coordinator=zone_optimization_coordinator,
+                    name="Optimized Supply Temperature",
+                    unique_id=f"{zone_entry_id}_optimized_supply_temperature",
+                    icon="mdi:thermometer-chevron-up",
+                    device=zone_device,
+                ),
+                CoordinatorNetHeatLossSensor(
+                    coordinator=zone_heat_coordinator,
+                    name="Net Heat Loss",
+                    unique_id=f"{zone_entry_id}_net_heat_loss",
+                    icon="mdi:fire-off",
+                    device=zone_device,
+                ),
+            ],
+            config_subentry_id=subentry_id,
+        )
 
 
 def _setup_event_driven_sensors(
     hass: HomeAssistant,
     entry: ConfigEntry,
-    config: dict,
-    device,
-    entities: list,
-    weather_coordinator,
+    config: dict[str, Any],
+    device: DeviceInfo,
+    entities: list[Any],
+    weather_coordinator: Any,
 ) -> None:
     """Set up event-driven sensors that track state changes in real-time."""
 
@@ -342,7 +436,10 @@ def _setup_event_driven_sensors(
         )
 
         # Find outdoor temperature sensor reference
-        outdoor_sensor_ref = None
+        # `: Any` - holds either a live entity reference or an entity_id
+        # string fallback (a common HA idiom for cross-referencing an
+        # entity that may or may not exist yet).
+        outdoor_sensor_ref: Any = None
         for entity in entities:
             if isinstance(entity, CoordinatorOutdoorTemperatureSensor):
                 outdoor_sensor_ref = entity
@@ -372,7 +469,7 @@ def _setup_event_driven_sensors(
                 break
 
         # Find heating curve offset sensor
-        offset_sensor = None
+        offset_sensor: Any = None
         for entity in entities:
             if isinstance(entity, CoordinatorHeatingCurveOffsetSensor):
                 offset_sensor = entity
@@ -381,7 +478,7 @@ def _setup_event_driven_sensors(
             offset_sensor = "sensor.heating_curve_optimizer_heating_curve_offset"
 
         # Find calculated supply temperature sensor
-        calculated_supply_sensor = None
+        calculated_supply_sensor: Any = None
         for entity in entities:
             if isinstance(entity, CoordinatorCalculatedSupplyTemperatureSensor):
                 calculated_supply_sensor = entity
@@ -433,9 +530,9 @@ def _setup_event_driven_sensors(
 def _setup_daily_utility_sensors(
     hass: HomeAssistant,
     entry: ConfigEntry,
-    config: dict,
-    device,
-    entities: list,
+    config: dict[str, Any],
+    device: DeviceInfo,
+    entities: list[Any],
 ) -> None:
     """Set up daily utility sensors that track cumulative energy (kWh)."""
 

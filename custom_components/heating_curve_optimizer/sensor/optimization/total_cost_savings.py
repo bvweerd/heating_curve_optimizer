@@ -21,7 +21,7 @@ from ...entity import BaseUtilitySensor
 _LOGGER = logging.getLogger(__name__)
 
 
-class TotalCostSavingsSensor(RestoreSensor, BaseUtilitySensor):
+class TotalCostSavingsSensor(RestoreSensor, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Cumulative cost savings sensor tracking total savings since activation."""
 
     def __init__(
@@ -103,7 +103,7 @@ class TotalCostSavingsSensor(RestoreSensor, BaseUtilitySensor):
             self._unsub_timer = None
         await super().async_will_remove_from_hass()
 
-    @callback
+    @callback  # type: ignore[untyped-decorator]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     async def _async_update_savings(self, now: datetime | None = None) -> None:
         """Update cumulative savings periodically."""
         # Get current states
@@ -191,7 +191,7 @@ class TotalCostSavingsSensor(RestoreSensor, BaseUtilitySensor):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra state attributes."""
-        attrs = {}
+        attrs: dict[str, Any] = {}
         if self._last_update:
             attrs["last_update"] = self._last_update.isoformat()
         attrs["time_base_minutes"] = self.time_base

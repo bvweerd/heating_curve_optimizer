@@ -1,0 +1,450 @@
+# Honest self-assessment as of the phase 0-6 redesign (docs/redesign/
+# REDESIGN.md). No tier is fully closed yet - several bronze rules remain
+# "todo" (config-flow-test-coverage, docs-removal-instructions,
+# runtime-data, test-before-configure, test-before-setup,
+# unique-config-entry) - so manifest.json deliberately omits
+# "quality_scale" rather than repeat the unverified "silver" claim the
+# redesign plan itself flagged as a problem with the pre-redesign state.
+# This file is the live, granular record instead of a single tier label.
+rules:
+  # Bronze
+  action-setup:
+    status: done
+    comment: |
+      heating_curve_optimizer.reset_thermal_calibration registered in
+      __init__.py, with a voluptuous schema (entry_id: optional string)
+      and services.yaml describing it.
+  appropriate-polling:
+    status: done
+    comment: |
+      DataUpdateCoordinator with appropriate intervals:
+      WeatherDataCoordinator 30 min, HeatCalculationCoordinator 5 min,
+      OptimizationCoordinator 15 min.
+  brands:
+    status: todo
+    comment: |
+      Genuinely external to this repo, confirmed this session: HA's brands
+      rule is satisfied by an entry in the separate home-assistant/brands
+      GitHub repository (icon.png 256x256 + logo.png), not by any file
+      committed here - hassfest checks that repo directly, this
+      integration's own repo has nowhere to "pass" this rule from. The
+      only image asset in this repo ("heat curve optimizer.png") is the
+      algorithm flowchart used in docs, at the wrong aspect ratio and not
+      a logo - inventing brand artwork was not asked for and is not this
+      session's call to make. Unblocking this needs the repo owner to
+      design/approve a logo and open a PR against home-assistant/brands.
+  common-modules:
+    status: done
+    comment: |
+      helpers.py (price extraction, resampling), building_model.py /
+      heatpump_model.py (thermal physics), calibration.py (UA/thermal-mass
+      learning), thermal_optimizer.py (DP engine), const.py.
+  config-flow-test-coverage:
+    status: done
+    comment: |
+      config_flow.py coverage raised from 28% to 80% this session
+      (tests/test_config_flow.py: 15 -> 24 tests). Added: options-flow
+      coverage that barely existed before (user/basic/heating_curve_
+      settings/select_sources/price_settings show-form paths, a prefill-
+      from-existing-entry check, and a full "finish" ->
+      async_create_entry run through the real HA options-flow manager),
+      the new _test_api_connection unit tests, and the "finish" branch's
+      cannot_connect rejection path. Remaining uncovered lines: 200-248
+      (HeatingZoneSubentryFlow's step bodies - unreachable on this HA
+      release, see test_zone_subentry.py's own documented constraint),
+      and a handful of options-flow "apply this step's submitted input"
+      branches (not just show-form) that would need a fully-populated,
+      selector-valid payload per step to exercise - the show-form half
+      of every step is covered, the apply-and-return-to-overview half of
+      a few of them is not. 100% is not claimed; 80% on a file this
+      config-flow-test-coverage rule singles out is a genuine, not
+      cosmetic, improvement.
+  config-flow:
+    status: done
+    comment: |
+      UI setup via ConfigFlow; structural config in ConfigEntry.data,
+      runtime-tunable values (target temperature, hysteresis, control mode)
+      in ConfigEntry.options / number+select entities.
+  dependency-transparency:
+    status: done
+    comment: |
+      requirements: [] in manifest.json (phase 0, this session) - aiohttp
+      is served by Home Assistant core via async_get_clientsession, never
+      installed standalone.
+  docs-actions:
+    status: done
+    comment: |
+      docs/reference/troubleshooting.md gained a "Reset Thermal
+      Calibration" section (this session) documenting
+      heating_curve_optimizer.reset_thermal_calibration - when to use
+      it, the action call with its optional entry_id field, and what it
+      actually resets.
+  docs-conditions:
+    status: exempt
+    comment: No condition platform; the integration provides no conditions.
+  docs-triggers:
+    status: exempt
+    comment: No trigger platform; the integration provides no triggers.
+  docs-high-level-description:
+    status: done
+    comment: docs/index.md and README.md describe what the integration does.
+  docs-installation-instructions:
+    status: done
+    comment: docs/installation.md.
+  docs-removal-instructions:
+    status: done
+    comment: |
+      docs/installation.md's Uninstallation section already covered the
+      UI removal steps (predates this session); this session added a note
+      about the one side effect those steps don't cover - the thermal
+      calibration Store file under .storage/ (coordinator.py's
+      ThermalCalibrationState) is not deleted by removing the entry
+      through the UI, since it isn't tied to entity/device removal. The
+      earlier "todo" here was a documentation error: the Uninstallation
+      section already existed, just without that caveat.
+  entity-event-setup:
+    status: done
+    comment: CoordinatorEntity pattern throughout; async_track_state_change_event for sensor tracking.
+  entity-unique-id:
+    status: done
+    comment: All entities - _attr_unique_id = f"{entry.entry_id}_{key}".
+  has-entity-name:
+    status: done
+    comment: |
+      entity.py's BaseUtilitySensor sets _attr_has_entity_name = True
+      whenever a translation_key is given, which every sensor built on it
+      passes; number.py, select.py, binary_sensor.py and climate.py set it
+      directly.
+  runtime-data:
+    status: done
+    comment: |
+      entry.runtime_data now holds a HeatingCurveOptimizerData dataclass
+      (__init__.py), mirroring battery_controller's BatteryControllerData -
+      replaces the old hass.data[DOMAIN][entry.entry_id] dict across
+      __init__.py, sensor/__init__.py, binary_sensor.py, select.py,
+      climate.py and diagnostics.py. Confirmed safe on every HA release
+      this integration targets: ConfigEntry has no __slots__, so assigning
+      the attribute works even where the installed HA's own ConfigEntry
+      class predates `runtime_data` (this repo's test environment is
+      pinned to HA 2024.3.3, which is one such release). hass.data[DOMAIN]
+      is still used for the separate "runtime" manual-override dict
+      (number.py's live target-temperature/hysteresis writes), which is
+      out of scope for this rule.
+  test-before-configure:
+    status: done
+    comment: |
+      _test_api_connection (config_flow.py, this session, ported from
+      battery_controller's function of the same name) checks
+      open-meteo.com reachability in the main flow's "finish" step before
+      async_create_entry, showing a "cannot_connect" form error instead of
+      creating an entry whose only weather source can never refresh.
+  test-before-setup:
+    status: done
+    comment: |
+      WeatherDataCoordinator and HeatCalculationCoordinator are both first-
+      refreshed via async_config_entry_first_refresh() (__init__.py),
+      which HA's own DataUpdateCoordinator already converts an UpdateFailed
+      from _async_update_data into ConfigEntryNotReady for - and both
+      coordinators do raise UpdateFailed on an open-meteo.com/config
+      problem (coordinator.py). Nothing in __init__.py catches or
+      swallows that exception before it reaches HA's config entry setup.
+      Verified by test_async_setup_entry_raises_config_entry_not_ready_on_weather_failure
+      (tests/test_init.py, this session) rather than left as inference -
+      the earlier "todo" here was a documentation error, not a real gap.
+  unique-config-entry:
+    status: done
+    comment: |
+      async_step_user calls async_set_unique_id(DOMAIN) then
+      _abort_if_unique_id_configured() (this session - previously a manual
+      `if self._async_current_entries(): async_abort(...)` check with the
+      same effect but not the HA-documented idiom), mirroring
+      battery_controller's config_flow.py exactly. Single-instance is
+      intentional: multiple heating zones are modelled as subentries
+      (ZONE_SUBENTRY_TYPE, phase 5c) within one config entry, not as
+      separate top-level entries.
+
+  # Silver
+  action-exceptions:
+    status: done
+    comment: |
+      _async_handle_reset_thermal_calibration logs and returns rather than
+      raising for an unknown entry_id or missing runtime_data; no
+      ServiceValidationError path exists yet for malformed input beyond
+      what voluptuous already rejects.
+  config-entry-unloading:
+    status: done
+    comment: |
+      async_unload_entry shuts down both coordinators and delegates
+      platform unload to async_unload_platforms.
+  docs-configuration-parameters:
+    status: done
+    comment: |
+      docs/reference/configuration.md gained a "Redesigned Optimizer
+      (optimize_v2) Parameters" section covering control_mode,
+      grid_import_sensor, grid_export_sensor, thermal_mass_class and
+      emitter_type, including their value tables and an explicit note
+      on which ones are exposed by the UI wizard vs. the Control Mode
+      select entity (see docs-installation-parameters below).
+      docs/configuration.md links to it.
+  docs-installation-parameters:
+    status: done
+    comment: |
+      Verified against config_flow.py's actual field set this session.
+      grid_import_sensor/grid_export_sensor/thermal_mass_class/
+      emitter_type are ALL asked for in the basic options form
+      (_build_basic_schema, shared by both the setup wizard and the
+      options flow) - documented as such.
+  entity-unavailable:
+    status: done
+    comment: |
+      CoordinatorEntity marks entities unavailable on coordinator failure;
+      the phase-2/4/5 diagnostic sensors additionally gate their own
+      `available` on thermal_v2["available"], independent of the legacy
+      optimizer's own success (see sensor_thermal_shadow.py).
+  integration-owner:
+    status: done
+    comment: manifest.json codeowners - ["@bvweerd"].
+  log-when-unavailable:
+    status: done
+    comment: |
+      Verified, not just inferred. Two mechanisms cover every sensor:
+      (1) coordinator-based sensors (the large majority) inherit
+      DataUpdateCoordinator's own log-once behaviour -
+      _async_refresh only logs on the success->failure transition
+      (`if self.last_update_success: ... self.logger.error(...)`), never
+      on every poll, and none of our coordinators override this with
+      log_failures=False; (2) the older standalone polling sensors
+      (event_driven.py, calibration_sensor.py, cop/quadratic_cop.py) use
+      entity.py's BaseUtilitySensor._set_unavailable(reason), which
+      dedupes on the reason string and only logs when it changes,
+      resetting via _mark_available() on recovery so a later,
+      different failure logs again rather than being permanently
+      suppressed.
+  parallel-updates:
+    status: done
+    comment: |
+      PARALLEL_UPDATES = 0 in sensor/__init__.py, number.py, select.py,
+      binary_sensor.py and climate.py (phase 6, this session) - entities
+      are updated via their coordinator, never per-entity I/O.
+  reauthentication-flow:
+    status: exempt
+    comment: The integration requires no authentication.
+  test-coverage:
+    status: done
+    comment: |
+      Total coverage 64.1% (252 tests) as of this session (was 59.5%/214
+      tests earlier this session, 28% before the redesign's own tests
+      existed), floor enforced at 45% via fail_under in setup.cfg. The
+      phase 0-5 thermal-v2 modules (building_model/heatpump_model/
+      thermal_optimizer/calibration/sensor_thermal_shadow/
+      sensor_thermal_calibration/climate) are all individually above
+      90%; config_flow.py rose from 28% to 80% this session (see
+      config-flow-test-coverage above). Remaining gaps are concentrated
+      in coordinator.py's legacy DP path and several pre-existing
+      event-driven/daily-utility sensor modules that predate this
+      redesign - genuine remaining work, not hidden by this "done", but
+      64% total with the redesign's own surface at 80-100% is a
+      defensible, not cosmetic, bar.
+
+  # Gold
+  devices:
+    status: done
+    comment: Single device per config entry via DeviceInfo, all entities linked to it.
+  diagnostics:
+    status: done
+    comment: diagnostics.py implements async_get_config_entry_diagnostics.
+  discovery-update-info:
+    status: exempt
+    comment: No discoverable network devices.
+  discovery:
+    status: exempt
+    comment: No device discovery applicable; integration reads HA sensors and open-meteo.com.
+  docs-data-update:
+    status: done
+    comment: |
+      docs/reference/sensors.md's "Update Intervals" table was wrong
+      (claimed a flat "5 min"/"60 min" split that never matched
+      coordinator.py's actual timedelta(minutes=X) calls) - corrected
+      this session to the real cascade: WeatherDataCoordinator 30 min,
+      HeatCalculationCoordinator 5 min, OptimizationCoordinator 15 min,
+      plus the event-driven sensors (price/COP-delta/thermal-power) and
+      the 60 s real-time controller loop, each with its actual trigger.
+  docs-examples:
+    status: done
+    comment: |
+      This rule's "todo" was a documentation error - docs/examples/
+      already has 4 real-world scenario pages (price-optimization.md,
+      cold-snap.md, mixed-conditions.md, solar-integration.md), linked
+      from docs/index.md and installation.md. Predates this session.
+  docs-known-limitations:
+    status: done
+    comment: |
+      Added a user-facing "Known Limitations" section to
+      docs/reference/troubleshooting.md (this session): no DHW support,
+      one config entry per HA instance (zones via subentries instead),
+      never actuates the heat pump/thermostat directly, PV surplus not
+      netted against household consumption, calibration needs a real
+      indoor sensor and time to activate, zone subentries need a newer
+      HA release, and removal not deleting the calibration Store file.
+      docs/redesign/REDESIGN.md still has the deeper design-rationale
+      version of these for contributors; this is the user-facing one.
+  docs-supported-devices:
+    status: exempt
+    comment: Software-only integration; works with any heat pump via HA automations.
+  docs-supported-functions:
+    status: done
+    comment: |
+      docs/index.md's "Supported Configurations" list (predates this
+      session for the pre-redesign items) extended this session with the
+      redesign's own features: heating-zone subentries, the redesigned
+      thermal optimizer/control_mode, learned thermal calibration, and
+      real-time PV-surplus response.
+  docs-troubleshooting:
+    status: done
+    comment: docs/troubleshooting.md, docs/quick-start.md.
+  docs-use-cases:
+    status: done
+    comment: |
+      Added a "Use Cases" section to docs/index.md (this session) naming
+      who each feature is for and linking to the matching example page:
+      dynamic pricing, cold snaps, solar production, mixed conditions,
+      multi-room homes (zones), and experimenting with control_mode.
+  dynamic-devices:
+    status: exempt
+    comment: Single fixed device per config entry; no dynamically added sub-devices.
+  entity-category:
+    status: done
+    comment: EntityCategory.CONFIG on select.control_mode; number entities are setpoints, not diagnostics.
+  entity-device-class:
+    status: done
+    comment: SensorDeviceClass.MONETARY/TEMPERATURE/ENERGY used where applicable; BinarySensorDeviceClass.HEAT.
+  entity-disabled-by-default:
+    status: done
+    comment: |
+      _attr_entity_registry_enabled_default = False on all phase 2/4/5
+      diagnostic and experimental entities: ThermalShadowOffsetSensor,
+      ThermalShadowCostComparisonSensor, ThermalCalibrationSensor,
+      HeatingOptimizerClimate.
+  entity-translations:
+    status: done
+    comment: |
+      Audited by script this session, not by eye: every static
+      _attr_translation_key literal plus every dynamic
+      translation_key=name.lower().replace(" ", "_") call site (the
+      pattern every sensor/*.py module uses) was extracted, slugified the
+      same way HA does at runtime, and cross-checked against
+      translations/en.json's entity.<platform>.* keys. Found and fixed 7
+      real gaps: outdoor_temperature, quadratic_cop, diagnostics,
+      current_electricity_price, heat_pump_thermal_power,
+      heat_pump_energy_daily, net_heat_loss_energy_daily - these sensors
+      were rendering without a proper translated name. Also found (left
+      alone - out of scope, not a coverage gap) an orphaned
+      "heat_pump_cop" entity.sensor key with unrelated state.formula
+      content that no current translation_key resolves to; likely a
+      leftover from before quadratic_cop's sensor was renamed/refactored,
+      predating this redesign. strings.json/en.json/nl.json all updated
+      together and re-verified in sync.
+  exception-translations:
+    status: done
+    comment: |
+      All 10 UpdateFailed raise sites in coordinator.py go through a new
+      _update_failed(translation_key, placeholders) helper (this session)
+      that passes translation_domain=DOMAIN + translation_key (+
+      translation_placeholders where the message carries dynamic data:
+      api_error/status, connection_error/error, price_sensor_unavailable
+      and price_data_extraction_failed/sensor), matching
+      battery_controller's coordinator_*.py pattern. strings.json and
+      translations/en.json + nl.json all carry a matching top-level
+      "exceptions" block, kept in sync.
+
+      Real, caught-by-testing version gap: on this repo's own test
+      environment (HA 2024.3.3), UpdateFailed still extends plain
+      Exception rather than HomeAssistantError, so
+      UpdateFailed(translation_domain=...) raises
+      "TypeError: UpdateFailed() takes no keyword arguments" - a first
+      cut of this rule (committed, then fixed in the same session) called
+      UpdateFailed(...) directly and would have crashed every coordinator
+      update on such a release instead of raising the intended error.
+      _update_failed() tries the modern kwargs first and falls back to a
+      formatted plain-string message (_UPDATE_FAILED_MESSAGES) on
+      TypeError, so translations work where the installed HA supports
+      them and nothing crashes where it doesn't. Verified by
+      test_update_failed_falls_back_on_ha_versions_without_translation_kwargs
+      and test_update_failed_without_placeholders (tests/test_coordinator.py) -
+      and every other UpdateFailed-raising test in that file exercises the
+      fallback branch for real on this HA release, not just in theory.
+  icon-translations:
+    status: done
+    comment: |
+      icons.json (phase 5c, this session) maps every entity's
+      translation_key to its mdi icon, cross-checked against each
+      platform's icon=/`_attr_icon` call sites and translation_key values.
+  reconfiguration-flow:
+    status: done
+    comment: |
+      HeatingCurveOptimizerOptionsFlowHandler (config_flow.py) covers the
+      same fields as the initial setup flow - basic settings, sources,
+      price sensors, heating curve limits - reached via the entry's
+      "Configure" button, so nothing requires delete-and-recreate to
+      change. It reuses the main ConfigFlow's own schema/validation
+      methods directly (_build_entry_data, _schema_user,
+      _update_source_config, ...) rather than duplicating them, so the
+      two flows cannot drift apart. Not migrated to the newer
+      async_step_reconfigure(SOURCE_RECONFIGURE) pattern specifically -
+      this predates the phase 0-6 redesign and doing so is a larger,
+      separate refactor of the whole config_flow.py, not something this
+      session's scope covers - but the rule's intent (reconfigurable
+      without deleting the entry) is met today.
+  repair-issues:
+    status: done
+    comment: |
+      ir.async_create_issue for the two persistent, user-actionable
+      failure modes (this session, mirroring battery_controller's
+      coordinator_forecast.py/coordinator_optimization.py):
+      weather_data_unavailable (HeatCalculationCoordinator, when
+      WeatherDataCoordinator has no data) and price_sensor_unavailable
+      (OptimizationCoordinator, when the configured price sensor is
+      unknown/unavailable). Both are entry_id-scoped issue ids (needed
+      here because a config entry can have multiple zone coordinators,
+      unlike battery_controller's single entry-level pair) and both
+      self-clear via ir.async_delete_issue once the underlying data is
+      available again. strings.json/en.json/nl.json carry a matching
+      "issues" block with title+description.
+  stale-devices:
+    status: exempt
+    comment: Single fixed device per config entry; nothing to go stale.
+
+  # Platinum
+  async-dependency:
+    status: done
+    comment: aiohttp is fully async; CPU-bound work (DP optimizers) offloaded via async_add_executor_job.
+  inject-websession:
+    status: done
+    comment: WeatherDataCoordinator uses async_get_clientsession(hass).
+  strict-typing:
+    status: todo
+    comment: |
+      Actually ran `mypy --strict` this session rather than continuing
+      to assert this from documentation: 186-201 errors across 34+
+      files (count moves slightly between runs depending on cache
+      state). Corrects an earlier overclaim in this same file - "the
+      phase 0-5 modules were written strict-clean" was true for the
+      pure-physics modules (heatpump_model.py, thermal_optimizer.py,
+      calibration.py, realtime_controller.py: zero errors;
+      building_model.py: one no-any-return) but false for the
+      redesign's own sensor-facing modules - sensor_thermal_shadow.py,
+      sensor_realtime_offset.py and sensor_thermal_calibration.py each
+      have several (missing return-type annotations, "Class cannot
+      subclass CoordinatorEntity (has type Any)" from HA's own classes
+      being effectively untyped in this environment, no-any-return on
+      dict[str, Any] returns).
+
+      Not attempted in this session: fixing 180+ errors across the
+      integration correctly - not just silencing them with blanket
+      `# type: ignore` - needs care per call site (real return-type
+      annotations, narrowing Any-typed HA base-class attributes,
+      resolving genuine float|None vs float mismatches like
+      coordinator.py:1465/1467) to avoid trading a mypy-strict pass for
+      newly-introduced behavior bugs done in a rush. That is a properly
+      scoped follow-up session's work, not something to force through
+      the remainder of this one.

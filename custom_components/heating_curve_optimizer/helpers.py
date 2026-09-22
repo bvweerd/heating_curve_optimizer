@@ -135,7 +135,7 @@ def extract_price_forecast_with_interval(state: State) -> tuple[list[float], int
 
     hour = now.hour
 
-    forecast: list[float] = []
+    forecast = []
     raw_today = state.attributes.get("raw_today")
     if isinstance(raw_today, list):
         for entry in raw_today[hour:]:
@@ -196,6 +196,28 @@ def calculate_supply_temperature(
         return water_min
     ratio = (outdoor_temp - outdoor_min) / (outdoor_max - outdoor_min)
     return water_max + (water_min - water_max) * ratio
+
+
+def coordinator_data_section(coordinator: Any, key: str) -> dict[str, Any]:
+    """Return `coordinator.data[key]`, or `{}` if the coordinator has no data yet.
+
+    Shared by the phase-2/5b diagnostic sensors (thermal shadow, thermal
+    calibration, real-time offset) that each read one named section of
+    OptimizationCoordinator.data.
+    """
+    if not coordinator.data:
+        return {}
+    result: dict[str, Any] = coordinator.data.get(key, {})
+    return result
+
+
+def max_offset_change(time_base: int, offset_delta_t: int) -> int:
+    """Maximum heating curve offset change (°C) allowed per optimizer step.
+
+    At time_base=60 and offset_delta_t=10: 60/10 = 6°C per step.
+    At time_base=60 and offset_delta_t=60: 60/60 = 1°C per step.
+    """
+    return max(1, time_base // max(1, offset_delta_t))
 
 
 def calculate_defrost_factor(outdoor_temp: float, humidity: float = 80.0) -> float:

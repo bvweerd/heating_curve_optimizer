@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -9,7 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from ...entity import BaseUtilitySensor
 
 
-class BaseOptimizationSensor(CoordinatorEntity, BaseUtilitySensor):
+class BaseOptimizationSensor(CoordinatorEntity, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Base class for optimization sensors using coordinator.
 
     Provides common initialization and availability logic for sensors
@@ -18,7 +20,7 @@ class BaseOptimizationSensor(CoordinatorEntity, BaseUtilitySensor):
 
     def __init__(
         self,
-        coordinator,
+        coordinator: Any,
         name: str,
         unique_id: str,
         icon: str,

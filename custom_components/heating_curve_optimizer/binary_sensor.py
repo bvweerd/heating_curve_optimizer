@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -18,14 +19,18 @@ from .const import CONF_AREA_M2, CONF_ENERGY_LABEL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+# Entities are updated via their coordinator, never by per-entity I/O,
+# so there is no reason to serialize updates against each other.
+PARALLEL_UPDATES = 0
 
-class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity):
+
+class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Binary sensor that indicates heat demand using coordinator."""
 
     _attr_device_class = BinarySensorDeviceClass.HEAT
     _attr_should_poll = False
 
-    def __init__(self, coordinator, entry_id: str, device: DeviceInfo) -> None:
+    def __init__(self, coordinator: Any, entry_id: str, device: DeviceInfo) -> None:
         """Initialize the binary sensor."""
         super().__init__(coordinator)
         self._entry_id = entry_id
@@ -42,8 +47,10 @@ class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity):
             return False
         # Use heat_pump_on state which considers temperature hysteresis
         # Falls back to net_heat_loss > 0 for backward compatibility
-        return self.coordinator.data.get(
-            "heat_pump_on", self.coordinator.data.get("net_heat_loss", 0.0) > 0.0
+        return bool(
+            self.coordinator.data.get(
+                "heat_pump_on", self.coordinator.data.get("net_heat_loss", 0.0) > 0.0
+            )
         )
 
     @property
@@ -73,7 +80,7 @@ class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity):
         return attrs
 
 
-class HeatDemandBinarySensor(BinarySensorEntity):
+class HeatDemandBinarySensor(BinarySensorEntity):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Binary sensor that indicates whether the heat pump has demand."""
 
     _attr_device_class = BinarySensorDeviceClass.HEAT
@@ -114,23 +121,23 @@ class HeatDemandBinarySensor(BinarySensorEntity):
             self._extra_attrs = {}
             return
 
-        state = self.hass.states.get(entity_id)
+        state = self.hass.states.get(str(entity_id))
         if state is None or state.state in ("unknown", "unavailable"):
             self._attr_available = False
-            self._extra_attrs = {"net_heat_entity_id": entity_id}
+            self._extra_attrs = {"net_heat_entity_id": str(entity_id)}
             return
 
         try:
             net_heat = float(state.state)
         except (TypeError, ValueError):
             self._attr_available = False
-            self._extra_attrs = {"net_heat_entity_id": entity_id}
+            self._extra_attrs = {"net_heat_entity_id": str(entity_id)}
             return
 
         self._attr_available = True
         self._attr_is_on = net_heat > 0.0
         self._extra_attrs = {
-            "net_heat_entity_id": entity_id,
+            "net_heat_entity_id": str(entity_id),
             "net_heat_kW": round(net_heat, 3),
         }
 
@@ -148,11 +155,11 @@ async def async_setup_entry(
         return
 
     # Check if coordinators are available
-    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-    heat_coordinator = entry_data.get("heat_coordinator")
-    device = entry_data.get("device")
+    runtime_data = getattr(entry, "runtime_data", None)
+    heat_coordinator = runtime_data.heat_coordinator if runtime_data else None
+    device = runtime_data.device if runtime_data else None
 
-    if heat_coordinator and device:
+    if heat_coordinator and device and runtime_data is not None:
         # Use coordinator-based binary sensor
         _LOGGER.info("Setting up coordinator-based heat demand binary sensor")
         async_add_entities(
@@ -163,6 +170,27 @@ async def async_setup_entry(
             ],
             True,
         )
+
+        # Per-zone heat demand (phase 5c, REDESIGN.md): each zone's own
+        # coordinator gets the same sensor, associated with its own
+        # subentry/device via config_subentry_id (see __init__.py's zone
+        # setup and battery_controller's per-battery/per-PV-array pattern).
+        for subentry_id, zone_data in runtime_data.zones.items():
+            zone_heat_coordinator = zone_data.get("heat_coordinator")
+            zone_device = zone_data.get("device")
+            if not zone_heat_coordinator or not zone_device:
+                continue
+            async_add_entities(
+                [
+                    CoordinatorHeatDemandBinarySensor(
+                        zone_heat_coordinator,
+                        f"{entry.entry_id}_{subentry_id}",
+                        zone_device,
+                    )
+                ],
+                True,
+                config_subentry_id=subentry_id,
+            )
     else:
         # Fallback to legacy
         _LOGGER.warning(

@@ -1,0 +1,10 @@
+reset_thermal_calibration:
+  name: Reset thermal calibration
+  description: Reset the learned UA (heat loss) and thermal mass back to the label-based estimate and clear all calibration samples.
+  fields:
+    entry_id:
+      name: Config entry ID
+      description: Optional. Reset only the specified Heating Curve Optimizer config entry. Leave empty to reset all entries.
+      example: 01KK4RJJQZBD9C3FMEVYAB0VAB
+      selector:
+        text:

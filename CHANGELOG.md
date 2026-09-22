@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - Redesign
+
+Complete redesign of the optimization core, modelled on the sibling
+`battery_controller` integration's architecture. Full design rationale and
+implementation notes in `docs/redesign/REDESIGN.md` and
+`docs/algorithm/redesign-thermal-model.md`.
+
+### Added
+- **New thermal model** (`building_model.py`, `heatpump_model.py`,
+  `thermal_optimizer.py`): a 1R1C building model with an emitter power
+  curve couples the heating-curve offset to *how much heat is actually
+  delivered*, not just to COP - the building is modelled the same way
+  `battery_controller` models a battery (indoor temperature as state of
+  charge, thermal mass as capacity, UA as round-trip loss). Backward
+  induction with a real terminal value function replaces the legacy DP's
+  buffer-as-payload and ad-hoc end-of-horizon penalty.
+- **`select.control_mode`**: choose between `legacy` (unchanged default),
+  `follow_curve` (a clean no-optimization baseline), and `optimize_v2`
+  (the redesigned optimizer). Falls back to `legacy` automatically if the
+  new optimizer errors on a given cycle.
+- **Thermal calibration** (`calibration.py`): learns the building's real
+  UA and thermal mass from operation (real indoor-temperature response
+  against real electricity-meter-derived heat input), instead of holding
+  them at the energy-label estimate forever. New service
+  `heating_curve_optimizer.reset_thermal_calibration`.
+- **PV surplus / feed-in pricing**: heat covered by PV production is now
+  priced at the production-price sensor's rate rather than the
+  consumption rate, when configured.
+- **`climate.HeatingOptimizerClimate`** (disabled by default): native HA
+  climate entity for the existing target-temperature setpoint.
+- Two disabled-by-default diagnostic sensors comparing the redesigned
+  optimizer's plan and cost estimate against the legacy optimizer's, so
+  the new model's behaviour can be watched on real data before switching
+  `control_mode`.
+- `quality_scale.yaml`: an honest, evidence-based self-assessment (see
+  file for the current gaps).
+
+### Fixed
+- Two number entities (`target_indoor_temp`, hysteresis) stored their
+  value in a location not keyed per config entry - a second config entry
+  (a second heating system) would silently share/overwrite the first
+  one's setpoint.
+- `requirements: ["aiohttp"]` removed from `manifest.json` - aiohttp is a
+  Home Assistant core dependency, never installed standalone.
+- Coverage measurement (`setup.cfg`) measured `tests/` instead of the
+  integration, always reporting close to 100% regardless of what the code
+  actually did.
+
+### Changed
+- `manifest.json` no longer claims a `quality_scale` tier that
+  `quality_scale.yaml`'s own audit does not support yet.
+
 ## [Unreleased]
 
 ### Added

@@ -9,8 +9,12 @@ repos:
     hooks:
       - id: codespell
         args:
-          - --ignore-words-list=hass,alot,datas,dof,dur,farenheit,hist,iff,ines,ist,lightsensor,mut,nd,pres,referer,ser,serie,te,technik,ue,uint,visability,wan,wanna,withing
-          - --skip="./.*,*.csv,*.json"
+          - --ignore-words-list=hass,alot,datas,dof,dur,farenheit,hist,iff,ines,ist,lightsensor,mut,nd,pres,referer,ser,serie,te,technik,thirdparty,ue,uint,visability,wan,wanna,withing
+          # docs/redesign and docs/algorithm are Dutch-language design docs
+          # (docs/redesign/REDESIGN.md and its implementation notes) -
+          # English spell-checking them is the wrong tool and would be an
+          # unbounded false-positive source (fase, stap, wel, mis, ...).
+          - --skip="./.*,*.csv,*.json,docs/redesign/*,docs/algorithm/*"
           - --quiet-level=2
         exclude_types: [csv, json]
   - repo: https://github.com/charliermarsh/ruff-pre-commit

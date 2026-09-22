@@ -11,7 +11,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
     RestoreSensor,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.event import (
     async_track_time_interval,
@@ -24,7 +24,7 @@ from ...entity import BaseUtilitySensor
 _LOGGER = logging.getLogger(__name__)
 
 
-class NetHeatLossEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
+class NetHeatLossEnergyDailySensor(RestoreSensor, BaseUtilitySensor):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Daily utility sensor tracking net heat loss energy in kWh."""
 
     def __init__(
@@ -36,7 +36,7 @@ class NetHeatLossEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
         device: DeviceInfo,
         *,
         net_heat_loss_sensor: str,
-    ):
+    ) -> None:
         """Initialize the sensor."""
         BaseUtilitySensor.__init__(
             self,
@@ -113,14 +113,14 @@ class NetHeatLossEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
             self._unsub_state = None
         await super().async_will_remove_from_hass()
 
-    def _schedule_daily_reset(self):
+    def _schedule_daily_reset(self) -> None:
         """Schedule reset at midnight."""
         now = dt_util.utcnow()
         # Calculate next midnight
         tomorrow = now.date() + timedelta(days=1)
         next_midnight = dt_util.as_utc(datetime.combine(tomorrow, datetime.min.time()))
 
-        async def _reset_at_midnight(_now):
+        async def _reset_at_midnight(_now: datetime | None) -> None:
             """Reset counter at midnight."""
             _LOGGER.info("Midnight reset: Daily net heat loss counter")
             self._daily_total = 0.0
@@ -137,7 +137,7 @@ class NetHeatLossEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
             lambda: self.hass.async_create_task(_reset_at_midnight(None)),
         )
 
-    async def _handle_state_change(self, event):
+    async def _handle_state_change(self, event: Event) -> None:
         """Handle state change of net heat loss sensor."""
         await self._async_update_energy()
 
@@ -189,7 +189,7 @@ class NetHeatLossEnergyDailySensor(RestoreSensor, BaseUtilitySensor):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra state attributes."""
-        attrs = {}
+        attrs: dict[str, Any] = {}
         if self._last_update:
             attrs["last_update"] = self._last_update.isoformat()
         if self._last_reset:

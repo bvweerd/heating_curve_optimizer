@@ -5,10 +5,32 @@ from unittest.mock import MagicMock
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from homeassistant.core import HomeAssistant
 
+from custom_components.heating_curve_optimizer import HeatingCurveOptimizerData
 from custom_components.heating_curve_optimizer.diagnostics import (
     async_get_config_entry_diagnostics,
 )
 from custom_components.heating_curve_optimizer.const import DOMAIN
+
+
+def _make_runtime_data(
+    weather=None, heat=None, optimization=None, config=None
+) -> HeatingCurveOptimizerData:
+    """Build a HeatingCurveOptimizerData from the coordinator mocks a test
+    cares about, defaulting missing ones to an unavailable MagicMock."""
+
+    def _default_coordinator():
+        coordinator = MagicMock()
+        coordinator.data = None
+        coordinator.last_update_success = False
+        return coordinator
+
+    return HeatingCurveOptimizerData(
+        weather_coordinator=weather or _default_coordinator(),
+        heat_coordinator=heat or _default_coordinator(),
+        optimization_coordinator=optimization or _default_coordinator(),
+        config=config or {},
+        device=MagicMock(),
+    )
 
 
 @pytest.mark.asyncio
@@ -49,16 +71,9 @@ async def test_diagnostics_basic(hass: HomeAssistant):
     }
     mock_opt.last_update_success = True
 
-    # Setup hass.data
-    hass.data[DOMAIN] = {
-        entry.entry_id: {
-            "weather_coordinator": mock_weather,
-            "heat_coordinator": mock_heat,
-            "optimization_coordinator": mock_opt,
-            "config": entry.data,
-            "entry": entry,
-        }
-    }
+    entry.runtime_data = _make_runtime_data(
+        weather=mock_weather, heat=mock_heat, optimization=mock_opt, config=entry.data
+    )
 
     # Get diagnostics
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
@@ -66,6 +81,7 @@ async def test_diagnostics_basic(hass: HomeAssistant):
     assert diagnostics is not None
     # Diagnostics should contain entry and coordinator info
     assert isinstance(diagnostics, dict)
+    assert diagnostics["stored_data"]["weather"]["current_temperature"] == 10.0
 
 
 @pytest.mark.asyncio
@@ -95,15 +111,9 @@ async def test_diagnostics_redacts_sensitive_data(hass: HomeAssistant):
     mock_opt.data = {"optimal_offset": 1.0}
     mock_opt.last_update_success = True
 
-    hass.data[DOMAIN] = {
-        entry.entry_id: {
-            "weather_coordinator": mock_weather,
-            "heat_coordinator": mock_heat,
-            "optimization_coordinator": mock_opt,
-            "config": entry.data,
-            "entry": entry,
-        }
-    }
+    entry.runtime_data = _make_runtime_data(
+        weather=mock_weather, heat=mock_heat, optimization=mock_opt, config=entry.data
+    )
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -122,18 +132,12 @@ async def test_diagnostics_with_missing_coordinators(hass: HomeAssistant):
     )
     entry.add_to_hass(hass)
 
-    # Only weather coordinator present
+    # Only weather coordinator has data
     mock_weather = MagicMock()
     mock_weather.data = {"current_temperature": 10.0}
     mock_weather.last_update_success = True
 
-    hass.data[DOMAIN] = {
-        entry.entry_id: {
-            "weather_coordinator": mock_weather,
-            "config": entry.data,
-            "entry": entry,
-        }
-    }
+    entry.runtime_data = _make_runtime_data(weather=mock_weather, config=entry.data)
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -151,28 +155,8 @@ async def test_diagnostics_with_failed_coordinators(hass: HomeAssistant):
     )
     entry.add_to_hass(hass)
 
-    # Coordinators with failed status
-    mock_weather = MagicMock()
-    mock_weather.data = None
-    mock_weather.last_update_success = False
-
-    mock_heat = MagicMock()
-    mock_heat.data = None
-    mock_heat.last_update_success = False
-
-    mock_opt = MagicMock()
-    mock_opt.data = None
-    mock_opt.last_update_success = False
-
-    hass.data[DOMAIN] = {
-        entry.entry_id: {
-            "weather_coordinator": mock_weather,
-            "heat_coordinator": mock_heat,
-            "optimization_coordinator": mock_opt,
-            "config": entry.data,
-            "entry": entry,
-        }
-    }
+    # Coordinators with failed status (data=None, last_update_success=False)
+    entry.runtime_data = _make_runtime_data(config=entry.data)
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -202,15 +186,9 @@ async def test_diagnostics_includes_coordinator_status(hass: HomeAssistant):
     mock_opt.data = {"optimal_offset": 1.0}
     mock_opt.last_update_success = True
 
-    hass.data[DOMAIN] = {
-        entry.entry_id: {
-            "weather_coordinator": mock_weather,
-            "heat_coordinator": mock_heat,
-            "optimization_coordinator": mock_opt,
-            "config": entry.data,
-            "entry": entry,
-        }
-    }
+    entry.runtime_data = _make_runtime_data(
+        weather=mock_weather, heat=mock_heat, optimization=mock_opt, config=entry.data
+    )
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -218,8 +196,9 @@ async def test_diagnostics_includes_coordinator_status(hass: HomeAssistant):
 
 
 @pytest.mark.asyncio
-async def test_diagnostics_empty_data(hass: HomeAssistant):
-    """Test diagnostics when hass.data is empty."""
+async def test_diagnostics_no_runtime_data(hass: HomeAssistant):
+    """Test diagnostics when the entry has no runtime_data (setup never
+    completed) - should not raise, just report empty stored_data."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={"area_m2": 150},
@@ -227,17 +206,10 @@ async def test_diagnostics_empty_data(hass: HomeAssistant):
     )
     entry.add_to_hass(hass)
 
-    # No data in hass.data
-    hass.data[DOMAIN] = {}
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)
 
-    # Should handle missing entry gracefully
-    try:
-        diagnostics = await async_get_config_entry_diagnostics(hass, entry)
-        # If it doesn't raise, check result
-        assert diagnostics is not None or diagnostics is None
-    except KeyError:
-        # Acceptable to raise KeyError if entry not found
-        pass
+    assert diagnostics is not None
+    assert diagnostics["stored_data"] == {}
 
 
 @pytest.mark.asyncio
@@ -281,15 +253,9 @@ async def test_diagnostics_with_complex_data(hass: HomeAssistant):
     }
     mock_opt.last_update_success = True
 
-    hass.data[DOMAIN] = {
-        entry.entry_id: {
-            "weather_coordinator": mock_weather,
-            "heat_coordinator": mock_heat,
-            "optimization_coordinator": mock_opt,
-            "config": entry.data,
-            "entry": entry,
-        }
-    }
+    entry.runtime_data = _make_runtime_data(
+        weather=mock_weather, heat=mock_heat, optimization=mock_opt, config=entry.data
+    )
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -312,15 +278,10 @@ async def test_diagnostics_includes_entry_metadata(hass: HomeAssistant):
     mock_weather.data = {"current_temperature": 10.0}
     mock_weather.last_update_success = True
 
-    hass.data[DOMAIN] = {
-        entry.entry_id: {
-            "weather_coordinator": mock_weather,
-            "config": entry.data,
-            "entry": entry,
-        }
-    }
+    entry.runtime_data = _make_runtime_data(weather=mock_weather, config=entry.data)
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
 
     assert diagnostics is not None
     assert isinstance(diagnostics, dict)
+    assert diagnostics["config_entry"]["title"] == "Heating Curve Optimizer"

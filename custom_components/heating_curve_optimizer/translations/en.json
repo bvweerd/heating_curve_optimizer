@@ -6,14 +6,20 @@
           "energy_label": "Energy label",
           "ventilation_type": "Ventilation type",
           "ceiling_height": "Ceiling height (m)",
+          "thermal_mass_class": "Thermal mass class",
+          "emitter_type": "Heat emitter type",
           "pv_east_wp": "PV panels east (Wp)",
           "pv_south_wp": "PV panels south (Wp)",
           "pv_west_wp": "PV panels west (Wp)",
-          "pv_tilt": "PV panel tilt angle (degrees)"
+          "pv_tilt": "PV panel tilt angle (degrees)",
+          "grid_import_sensor": "Grid import power sensor (W or kW, real-time PV-surplus control)",
+          "grid_export_sensor": "Grid export power sensor (W or kW, real-time PV-surplus control)"
         },
         "data_description": {
           "ventilation_type": "Type of ventilation system for calculating ventilation heat loss",
           "ceiling_height": "Average ceiling height for calculating building volume (default: 2.5m)",
+          "thermal_mass_class": "Construction weight class, used by the redesigned optimizer (optimize_v2) instead of the energy-label-derived estimate (default: medium)",
+          "emitter_type": "How emitter output falls off as supply temperature drops, used by the redesigned optimizer (optimize_v2) (default: radiator)",
           "pv_east_wp": "Total peak power of east-facing PV panels in Wp",
           "pv_south_wp": "Total peak power of south-facing PV panels in Wp",
           "pv_west_wp": "Total peak power of west-facing PV panels in Wp",
@@ -79,6 +85,14 @@
           "pv_tilt": "Tilt angle of PV panels (0=horizontal, 90=vertical, typical: 35°)"
         }
       }
+    },
+    "abort": {
+      "already_configured": "Device is already configured"
+    },
+    "error": {
+      "missing_basic": "Please fill in the basic settings (area and energy label) before finishing.",
+      "no_blocks": "Add at least one consumption or production source before finishing.",
+      "cannot_connect": "Could not reach open-meteo.com. Check the internet connection and try again."
     }
   },
   "entity": {
@@ -163,6 +177,54 @@
       },
       "calibration": {
         "name": "Parameter Calibration"
+      },
+      "thermal_v2_offset": {
+        "name": "Thermal V2 offset (shadow mode, experimental)"
+      },
+      "thermal_v2_cost_comparison": {
+        "name": "Thermal V2 cost comparison (shadow mode, experimental)"
+      },
+      "thermal_calibration": {
+        "name": "Thermal calibration (experimental)"
+      },
+      "realtime_offset_adjustment": {
+        "name": "Realtime offset adjustment (PV surplus, experimental)"
+      },
+      "outdoor_temperature": {
+        "name": "Outdoor temperature"
+      },
+      "quadratic_cop": {
+        "name": "Quadratic COP"
+      },
+      "diagnostics": {
+        "name": "Diagnostics"
+      },
+      "current_electricity_price": {
+        "name": "Current electricity price"
+      },
+      "heat_pump_thermal_power": {
+        "name": "Heat pump thermal power"
+      },
+      "heat_pump_energy_daily": {
+        "name": "Heat pump energy daily"
+      },
+      "net_heat_loss_energy_daily": {
+        "name": "Net heat loss energy daily"
+      }
+    },
+    "select": {
+      "control_mode": {
+        "name": "Control mode",
+        "state": {
+          "legacy": "Legacy optimizer",
+          "follow_curve": "Follow curve (no optimization)",
+          "optimize_v2": "Redesigned optimizer (v2, experimental)"
+        }
+      }
+    },
+    "climate": {
+      "heating": {
+        "name": "Heating"
       }
     }
   },
@@ -179,6 +241,101 @@
         "heat_recovery_70": "Heat recovery 70% efficiency",
         "heat_recovery_90": "Heat recovery 90% efficiency"
       }
+    },
+    "thermal_mass_class": {
+      "options": {
+        "light": "Light (timber frame)",
+        "medium": "Medium (cavity wall + concrete floor)",
+        "heavy": "Heavy (masonry/concrete throughout)"
+      }
+    },
+    "emitter_type": {
+      "options": {
+        "radiator": "Radiator",
+        "underfloor": "Underfloor heating",
+        "fan_coil": "Fan coil"
+      }
+    }
+  },
+  "config_subentries": {
+    "heating_zone": {
+      "entry_type": "Heating Zone",
+      "flow_title": "Heating zone",
+      "initiate_flow": {
+        "user": "Add heating zone"
+      },
+      "step": {
+        "user": {
+          "title": "Add heating zone",
+          "description": "Configure an additional room or heating circuit. Price sensor, heating curve limits and heat pump parameters are shared from the main configuration - only what differs between rooms is set here.",
+          "data": {
+            "name": "Zone name",
+            "area_m2": "Floor area (m²)",
+            "energy_label": "Energy label",
+            "target_indoor_temp": "Target indoor temperature (°C)",
+            "indoor_temperature_sensor": "Indoor temperature sensor (optional)"
+          }
+        },
+        "reconfigure": {
+          "title": "Edit heating zone",
+          "description": "Update this zone's configuration.",
+          "data": {
+            "name": "Zone name",
+            "area_m2": "Floor area (m²)",
+            "energy_label": "Energy label",
+            "target_indoor_temp": "Target indoor temperature (°C)",
+            "indoor_temperature_sensor": "Indoor temperature sensor (optional)"
+          }
+        }
+      },
+      "error": {
+        "invalid_zone_input": "Invalid zone configuration. Check the name and floor area."
+      },
+      "abort": {
+        "reconfigure_successful": "Heating zone updated successfully."
+      }
+    }
+  },
+  "exceptions": {
+    "api_error": {
+      "message": "Open-Meteo API returned status {status}."
+    },
+    "connection_error": {
+      "message": "Error fetching weather data from open-meteo.com: {error}."
+    },
+    "no_forecast_data": {
+      "message": "No forecast data in the open-Meteo API response."
+    },
+    "no_weather_data": {
+      "message": "Weather coordinator has no data yet."
+    },
+    "missing_building_config": {
+      "message": "Missing area or energy label configuration."
+    },
+    "no_heat_data": {
+      "message": "Heat calculation coordinator has no data yet."
+    },
+    "no_weather_data_for_optimization": {
+      "message": "No weather data available for optimization."
+    },
+    "no_price_sensor": {
+      "message": "No electricity price sensor is configured."
+    },
+    "price_sensor_unavailable": {
+      "message": "Price sensor {sensor} is unavailable."
+    },
+    "price_data_extraction_failed": {
+      "message": "Cannot extract price data from sensor {sensor}."
+    }
+  },
+  "issues": {
+    "weather_data_unavailable": {
+      "title": "Weather data unavailable (open-meteo)",
+      "description": "The integration cannot reach the open-meteo.com weather API, so heat loss, solar gain and optimization cannot be calculated. Check your internet connection or open-meteo.com service status."
+    },
+    "price_sensor_unavailable": {
+      "title": "Electricity price sensor unavailable",
+      "description": "The configured price sensor **{sensor}** is unavailable or unknown. The heating curve optimizer cannot run without price data. Check that the sensor exists and is working."
     }
   }
 }

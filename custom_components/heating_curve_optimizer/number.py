@@ -26,6 +26,10 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Entities are updated via their coordinator, never by per-entity I/O,
+# so there is no reason to serialize updates against each other.
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -84,7 +88,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class BaseTemperatureNumber(NumberEntity, RestoreEntity):
+class BaseTemperatureNumber(NumberEntity, RestoreEntity):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Base class for temperature-related number entities."""
 
     _attr_has_entity_name = True
@@ -134,10 +138,17 @@ class BaseTemperatureNumber(NumberEntity, RestoreEntity):
         _LOGGER.debug("%s set to %.1f°C", self._log_name, value)
 
     def _update_runtime_data(self) -> None:
-        """Update runtime data for use by other components."""
-        self.hass.data.setdefault(DOMAIN, {}).setdefault("runtime", {})[
-            self._runtime_key
-        ] = self._attr_native_value
+        """Update runtime data for use by other components.
+
+        Keyed by entry_id first, then by CONF_* key: two config entries (two
+        heating systems in the same HA instance) must not overwrite each
+        other's target temperature / hysteresis. `__init__.py`'s unload
+        handler already assumes this nesting (it pops `runtime[entry_id]`),
+        so writing flat here made that cleanup a silent no-op.
+        """
+        self.hass.data.setdefault(DOMAIN, {}).setdefault("runtime", {}).setdefault(
+            self._entry.entry_id, {}
+        )[self._runtime_key] = self._attr_native_value
 
 
 class TargetIndoorTemperatureNumber(BaseTemperatureNumber):
