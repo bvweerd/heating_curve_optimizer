@@ -288,8 +288,8 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):
         # Get target temperature and hysteresis from runtime data (number entities) or
         # config. Runtime data is keyed per entry_id (see number.py) so multiple config
         # entries don't share one target temperature.
-        runtime = self.hass.data.get(DOMAIN, {}).get("runtime", {}).get(
-            self._entry_id, {}
+        runtime = (
+            self.hass.data.get(DOMAIN, {}).get("runtime", {}).get(self._entry_id, {})
         )
         target_temp = runtime.get(
             CONF_TARGET_INDOOR_TEMP,

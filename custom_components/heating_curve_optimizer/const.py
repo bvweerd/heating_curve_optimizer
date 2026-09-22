@@ -303,7 +303,36 @@ DEFAULT_COP_COMPENSATION_FACTOR = 1.0
 # When offset is -1°C, building uses stored thermal energy
 # Value of 0.15 means 15% of current heat demand is stored/released per °C offset
 # This represents the thermal inertia of building materials (concrete, brick, etc.)
+# Superseded by building_model.BuildingConfig's explicit thermal mass (kWh/K)
+# for the redesigned optimizer (see docs/redesign/REDESIGN.md); kept for the
+# legacy optimizer.optimize_offsets() until fase 3 removes it.
 DEFAULT_THERMAL_STORAGE_EFFICIENCY = 0.15
+
+# --- Redesigned thermal model (building_model.py / heatpump_model.py) ------
+#
+# Thermal mass per m² floor area, in Wh/(m2*K), by construction weight class.
+# Rule-of-thumb starting values (light timber-frame vs. heavy masonry/
+# concrete construction), used until calibration.py (fase 4) learns the real
+# value for a specific home from its measured heating/cool-down curves.
+CONF_THERMAL_MASS_CLASS = "thermal_mass_class"
+DEFAULT_THERMAL_MASS_CLASS = "medium"
+THERMAL_MASS_WH_PER_M2_K = {
+    "light": 40.0,  # timber frame, light interior finishes
+    "medium": 90.0,  # standard Dutch cavity wall + concrete floor
+    "heavy": 165.0,  # masonry/concrete throughout, exposed screed or floor
+}
+
+# Heat emitter type: how much thermal power an emitter can push into the
+# room for a given (supply_temp - indoor_temp), relative to its power at
+# the design point. exponent follows the standard EN 442 radiator exponent
+# (~1.3) vs. the flatter underfloor/fan-coil curves.
+CONF_EMITTER_TYPE = "emitter_type"
+DEFAULT_EMITTER_TYPE = "radiator"
+EMITTER_EXPONENT_MAP = {
+    "radiator": 1.3,
+    "underfloor": 1.1,
+    "fan_coil": 1.0,
+}
 
 # Possible source types
 SOURCE_TYPE_CONSUMPTION = "Electricity consumption"
