@@ -37,7 +37,10 @@ class BaseUtilitySensor(SensorEntity, RestoreEntity):  # type: ignore[misc]  # H
             device_class = SensorDeviceClass(device_class)
         self._attr_device_class = device_class
         self._attr_state_class = SensorStateClass.TOTAL
-        self._attr_native_value = 0.0
+        # float | None: `native_value` below treats None the same as 0.0
+        # (`self._attr_native_value or 0.0`) - some subclasses (e.g.
+        # CalibrationSensor) assign None deliberately to mean "unknown yet".
+        self._attr_native_value: float | None = 0.0
         self._attr_available = True
         self._attr_icon = icon
         self._attr_entity_registry_enabled_default = visible

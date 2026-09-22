@@ -9,7 +9,7 @@ whenever the real-time loop has not produced anything yet.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.helpers.entity import DeviceInfo
@@ -22,8 +22,13 @@ class RealtimeOffsetAdjustmentSensor(CoordinatorEntity, BaseUtilitySensor):  # t
     """The real-time controller's current adjustment to the planned offset."""
 
     def __init__(
-        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
-    ):
+        self,
+        coordinator: Any,
+        name: str,
+        unique_id: str,
+        icon: str,
+        device: DeviceInfo,
+    ) -> None:
         """Initialize the sensor."""
         CoordinatorEntity.__init__(self, coordinator)
         BaseUtilitySensor.__init__(
@@ -44,7 +49,7 @@ class RealtimeOffsetAdjustmentSensor(CoordinatorEntity, BaseUtilitySensor):  # t
     def _realtime(self) -> dict[str, Any]:
         if not self.coordinator.data:
             return {}
-        return self.coordinator.data.get("realtime", {})
+        return cast(dict[str, Any], self.coordinator.data.get("realtime", {}))
 
     @property
     def available(self) -> bool:
@@ -58,9 +63,10 @@ class RealtimeOffsetAdjustmentSensor(CoordinatorEntity, BaseUtilitySensor):  # t
         return self.coordinator.data is not None and bool(self._realtime())
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | None:
         """Return the current offset adjustment, in whole degrees."""
-        return self._realtime().get("adjustment")
+        value = self._realtime().get("adjustment")
+        return float(value) if value is not None else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

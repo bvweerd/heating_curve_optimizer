@@ -16,7 +16,7 @@ new sensors from here on are plain modules like battery_controller's
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.helpers.entity import DeviceInfo
@@ -45,8 +45,13 @@ class ThermalShadowOffsetSensor(CoordinatorEntity, BaseUtilitySensor):  # type: 
     )
 
     def __init__(
-        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
-    ):
+        self,
+        coordinator: Any,
+        name: str,
+        unique_id: str,
+        icon: str,
+        device: DeviceInfo,
+    ) -> None:
         """Initialize the sensor."""
         CoordinatorEntity.__init__(self, coordinator)
         BaseUtilitySensor.__init__(
@@ -67,7 +72,7 @@ class ThermalShadowOffsetSensor(CoordinatorEntity, BaseUtilitySensor):  # type: 
     def _thermal_v2(self) -> dict[str, Any]:
         if not self.coordinator.data:
             return {}
-        return self.coordinator.data.get("thermal_v2", {})
+        return cast(dict[str, Any], self.coordinator.data.get("thermal_v2", {}))
 
     @property
     def available(self) -> bool:
@@ -84,9 +89,10 @@ class ThermalShadowOffsetSensor(CoordinatorEntity, BaseUtilitySensor):  # type: 
         )
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | None:
         """Return the offset the redesigned optimizer would choose."""
-        return self._thermal_v2().get("offset")
+        value = self._thermal_v2().get("offset")
+        return float(value) if value is not None else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -120,8 +126,13 @@ class ThermalShadowCostComparisonSensor(CoordinatorEntity, BaseUtilitySensor):  
     """
 
     def __init__(
-        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
-    ):
+        self,
+        coordinator: Any,
+        name: str,
+        unique_id: str,
+        icon: str,
+        device: DeviceInfo,
+    ) -> None:
         """Initialize the sensor."""
         CoordinatorEntity.__init__(self, coordinator)
         BaseUtilitySensor.__init__(
@@ -142,7 +153,7 @@ class ThermalShadowCostComparisonSensor(CoordinatorEntity, BaseUtilitySensor):  
     def _thermal_v2(self) -> dict[str, Any]:
         if not self.coordinator.data:
             return {}
-        return self.coordinator.data.get("thermal_v2", {})
+        return cast(dict[str, Any], self.coordinator.data.get("thermal_v2", {}))
 
     @property
     def available(self) -> bool:
@@ -156,14 +167,14 @@ class ThermalShadowCostComparisonSensor(CoordinatorEntity, BaseUtilitySensor):  
         )
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | None:
         """Return estimated savings (legacy cost minus redesigned cost), EUR."""
         data = self._thermal_v2()
         legacy_cost = data.get("legacy_total_cost_eur")
         new_cost = data.get("total_cost_eur")
         if legacy_cost is None or new_cost is None:
             return None
-        return round(legacy_cost - new_cost, 4)
+        return float(round(legacy_cost - new_cost, 4))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

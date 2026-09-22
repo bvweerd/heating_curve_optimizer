@@ -11,7 +11,7 @@ calibrations.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.helpers.entity import DeviceInfo
@@ -25,8 +25,13 @@ class ThermalCalibrationSensor(CoordinatorEntity, BaseUtilitySensor):  # type: i
     """Sample count and status of the thermal calibration fit."""
 
     def __init__(
-        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
-    ):
+        self,
+        coordinator: Any,
+        name: str,
+        unique_id: str,
+        icon: str,
+        device: DeviceInfo,
+    ) -> None:
         """Initialize the sensor."""
         CoordinatorEntity.__init__(self, coordinator)
         BaseUtilitySensor.__init__(
@@ -47,7 +52,7 @@ class ThermalCalibrationSensor(CoordinatorEntity, BaseUtilitySensor):  # type: i
     def _thermal_v2(self) -> dict[str, Any]:
         if not self.coordinator.data:
             return {}
-        return self.coordinator.data.get("thermal_v2", {})
+        return cast(dict[str, Any], self.coordinator.data.get("thermal_v2", {}))
 
     @property
     def available(self) -> bool:
@@ -59,9 +64,9 @@ class ThermalCalibrationSensor(CoordinatorEntity, BaseUtilitySensor):  # type: i
         )
 
     @property
-    def native_value(self):
+    def native_value(self) -> float:
         """Return the number of samples behind the current fit."""
-        return self._thermal_v2().get("calibration_sample_count", 0)
+        return float(self._thermal_v2().get("calibration_sample_count", 0))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
