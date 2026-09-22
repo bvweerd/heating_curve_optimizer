@@ -91,6 +91,40 @@ def test_get_control_action_reports_effective_offset():
     assert action["planned_offset"] == 1
 
 
+def test_effective_offset_clamped_to_dp_curve_bound():
+    """planned_offset already at the DP's absolute bound (+4) plus a
+    same-direction adjustment at the ramp-rate limit must not report an
+    effective_offset the heating curve was never configured to reach -
+    max_adjustment alone only bounds the *ramp*, not the *result*."""
+    controller = _controller(deadband_w=300.0)
+    controller.reset(6)  # previous cycles already pushed adjustment to the ramp cap
+    action = controller.get_control_action(
+        current_grid_w=-500.0,
+        shadow_price_eur_per_kwh=0.05,
+        planned_offset=4,
+        max_adjustment=6,
+        offset_min=-4,
+        offset_max=4,
+    )
+    assert action["adjustment"] == 6
+    assert action["effective_offset"] == 4
+
+
+def test_effective_offset_clamped_at_lower_bound():
+    controller = _controller(deadband_w=300.0)
+    controller.reset(-6)
+    action = controller.get_control_action(
+        current_grid_w=500.0,
+        shadow_price_eur_per_kwh=0.05,
+        planned_offset=-4,
+        max_adjustment=6,
+        offset_min=-4,
+        offset_max=4,
+    )
+    assert action["adjustment"] == -6
+    assert action["effective_offset"] == -4
+
+
 def test_create_realtime_controller_reads_config():
     controller = create_realtime_controller({"realtime_deadband_w": 150.0})
     assert controller.config.deadband_w == 150.0

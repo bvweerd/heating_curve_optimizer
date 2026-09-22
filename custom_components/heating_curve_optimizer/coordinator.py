@@ -89,7 +89,11 @@ from .heatpump_model import HeatPumpConfig
 from .helpers import extract_price_forecast_with_interval, max_offset_change
 from .optimizer import calculate_buffer_energy, optimize_offsets
 from .realtime_controller import RealtimeController, create_realtime_controller
-from .thermal_optimizer import optimize_thermal_schedule
+from .thermal_optimizer import (
+    DEFAULT_OFFSET_MAX,
+    DEFAULT_OFFSET_MIN,
+    optimize_thermal_schedule,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -833,6 +837,8 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
             shadow_price_eur_per_kwh=shadow_price,
             planned_offset=planned_offset,
             max_adjustment=max_adjustment,
+            offset_min=DEFAULT_OFFSET_MIN,
+            offset_max=DEFAULT_OFFSET_MAX,
         )
 
         self.async_set_updated_data({**self.data, "realtime": action})

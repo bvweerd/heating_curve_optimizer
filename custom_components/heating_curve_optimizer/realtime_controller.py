@@ -24,6 +24,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from .thermal_optimizer import DEFAULT_OFFSET_MAX, DEFAULT_OFFSET_MIN
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -103,16 +105,30 @@ class RealtimeController:
         shadow_price_eur_per_kwh: float,
         planned_offset: int,
         max_adjustment: int,
+        offset_min: int = DEFAULT_OFFSET_MIN,
+        offset_max: int = DEFAULT_OFFSET_MAX,
     ) -> dict[str, Any]:
-        """Return the adjustment plus the resulting effective offset."""
+        """Return the adjustment plus the resulting effective offset.
+
+        `effective_offset` is clamped to `[offset_min, offset_max]` - the
+        DP's own absolute curve-offset bound - not just to `planned_offset
+        +/- max_adjustment`. `max_adjustment` only bounds the *ramp-rate*
+        step; without this clamp a `planned_offset` already at the DP's
+        bound (e.g. +4 on a cold snap) plus a same-direction adjustment
+        would report an effective_offset outside the range the heating
+        curve is ever configured to reach.
+        """
         adjustment = self.calculate_adjustment(
             current_grid_w=current_grid_w,
             shadow_price_eur_per_kwh=shadow_price_eur_per_kwh,
             max_adjustment=max_adjustment,
         )
+        effective_offset = int(
+            _clamp(planned_offset + adjustment, offset_min, offset_max)
+        )
         return {
             "adjustment": adjustment,
-            "effective_offset": planned_offset + adjustment,
+            "effective_offset": effective_offset,
             "planned_offset": planned_offset,
             "current_grid_w": current_grid_w,
             "shadow_price_eur_per_kwh": shadow_price_eur_per_kwh,

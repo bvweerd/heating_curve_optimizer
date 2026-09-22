@@ -79,6 +79,14 @@ HARD_FLOOR_PENALTY_EUR = 1000.0
 # price silently make solar-covered heating look free.
 DEFAULT_FEED_IN_PRICE = 0.07
 
+# The DP's absolute curve-offset bound (not the ramp-rate limit). Exposed as
+# module constants, rather than only as this function's default arguments,
+# so other callers that need to respect the same bound - the real-time
+# PV-surplus controller's `effective_offset` clamp in coordinator.py, in
+# particular - stay in sync with it instead of hardcoding their own copy.
+DEFAULT_OFFSET_MIN = -4
+DEFAULT_OFFSET_MAX = 4
+
 
 def _pad(data: list[float] | None, length: int, default: float) -> list[float]:
     """Pad/truncate a forecast to `length`, holding the last value."""
@@ -140,8 +148,8 @@ def optimize_thermal_schedule(
     humidity_forecast: list[float] | None = None,
     time_base: int = 60,
     offset_delta_t: int = 10,
-    offset_min: int = -4,
-    offset_max: int = 4,
+    offset_min: int = DEFAULT_OFFSET_MIN,
+    offset_max: int = DEFAULT_OFFSET_MAX,
     water_min: float = 28.0,
     water_max: float = 45.0,
     outdoor_min: float = -20.0,
@@ -307,10 +315,19 @@ def optimize_thermal_schedule(
     v_zero = v_next
 
     # --- forward pass ------------------------------------------------
+    # `current_offset` (the coordinator's persisted last offset) is only
+    # ever written back from this function's own `offsets[0]`, so it stays
+    # within `offsets_range` in practice - but action_table is keyed only
+    # on that range, so an out-of-range value here would KeyError instead
+    # of degrading gracefully. Guarded the same way the shadow-price `row`
+    # lookup below already is, rather than trusting the caller.
+    safe_current_offset = (
+        current_offset if current_offset in offsets_range else offsets_range[0]
+    )
     start_idx = snap_state(initial_indoor_temp)
     result = ThermalOptimizationResult()
     state_idx = start_idx
-    prev_offset = current_offset
+    prev_offset = safe_current_offset
 
     for t in range(horizon):
         offset, next_idx = action_table[t][state_idx][prev_offset]
@@ -345,7 +362,7 @@ def optimize_thermal_schedule(
     # lambda = -(dV[0]/dT_in) / thermal_mass, at the actual start state and
     # current_offset. More stored heat lowers future cost, so dV/dT_in <= 0
     # and lambda >= 0 - a positive price for the marginal kWh stored now.
-    row = current_offset if current_offset in offsets_range else offsets_range[0]
+    row = safe_current_offset
     if n_states > 1 and building.thermal_mass_kwh_per_k > 0:
         lo_idx = max(0, start_idx - 1)
         hi_idx = min(n_states - 1, start_idx + 1)

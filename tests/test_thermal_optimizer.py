@@ -94,6 +94,33 @@ def test_comfort_band_never_breached_in_normal_conditions():
     assert all(19.0 - 1e-6 <= t <= 21.0 + 1e-6 for t in result.indoor_temps)
 
 
+def test_out_of_range_current_offset_does_not_raise():
+    """`current_offset` (the coordinator's persisted last offset) is only
+    ever written back from this function's own offsets[0], so it should
+    stay within [offset_min, offset_max] in practice - but the DP's action
+    table is keyed only on that range, so a stale/out-of-range value
+    (e.g. left over from a config change that narrowed the offset bounds)
+    must degrade gracefully to the nearest valid offset instead of
+    KeyError-ing."""
+    building, heatpump, emitter = _make_system()
+    horizon = 6
+    outdoor = [0.0] * horizon
+    prices = [0.20] * horizon
+
+    result = optimize_thermal_schedule(
+        building=building,
+        heatpump=heatpump,
+        emitter=emitter,
+        outdoor_temps=outdoor,
+        prices=prices,
+        initial_indoor_temp=20.0,
+        time_base=60,
+        current_offset=99,
+    )
+
+    assert len(result.offsets) == horizon
+
+
 def test_hard_floor_never_breached_even_when_undersized():
     """Even when the heat pump is deliberately too small for a cold snap,
     the DP must never report an indoor temperature below the discretized
