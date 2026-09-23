@@ -361,6 +361,71 @@ outdoor_temperature: 5.0
 
 ---
 
+## Hybrid Gas Boiler Sensors
+
+Only present when a **Hybrid gas boiler** subentry is configured (Settings →
+Devices & Services → Heating Curve Optimizer → Add sub-entry). See
+[Configuration Reference](configuration.md#hybrid-gas-boiler-comparison-optional-subentry)
+for the underlying cost formula and the buffer-aware gating logic.
+
+### Gas Boiler Heat Pump Cost
+**Entity ID**: `sensor.heating_curve_optimizer_gas_boiler_heat_pump_cost`
+
+**Description**: Heat pump's current cost per kWh of heat delivered (electricity price ÷ COP)
+
+**Unit**: €/kWh
+
+**Update Frequency**: On gas or electricity price sensor state change (event-driven), plus a 15-minute safety-net poll
+
+**Attributes**:
+```yaml
+heat_pump_cop: 3.5
+electricity_price_eur_per_kwh: 0.35
+supply_temp: 40.0
+outdoor_temp: -5.0
+```
+
+---
+
+### Gas Boiler Gas Cost
+**Entity ID**: `sensor.heating_curve_optimizer_gas_boiler_gas_cost`
+
+**Description**: Configured gas boiler's current cost per kWh of heat delivered
+
+**Unit**: €/kWh
+
+**Update Frequency**: On gas or electricity price sensor state change (event-driven), plus a 15-minute safety-net poll
+
+**Formula**: `gas_cost_eur_per_kwh = (gas_price_eur_per_m3 / gas_calorific_value_kwh_per_m3) / gas_boiler_efficiency`
+
+**Attributes**:
+```yaml
+gas_price_eur_per_m3: 1.20
+efficiency: 0.9
+calorific_value_kwh_per_m3: 9.77
+```
+
+---
+
+### Gas Boiler Cost Savings
+**Entity ID**: `sensor.heating_curve_optimizer_gas_boiler_cost_savings`
+
+**Description**: Heat pump cost minus gas cost, per kWh (positive = gas is cheaper right now)
+
+**Unit**: €/kWh
+
+**Update Frequency**: On gas or electricity price sensor state change (event-driven), plus a 15-minute safety-net poll
+
+**Attributes**:
+```yaml
+savings_pct: -36.6
+prefer_gas_boiler: false
+heat_currently_needed: true
+heat_currently_needed_source: "power_sensor"  # or "modeled_demand"
+```
+
+---
+
 ## Forecast & Diagnostic Sensors
 
 ### Energy Consumption Forecast
@@ -497,7 +562,7 @@ cop: 3.45
 
 ---
 
-## Binary Sensor
+## Binary Sensors
 
 ### Heat Demand
 **Entity ID**: `binary_sensor.heating_curve_optimizer_heat_demand`
@@ -518,6 +583,34 @@ threshold: 0  # kW
 ```
 
 **Usage**: Automations requiring binary heat/no-heat logic
+
+---
+
+### Gas Boiler Preferred
+**Entity ID**: `binary_sensor.heating_curve_optimizer_gas_boiler_preferred`
+
+**Description**: Only present with a **Hybrid gas boiler** subentry configured
+(see [Hybrid Gas Boiler Sensors](#hybrid-gas-boiler-sensors) above). `on`
+means heat is genuinely needed right now *and* the gas boiler is currently
+cheaper per kWh than the heat pump - never just "gas happens to be cheaper",
+since coasting on the thermal buffer costs €0 and always wins when no heat
+is actually needed.
+
+**State**:
+
+- `on`: Heat needed AND gas is cheaper right now
+- `off`: Either no heat is needed (buffer/solar gain covers demand), or the heat pump is still cheaper
+
+**Attributes**:
+```yaml
+heat_pump_cost_eur_per_kwh: 0.10
+gas_cost_eur_per_kwh: 0.1366
+savings_eur_per_kwh: -0.0366
+heat_currently_needed: true
+heat_currently_needed_source: "power_sensor"  # or "modeled_demand"
+```
+
+**Usage**: Trigger your own automation to switch a hybrid system over to the gas boiler
 
 ---
 
@@ -602,6 +695,7 @@ of polling:
 | `OptimizationCoordinator` (Heating Curve Offset, Optimized Supply Temperature, Heat Buffer, Cost Savings, thermal v2/calibration/realtime diagnostic sensors) | 15 min | Time interval, depends on heat coordinator's latest data; also refreshed immediately after a `control_mode` change |
 | Current Electricity Price, COP Delta, Heat Generation Delta, Heat Pump Thermal Power | Event-driven | Fires on the underlying price/power/supply-temperature sensor's own state change, not on a timer |
 | Real-time offset controller (`realtime_controller.py`) | 60 s | Time interval, only active when `grid_import_sensor`/`grid_export_sensor` are configured and `control_mode` is `optimize_v2` |
+| `GasBoilerCoordinator` (Gas Boiler Heat Pump Cost, Gas Cost, Cost Savings, Gas Boiler Preferred) | Event-driven, 15 min safety net | Fires on the gas or electricity price sensor's own state change; only active when a **Hybrid gas boiler** subentry is configured |
 
 ### Availability
 

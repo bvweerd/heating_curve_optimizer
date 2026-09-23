@@ -572,6 +572,19 @@ behavior.
 - **Removing the integration does not delete learned calibration data.**
   See [Installation Guide](../installation.md#uninstallation) for how to
   clean that up by hand if you want a completely fresh reinstall.
+- **Hybrid gas boiler comparison is instantaneous only.** The
+  `gas_boiler_preferred` binary sensor and its supporting cost sensors
+  compare current gas vs. heat-pump cost per kWh with no forecast or
+  hysteresis/duration smoothing - add a `for:` trigger in your own
+  automation if you want to avoid reacting to a brief price crossing. See
+  [Configuration Guide](../configuration.md).
+- **One gas boiler per config entry, not per zone.** A hybrid system's gas
+  boiler serves the whole house, so its subentry and entities live on the
+  main config entry even if you also use heating-zone subentries.
+- **The DP optimizers don't yet know about the gas boiler.**
+  `optimized_offset` and the cost-savings sensors are computed exactly as
+  if the gas boiler didn't exist; `gas_boiler_preferred` is a separate,
+  advisory-only signal for your own automation to act on.
 
 ## Getting Help
 
