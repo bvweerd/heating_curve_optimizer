@@ -20,6 +20,7 @@ from custom_components.heating_curve_optimizer.companion_integrations import (
     FIELD_SOURCES_PRODUCTION,
     detect_gas_price_sensor,
     detect_main_flow_sensors,
+    detect_pv_arrays,
     detect_source_sensors,
 )
 
@@ -349,3 +350,131 @@ async def test_decc_subentry_missing_sources_key_is_skipped_not_crashed(
     }
 
     assert detect_source_sensors(hass) == {}
+
+
+@pytest.mark.asyncio
+async def test_detect_pv_arrays_returns_empty_without_battery_controller(
+    hass: HomeAssistant,
+):
+    assert detect_pv_arrays(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_detect_pv_arrays_reads_physical_parameters(hass: HomeAssistant):
+    """The array's own peak_power_kwp/orientation/tilt/efficiency_factor/
+    dc_coupled must be read directly - field names are a straight match
+    with this integration's own PV-array subentry schema (see
+    DetectedPvArray's docstring), not remapped."""
+    bc_entry = MockConfigEntry(domain=BATTERY_CONTROLLER_DOMAIN, data={})
+    bc_entry.add_to_hass(hass)
+    bc_entry.subentries = {
+        "sub1": SimpleNamespace(
+            subentry_type="pv_array",
+            title="East roof",
+            data={
+                "peak_power_kwp": 4.2,
+                "orientation": 90.0,
+                "tilt": 30.0,
+                "efficiency_factor": 0.9,
+                "dc_coupled": True,
+                # battery_controller-only fields, never copied over:
+                "pv_measured_production_sensor": "sensor.pv_east_production",
+                "pv_forecast_sensors": ["sensor.pv_east_forecast"],
+            },
+        ),
+    }
+
+    detected = detect_pv_arrays(hass)
+
+    assert len(detected) == 1
+    array = detected[0]
+    assert array.name == "East roof"
+    assert array.peak_power_kwp == 4.2
+    assert array.orientation == 90.0
+    assert array.tilt == 30.0
+    assert array.efficiency_factor == 0.9
+    assert array.dc_coupled is True
+    assert array.source == "Battery Controller"
+
+
+@pytest.mark.asyncio
+async def test_detect_pv_arrays_returns_one_per_subentry_and_ignores_others(
+    hass: HomeAssistant,
+):
+    bc_entry = MockConfigEntry(domain=BATTERY_CONTROLLER_DOMAIN, data={})
+    bc_entry.add_to_hass(hass)
+    bc_entry.subentries = {
+        "sub1": SimpleNamespace(
+            subentry_type="pv_array",
+            title="South roof",
+            data={"peak_power_kwp": 3.0, "orientation": 180.0, "tilt": 35.0},
+        ),
+        "sub2": SimpleNamespace(
+            subentry_type="pv_array",
+            title="West roof",
+            data={"peak_power_kwp": 2.5, "orientation": 270.0, "tilt": 35.0},
+        ),
+        "sub3": SimpleNamespace(
+            subentry_type="battery",
+            title="Home battery",
+            data={"capacity_kwh": 10.0},
+        ),
+    }
+
+    detected = detect_pv_arrays(hass)
+
+    assert [array.name for array in detected] == ["South roof", "West roof"]
+
+
+@pytest.mark.asyncio
+async def test_detect_pv_arrays_fills_defaults_for_missing_optional_fields(
+    hass: HomeAssistant,
+):
+    """Only peak_power_kwp is required by battery_controller's own schema -
+    a subentry missing the rest must still be detected, using this
+    integration's own defaults rather than being skipped entirely."""
+    bc_entry = MockConfigEntry(domain=BATTERY_CONTROLLER_DOMAIN, data={})
+    bc_entry.add_to_hass(hass)
+    bc_entry.subentries = {
+        "sub1": SimpleNamespace(
+            subentry_type="pv_array",
+            title="Minimal array",
+            data={"peak_power_kwp": 1.5},
+        ),
+    }
+
+    detected = detect_pv_arrays(hass)
+
+    assert len(detected) == 1
+    array = detected[0]
+    assert array.orientation == 180.0
+    assert array.tilt == 35.0
+    assert array.efficiency_factor == 0.85
+    assert array.dc_coupled is False
+
+
+@pytest.mark.asyncio
+async def test_detect_pv_arrays_skips_subentry_missing_peak_power(
+    hass: HomeAssistant,
+):
+    """A malformed subentry (no peak_power_kwp at all) must be skipped, not
+    crash detection for every other array - a fabricated peak power would
+    silently poison the forecast."""
+    bc_entry = MockConfigEntry(domain=BATTERY_CONTROLLER_DOMAIN, data={})
+    bc_entry.add_to_hass(hass)
+    bc_entry.subentries = {
+        "sub1": SimpleNamespace(
+            subentry_type="pv_array",
+            title="Broken array",
+            data={"orientation": 180.0},
+        ),
+        "sub2": SimpleNamespace(
+            subentry_type="pv_array",
+            title="Valid array",
+            data={"peak_power_kwp": 2.0},
+        ),
+    }
+
+    detected = detect_pv_arrays(hass)
+
+    assert [array.name for array in detected] == ["Valid array"]

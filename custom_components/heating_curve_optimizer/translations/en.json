@@ -427,6 +427,13 @@
       "step": {
         "user": {
           "title": "Add PV array",
+          "description": "Battery Controller already has one or more PV arrays configured. Import one to reuse its peak power, orientation and tilt, or enter a new array manually.",
+          "data": {
+            "import_choice": "Array to import"
+          }
+        },
+        "configure": {
+          "title": "Add PV array",
           "description": "Add one solar panel array. Panels facing different directions or at different tilts are added as separate arrays; their forecasted production is summed.",
           "data": {
             "name": "Array name (optional)",
