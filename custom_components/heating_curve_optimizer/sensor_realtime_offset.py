@@ -1,10 +1,10 @@
 """Real-time PV-surplus offset adjustment sensor (phase 5b, REDESIGN.md).
 
-Reports what `realtime_controller.py` is layering on top of the DP's
-planned offset right now, when a grid sensor is configured and
-control_mode is optimize_v2. Diagnostic/opt-in - disabled by default like
-the other phase 2/4/5 additions, and entirely inert (native_value None)
-whenever the real-time loop has not produced anything yet.
+Reports what `realtime_controller.py` is layering on top of the thermal
+optimizer's planned offset right now, when a grid sensor is configured.
+Diagnostic/opt-in - disabled by default like the other phase 2/4/5
+additions, and entirely inert (native_value None) whenever the real-time
+loop has not produced anything yet.
 """
 
 from __future__ import annotations

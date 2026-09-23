@@ -365,14 +365,13 @@ Consumption Price: 0.30 (fixed)
 Production Price: (none)
 ```
 
-## Advanced: Redesigned Optimizer Settings
+## Advanced: Thermal Optimizer Settings
 
-Beyond the setup wizard above, a few settings only matter once you opt
-into the redesigned thermal optimizer via the **Control Mode** select
-entity (`optimize_v2`) or the real-time PV-surplus controller
-(`grid_import_sensor`/`grid_export_sensor`): `control_mode`,
-`thermal_mass_class`, `emitter_type`, `grid_import_sensor`,
-`grid_export_sensor`. See [Configuration Reference](reference/configuration.md#redesigned-optimizer-optimize_v2-parameters)
+Beyond the setup wizard above, a few settings refine the thermal
+optimizer or enable the real-time PV-surplus controller
+(`grid_import_sensor`/`grid_export_sensor`): `thermal_mass_class`,
+`emitter_type`, `grid_import_sensor`, `grid_export_sensor`. See
+[Configuration Reference](reference/configuration.md#thermal-optimizer-parameters)
 for the full parameter table, valid values and what each one changes.
 
 ## Validation

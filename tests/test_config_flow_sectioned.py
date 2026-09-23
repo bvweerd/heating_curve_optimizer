@@ -43,16 +43,11 @@ from custom_components.heating_curve_optimizer.const import (
     CONF_INDOOR_TEMPERATURE_SENSOR,
     CONF_INDOOR_TEMP_HYSTERESIS,
     CONF_K_FACTOR,
-    CONF_MAX_BUFFER_DEBT,
     CONF_OFFSET_DELTA_T,
     CONF_OUTDOOR_TEMP_COEFFICIENT,
     CONF_PLANNING_WINDOW,
     CONF_POWER_CONSUMPTION,
     CONF_PRODUCTION_PRICE_SENSOR,
-    CONF_PV_EAST_WP,
-    CONF_PV_SOUTH_WP,
-    CONF_PV_TILT,
-    CONF_PV_WEST_WP,
     CONF_SOURCE_TYPE,
     CONF_SOURCES,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
@@ -69,11 +64,9 @@ from custom_components.heating_curve_optimizer.const import (
     DEFAULT_HEAT_CURVE_MIN,
     DEFAULT_INDOOR_TEMP_HYSTERESIS,
     DEFAULT_K_FACTOR,
-    DEFAULT_MAX_BUFFER_DEBT,
     DEFAULT_OFFSET_DELTA_T,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_PLANNING_WINDOW,
-    DEFAULT_PV_TILT,
     DEFAULT_TARGET_INDOOR_TEMP,
     DEFAULT_THERMAL_MASS_CLASS,
     DEFAULT_TIME_BASE,
@@ -111,10 +104,6 @@ def test_extract_sectioned_data_minimal_input_uses_defaults():
     assert flat[CONF_CEILING_HEIGHT] == DEFAULT_CEILING_HEIGHT
     assert flat[CONF_THERMAL_MASS_CLASS] == DEFAULT_THERMAL_MASS_CLASS
     assert flat[CONF_EMITTER_TYPE] == DEFAULT_EMITTER_TYPE
-    assert flat[CONF_PV_EAST_WP] == 0.0
-    assert flat[CONF_PV_SOUTH_WP] == 0.0
-    assert flat[CONF_PV_WEST_WP] == 0.0
-    assert flat[CONF_PV_TILT] == DEFAULT_PV_TILT
     assert flat[CONF_INDOOR_TEMPERATURE_SENSOR] is None
     assert flat[CONF_POWER_CONSUMPTION] is None
     assert flat[CONF_SUPPLY_TEMPERATURE_SENSOR] is None
@@ -132,7 +121,6 @@ def test_extract_sectioned_data_minimal_input_uses_defaults():
     assert flat[CONF_OFFSET_DELTA_T] == DEFAULT_OFFSET_DELTA_T
     assert flat[CONF_PLANNING_WINDOW] == DEFAULT_PLANNING_WINDOW
     assert flat[CONF_TIME_BASE] == DEFAULT_TIME_BASE
-    assert flat[CONF_MAX_BUFFER_DEBT] == DEFAULT_MAX_BUFFER_DEBT
     assert flat[CONF_TARGET_INDOOR_TEMP] == DEFAULT_TARGET_INDOOR_TEMP
     assert flat[CONF_INDOOR_TEMP_HYSTERESIS] == DEFAULT_INDOOR_TEMP_HYSTERESIS
 
@@ -154,10 +142,6 @@ def test_extract_sectioned_data_full_input_round_trips_exactly():
             CONF_CEILING_HEIGHT: 3.0,
             CONF_THERMAL_MASS_CLASS: "heavy",
             CONF_EMITTER_TYPE: "underfloor",
-            CONF_PV_EAST_WP: 1000,
-            CONF_PV_SOUTH_WP: 3000,
-            CONF_PV_WEST_WP: 1000,
-            CONF_PV_TILT: 40,
         },
         "sensors": {
             CONF_INDOOR_TEMPERATURE_SENSOR: "sensor.indoor",
@@ -181,7 +165,6 @@ def test_extract_sectioned_data_full_input_round_trips_exactly():
         "advanced": {
             CONF_PLANNING_WINDOW: 12,
             CONF_TIME_BASE: 30,
-            CONF_MAX_BUFFER_DEBT: 8.0,
             CONF_TARGET_INDOOR_TEMP: 21.0,
             CONF_INDOOR_TEMP_HYSTERESIS: 0.4,
         },

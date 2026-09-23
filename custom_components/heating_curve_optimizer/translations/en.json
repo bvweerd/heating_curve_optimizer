@@ -8,22 +8,14 @@
           "ceiling_height": "Ceiling height (m)",
           "thermal_mass_class": "Thermal mass class",
           "emitter_type": "Heat emitter type",
-          "pv_east_wp": "PV panels east (Wp)",
-          "pv_south_wp": "PV panels south (Wp)",
-          "pv_west_wp": "PV panels west (Wp)",
-          "pv_tilt": "PV panel tilt angle (degrees)",
           "grid_import_sensor": "Grid import power sensor (W or kW, real-time PV-surplus control)",
           "grid_export_sensor": "Grid export power sensor (W or kW, real-time PV-surplus control)"
         },
         "data_description": {
           "ventilation_type": "Type of ventilation system for calculating ventilation heat loss",
           "ceiling_height": "Average ceiling height for calculating building volume (default: 2.5m)",
-          "thermal_mass_class": "Construction weight class, used by the redesigned optimizer (optimize_v2) instead of the energy-label-derived estimate (default: medium)",
-          "emitter_type": "How emitter output falls off as supply temperature drops, used by the redesigned optimizer (optimize_v2) (default: radiator)",
-          "pv_east_wp": "Total peak power of east-facing PV panels in Wp",
-          "pv_south_wp": "Total peak power of south-facing PV panels in Wp",
-          "pv_west_wp": "Total peak power of west-facing PV panels in Wp",
-          "pv_tilt": "Tilt angle of PV panels (0=horizontal, 90=vertical, typical: 35°)"
+          "thermal_mass_class": "Construction weight class, used instead of the energy-label-derived estimate (default: medium)",
+          "emitter_type": "How emitter output falls off as supply temperature drops (default: radiator)"
         }
       },
       "heating_curve_settings": {
@@ -37,7 +29,6 @@
           "cop_compensation_factor": "COP compensation factor",
           "planning_window": "Planning window (hours)",
           "time_base": "Time base (minutes per step)",
-          "max_buffer_debt": "Maximum heat debt (kWh)",
           "target_indoor_temp": "Target indoor temperature (°C)",
           "indoor_temp_hysteresis": "Indoor temperature hysteresis (°C)",
           "indoor_temp_hysteresis_lower": "Lower hysteresis - heat pump ON (°C)",
@@ -57,7 +48,6 @@
           "cop_compensation_factor": "Factor to adjust theoretical COP to actual system performance (typical: 0.8-1.2)",
           "planning_window": "Optimization planning horizon in hours (default: 6)",
           "time_base": "Time interval for optimization in minutes (default: 60)",
-          "max_buffer_debt": "Maximum allowed heat debt for cost optimization. Allows reducing heating during expensive hours and compensating later (default: 5.0 kWh)",
           "target_indoor_temp": "Desired room temperature setpoint (default: 20°C)",
           "indoor_temp_hysteresis": "Temperature band around setpoint where heating modulates (default: 0.5°C)",
           "indoor_temp_hysteresis_lower": "How far below target temp before heat pump turns ON (default: 0.3°C)",
@@ -73,17 +63,7 @@
       "user": {
         "title": "Set up Heating Curve Optimizer",
         "data": {
-          "energy_label": "Energy label",
-          "pv_east_wp": "PV panels east (Wp)",
-          "pv_south_wp": "PV panels south (Wp)",
-          "pv_west_wp": "PV panels west (Wp)",
-          "pv_tilt": "PV panel tilt angle (degrees)"
-        },
-        "data_description": {
-          "pv_east_wp": "Total peak power of east-facing PV panels in Wp",
-          "pv_south_wp": "Total peak power of south-facing PV panels in Wp",
-          "pv_west_wp": "Total peak power of west-facing PV panels in Wp",
-          "pv_tilt": "Tilt angle of PV panels (0=horizontal, 90=vertical, typical: 35°)"
+          "energy_label": "Energy label"
         },
         "sections": {
           "building": {
@@ -101,8 +81,8 @@
             }
           },
           "envelope": {
-            "name": "Building envelope & PV",
-            "description": "Glass areas, insulation, ventilation and solar panels - improves heat-loss and solar-gain accuracy.",
+            "name": "Building envelope",
+            "description": "Glass areas, insulation and ventilation - improves heat-loss and solar-gain accuracy. Solar panels are added separately, as PV arrays, from the integration page after setup.",
             "data": {
               "glass_east_m2": "East-facing glass area (m²)",
               "glass_west_m2": "West-facing glass area (m²)",
@@ -111,22 +91,14 @@
               "ventilation_type": "Ventilation type",
               "ceiling_height": "Ceiling height (m)",
               "thermal_mass_class": "Thermal mass class",
-              "emitter_type": "Heat emitter type",
-              "pv_east_wp": "PV panels east (Wp)",
-              "pv_south_wp": "PV panels south (Wp)",
-              "pv_west_wp": "PV panels west (Wp)",
-              "pv_tilt": "PV panel tilt angle (degrees)"
+              "emitter_type": "Heat emitter type"
             },
             "data_description": {
               "glass_u_value": "Heat transfer coefficient of the glass (default: 1.2)",
               "ventilation_type": "Type of ventilation system for calculating ventilation heat loss",
               "ceiling_height": "Average ceiling height for calculating building volume (default: 2.5m)",
-              "thermal_mass_class": "Construction weight class, used by the redesigned optimizer (optimize_v2) instead of the energy-label-derived estimate (default: medium)",
-              "emitter_type": "How emitter output falls off as supply temperature drops, used by the redesigned optimizer (optimize_v2) (default: radiator)",
-              "pv_east_wp": "Total peak power of east-facing PV panels in Wp",
-              "pv_south_wp": "Total peak power of south-facing PV panels in Wp",
-              "pv_west_wp": "Total peak power of west-facing PV panels in Wp",
-              "pv_tilt": "Tilt angle of PV panels (0=horizontal, 90=vertical, typical: 35°)"
+              "thermal_mass_class": "Construction weight class, used instead of the energy-label-derived estimate (default: medium)",
+              "emitter_type": "How emitter output falls off as supply temperature drops (default: radiator)"
             }
           },
           "sensors": {
@@ -183,14 +155,12 @@
             "data": {
               "planning_window": "Planning window (hours)",
               "time_base": "Time base (minutes per step)",
-              "max_buffer_debt": "Maximum heat debt (kWh)",
               "target_indoor_temp": "Target indoor temperature (°C)",
               "indoor_temp_hysteresis": "Indoor temperature hysteresis (°C)"
             },
             "data_description": {
               "planning_window": "Optimization planning horizon in hours (default: 6)",
               "time_base": "Time interval for optimization in minutes (default: 60)",
-              "max_buffer_debt": "Maximum allowed heat debt for cost optimization. Allows reducing heating during expensive hours and compensating later (default: 5.0 kWh)",
               "target_indoor_temp": "Desired room temperature setpoint (default: 20°C)",
               "indoor_temp_hysteresis": "Temperature band around setpoint where heating modulates (default: 0.5°C)"
             }
@@ -292,12 +262,6 @@
       "calibration": {
         "name": "Parameter Calibration"
       },
-      "thermal_v2_offset": {
-        "name": "Thermal V2 offset (shadow mode, experimental)"
-      },
-      "thermal_v2_cost_comparison": {
-        "name": "Thermal V2 cost comparison (shadow mode, experimental)"
-      },
       "thermal_calibration": {
         "name": "Thermal calibration (experimental)"
       },
@@ -333,16 +297,6 @@
       },
       "current_consumption_price": {
         "name": "Current consumption price"
-      }
-    },
-    "select": {
-      "control_mode": {
-        "name": "Control mode",
-        "state": {
-          "legacy": "Legacy optimizer",
-          "follow_curve": "Follow curve (no optimization)",
-          "optimize_v2": "Redesigned optimizer (v2, experimental)"
-        }
       }
     },
     "climate": {
@@ -463,6 +417,50 @@
         "single_instance_allowed": "Only one hybrid gas boiler can be configured.",
         "reconfigure_successful": "Hybrid gas boiler updated successfully."
       }
+    },
+    "pv_array": {
+      "entry_type": "PV Array",
+      "flow_title": "PV array",
+      "initiate_flow": {
+        "user": "Add PV array"
+      },
+      "step": {
+        "user": {
+          "title": "Add PV array",
+          "description": "Add one solar panel array. Panels facing different directions or at different tilts are added as separate arrays; their forecasted production is summed.",
+          "data": {
+            "name": "Array name (optional)",
+            "peak_power_kwp": "Peak power (kWp)",
+            "orientation": "Orientation (degrees, 180 = south)",
+            "tilt": "Tilt (degrees, 0 = flat, 90 = vertical)",
+            "efficiency_factor": "System efficiency (inverter/wiring/temperature losses)",
+            "dc_coupled": "DC-coupled (e.g. hybrid inverter with battery)"
+          },
+          "data_description": {
+            "peak_power_kwp": "Total peak power (STC) of this array in kWp",
+            "orientation": "Compass direction the panels face - 0/360 = north, 90 = east, 180 = south, 270 = west",
+            "efficiency_factor": "Typical value: 0.85"
+          }
+        },
+        "reconfigure": {
+          "title": "Edit PV array",
+          "description": "Update this array's configuration.",
+          "data": {
+            "name": "Array name (optional)",
+            "peak_power_kwp": "Peak power (kWp)",
+            "orientation": "Orientation (degrees, 180 = south)",
+            "tilt": "Tilt (degrees, 0 = flat, 90 = vertical)",
+            "efficiency_factor": "System efficiency (inverter/wiring/temperature losses)",
+            "dc_coupled": "DC-coupled (e.g. hybrid inverter with battery)"
+          }
+        }
+      },
+      "error": {
+        "invalid_pv_array_input": "Invalid PV array configuration. Check the peak power, orientation and tilt."
+      },
+      "abort": {
+        "reconfigure_successful": "PV array updated successfully."
+      }
     }
   },
   "exceptions": {
@@ -507,6 +505,9 @@
     },
     "gas_boiler_electricity_price_unavailable": {
       "message": "Electricity price sensor {sensor} is unavailable (see the main price_sensor_unavailable repair issue)."
+    },
+    "thermal_optimizer_failed": {
+      "message": "The thermal optimizer failed this cycle: {error}."
     }
   },
   "issues": {

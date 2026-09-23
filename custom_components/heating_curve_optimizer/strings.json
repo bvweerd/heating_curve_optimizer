@@ -6,20 +6,12 @@
           "energy_label": "Energy label",
           "ventilation_type": "Ventilation type",
           "ceiling_height": "Ceiling height (m)",
-          "pv_east_wp": "PV panels east (Wp)",
-          "pv_south_wp": "PV panels south (Wp)",
-          "pv_west_wp": "PV panels west (Wp)",
-          "pv_tilt": "PV panel tilt angle (degrees)",
           "grid_import_sensor": "Grid import power sensor (W or kW, real-time PV-surplus control)",
           "grid_export_sensor": "Grid export power sensor (W or kW, real-time PV-surplus control)"
         },
         "data_description": {
           "ventilation_type": "Type of ventilation system for calculating ventilation heat loss",
-          "ceiling_height": "Average ceiling height for calculating building volume (default: 2.5m)",
-          "pv_east_wp": "Total peak power of east-facing PV panels in Wp",
-          "pv_south_wp": "Total peak power of south-facing PV panels in Wp",
-          "pv_west_wp": "Total peak power of west-facing PV panels in Wp",
-          "pv_tilt": "Tilt angle of PV panels (0=horizontal, 90=vertical, typical: 35°)"
+          "ceiling_height": "Average ceiling height for calculating building volume (default: 2.5m)"
         }
       },
       "heating_curve_settings": {
@@ -33,7 +25,6 @@
           "cop_compensation_factor": "COP compensation factor",
           "planning_window": "Planning window (hours)",
           "time_base": "Time base (minutes per step)",
-          "max_buffer_debt": "Maximum heat debt (kWh)",
           "target_indoor_temp": "Target indoor temperature (°C)",
           "indoor_temp_hysteresis": "Indoor temperature hysteresis (°C)",
           "indoor_temp_hysteresis_lower": "Lower hysteresis - heat pump ON (°C)",
@@ -53,7 +44,6 @@
           "cop_compensation_factor": "Factor to adjust theoretical COP to actual system performance (typical: 0.8-1.2)",
           "planning_window": "Optimization planning horizon in hours (default: 6)",
           "time_base": "Time interval for optimization in minutes (default: 60)",
-          "max_buffer_debt": "Maximum allowed heat debt for cost optimization. Allows reducing heating during expensive hours and compensating later (default: 5.0 kWh)",
           "target_indoor_temp": "Desired room temperature setpoint (default: 20°C)",
           "indoor_temp_hysteresis": "Temperature band around setpoint where heating modulates (default: 0.5°C)",
           "indoor_temp_hysteresis_lower": "How far below target temp before heat pump turns ON (default: 0.3°C)",
@@ -68,17 +58,7 @@
       },
       "user": {
         "data": {
-          "energy_label": "Energy label",
-          "pv_east_wp": "PV panels east (Wp)",
-          "pv_south_wp": "PV panels south (Wp)",
-          "pv_west_wp": "PV panels west (Wp)",
-          "pv_tilt": "PV panel tilt angle (degrees)"
-        },
-        "data_description": {
-          "pv_east_wp": "Total peak power of east-facing PV panels in Wp",
-          "pv_south_wp": "Total peak power of south-facing PV panels in Wp",
-          "pv_west_wp": "Total peak power of west-facing PV panels in Wp",
-          "pv_tilt": "Tilt angle of PV panels (0=horizontal, 90=vertical, typical: 35°)"
+          "energy_label": "Energy label"
         }
       }
     },
@@ -174,12 +154,6 @@
       "calibration": {
         "name": "Parameter Calibration"
       },
-      "thermal_v2_offset": {
-        "name": "Thermal V2 offset (shadow mode, experimental)"
-      },
-      "thermal_v2_cost_comparison": {
-        "name": "Thermal V2 cost comparison (shadow mode, experimental)"
-      },
       "thermal_calibration": {
         "name": "Thermal calibration (experimental)"
       },
@@ -206,16 +180,6 @@
       },
       "net_heat_loss_energy_daily": {
         "name": "Net heat loss energy daily"
-      }
-    },
-    "select": {
-      "control_mode": {
-        "name": "Control mode",
-        "state": {
-          "legacy": "Legacy optimizer",
-          "follow_curve": "Follow curve (no optimization)",
-          "optimize_v2": "Redesigned optimizer (v2, experimental)"
-        }
       }
     },
     "climate": {
@@ -308,6 +272,9 @@
     },
     "price_data_extraction_failed": {
       "message": "Cannot extract price data from sensor {sensor}."
+    },
+    "thermal_optimizer_failed": {
+      "message": "The thermal optimizer failed this cycle: {error}."
     }
   },
   "issues": {

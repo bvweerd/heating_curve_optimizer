@@ -5,7 +5,7 @@ DOMAIN = "heating_curve_optimizer"
 DOMAIN_ABBREVIATION = "HCO"
 
 # Supported platforms for this integration
-PLATFORMS = ["sensor", "binary_sensor", "number", "select", "climate"]
+PLATFORMS = ["sensor", "binary_sensor", "number", "climate"]
 
 # Configuration keys
 CONF_SOURCE_TYPE = "source_type"
@@ -81,7 +81,6 @@ CONF_HEAT_CURVE_MIN = "heat_curve_min"
 CONF_HEAT_CURVE_MAX = "heat_curve_max"
 CONF_VENTILATION_TYPE = "ventilation_type"
 CONF_CEILING_HEIGHT = "ceiling_height"
-CONF_MAX_BUFFER_DEBT = "max_buffer_debt"
 CONF_TARGET_INDOOR_TEMP = "target_indoor_temp"
 CONF_INDOOR_TEMP_HYSTERESIS = "indoor_temp_hysteresis"  # Legacy, kept for compatibility
 CONF_INDOOR_TEMP_HYSTERESIS_LOWER = "indoor_temp_hysteresis_lower"  # Below target
@@ -92,7 +91,6 @@ CONF_OFFSET_DELTA_T = "offset_delta_t"  # Minutes per 1°C offset change
 DEFAULT_HEATING_CURVE_OFFSET = 0.0
 DEFAULT_HEAT_CURVE_MIN = 20.0
 DEFAULT_HEAT_CURVE_MAX = 45.0
-DEFAULT_MAX_BUFFER_DEBT = 5.0  # kWh - allows heat debt for cost optimization
 DEFAULT_TARGET_INDOOR_TEMP = 20.0  # °C - desired room temperature
 DEFAULT_INDOOR_TEMP_HYSTERESIS = 0.5  # °C - legacy hysteresis (symmetric)
 DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER = (
@@ -154,14 +152,24 @@ VENTILATION_TYPES: dict[str, dict[str, float | str]] = {
     },
 }
 
-# PV panel configuration
-CONF_PV_EAST_WP = "pv_east_wp"
-CONF_PV_SOUTH_WP = "pv_south_wp"
-CONF_PV_WEST_WP = "pv_west_wp"
-CONF_PV_TILT = "pv_tilt"
+# PV arrays, as config subentries - matches battery_controller's own
+# PV_SUBENTRY_TYPE/BatteryControllerPVSubentryFlow field-for-field
+# (peak_power_kwp/orientation/tilt/efficiency_factor/dc_coupled), so a
+# home with several arrays at different orientations is modelled as
+# several subentries instead of the old fixed east/south/west Wp numbers -
+# added via the integration page after setup, like this integration's own
+# zone/gas-boiler subentries. No migration from the old fixed fields: this
+# integration has no deployed installs yet to preserve behaviour for.
+PV_SUBENTRY_TYPE = "pv_array"
+CONF_PV_PEAK_POWER_KWP = "peak_power_kwp"
+CONF_PV_ORIENTATION = "orientation"  # degrees, 0-360, 180 = south
+CONF_PV_TILT = "tilt"  # degrees, 0-90
+CONF_PV_EFFICIENCY_FACTOR = "efficiency_factor"
+CONF_PV_DC_COUPLED = "dc_coupled"
 
-# Default PV tilt angle (degrees) - typical for Netherlands
-DEFAULT_PV_TILT = 35
+DEFAULT_PV_ORIENTATION_DEG = 180.0  # south-facing
+DEFAULT_PV_TILT = 35.0  # degrees - typical for Netherlands
+DEFAULT_PV_EFFICIENCY_FACTOR = 0.85
 
 # Allowed energy labels
 ENERGY_LABELS = ["A+++", "A++", "A+", "A", "B", "C", "D", "E", "F", "G"]
@@ -342,8 +350,8 @@ DEFAULT_COP_COMPENSATION_FACTOR = 1.0
 # Value of 0.15 means 15% of current heat demand is stored/released per °C offset
 # This represents the thermal inertia of building materials (concrete, brick, etc.)
 # Superseded by building_model.BuildingConfig's explicit thermal mass (kWh/K)
-# for the redesigned optimizer (see docs/redesign/REDESIGN.md); kept for the
-# legacy optimizer.optimize_offsets() until phase 3 removes it.
+# for the thermal optimizer; still used by calibration_sensor.py/
+# sensor/event_driven.py as a rule-of-thumb prior.
 DEFAULT_THERMAL_STORAGE_EFFICIENCY = 0.15
 
 # --- Redesigned thermal model (building_model.py / heatpump_model.py) ------
@@ -372,24 +380,12 @@ EMITTER_EXPONENT_MAP = {
     "fan_coil": 1.0,
 }
 
-# Which optimizer actually drives optimized_offset/optimized_supply_temperature
-# (phase 3, docs/redesign/REDESIGN.md). Default stays on the legacy DP: the
-# redesigned optimizer only has phase-2 shadow-mode diagnostics to judge it by
-# at this point, not field hours on real installations, so switching the
-# default now would change real heating behaviour on an unvalidated model.
-CONF_CONTROL_MODE = "control_mode"
-MODE_LEGACY = "legacy"
-MODE_FOLLOW_CURVE = "follow_curve"
-MODE_OPTIMIZE_V2 = "optimize_v2"
-CONTROL_MODES = [MODE_LEGACY, MODE_FOLLOW_CURVE, MODE_OPTIMIZE_V2]
-DEFAULT_CONTROL_MODE = MODE_LEGACY
-
 # Real-time PV-surplus controller (phase 5b, docs/redesign/REDESIGN.md),
 # modelled on battery_controller's zero_grid_controller.py but right-sized
 # for heating's whole-degree offset steps and slower thermal time constants:
 # a deadbanded step controller, not a continuous-power integrator. Only
-# runs when control_mode is optimize_v2 (it needs the shadow price, which
-# only thermal_optimizer.py computes) and at least one grid sensor is set.
+# runs when at least one grid sensor is set (it needs the shadow price,
+# which thermal_optimizer.py computes).
 CONF_REALTIME_DEADBAND_W = "realtime_deadband_w"
 DEFAULT_REALTIME_DEADBAND_W = 300.0  # W - looser than a battery's ~50 W:
 # heating's actuator is a whole-degree curve offset, not a continuous power

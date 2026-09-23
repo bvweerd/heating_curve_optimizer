@@ -8,8 +8,15 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.heating_curve_optimizer.calibration import (
+    MIN_INDOOR_TEMP_DELTA_C,
     MIN_SAMPLES_TO_APPLY,
+    RESULT_ELAPSED_GAP,
     RESULT_IMPLAUSIBLE,
+    RESULT_MISSING_BUILDING_CONFIG,
+    RESULT_NO_INDOOR_SENSOR,
+    RESULT_NO_POWER_READING,
+    RESULT_NO_RESULT,
+    RESULT_STEP_TOO_SMALL,
     ThermalCalibrationState,
     fit_ua_and_thermal_mass,
 )
@@ -79,6 +86,38 @@ def test_fit_rejects_unphysical_negative_result():
     samples = [(5.0, 0.0, 1.0), (10.0, 0.0, 2.0), (2.0, 0.0, 0.4)]
     result = fit_ua_and_thermal_mass(samples)
     assert result is None or (result[0] > 0 and result[1] > 0)
+
+
+def test_min_indoor_temp_delta_is_a_few_sensor_quanta():
+    """0.3°C is a few multiples of the typical 0.1°C HA temperature-sensor
+    resolution - loose enough to allow real signal through, tight enough to
+    reject single-quantum noise."""
+    assert 0.2 <= MIN_INDOOR_TEMP_DELTA_C <= 0.5
+
+
+def test_pre_sample_skip_reasons_are_distinct_from_each_other_and_no_result():
+    """The 5 new skip-reason constants set by coordinator.py before a
+    sample ever reaches record_sample must each be distinguishable from one
+    another and from the "nothing happened yet" default."""
+    reasons = {
+        RESULT_NO_INDOOR_SENSOR,
+        RESULT_NO_POWER_READING,
+        RESULT_ELAPSED_GAP,
+        RESULT_MISSING_BUILDING_CONFIG,
+        RESULT_STEP_TOO_SMALL,
+        RESULT_NO_RESULT,
+    }
+    assert len(reasons) == 6
+
+
+def test_last_result_defaults_to_no_result_and_is_directly_assignable():
+    """last_result is a plain mutable field - coordinator.py sets it
+    directly (`state.last_result = RESULT_XXX`) for skips that happen
+    before record_sample, without a dedicated setter method."""
+    state = _make_state()
+    assert state.last_result == RESULT_NO_RESULT
+    state.last_result = RESULT_NO_INDOOR_SENSOR
+    assert state.last_result == RESULT_NO_INDOOR_SENSOR
 
 
 def _make_state() -> ThermalCalibrationState:

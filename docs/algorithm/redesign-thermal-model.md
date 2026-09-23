@@ -158,16 +158,16 @@ bestaande optimizer nu echt doet. Een fout in de nieuwe berekening wordt
 dubbel geïsoleerd (in de methode zelf en op de aanroepplek) zodat hij nooit
 het echte, sturende resultaat kan raken.
 
-## Fase 3 — control_mode
+## Fase 3 — control_mode (afgerond, verwijderd)
 
-`select.control_mode` (`legacy` / `follow_curve` / `optimize_v2`) bepaalt
-welke motor `optimized_offset` daadwerkelijk levert. Default blijft
-`legacy` — de fase-2 schaduwdiagnostiek heeft nog geen enkel uur op een
-echte installatie gedraaid, dus de default omzetten zou echt stookgedrag
-laten sturen door een ongevalideerd model. `follow_curve` is een nieuwe
-mogelijkheid op zich: offset altijd 0, een schone nulmeting. Bij
-`optimize_v2` valt de coordinator terug op het legacy-resultaat zodra de
-nieuwe optimizer een cyclus faalt — er is nooit een cyclus zonder beslissing.
+De `select.control_mode`-keuze (`legacy` / `follow_curve` / `optimize_v2`)
+was tijdelijke infrastructuur voor de overgang. Nu de nieuwe optimizer
+voldoende vertrouwd is, is de keuze zelf weer weg: `thermal_optimizer.py`
+is de enige motor die `optimized_offset` levert, de oude DP-code
+(`optimizer.py`, `select.py`, de schaduw-sensoren) is verwijderd, en er is
+bewust geen terugval meer op een ander algoritme bij een mislukte cyclus —
+die faalt dan gewoon zichtbaar (`_update_failed`), in plaats van stilzwijgend
+een ander resultaat te tonen.
 
 ## Fase 4 — kalibratie
 

@@ -29,7 +29,6 @@ CONFIG = {
     "heat_curve_max": 45.0,
     "heat_curve_min_outdoor": -10.0,
     "heat_curve_max_outdoor": 15.0,
-    "control_mode": "optimize_v2",
     "grid_import_sensor": "sensor.grid_import",
     "grid_export_sensor": "sensor.grid_export",
 }
@@ -80,16 +79,9 @@ async def test_realtime_update_noop_without_controller(hass: HomeAssistant):
 
 
 @pytest.mark.asyncio
-async def test_realtime_update_noop_when_not_optimize_v2(hass: HomeAssistant):
+async def test_realtime_update_noop_when_thermal_v2_unavailable(hass: HomeAssistant):
     coordinator = _make_coordinator(hass)
-    coordinator._control_mode = "legacy"
-    coordinator.data = {
-        "thermal_v2": {
-            "available": True,
-            "offsets": [1],
-            "shadow_price_eur_per_kwh": 0.1,
-        }
-    }
+    coordinator.data = {"thermal_v2": {"available": False, "error": "boom"}}
     hass.states.async_set("sensor.grid_import", "0", {"unit_of_measurement": "W"})
     hass.states.async_set("sensor.grid_export", "500", {"unit_of_measurement": "W"})
 

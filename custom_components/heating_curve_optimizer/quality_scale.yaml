@@ -63,8 +63,8 @@ rules:
     status: done
     comment: |
       UI setup via ConfigFlow; structural config in ConfigEntry.data,
-      runtime-tunable values (target temperature, hysteresis, control mode)
-      in ConfigEntry.options / number+select entities.
+      runtime-tunable values (target temperature, hysteresis)
+      in ConfigEntry.options / number entities.
   dependency-transparency:
     status: done
     comment: |
@@ -113,7 +113,7 @@ rules:
     comment: |
       entity.py's BaseUtilitySensor sets _attr_has_entity_name = True
       whenever a translation_key is given, which every sensor built on it
-      passes; number.py, select.py, binary_sensor.py and climate.py set it
+      passes; number.py, binary_sensor.py and climate.py set it
       directly.
   runtime-data:
     status: done
@@ -121,7 +121,7 @@ rules:
       entry.runtime_data now holds a HeatingCurveOptimizerData dataclass
       (__init__.py), mirroring battery_controller's BatteryControllerData -
       replaces the old hass.data[DOMAIN][entry.entry_id] dict across
-      __init__.py, sensor/__init__.py, binary_sensor.py, select.py,
+      __init__.py, sensor/__init__.py, binary_sensor.py,
       climate.py and diagnostics.py. Confirmed safe on every HA release
       this integration targets: ConfigEntry has no __slots__, so assigning
       the attribute works even where the installed HA's own ConfigEntry
@@ -179,12 +179,11 @@ rules:
   docs-configuration-parameters:
     status: done
     comment: |
-      docs/reference/configuration.md gained a "Redesigned Optimizer
-      (optimize_v2) Parameters" section covering control_mode,
-      grid_import_sensor, grid_export_sensor, thermal_mass_class and
-      emitter_type, including their value tables and an explicit note
-      on which ones are exposed by the UI wizard vs. the Control Mode
-      select entity (see docs-installation-parameters below).
+      docs/reference/configuration.md gained a "Thermal Optimizer
+      Parameters" section covering grid_import_sensor, grid_export_sensor,
+      thermal_mass_class and emitter_type, including their value tables
+      and an explicit note on which ones are exposed by the UI wizard
+      (see docs-installation-parameters below).
       docs/configuration.md links to it. Also gained a "Hybrid Gas Boiler
       Comparison (optional subentry)" section covering gas_price_sensor,
       gas_boiler_efficiency and gas_calorific_value_kwh_per_m3 (defaults,
@@ -228,7 +227,7 @@ rules:
   parallel-updates:
     status: done
     comment: |
-      PARALLEL_UPDATES = 0 in sensor/__init__.py, number.py, select.py,
+      PARALLEL_UPDATES = 0 in sensor/__init__.py, number.py,
       binary_sensor.py and climate.py (phase 6, this session) - entities
       are updated via their coordinator, never per-entity I/O.
   reauthentication-flow:
@@ -257,7 +256,15 @@ rules:
     comment: Single device per config entry via DeviceInfo, all entities linked to it.
   diagnostics:
     status: done
-    comment: diagnostics.py implements async_get_config_entry_diagnostics.
+    comment: >-
+      diagnostics.py implements async_get_config_entry_diagnostics.
+      TO_REDACT lists every entity-id-valued config key (price/power/indoor
+      and supply temperature sensors, sources), mirroring
+      battery_controller's own redaction list. The dump also includes
+      entry.subentries (zone/gas-boiler/PV-array, redacted the same way)
+      and a per-coordinator "calibration" section (sample_count,
+      last_result, learned values) so a bug report doesn't need the
+      stored_data.optimization blob cross-referenced by hand.
   discovery-update-info:
     status: exempt
     comment: No discoverable network devices.
@@ -309,9 +316,9 @@ rules:
     comment: |
       docs/index.md's "Supported Configurations" list (predates this
       session for the pre-redesign items) extended this session with the
-      redesign's own features: heating-zone subentries, the redesigned
-      thermal optimizer/control_mode, learned thermal calibration, and
-      real-time PV-surplus response. Further extended with the hybrid
+      redesign's own features: heating-zone subentries, the thermal
+      optimizer, learned thermal calibration, and real-time PV-surplus
+      response. Further extended with the hybrid
       heat-pump + gas-boiler cost comparison (optional gas boiler
       subentry), also added as its own "Use Cases" bullet.
   docs-troubleshooting:
@@ -323,13 +330,22 @@ rules:
       Added a "Use Cases" section to docs/index.md (this session) naming
       who each feature is for and linking to the matching example page:
       dynamic pricing, cold snaps, solar production, mixed conditions,
-      multi-room homes (zones), and experimenting with control_mode.
+      and multi-room homes (zones).
   dynamic-devices:
     status: exempt
     comment: Single fixed device per config entry; no dynamically added sub-devices.
   entity-category:
-    status: done
-    comment: EntityCategory.CONFIG on select.control_mode; number entities are setpoints, not diagnostics.
+    status: todo
+    comment: |
+      select.control_mode (this rule's previous EntityCategory.CONFIG
+      justification) has been removed along with the legacy/follow_curve
+      optimizer choice - no entity currently sets entity_category at all.
+      Several sensors describe themselves as diagnostic-only in their own
+      docstrings (sensor_thermal_calibration.py, calibration_sensor.py,
+      sensor/diagnostics_sensor.py) and are plausible EntityCategory.
+      DIAGNOSTIC candidates, pre-dating this change - a real audit of
+      those, not just this rule's own justification text, is needed
+      before re-claiming "done".
   entity-device-class:
     status: done
     comment: SensorDeviceClass.MONETARY/TEMPERATURE/ENERGY used where applicable; BinarySensorDeviceClass.HEAT.
@@ -447,8 +463,8 @@ rules:
       pure-physics modules (heatpump_model.py, thermal_optimizer.py,
       calibration.py, realtime_controller.py: zero errors;
       building_model.py: one no-any-return) but false for the
-      redesign's own sensor-facing modules - sensor_thermal_shadow.py,
-      sensor_realtime_offset.py and sensor_thermal_calibration.py each
+      redesign's own sensor-facing modules - sensor_realtime_offset.py
+      and sensor_thermal_calibration.py each
       have several (missing return-type annotations, "Class cannot
       subclass CoordinatorEntity (has type Any)" from HA's own classes
       being effectively untyped in this environment, no-any-return on

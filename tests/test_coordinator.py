@@ -195,6 +195,44 @@ async def test_heat_pump_actively_running_reflects_real_power_reading(
 
 
 @pytest.mark.asyncio
+async def test_thermal_optimizer_unavailable_raises_update_failed(
+    hass: HomeAssistant,
+):
+    """No fallback to a different algorithm when the thermal optimizer
+    fails a cycle (the control_mode/legacy-DP removal's core safety
+    property) - the whole update must fail visibly via UpdateFailed
+    instead of silently reusing a stale or fabricated result."""
+    weather_coordinator = MagicMock()
+    weather_coordinator.data = {"temperature_forecast": [2.0] * 8}
+
+    # area_m2 omitted -> BuildingConfig.from_config raises inside
+    # _run_thermal_v2_optimization's own try/except, which reports
+    # available: False rather than propagating.
+    config = {
+        "energy_label": "C",
+        "consumption_price_sensor": "sensor.price",
+    }
+    heat_coordinator = HeatCalculationCoordinator(
+        hass, weather_coordinator, config, "test_entry"
+    )
+    heat_coordinator.data = {
+        "net_heat_loss_forecast": [1.0] * 8,
+        "heat_demand_factor": 1.0,
+        "heat_pump_on": True,
+        "net_heat_loss": 1.0,
+        "solar_gain_forecast": [],
+        "indoor_temperature": 20.0,
+    }
+    heat_coordinator.weather_coordinator = weather_coordinator
+
+    coordinator = OptimizationCoordinator(hass, heat_coordinator, config, "test_entry")
+    hass.states.async_set("sensor.price", "0.30", {"forecast_prices": [0.30] * 8})
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+
+@pytest.mark.asyncio
 async def test_heat_pump_power_kw_none_when_no_sensor_configured(
     hass: HomeAssistant,
 ):
