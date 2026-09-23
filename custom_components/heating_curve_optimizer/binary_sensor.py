@@ -80,6 +80,62 @@ class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity): 
         return attrs
 
 
+class GasBoilerPreferredBinarySensor(CoordinatorEntity, BinarySensorEntity):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
+    """Whether the gas boiler is currently the cheaper heat source.
+
+    `is_on` is already gated on whether heat is actually needed right now
+    (see gas_boiler_coordinator.py's `prefer_gas_boiler` computation) -
+    coasting on the thermal buffer costs nothing and always beats both
+    paid sources, so this is never True just because gas happens to be
+    cheaper in isolation. Advisory only, like every other entity in this
+    integration - a user's own automation decides whether/how to act on it.
+    """
+
+    _attr_icon = "mdi:gas-burner"
+    _attr_should_poll = False
+
+    def __init__(self, coordinator: Any, entry_id: str, device: DeviceInfo) -> None:
+        """Initialize the binary sensor."""
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._attr_unique_id = f"{entry_id}_gas_boiler_preferred"
+        self._attr_translation_key = "gas_boiler_preferred"
+        self._attr_has_entity_name = True
+        self._attr_device_info = device
+
+    @property
+    def is_on(self) -> bool:
+        """Return True when the gas boiler is currently the cheaper choice."""
+        if not self.coordinator.data:
+            return False
+        return bool(self.coordinator.data.get("prefer_gas_boiler", False))
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return (
+            self.coordinator.last_update_success
+            and self.coordinator.data is not None
+            and bool(self.coordinator.data.get("available", False))
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the full comparison, including why the recommendation is
+        off (no heat needed vs. heat pump is cheaper) when it is."""
+        if not self.coordinator.data:
+            return {}
+        data = self.coordinator.data
+        return {
+            "heat_currently_needed": data.get("heat_currently_needed"),
+            "heat_currently_needed_source": data.get("heat_currently_needed_source"),
+            "heat_pump_cost_eur_per_kwh": data.get("heat_pump_cost_eur_per_kwh"),
+            "gas_cost_eur_per_kwh": data.get("gas_cost_eur_per_kwh"),
+            "savings_eur_per_kwh": data.get("savings_eur_per_kwh"),
+            "savings_pct": data.get("savings_pct"),
+        }
+
+
 class HeatDemandBinarySensor(BinarySensorEntity):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Binary sensor that indicates whether the heat pump has demand."""
 
@@ -190,6 +246,23 @@ async def async_setup_entry(
                 ],
                 True,
                 config_subentry_id=subentry_id,
+            )
+
+        # Hybrid gas-boiler comparison (optional, singleton subentry - see
+        # __init__.py's gas boiler setup). Absent for every installation
+        # that hasn't configured it.
+        gas_boiler_coordinator = runtime_data.gas_boiler_coordinator
+        gas_boiler_device = runtime_data.gas_boiler_device
+        gas_boiler_subentry_id = runtime_data.gas_boiler_subentry_id
+        if gas_boiler_coordinator is not None and gas_boiler_device is not None:
+            async_add_entities(
+                [
+                    GasBoilerPreferredBinarySensor(
+                        gas_boiler_coordinator, entry.entry_id, gas_boiler_device
+                    )
+                ],
+                True,
+                config_subentry_id=gas_boiler_subentry_id,
             )
     else:
         # Fallback to legacy
