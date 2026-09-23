@@ -21,7 +21,10 @@
       "thermal_v2_offset": { "default": "mdi:chart-timeline-variant" },
       "thermal_v2_cost_comparison": { "default": "mdi:scale-balance" },
       "thermal_calibration": { "default": "mdi:tune" },
-      "realtime_offset_adjustment": { "default": "mdi:solar-power-variant" }
+      "realtime_offset_adjustment": { "default": "mdi:solar-power-variant" },
+      "gas_boiler_heat_pump_cost": { "default": "mdi:heat-pump" },
+      "gas_boiler_gas_cost": { "default": "mdi:fire" },
+      "gas_boiler_cost_savings": { "default": "mdi:piggy-bank-outline" }
     },
     "number": {
       "target_indoor_temperature": { "default": "mdi:home-thermometer" },
@@ -29,7 +32,14 @@
       "indoor_temp_hysteresis_upper": { "default": "mdi:thermometer-chevron-up" }
     },
     "binary_sensor": {
-      "heat_pump_demand": { "default": "mdi:radiator" }
+      "heat_pump_demand": { "default": "mdi:radiator" },
+      "gas_boiler_preferred": {
+        "default": "mdi:gas-burner",
+        "state": {
+          "on": "mdi:gas-burner",
+          "off": "mdi:heat-pump"
+        }
+      }
     },
     "select": {
       "control_mode": {

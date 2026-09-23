@@ -99,6 +99,9 @@
     "binary_sensor": {
       "heat_pump_demand": {
         "name": "Heat pump demand"
+      },
+      "gas_boiler_preferred": {
+        "name": "Gas boiler preferred"
       }
     },
     "number": {
@@ -210,6 +213,15 @@
       },
       "net_heat_loss_energy_daily": {
         "name": "Net heat loss energy daily"
+      },
+      "gas_boiler_heat_pump_cost": {
+        "name": "Heat pump cost"
+      },
+      "gas_boiler_gas_cost": {
+        "name": "Gas cost"
+      },
+      "gas_boiler_cost_savings": {
+        "name": "Gas boiler cost savings"
       }
     },
     "select": {
@@ -294,6 +306,51 @@
       "abort": {
         "reconfigure_successful": "Heating zone updated successfully."
       }
+    },
+    "gas_boiler": {
+      "entry_type": "Hybrid Gas Boiler",
+      "flow_title": "Hybrid gas boiler",
+      "initiate_flow": {
+        "user": "Add hybrid gas boiler"
+      },
+      "step": {
+        "user": {
+          "title": "Add hybrid gas boiler",
+          "description": "Compare the heat pump's cost per kWh against a gas boiler's, so you can see when it would be cheaper to heat with gas instead. Only one gas boiler can be configured.",
+          "data": {
+            "gas_price_sensor": "Gas price sensor (€/m³)",
+            "gas_boiler_efficiency": "Boiler efficiency (fraction, e.g. 0.90 = 90%)",
+            "gas_calorific_value_kwh_per_m3": "Gas calorific value (kWh/m³)"
+          },
+          "data_description": {
+            "gas_boiler_efficiency": "Typical Dutch HR-combi boiler: 0.90 at normal return temperatures, up to ~1.07 for a well-tuned condensing unit at low return temperature.",
+            "gas_calorific_value_kwh_per_m3": "Dutch G-gas bovenwaarde (HHV) is typically 9.77 kWh/m³ - not the lower heating value (~8.8 kWh/m³) some appliance datasheets quote instead."
+          }
+        },
+        "reconfigure": {
+          "title": "Edit hybrid gas boiler",
+          "description": "Update the gas boiler comparison settings.",
+          "data": {
+            "gas_price_sensor": "Gas price sensor (€/m³)",
+            "gas_boiler_efficiency": "Boiler efficiency (fraction, e.g. 0.90 = 90%)",
+            "gas_calorific_value_kwh_per_m3": "Gas calorific value (kWh/m³)"
+          },
+          "data_description": {
+            "gas_boiler_efficiency": "Typical Dutch HR-combi boiler: 0.90 at normal return temperatures, up to ~1.07 for a well-tuned condensing unit at low return temperature.",
+            "gas_calorific_value_kwh_per_m3": "Dutch G-gas bovenwaarde (HHV) is typically 9.77 kWh/m³ - not the lower heating value (~8.8 kWh/m³) some appliance datasheets quote instead."
+          }
+        }
+      },
+      "error": {
+        "invalid_gas_boiler_input": "Invalid gas boiler configuration.",
+        "gas_price_sensor_required": "A gas price sensor is required.",
+        "efficiency_out_of_range": "Boiler efficiency must be between 0.5 and 1.2.",
+        "calorific_value_must_be_positive": "Calorific value must be greater than 0."
+      },
+      "abort": {
+        "single_instance_allowed": "Only one hybrid gas boiler can be configured.",
+        "reconfigure_successful": "Hybrid gas boiler updated successfully."
+      }
     }
   },
   "exceptions": {
@@ -326,6 +383,18 @@
     },
     "price_data_extraction_failed": {
       "message": "Cannot extract price data from sensor {sensor}."
+    },
+    "no_gas_price_sensor": {
+      "message": "No gas price sensor is configured."
+    },
+    "gas_price_sensor_unavailable": {
+      "message": "Gas price sensor {sensor} is unavailable."
+    },
+    "gas_boiler_operating_point_unavailable": {
+      "message": "No operating point (outdoor/supply temperature) available yet for the gas boiler comparison."
+    },
+    "gas_boiler_electricity_price_unavailable": {
+      "message": "Electricity price sensor {sensor} is unavailable (see the main price_sensor_unavailable repair issue)."
     }
   },
   "issues": {
@@ -336,6 +405,10 @@
     "price_sensor_unavailable": {
       "title": "Electricity price sensor unavailable",
       "description": "The configured price sensor **{sensor}** is unavailable or unknown. The heating curve optimizer cannot run without price data. Check that the sensor exists and is working."
+    },
+    "gas_price_sensor_unavailable": {
+      "title": "Gas price sensor unavailable",
+      "description": "The configured gas price sensor **{sensor}** is unavailable or unknown. The hybrid gas-boiler cost comparison cannot run without gas price data. Check that the sensor exists and is working."
     }
   }
 }

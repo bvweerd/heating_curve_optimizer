@@ -99,6 +99,9 @@
     "binary_sensor": {
       "heat_pump_demand": {
         "name": "Warmtevraag warmtepomp"
+      },
+      "gas_boiler_preferred": {
+        "name": "Gas-cv voordeliger"
       }
     },
     "number": {
@@ -210,6 +213,15 @@
       },
       "net_heat_loss_energy_daily": {
         "name": "Netto warmteverlies energie per dag"
+      },
+      "gas_boiler_heat_pump_cost": {
+        "name": "Kosten warmtepomp"
+      },
+      "gas_boiler_gas_cost": {
+        "name": "Kosten gas-cv"
+      },
+      "gas_boiler_cost_savings": {
+        "name": "Besparing gas-cv"
       }
     },
     "select": {
@@ -294,6 +306,51 @@
       "abort": {
         "reconfigure_successful": "Verwarmingszone bijgewerkt."
       }
+    },
+    "gas_boiler": {
+      "entry_type": "Hybride gas-cv",
+      "flow_title": "Hybride gas-cv",
+      "initiate_flow": {
+        "user": "Hybride gas-cv toevoegen"
+      },
+      "step": {
+        "user": {
+          "title": "Hybride gas-cv toevoegen",
+          "description": "Vergelijk de kosten per kWh van de warmtepomp met die van een gas-cv, zodat je kunt zien wanneer stoken op gas goedkoper is. Er kan maar een gas-cv worden geconfigureerd.",
+          "data": {
+            "gas_price_sensor": "Gasprijssensor (€/m³)",
+            "gas_boiler_efficiency": "Cv-rendement (breuk, bv. 0.90 = 90%)",
+            "gas_calorific_value_kwh_per_m3": "Calorische waarde gas (kWh/m³)"
+          },
+          "data_description": {
+            "gas_boiler_efficiency": "Gangbare Nederlandse HR-combiketel: 0.90 bij normale retourtemperaturen, tot ~1.07 voor een goed afgestelde condenserende ketel bij lage retourtemperatuur.",
+            "gas_calorific_value_kwh_per_m3": "De Nederlandse G-gas bovenwaarde (bovenste verbrandingswaarde) is doorgaans 9.77 kWh/m³ - niet de onderwaarde (~8.8 kWh/m³) die sommige productbladen van cv-ketels gebruiken."
+          }
+        },
+        "reconfigure": {
+          "title": "Hybride gas-cv bewerken",
+          "description": "Werk de instellingen van de gas-cv vergelijking bij.",
+          "data": {
+            "gas_price_sensor": "Gasprijssensor (€/m³)",
+            "gas_boiler_efficiency": "Cv-rendement (breuk, bv. 0.90 = 90%)",
+            "gas_calorific_value_kwh_per_m3": "Calorische waarde gas (kWh/m³)"
+          },
+          "data_description": {
+            "gas_boiler_efficiency": "Gangbare Nederlandse HR-combiketel: 0.90 bij normale retourtemperaturen, tot ~1.07 voor een goed afgestelde condenserende ketel bij lage retourtemperatuur.",
+            "gas_calorific_value_kwh_per_m3": "De Nederlandse G-gas bovenwaarde (bovenste verbrandingswaarde) is doorgaans 9.77 kWh/m³ - niet de onderwaarde (~8.8 kWh/m³) die sommige productbladen van cv-ketels gebruiken."
+          }
+        }
+      },
+      "error": {
+        "invalid_gas_boiler_input": "Ongeldige gas-cv configuratie.",
+        "gas_price_sensor_required": "Een gasprijssensor is verplicht.",
+        "efficiency_out_of_range": "Het rendement moet tussen 0.5 en 1.2 liggen.",
+        "calorific_value_must_be_positive": "De calorische waarde moet groter zijn dan 0."
+      },
+      "abort": {
+        "single_instance_allowed": "Er kan maar een hybride gas-cv worden geconfigureerd.",
+        "reconfigure_successful": "Hybride gas-cv bijgewerkt."
+      }
     }
   },
   "exceptions": {
@@ -326,6 +383,18 @@
     },
     "price_data_extraction_failed": {
       "message": "Kan geen prijsgegevens ophalen uit sensor {sensor}."
+    },
+    "no_gas_price_sensor": {
+      "message": "Er is geen gasprijssensor geconfigureerd."
+    },
+    "gas_price_sensor_unavailable": {
+      "message": "Gasprijssensor {sensor} is niet beschikbaar."
+    },
+    "gas_boiler_operating_point_unavailable": {
+      "message": "Nog geen werkpunt (buiten-/aanvoertemperatuur) beschikbaar voor de gas-cv vergelijking."
+    },
+    "gas_boiler_electricity_price_unavailable": {
+      "message": "Elektriciteitsprijssensor {sensor} is niet beschikbaar (zie de hoofd price_sensor_unavailable melding)."
     }
   },
   "issues": {
@@ -336,6 +405,10 @@
     "price_sensor_unavailable": {
       "title": "Elektriciteitsprijs-sensor niet beschikbaar",
       "description": "De geconfigureerde prijssensor **{sensor}** is niet beschikbaar of onbekend. De stooklijnoptimalisatie kan niet draaien zonder prijsgegevens. Controleer of de sensor bestaat en werkt."
+    },
+    "gas_price_sensor_unavailable": {
+      "title": "Gasprijssensor niet beschikbaar",
+      "description": "De geconfigureerde gasprijssensor **{sensor}** is niet beschikbaar of onbekend. De hybride gas-cv kostenvergelijking kan niet draaien zonder gasprijsgegevens. Controleer of de sensor bestaat en werkt."
     }
   }
 }
