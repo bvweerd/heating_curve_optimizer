@@ -23,6 +23,11 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import selector
 import voluptuous as vol
 
+from .companion_integrations import (
+    DetectedSensor,
+    detect_gas_price_sensor,
+    detect_main_flow_sensors,
+)
 from .const import (
     CONF_AREA_M2,
     CONF_CONFIGS,
@@ -90,6 +95,12 @@ from .const import (
     THERMAL_MASS_WH_PER_M2_K,
     EMITTER_EXPONENT_MAP,
     ZONE_SUBENTRY_TYPE,
+    GAS_SUBENTRY_TYPE,
+    CONF_GAS_PRICE_SENSOR,
+    CONF_GAS_BOILER_EFFICIENCY,
+    CONF_GAS_CALORIFIC_VALUE,
+    DEFAULT_GAS_BOILER_EFFICIENCY,
+    DEFAULT_GAS_CALORIFIC_VALUE_KWH_PER_M3,
 )
 
 STEP_SELECT_SOURCES = "select_sources"
@@ -261,6 +272,135 @@ else:
     HeatingZoneSubentryFlow = None  # type: ignore[assignment,misc]
 
 
+def _build_gas_boiler_subentry_schema(
+    defaults: dict[str, Any] | None = None,
+) -> vol.Schema:
+    """Build the schema for the (singleton) hybrid gas-boiler subentry.
+
+    A plain entity selector, not a dropdown filtered by device_class, for
+    the gas price sensor: Dutch dynamic-gas-price sensors don't reliably
+    carry device_class="monetary" the way electricity price sensors often
+    do.
+    """
+    defaults = defaults or {}
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_GAS_PRICE_SENSOR, default=defaults.get(CONF_GAS_PRICE_SENSOR)
+            ): selector({"entity": {"domain": "sensor"}}),
+            vol.Optional(
+                CONF_GAS_BOILER_EFFICIENCY,
+                default=defaults.get(
+                    CONF_GAS_BOILER_EFFICIENCY, DEFAULT_GAS_BOILER_EFFICIENCY
+                ),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_GAS_CALORIFIC_VALUE,
+                default=defaults.get(
+                    CONF_GAS_CALORIFIC_VALUE,
+                    DEFAULT_GAS_CALORIFIC_VALUE_KWH_PER_M3,
+                ),
+            ): vol.Coerce(float),
+        }
+    )
+
+
+def _validate_gas_boiler_subentry(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Validate and normalize the gas-boiler subentry's input."""
+    gas_price_sensor = user_input.get(CONF_GAS_PRICE_SENSOR)
+    if not gas_price_sensor:
+        raise vol.Invalid("gas_price_sensor_required")
+    efficiency = float(
+        user_input.get(CONF_GAS_BOILER_EFFICIENCY, DEFAULT_GAS_BOILER_EFFICIENCY)
+    )
+    if not (0.5 <= efficiency <= 1.2):
+        raise vol.Invalid("efficiency_out_of_range")
+    calorific_value = float(
+        user_input.get(CONF_GAS_CALORIFIC_VALUE, DEFAULT_GAS_CALORIFIC_VALUE_KWH_PER_M3)
+    )
+    if calorific_value <= 0:
+        raise vol.Invalid("calorific_value_must_be_positive")
+    return {
+        CONF_GAS_PRICE_SENSOR: gas_price_sensor,
+        CONF_GAS_BOILER_EFFICIENCY: efficiency,
+        CONF_GAS_CALORIFIC_VALUE: calorific_value,
+    }
+
+
+if _ConfigSubentryFlow is not None:
+
+    class HeatingGasBoilerSubentryFlow(_ConfigSubentryFlow):  # type: ignore[misc, valid-type]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
+        """Flow for adding or editing the (singleton) hybrid gas-boiler subentry.
+
+        Unlike HeatingZoneSubentryFlow (zero-to-many), a hybrid system has
+        exactly one physical gas boiler - async_step_user aborts before
+        showing the form if one is already configured, the same
+        application-level singleton pattern HA's own single-instance
+        integrations use for the main entry itself
+        (_abort_if_unique_id_configured), just applied at the subentry
+        level since ConfigSubentryFlow has no built-in cap.
+        """
+
+        async def async_step_user(
+            self, user_input: dict[str, Any] | None = None
+        ) -> SubentryFlowResult:
+            """Handle adding the gas boiler subentry."""
+            entry = self._get_entry()
+            existing = getattr(entry, "subentries", {})
+            if any(sub.subentry_type == GAS_SUBENTRY_TYPE for sub in existing.values()):
+                return self.async_abort(reason="single_instance_allowed")
+
+            errors: dict[str, str] = {}
+            if user_input is not None:
+                try:
+                    data = _validate_gas_boiler_subentry(user_input)
+                except vol.Invalid as err:
+                    errors["base"] = (
+                        str(err.error_message) or "invalid_gas_boiler_input"
+                    )
+                else:
+                    return self.async_create_entry(title="Gas Boiler", data=data)
+
+            defaults: dict[str, Any] = {}
+            detected_gas_price = detect_gas_price_sensor(self.hass)
+            if detected_gas_price is not None:
+                defaults[CONF_GAS_PRICE_SENSOR] = detected_gas_price.entity_id
+            return self.async_show_form(
+                step_id="user",
+                data_schema=_build_gas_boiler_subentry_schema(defaults),
+                errors=errors,
+            )
+
+        async def async_step_reconfigure(
+            self, user_input: dict[str, Any] | None = None
+        ) -> SubentryFlowResult:
+            """Handle editing the gas boiler subentry."""
+            errors: dict[str, str] = {}
+            entry = self._get_entry()
+            subentry = self._get_reconfigure_subentry()
+            current_data = dict(subentry.data)
+
+            if user_input is not None:
+                try:
+                    data = _validate_gas_boiler_subentry(user_input)
+                except vol.Invalid as err:
+                    errors["base"] = (
+                        str(err.error_message) or "invalid_gas_boiler_input"
+                    )
+                else:
+                    return self.async_update_and_abort(
+                        entry, subentry, title="Gas Boiler", data=data
+                    )
+            return self.async_show_form(
+                step_id="reconfigure",
+                data_schema=_build_gas_boiler_subentry_schema(current_data),
+                errors=errors,
+            )
+
+else:
+    HeatingGasBoilerSubentryFlow = None  # type: ignore[assignment,misc]
+
+
 class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg, misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Handle a config flow for Heating Curve Optimizer."""
 
@@ -271,14 +411,21 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_supported_subentry_types(
         cls, config_entry: config_entries.ConfigEntry
     ) -> dict[str, type]:
-        """Return supported subentry types (phase 5c, REDESIGN.md).
+        """Return supported subentry types (phase 5c, REDESIGN.md; hybrid
+        gas-boiler comparison).
 
         Empty on an HA release too old to have ConfigSubentryFlow at all -
-        see HeatingZoneSubentryFlow's definition above.
+        see HeatingZoneSubentryFlow's/HeatingGasBoilerSubentryFlow's
+        definitions above. Each type is independently None-guarded (both
+        share the same HA-version gate today, but this stays correct if
+        that ever changes).
         """
-        if HeatingZoneSubentryFlow is None:
-            return {}
-        return {ZONE_SUBENTRY_TYPE: HeatingZoneSubentryFlow}
+        types: dict[str, type] = {}
+        if HeatingZoneSubentryFlow is not None:
+            types[ZONE_SUBENTRY_TYPE] = HeatingZoneSubentryFlow
+        if HeatingGasBoilerSubentryFlow is not None:
+            types[GAS_SUBENTRY_TYPE] = HeatingGasBoilerSubentryFlow
+        return types
 
     def __init__(self) -> None:
         super().__init__()
@@ -324,12 +471,20 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.heating_curve_offset: float = DEFAULT_HEATING_CURVE_OFFSET
         self.heat_curve_min: float = DEFAULT_HEAT_CURVE_MIN
         self.heat_curve_max: float = DEFAULT_HEAT_CURVE_MAX
+        self._detection_offered: bool = False
+        self._detected_sensors: dict[str, DetectedSensor] = {}
 
     async def async_step_user(
         self, user_input: dict[str, str] | None = None
     ) -> ConfigFlowResult:
         await self.async_set_unique_id(DOMAIN)
         self._abort_if_unique_id_configured()
+        if user_input is None and not self._detection_offered:
+            self._detection_offered = True
+            detected = detect_main_flow_sensors(self.hass)
+            if detected:
+                self._detected_sensors = detected
+                return await self.async_step_detected_integrations()
         if user_input is not None:
             choice = user_input[CONF_SOURCE_TYPE]
             if choice == STEP_BASIC:
@@ -378,6 +533,36 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self.async_step_select_sources()
 
         return self.async_show_form(step_id="user", data_schema=self._schema_user())
+
+    async def async_step_detected_integrations(
+        self, user_input: dict[str, bool] | None = None
+    ) -> ConfigFlowResult:
+        """Offer to prefill sensors already configured in Battery Controller
+        and/or Dynamic Energy Contract Calculator (see
+        companion_integrations.py). Only reached when at least one
+        candidate was found - shown once, then falls through to the normal
+        setup menu either way."""
+        if user_input is not None:
+            for field, use_detected in user_input.items():
+                if use_detected and field in self._detected_sensors:
+                    setattr(self, field, self._detected_sensors[field].entity_id)
+            return await self.async_step_user()
+
+        schema = vol.Schema(
+            {
+                vol.Optional(field, default=True): bool
+                for field in self._detected_sensors
+            }
+        )
+        detected_list = "\n".join(
+            f"- {field}: `{detected.entity_id}` ({detected.source})"
+            for field, detected in self._detected_sensors.items()
+        )
+        return self.async_show_form(
+            step_id="detected_integrations",
+            data_schema=schema,
+            description_placeholders={"detected_list": detected_list},
+        )
 
     def _build_entry_data(
         self, consumption_price_sensor: str | None, production_price_sensor: str | None
@@ -456,12 +641,27 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     def _get_power_sensors(self) -> list[str]:
-        """Get sorted list of power sensors."""
-        return sorted(
+        """Get sorted list of power sensors.
+
+        Also unions in whatever power_consumption/grid_import_sensor/
+        grid_export_sensor is currently selected, even if it doesn't carry
+        a matching device_class - otherwise a sensor prefilled from a
+        companion integration (companion_integrations.py) could silently
+        vanish from its own dropdown instead of showing as selected.
+        """
+        discovered = {
             state.entity_id
             for state in self.hass.states.async_all("sensor")
             if state.attributes.get("device_class") in ("power", "energy")
-        )
+        }
+        for current in (
+            self.power_consumption,
+            self.grid_import_sensor,
+            self.grid_export_sensor,
+        ):
+            if current:
+                discovered.add(current)
+        return sorted(discovered)
 
     def _get_temperature_sensors(self) -> list[str]:
         """Get sorted list of temperature sensors."""
@@ -473,13 +673,23 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     def _get_price_sensors(self) -> list[str]:
-        """Get list of price sensors."""
-        return [
+        """Get list of price sensors.
+
+        Also unions in whatever consumption_price_sensor/
+        production_price_sensor is currently selected, for the same reason
+        _get_power_sensors does - a companion-integration-detected sensor
+        must never vanish from its own dropdown.
+        """
+        discovered = {
             state.entity_id
             for state in self.hass.states.async_all("sensor")
             if state.attributes.get("device_class") == "monetary"
             or state.attributes.get("unit_of_measurement") == "€/kWh"
-        ]
+        }
+        for current in (self.consumption_price_sensor, self.production_price_sensor):
+            if current:
+                discovered.add(current)
+        return sorted(discovered)
 
     async def async_step_basic_options(
         self, user_input: dict[str, Any] | None = None

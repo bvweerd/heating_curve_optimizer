@@ -99,6 +99,72 @@ available heat output at each candidate supply temperature, it does not
 change the sized nominal power itself (still derived automatically from
 your building's peak loss at the heating curve's design point).
 
+## Hybrid Gas Boiler Comparison (optional subentry)
+
+Compares the heat pump's cost per kWh of heat delivered (electricity price
+divided by COP - the same COP model the optimizer itself uses) against a
+configured gas boiler's cost per kWh, and publishes an advisory
+recommendation for when gas would be cheaper right now. Like every other
+entity in this integration, it never actuates real hardware directly - it
+only informs; a user's own automation decides whether/how to act on the
+recommendation.
+
+Configured as a genuine **singleton subentry** (Settings → Devices &
+Services → Heating Curve Optimizer → Add sub-entry → Hybrid gas boiler) -
+only one can exist per config entry, since a hybrid installation has exactly
+one physical gas boiler.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `gas_price_sensor` | entity_id | *(required)* | Gas price sensor, in €/m³. Required to enable the comparison at all. |
+| `gas_boiler_efficiency` | float | `0.90` | Boiler efficiency as a plain fraction (0.90 = 90%), not a percentage. Typical Dutch HR-combi boiler at normal return temperatures; a well-tuned condensing unit at a low return temperature can reach ~1.07 (107%, HHV-based). |
+| `gas_calorific_value_kwh_per_m3` | float | `9.77` | Dutch G-gas bovenwaarde (higher heating value/HHV), ~35.17 MJ/m³. **Not** the lower heating value (~8.8 kWh/m³) some appliance datasheets quote instead - using the wrong one under- or overstates gas cost by roughly 10%. |
+
+**Cost formula**: `gas_cost_eur_per_kwh = (gas_price_eur_per_m3 / gas_calorific_value_kwh_per_m3) / gas_boiler_efficiency`
+
+### Why the recommendation is gated on "is heat actually needed"
+
+Comparing gas cost against heat-pump cost in isolation would be wrong: the
+building can often coast on its thermal buffer (stored solar gain, or a
+pre-heated indoor temperature) without any heat input at all, and that
+always costs €0 - cheaper than either paid source. `prefer_gas_boiler` is
+therefore only ever `True` when heat is genuinely needed *and* gas is
+cheaper.
+
+Whether heat is needed right now is read in this priority order:
+
+1. **Real signal (preferred)**: whether the heat pump's own electricity
+   meter (`power_consumption`, from the main configuration) is confirmed
+   drawing more than an idle-power threshold (0.1 kW) right now - ground
+   truth, not a prediction, and the single most actionable moment to
+   recommend switching (the heat pump is *currently* consuming the
+   potentially-overpriced electricity).
+2. **Modeled fallback**: only used when no power sensor is configured (or
+   it's unavailable) - the same source-agnostic heat-demand signal the
+   `heat_pump_demand` binary sensor already uses (based on indoor
+   temperature vs. target and hysteresis).
+
+The binary sensor's `heat_currently_needed`/`heat_currently_needed_source`
+attributes show which of the two was used, and whether the current `off`
+state means "no heat needed at all" or "heat pump is still cheaper".
+
+### Known limitations
+
+- **Instantaneous comparison only** - no gas-price forecast (Dutch gas
+  contracts, even "dynamic" ones, reprice far less often than electricity,
+  so this isn't a meaningful gap in practice) and no hysteresis/duration
+  smoothing built in; add a `for:` trigger in your own automation if you
+  want to avoid reacting to a brief price crossing.
+- **Whole-house scope, not per zone** - one gas boiler serves the whole
+  house; the comparison lives on the main config entry, not on a
+  per-zone subentry.
+- **The DP optimizers don't yet know about the gas boiler** - `optimized_offset`
+  and the cost-savings sensors are computed exactly as if the gas boiler
+  didn't exist. A future phase could layer a per-step cheaper-source
+  choice on top of the existing plan (gas cost doesn't depend on curve
+  offset, so this wouldn't need a new search dimension) - not implemented
+  yet.
+
 ### Offset Change Speed (offset_delta_t) Explained
 
 The `offset_delta_t` parameter controls how quickly the heating curve offset can change:

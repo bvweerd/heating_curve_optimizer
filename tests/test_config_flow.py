@@ -14,6 +14,9 @@ from custom_components.heating_curve_optimizer.const import (
     CONF_THERMAL_MASS_CLASS,
     CONF_EMITTER_TYPE,
 )
+from custom_components.heating_curve_optimizer.companion_integrations import (
+    BATTERY_CONTROLLER_DOMAIN,
+)
 from custom_components.heating_curve_optimizer.config_flow import (
     STEP_BASIC,
     STEP_HEATING_CURVE_SETTINGS,
@@ -60,6 +63,72 @@ async def test_abort_if_configured(hass: HomeAssistant):
         )
     assert result["type"] == "abort"
     assert result["reason"] == "already_configured"
+
+
+@pytest.mark.asyncio
+async def test_shows_detected_integrations_step_when_battery_controller_configured(
+    hass: HomeAssistant,
+):
+    """companion_integrations.py: a battery_controller entry with a raw
+    price sensor is enough to trigger the (opt-in) prefill step, instead of
+    going straight to the normal menu."""
+    bc_entry = MockConfigEntry(
+        domain=BATTERY_CONTROLLER_DOMAIN,
+        data={"price_sensor": "sensor.raw_price"},
+    )
+    bc_entry.add_to_hass(hass)
+    with patch(
+        "homeassistant.config_entries._load_integration", return_value=None
+    ), patch(
+        "homeassistant.loader.async_get_integration",
+        AsyncMock(
+            return_value=SimpleNamespace(domain=DOMAIN, single_config_entry=False)
+        ),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+    assert result["type"] == "form"
+    assert result["step_id"] == "detected_integrations"
+    assert CONF_CONSUMPTION_PRICE_SENSOR in result["data_schema"].schema
+
+
+@pytest.mark.asyncio
+async def test_detected_integrations_step_prefills_selected_field(
+    hass: HomeAssistant,
+):
+    bc_entry = MockConfigEntry(
+        domain=BATTERY_CONTROLLER_DOMAIN,
+        data={"price_sensor": "sensor.raw_price"},
+    )
+    bc_entry.add_to_hass(hass)
+    with patch(
+        "homeassistant.config_entries._load_integration", return_value=None
+    ), patch(
+        "homeassistant.loader.async_get_integration",
+        AsyncMock(
+            return_value=SimpleNamespace(domain=DOMAIN, single_config_entry=False)
+        ),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_CONSUMPTION_PRICE_SENSOR: True}
+        )
+        # Falls through to the normal menu after the prefill step.
+        assert result2["type"] == "form"
+        assert result2["step_id"] == "user"
+
+        result3 = await hass.config_entries.flow.async_configure(
+            result2["flow_id"], {CONF_SOURCE_TYPE: STEP_PRICE_SETTINGS}
+        )
+    assert result3["step_id"] == STEP_PRICE_SETTINGS
+    price_schema = result3["data_schema"].schema
+    default_fn = next(
+        key.default for key in price_schema if key == CONF_CONSUMPTION_PRICE_SENSOR
+    )
+    assert default_fn() == "sensor.raw_price"
 
 
 @pytest.mark.asyncio

@@ -97,6 +97,14 @@ from .thermal_optimizer import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Below this, the heat pump's electricity meter reading is treated as
+# "confirmed idle" rather than "actively running" (standby/parasitic draw
+# noise floor, not a real heating cycle). Used by
+# OptimizationCoordinator._async_update_data's heat_pump_actively_running
+# field - the hybrid gas-boiler feature's primary "is heat needed right now"
+# signal when a power sensor is configured.
+IDLE_POWER_THRESHOLD_KW = 0.1
+
 # Plain-English fallback for each UpdateFailed translation_key, mirroring
 # strings.json's "exceptions" messages - used only on an HA release old
 # enough that UpdateFailed still extends plain Exception rather than
@@ -117,6 +125,16 @@ _UPDATE_FAILED_MESSAGES: dict[str, str] = {
     "no_price_sensor": "No electricity price sensor is configured.",
     "price_sensor_unavailable": "Price sensor {sensor} is unavailable.",
     "price_data_extraction_failed": "Cannot extract price data from sensor {sensor}.",
+    "no_gas_price_sensor": "No gas price sensor is configured.",
+    "gas_price_sensor_unavailable": "Gas price sensor {sensor} is unavailable.",
+    "gas_boiler_operating_point_unavailable": (
+        "No operating point (outdoor/supply temperature) available yet for "
+        "the gas boiler comparison."
+    ),
+    "gas_boiler_electricity_price_unavailable": (
+        "Electricity price sensor {sensor} is unavailable "
+        "(see the main price_sensor_unavailable repair issue)."
+    ),
 }
 
 
@@ -164,12 +182,22 @@ def _calculate_cop(
     outdoor_temp_coefficient: float,
     cop_compensation: float,
 ) -> float:
-    """Calculate COP from supply and outdoor temperatures."""
+    """Calculate COP from supply and outdoor temperatures.
+
+    Clamped above by the Carnot COP for the actual lift (see
+    heatpump_model.HeatPumpConfig.cop_at for the full rationale) so the
+    displayed baseline/optimized COP and cost-savings figures can't run
+    ahead of what a real heat pump could deliver at a small lift.
+    """
     cop = (
         base_cop
         + outdoor_temp_coefficient * outdoor_temp
         - k_factor * (supply_temp - 35)
     ) * cop_compensation
+    lift_k = supply_temp - outdoor_temp
+    if lift_k > 0.1:
+        carnot_cop = (supply_temp + 273.15) / lift_k
+        cop = min(cop, carnot_cop)
     return max(0.5, cop)
 
 
@@ -577,8 +605,14 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  
         system_efficiency = 0.85
 
         # Tilt factor (how much radiation is affected by panel angle)
-        # Optimal tilt for Netherlands is ~35°
-        tilt_factor = 1.0 if pv_tilt == 35 else max(0.7, 1.0 - abs(pv_tilt - 35) * 0.01)
+        # Optimal tilt for Netherlands is ~35° (DEFAULT_PV_TILT) - compared
+        # against that shared constant rather than a second hardcoded 35 so
+        # the two can't silently drift apart.
+        tilt_factor = (
+            1.0
+            if pv_tilt == DEFAULT_PV_TILT
+            else max(0.7, 1.0 - abs(pv_tilt - DEFAULT_PV_TILT) * 0.01)
+        )
 
         # Orientation factors for PV panels
         orientation_factors = {
@@ -1174,6 +1208,19 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
             # carried forward and silently compounding.
             self._realtime_controller.reset()
 
+        # Real (not modeled) confirmation of whether the heat pump is
+        # currently drawing power - the hybrid gas-boiler feature (if
+        # configured) uses this as its primary signal for "is heat actually
+        # needed right now", preferring it over the demand-factor estimate
+        # since it reflects what the appliance is actually doing. None means
+        # "no power sensor configured/available", distinct from a confirmed
+        # idle reading.
+        power_kw = self._read_power_consumption_kw()
+        result["heat_pump_power_kw"] = power_kw
+        result["heat_pump_actively_running"] = (
+            power_kw > IDLE_POWER_THRESHOLD_KW if power_kw is not None else None
+        )
+
         # async_add_executor_job's return type is Any in this environment
         # (HomeAssistant is untyped - no py.typed here); result is genuinely
         # the dict[str, Any] _run_optimization declares.
@@ -1212,7 +1259,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
             offsets, buffer_evolution = optimize_offsets(
                 demand=demand_limited,
                 prices=price_limited,
-                base_temp=base_cop,
+                base_cop=base_cop,
                 k_factor=k_factor,
                 cop_compensation_factor=cop_compensation,
                 buffer=current_buffer,  # Use actual buffer state
@@ -1273,11 +1320,14 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
                         )
                     )
                 else:
-                    # No temperature data, use min_supply as fallback
+                    # No temperature data, use min_supply as fallback. COP
+                    # falls back to the user's own configured base_cop
+                    # (not an unrelated hardcoded guess) for consistency
+                    # with every other COP figure this sensor reports.
                     baseline_supply_temps.append(round(min_supply, 1))
                     future_supply_temps.append(round(min_supply, 1))
-                    baseline_cop_list.append(3.0)
-                    optimized_cop_list.append(3.0)
+                    baseline_cop_list.append(base_cop)
+                    optimized_cop_list.append(base_cop)
 
             # Calculate real costs: electricity cost = (heat_demand / COP) * time * price
             baseline_cost = 0.0

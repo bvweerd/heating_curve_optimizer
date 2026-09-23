@@ -128,6 +128,8 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
         device: DeviceInfo,
         k_factor: float = DEFAULT_K_FACTOR,
         base_cop: float = DEFAULT_COP_AT_35,
+        outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
+        cop_compensation_factor: float = 1.0,
     ):
         super().__init__(
             name=name,
@@ -146,6 +148,8 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
         self.outdoor_sensor = outdoor_sensor
         self.k_factor = k_factor
         self.base_cop = base_cop
+        self.outdoor_temp_coefficient = outdoor_temp_coefficient
+        self.cop_compensation_factor = cop_compensation_factor
 
     async def async_update(self) -> None:
         p_state = self.hass.states.get(self.power_sensor)
@@ -220,7 +224,12 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
         except ValueError:
             self._set_unavailable(f"waarde van buitensensor {sensor_name} is ongeldig")
             return
-        cop = self.base_cop + 0.08 * o_temp - self.k_factor * (s_temp - 35)
+        cop = (
+            self.base_cop
+            + self.outdoor_temp_coefficient * o_temp
+            - self.k_factor * (s_temp - 35)
+        ) * self.cop_compensation_factor
+        cop = max(0.5, cop)
         thermal_power = power * cop / 1000.0
         _LOGGER.debug(
             "Thermal power calc power=%s cop=%s -> %s",

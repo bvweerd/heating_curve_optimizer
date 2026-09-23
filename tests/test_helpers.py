@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone
+
+import pytest
 from homeassistant.core import State
 
 from custom_components.heating_curve_optimizer.helpers import (
@@ -13,7 +15,6 @@ from custom_components.heating_curve_optimizer.helpers import (
     calculate_supply_temperature,
     calculate_defrost_factor,
 )
-
 
 # === Time Base Tests ===
 
@@ -379,3 +380,41 @@ def test_extract_price_forecast_skips_invalid_values():
 
     prices, interval = extract_price_forecast_with_interval(state)
     assert prices == [0.20, 0.30, 0.35]
+
+
+# === Defrost Factor Tests ===
+
+
+def test_defrost_factor_continuous_across_freezing_point():
+    """The 0-3°C branch and the below-freezing branch must agree at their
+    shared boundary (outdoor_temp=0) - a code review found them using
+    different base_penalty constants (0.25 vs 0.12), causing the COP
+    multiplier to jump ~17% right at the freezing point even though frost
+    formation is physically a continuous function of temperature."""
+    just_above = calculate_defrost_factor(0.01, humidity=80.0)
+    at_zero = calculate_defrost_factor(0.0, humidity=80.0)
+    just_below = calculate_defrost_factor(-0.01, humidity=80.0)
+
+    assert just_above == pytest.approx(at_zero, abs=0.01)
+    assert just_below == pytest.approx(at_zero, abs=0.01)
+
+
+def test_defrost_factor_no_frosting_above_6c():
+    assert calculate_defrost_factor(6.0, humidity=80.0) == 1.0
+    assert calculate_defrost_factor(10.0, humidity=80.0) == 1.0
+
+
+def test_defrost_factor_no_frosting_below_minus_10c():
+    assert calculate_defrost_factor(-10.0, humidity=80.0) == 1.0
+    assert calculate_defrost_factor(-15.0, humidity=80.0) == 1.0
+
+
+def test_defrost_factor_worst_near_zero():
+    """Penalty should be worse (lower multiplier) near 0-3°C than well
+    above freezing or well below -10°C's dry-air floor."""
+    worst = calculate_defrost_factor(1.0, humidity=80.0)
+    mild_above = calculate_defrost_factor(5.9, humidity=80.0)
+    mild_below = calculate_defrost_factor(-9.0, humidity=80.0)
+
+    assert worst < mild_above
+    assert worst < mild_below
