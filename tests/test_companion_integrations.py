@@ -68,11 +68,14 @@ async def test_battery_controller_only_uses_raw_price_sensors(hass: HomeAssistan
 
 
 @pytest.mark.asyncio
-async def test_battery_controller_falls_back_to_consumption_sensors_list(
+async def test_battery_controller_ignores_migrated_away_consumption_field(
     hass: HomeAssistant,
 ):
-    """power_consumption_sensors absent -> falls back to
-    electricity_consumption_sensors."""
+    """electricity_consumption_sensors is a pre-v6 field battery_controller
+    itself migrates away automatically (see its async_migrate_entry) - it
+    no longer exists on any real, current install, so it must not be read
+    as a fallback for power_consumption. Only power_consumption_sensors
+    (the current field) is a valid source."""
     entry = MockConfigEntry(
         domain=BATTERY_CONTROLLER_DOMAIN,
         data={"electricity_consumption_sensors": ["sensor.elec_consumption"]},
@@ -81,7 +84,7 @@ async def test_battery_controller_falls_back_to_consumption_sensors_list(
 
     detected = detect_main_flow_sensors(hass)
 
-    assert detected[FIELD_POWER_CONSUMPTION].entity_id == "sensor.elec_consumption"
+    assert FIELD_POWER_CONSUMPTION not in detected
 
 
 @pytest.mark.asyncio
@@ -212,7 +215,7 @@ async def test_decc_only_consumption_configured_falls_back_for_production(
     }
     bc_entry = MockConfigEntry(
         domain=BATTERY_CONTROLLER_DOMAIN,
-        data={"electricity_production_sensors": ["sensor.pv_production"]},
+        data={"pv_production_sensors": ["sensor.pv_production"]},
     )
     bc_entry.add_to_hass(hass)
 
@@ -233,8 +236,8 @@ async def test_battery_controller_only_detects_both_source_lists(
     bc_entry = MockConfigEntry(
         domain=BATTERY_CONTROLLER_DOMAIN,
         data={
-            "electricity_consumption_sensors": ["sensor.consumption"],
-            "electricity_production_sensors": ["sensor.production"],
+            "grid_import_sensors": ["sensor.consumption"],
+            "grid_export_sensors": ["sensor.production"],
         },
     )
     bc_entry.add_to_hass(hass)
@@ -244,6 +247,92 @@ async def test_battery_controller_only_detects_both_source_lists(
     assert detected[FIELD_SOURCES_CONSUMPTION].entity_ids == ["sensor.consumption"]
     assert detected[FIELD_SOURCES_PRODUCTION].entity_ids == ["sensor.production"]
     assert detected[FIELD_SOURCES_CONSUMPTION].source == "Battery Controller"
+
+
+@pytest.mark.asyncio
+async def test_battery_controller_consumption_unions_grid_import_and_gross_load(
+    hass: HomeAssistant,
+):
+    """Both fields represent metered consumption from a different vantage
+    point (see battery_controller's own v5->v6 migration comment) - both
+    are valid candidates, unioned rather than one taking exclusive
+    precedence."""
+    bc_entry = MockConfigEntry(
+        domain=BATTERY_CONTROLLER_DOMAIN,
+        data={
+            "grid_import_sensors": ["sensor.grid_import"],
+            "gross_load_sensors": ["sensor.gross_load"],
+        },
+    )
+    bc_entry.add_to_hass(hass)
+
+    detected = detect_source_sensors(hass)
+
+    assert detected[FIELD_SOURCES_CONSUMPTION].entity_ids == [
+        "sensor.grid_import",
+        "sensor.gross_load",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_battery_controller_production_includes_pv_array_subentries(
+    hass: HomeAssistant,
+):
+    """Each PV array is its own subentry in battery_controller (added via
+    the integration page after setup, like this integration's own zone/
+    gas-boiler subentries) - its measured-production sensor lives only
+    there, not in entry.data/entry.options, so it needs its own subentry
+    read to show up as a production candidate at all."""
+    bc_entry = MockConfigEntry(
+        domain=BATTERY_CONTROLLER_DOMAIN,
+        data={"grid_export_sensors": ["sensor.grid_export"]},
+    )
+    bc_entry.add_to_hass(hass)
+    bc_entry.subentries = {
+        "sub1": SimpleNamespace(
+            subentry_type="pv_array",
+            data={"pv_measured_production_sensor": "sensor.pv_east_production"},
+        ),
+        "sub2": SimpleNamespace(
+            subentry_type="pv_array",
+            data={"pv_measured_production_sensor": "sensor.pv_west_production"},
+        ),
+        "sub3": SimpleNamespace(
+            subentry_type="battery",
+            data={"capacity_kwh": 10.0},
+        ),
+    }
+
+    detected = detect_source_sensors(hass)
+
+    assert detected[FIELD_SOURCES_PRODUCTION].entity_ids == [
+        "sensor.grid_export",
+        "sensor.pv_east_production",
+        "sensor.pv_west_production",
+    ]
+    assert detected[FIELD_SOURCES_PRODUCTION].source == "Battery Controller"
+
+
+@pytest.mark.asyncio
+async def test_battery_controller_pv_subentries_alone_are_enough_for_production(
+    hass: HomeAssistant,
+):
+    """No flat production field at all - PV-array subentries alone must
+    still be picked up, not just as an addition to an existing list."""
+    bc_entry = MockConfigEntry(domain=BATTERY_CONTROLLER_DOMAIN, data={})
+    bc_entry.add_to_hass(hass)
+    bc_entry.subentries = {
+        "sub1": SimpleNamespace(
+            subentry_type="pv_array",
+            data={"pv_measured_production_sensor": "sensor.pv_south_production"},
+        ),
+    }
+
+    detected = detect_source_sensors(hass)
+
+    assert detected[FIELD_SOURCES_PRODUCTION].entity_ids == [
+        "sensor.pv_south_production"
+    ]
 
 
 @pytest.mark.asyncio

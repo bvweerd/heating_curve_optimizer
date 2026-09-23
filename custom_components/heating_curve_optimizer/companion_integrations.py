@@ -38,13 +38,33 @@ DECC_DOMAIN = "dynamic_energy_contract_calculator"
 # imported - it's a separate, optional integration, not a dependency of
 # this one). Consumption/grid keys are lists there; the first entry is
 # used as the single-sensor candidate this integration's own fields expect.
+#
+# electricity_consumption_sensors/electricity_production_sensors are
+# deliberately NOT read here: battery_controller's own config_flow.py
+# migrates entries off those two fields as of its schema version 6
+# (splitting them into grid_import_sensors/grid_export_sensors/
+# gross_load_sensors - see its async_migrate_entry), so on any
+# battery_controller install that has been through a single HA restart
+# since updating, those keys no longer exist in entry.data/entry.options
+# at all. Reading them here would silently detect nothing on every
+# real-world install.
 _BC_CONF_POWER_CONSUMPTION_SENSORS = "power_consumption_sensors"
-_BC_CONF_ELECTRICITY_CONSUMPTION_SENSORS = "electricity_consumption_sensors"
-_BC_CONF_ELECTRICITY_PRODUCTION_SENSORS = "electricity_production_sensors"
 _BC_CONF_GRID_IMPORT_SENSORS = "grid_import_sensors"
 _BC_CONF_GRID_EXPORT_SENSORS = "grid_export_sensors"
+_BC_CONF_GROSS_LOAD_SENSORS = "gross_load_sensors"
+_BC_CONF_PV_PRODUCTION_SENSORS = "pv_production_sensors"
+_BC_CONF_PV_MEASURED_PRODUCTION_SENSOR = "pv_measured_production_sensor"
 _BC_CONF_PRICE_SENSOR = "price_sensor"
 _BC_CONF_FEED_IN_PRICE_SENSOR = "feed_in_price_sensor"
+
+# battery_controller stores each PV array as its own subentry (added via
+# the integration page after initial setup, like this integration's own
+# zone/gas-boiler subentries) rather than as a field on the main entry -
+# its own measured-production sensor lives only there, never in
+# entry.data/entry.options, so it needs its own subentry read (see
+# _bc_pv_subentry_production_sensors below), the same way DECC's source
+# subentries already do below.
+_BC_PV_SUBENTRY_TYPE = "pv_array"
 
 _BATTERY_CONTROLLER_SOURCE = "Battery Controller"
 _DECC_SOURCE = "Dynamic Energy Contract Calculator"
@@ -137,9 +157,7 @@ def detect_main_flow_sensors(hass: HomeAssistant) -> dict[str, DetectedSensor]:
 
     bc_config = _first_configured_entry(hass, BATTERY_CONTROLLER_DOMAIN)
     if bc_config is not None:
-        power = _first_list_item(
-            bc_config.get(_BC_CONF_POWER_CONSUMPTION_SENSORS)
-        ) or _first_list_item(bc_config.get(_BC_CONF_ELECTRICITY_CONSUMPTION_SENSORS))
+        power = _first_list_item(bc_config.get(_BC_CONF_POWER_CONSUMPTION_SENSORS))
         if power:
             detected[FIELD_POWER_CONSUMPTION] = DetectedSensor(
                 power, _BATTERY_CONTROLLER_SOURCE
@@ -216,16 +234,57 @@ def _decc_source_entities(hass: HomeAssistant, source_type: str) -> list[str] | 
     return None
 
 
+def _dedupe(entity_ids: list[str]) -> list[str]:
+    """Order-preserving de-duplication - the same sensor can legitimately
+    turn up in two of battery_controller's own fields at once (e.g. a PV
+    array's measured-production sensor also summed into its main entry's
+    flat `pv_production_sensors` list)."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for entity_id in entity_ids:
+        if entity_id not in seen:
+            seen.add(entity_id)
+            result.append(entity_id)
+    return result
+
+
+def _bc_pv_subentry_production_sensors(hass: HomeAssistant) -> list[str]:
+    """Each battery_controller PV-array subentry's own
+    `pv_measured_production_sensor` - not reachable via
+    `_first_configured_entry` (which only merges `entry.data`/
+    `entry.options`), since subentries are a separate structure. Matched
+    by `subentry_type == "pv_array"`, the same discriminator
+    `BatteryControllerPVSubentryFlow` itself registers under."""
+    entries = hass.config_entries.async_entries(BATTERY_CONTROLLER_DOMAIN)
+    if not entries:
+        return []
+    sensors: list[str] = []
+    for subentry in getattr(entries[0], "subentries", {}).values():
+        if getattr(subentry, "subentry_type", None) != _BC_PV_SUBENTRY_TYPE:
+            continue
+        sensor = subentry.data.get(_BC_CONF_PV_MEASURED_PRODUCTION_SENSOR)
+        if sensor:
+            sensors.append(str(sensor))
+    return sensors
+
+
 def detect_source_sensors(hass: HomeAssistant) -> dict[str, DetectedSensorList]:
     """Candidate consumption/production energy-sensor lists for the main
     setup wizard's CONF_SOURCES fields.
 
     DECC's own source subentries are preferred when present: they're
     curated for the exact same "track consumption/production for cost"
-    purpose this integration's own sources are for. battery_controller's
-    flat `electricity_consumption_sensors`/`electricity_production_sensors`
-    lists are the fallback, checked independently per field - DECC might
-    only have one of the two source types configured.
+    purpose this integration's own sources are for. battery_controller is
+    the fallback, checked independently per field - DECC might only have
+    one of the two source types configured. Consumption candidates are the
+    union of its `grid_import_sensors` and `gross_load_sensors` lists (both
+    represent metered consumption, just from a different vantage point -
+    see its own migration comment for why there are two). Production
+    candidates are the union of its `grid_export_sensors` and
+    `pv_production_sensors` main-entry lists, plus every PV-array
+    subentry's own measured-production sensor - the same full "same flow
+    as battery_controller" picture its own config flow shows, not just its
+    main entry's flat fields.
     """
     detected: dict[str, DetectedSensorList] = {}
 
@@ -247,16 +306,28 @@ def detect_source_sensors(hass: HomeAssistant) -> dict[str, DetectedSensorList]:
     bc_config = _first_configured_entry(hass, BATTERY_CONTROLLER_DOMAIN)
     if bc_config is not None:
         if FIELD_SOURCES_CONSUMPTION not in detected:
-            consumption = bc_config.get(_BC_CONF_ELECTRICITY_CONSUMPTION_SENSORS)
-            if isinstance(consumption, list) and consumption:
+            consumption: list[str] = []
+            for key in (_BC_CONF_GRID_IMPORT_SENSORS, _BC_CONF_GROSS_LOAD_SENSORS):
+                value = bc_config.get(key)
+                if isinstance(value, list):
+                    consumption.extend(str(s) for s in value)
+            consumption = _dedupe(consumption)
+            if consumption:
                 detected[FIELD_SOURCES_CONSUMPTION] = DetectedSensorList(
-                    [str(s) for s in consumption], _BATTERY_CONTROLLER_SOURCE
+                    consumption, _BATTERY_CONTROLLER_SOURCE
                 )
+
         if FIELD_SOURCES_PRODUCTION not in detected:
-            production = bc_config.get(_BC_CONF_ELECTRICITY_PRODUCTION_SENSORS)
-            if isinstance(production, list) and production:
+            production: list[str] = []
+            for key in (_BC_CONF_GRID_EXPORT_SENSORS, _BC_CONF_PV_PRODUCTION_SENSORS):
+                value = bc_config.get(key)
+                if isinstance(value, list):
+                    production.extend(str(s) for s in value)
+            production.extend(_bc_pv_subentry_production_sensors(hass))
+            production = _dedupe(production)
+            if production:
                 detected[FIELD_SOURCES_PRODUCTION] = DetectedSensorList(
-                    [str(s) for s in production], _BATTERY_CONTROLLER_SOURCE
+                    production, _BATTERY_CONTROLLER_SOURCE
                 )
 
     return detected
