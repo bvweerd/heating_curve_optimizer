@@ -43,7 +43,6 @@ from custom_components.heating_curve_optimizer.const import (
     CONF_INDOOR_TEMPERATURE_SENSOR,
     CONF_INDOOR_TEMP_HYSTERESIS,
     CONF_K_FACTOR,
-    CONF_MAX_BUFFER_DEBT,
     CONF_OFFSET_DELTA_T,
     CONF_OUTDOOR_TEMP_COEFFICIENT,
     CONF_PLANNING_WINDOW,
@@ -69,7 +68,6 @@ from custom_components.heating_curve_optimizer.const import (
     DEFAULT_HEAT_CURVE_MIN,
     DEFAULT_INDOOR_TEMP_HYSTERESIS,
     DEFAULT_K_FACTOR,
-    DEFAULT_MAX_BUFFER_DEBT,
     DEFAULT_OFFSET_DELTA_T,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_PLANNING_WINDOW,
@@ -132,7 +130,6 @@ def test_extract_sectioned_data_minimal_input_uses_defaults():
     assert flat[CONF_OFFSET_DELTA_T] == DEFAULT_OFFSET_DELTA_T
     assert flat[CONF_PLANNING_WINDOW] == DEFAULT_PLANNING_WINDOW
     assert flat[CONF_TIME_BASE] == DEFAULT_TIME_BASE
-    assert flat[CONF_MAX_BUFFER_DEBT] == DEFAULT_MAX_BUFFER_DEBT
     assert flat[CONF_TARGET_INDOOR_TEMP] == DEFAULT_TARGET_INDOOR_TEMP
     assert flat[CONF_INDOOR_TEMP_HYSTERESIS] == DEFAULT_INDOOR_TEMP_HYSTERESIS
 
@@ -181,7 +178,6 @@ def test_extract_sectioned_data_full_input_round_trips_exactly():
         "advanced": {
             CONF_PLANNING_WINDOW: 12,
             CONF_TIME_BASE: 30,
-            CONF_MAX_BUFFER_DEBT: 8.0,
             CONF_TARGET_INDOOR_TEMP: 21.0,
             CONF_INDOOR_TEMP_HYSTERESIS: 0.4,
         },

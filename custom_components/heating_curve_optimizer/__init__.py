@@ -16,7 +16,6 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity import DeviceInfo
 
 from .const import (
-    CONF_CONTROL_MODE,
     DOMAIN,
     GAS_SUBENTRY_TYPE,
     PLATFORMS,
@@ -41,15 +40,6 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _MANIFEST: dict[str, Any] = json.loads(
     (Path(__file__).parent / "manifest.json").read_text(encoding="utf-8")
 )
-
-# Options keys that update.py's select entity writes to entry.options and
-# that a live coordinator already picks up the moment it's set (see
-# select.py's async_select_option, which sets
-# `optimization_coordinator.control_mode` directly before persisting).
-# Reloading the whole entry for these would throw away in-flight state
-# (buffer, current offset) for no benefit - mirrors battery_controller's
-# `_NO_RELOAD_KEYS`.
-_NO_RELOAD_KEYS = frozenset({CONF_CONTROL_MODE})
 
 SERVICE_RESET_THERMAL_CALIBRATION = "reset_thermal_calibration"
 SERVICE_ENTRY_ID = "entry_id"
@@ -82,10 +72,10 @@ class HeatingCurveOptimizerData:
     gas_boiler_device: DeviceInfo | None = None
     gas_boiler_subentry_id: str | None = None
     # entry.options exactly as they stood at setup - _update_listener compares
-    # the live entry.options against this (outside _NO_RELOAD_KEYS) to tell a
-    # runtime-only change from one that needs a reload. Never mutated after
-    # setup: a reload rebuilds this dataclass from scratch with a fresh
-    # snapshot, so there is nothing to keep in sync in between.
+    # the live entry.options against this to tell whether anything actually
+    # changed. Never mutated after setup: a reload rebuilds this dataclass
+    # from scratch with a fresh snapshot, so there is nothing to keep in
+    # sync in between.
     options: dict[str, Any] = field(default_factory=dict)
 
 
@@ -346,14 +336,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle an options update - reload, unless only _NO_RELOAD_KEYS changed.
+    """Handle an options update by reloading the config entry.
 
     `entry.runtime_data.options` is the snapshot taken at setup, never
-    mutated afterwards (mirrors battery_controller's `_update_listener`): a
-    reload always rebuilds it fresh, so there is nothing to keep in sync
-    between reloads. `entry.runtime_data` is only unset for an entry whose
-    setup never finished (e.g. it errored before reaching the end of
-    `async_setup_entry`) - nothing to reload-guard for in that case either.
+    mutated afterwards: a reload always rebuilds it fresh, so there is
+    nothing to keep in sync between reloads. `entry.runtime_data` is only
+    unset for an entry whose setup never finished (e.g. it errored before
+    reaching the end of `async_setup_entry`) - nothing to reload-guard for
+    in that case either.
     """
     runtime_data: HeatingCurveOptimizerData | None = getattr(
         entry, "runtime_data", None
@@ -361,18 +351,8 @@ async def _update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     if runtime_data is None:
         return
 
-    old_options = runtime_data.options
-    needs_reload = any(
-        old_options.get(key) != entry.options.get(key)
-        for key in (set(old_options) | set(entry.options)) - _NO_RELOAD_KEYS
-    )
-
-    if not needs_reload:
-        _LOGGER.debug(
-            "Entry %s options changed but only in _NO_RELOAD_KEYS - "
-            "no reload needed, already applied live",
-            entry.entry_id,
-        )
+    if runtime_data.options == dict(entry.options):
+        _LOGGER.debug("Entry %s options unchanged - no reload needed", entry.entry_id)
         return
 
     _LOGGER.debug("Reloading config entry %s", entry.entry_id)

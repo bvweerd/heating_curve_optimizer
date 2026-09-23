@@ -6,11 +6,14 @@
 > bestaande HACS-gebruikers te breken.
 
 > **Implementatiestatus (2026-09):** fase 0 t/m 5 uit §4 zijn gebouwd, getest en op `main`
-> uitrolbaar; `select.control_mode` staat default op `legacy` (nul gedragswijziging tenzij
-> een gebruiker expliciet omschakelt). Details en concrete afwijkingen van dit plan staan in
-> `docs/algorithm/redesign-thermal-model.md` en `quality_scale.yaml`. Fase 6 (afronding) is
-> in uitvoering; twee onderdelen zijn bewust uitgesteld met reden: `realtime_controller.py`
-> (ontbrekende live PV/net-meting) en subentries voor meerdere zones (zie §5).
+> uitrolbaar. `select.control_mode` (de tijdelijke schakelaar tussen het oude en het nieuwe
+> algoritme) is inmiddels weer verwijderd: de nieuwe thermal optimizer is de enige motor,
+> `optimizer.py`/`select.py`/de schaduw-sensoren zijn weg, en een mislukte cyclus faalt nu
+> zichtbaar in plaats van terug te vallen op het oude algoritme. Details en concrete
+> afwijkingen van dit plan staan in `docs/algorithm/redesign-thermal-model.md` en
+> `quality_scale.yaml`. Fase 6 (afronding) is in uitvoering; twee onderdelen zijn bewust
+> uitgesteld met reden: `realtime_controller.py` (ontbrekende live PV/net-meting) en
+> subentries voor meerdere zones (zie §5).
 
 ---
 

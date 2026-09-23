@@ -38,7 +38,6 @@ Quick reference for all configuration parameters.
 |-----------|------|-------|---------|-------------|
 | `planning_window_hours` | integer | 2-24 | 6 | Optimization planning horizon (hours) |
 | `time_base_minutes` | integer | 15-120 | 60 | Optimization time step (minutes) |
-| `max_buffer_debt` | float | 0-20 | 5.0 | Maximum heat debt (kWh) for cost optimization |
 | `offset_delta_t` | integer | 10-60 | 10 | Minutes per °C offset change (controls change speed) |
 | `min_supply_temp` | float | 20-45 | 25 | Minimum supply temperature (°C) |
 | `max_supply_temp` | float | 35-60 | 50 | Maximum supply temperature (°C) |
@@ -52,16 +51,14 @@ Quick reference for all configuration parameters.
 | `target_indoor_temp` | float | 15-25 | 20.0 | Target indoor temperature setpoint (°C) |
 | `indoor_temp_hysteresis` | float | 0.1-2.0 | 0.5 | Hysteresis band for heat demand modulation (°C) |
 
-## Redesigned Optimizer (`optimize_v2`) Parameters
+## Thermal Optimizer Parameters
 
-These control the redesigned thermal optimizer (`building_model.py` /
-`heatpump_model.py` / `thermal_optimizer.py`). They only affect anything once
-`control_mode` (below) is set to `optimize_v2`; on `legacy` (the default)
-they are read but unused.
+These control the thermal optimizer (`building_model.py` /
+`heatpump_model.py` / `thermal_optimizer.py`), which drives every
+optimization cycle.
 
 | Parameter | Type | Values | Default | Description |
 |-----------|------|--------|---------|-------------|
-| `control_mode` | select | `legacy`, `follow_curve`, `optimize_v2` | `legacy` | Which engine drives `optimized_offset` - see [`select.control_mode`](sensors.md). Configured via the **Control Mode** select entity (Settings → Devices & Services → Heating Curve Optimizer), not the setup wizard. |
 | `grid_import_sensor` | entity_id | - | none | Real household grid import power sensor (W), positive = importing. Enables the real-time PV-surplus controller (`realtime_controller.py`) when set. |
 | `grid_export_sensor` | entity_id | - | none | Real household grid export power sensor (W). Used alongside `grid_import_sensor` for the same real-time controller. |
 | `thermal_mass_class` | select | `light`, `medium`, `heavy` | `medium` | Building thermal mass class, used instead of the energy-label-derived estimate when set. See the table below for the underlying Wh/m²K values. |
@@ -71,11 +68,7 @@ they are read but unused.
     `thermal_mass_class`, `emitter_type` and `grid_import_sensor`/
     `grid_export_sensor` are all asked for in the **Basic Settings** step of
     the UI setup flow and options flow (`_build_basic_schema` in
-    `config_flow.py`), alongside area/energy label/glazing. `control_mode`
-    is the one exception: it is set via the **Control Mode** select entity
-    (Settings → Devices & Services → Heating Curve Optimizer), not the
-    setup wizard, since it is meant to be switched at runtime rather than
-    fixed at setup.
+    `config_flow.py`), alongside area/energy label/glazing.
 
 ### Thermal Mass Class → Wh/m²K
 
@@ -188,21 +181,6 @@ When `target_indoor_temp` and `indoor_temp_hysteresis` are configured with an in
 | Below (target - hysteresis) | > 1.0 (increased proportionally) |
 | Within hysteresis band | 0.0 to 1.0 (linear interpolation) |
 | Above (target + hysteresis) | 0.0 (no heat demand) |
-
-### Maximum Heat Debt Explained
-
-The `max_buffer_debt` parameter controls how much the optimizer can reduce heating during expensive hours with the promise to compensate later:
-
-- **0 kWh**: No heat debt allowed - always meet demand immediately (conservative)
-- **5.0 kWh** (default): Moderate debt - good balance between cost savings and comfort
-- **10+ kWh**: Aggressive optimization - may affect comfort if not carefully monitored
-
-**How it works**:
-- During expensive hours: Reduce heating, creating "heat debt" (building cools slightly)
-- During cheap hours: Extra heating to repay debt (building warms back up)
-- Net result: Same total heat, lower electricity costs
-
-**Comfort impact**: Higher debt limits allow more temperature variation. Monitor closely!
 
 ## Energy Label to U-Value Mapping
 

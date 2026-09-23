@@ -42,7 +42,6 @@ from .const import (
     CONF_PLANNING_WINDOW,
     CONF_TARGET_INDOOR_TEMP,
     CONF_TIME_BASE,
-    CONF_MAX_BUFFER_DEBT,
     CONF_HEAT_CURVE_MIN,
     CONF_HEAT_CURVE_MAX,
     CONF_HEAT_CURVE_MIN_OUTDOOR,
@@ -54,11 +53,6 @@ from .const import (
     CONF_POWER_CONSUMPTION,
     CONF_VENTILATION_TYPE,
     CONF_CEILING_HEIGHT,
-    CONF_CONTROL_MODE,
-    CONTROL_MODES,
-    DEFAULT_CONTROL_MODE,
-    MODE_FOLLOW_CURVE,
-    MODE_OPTIMIZE_V2,
     CONF_GRID_IMPORT_SENSOR,
     CONF_GRID_EXPORT_SENSOR,
     CONF_EMITTER_TYPE,
@@ -74,7 +68,6 @@ from .const import (
     DEFAULT_PLANNING_WINDOW,
     DEFAULT_TARGET_INDOOR_TEMP,
     DEFAULT_TIME_BASE,
-    DEFAULT_MAX_BUFFER_DEBT,
     DEFAULT_VENTILATION_TYPE,
     DEFAULT_CEILING_HEIGHT,
     DEFAULT_PV_TILT,
@@ -87,7 +80,6 @@ from .calibration import ThermalCalibrationState
 from .calibration import STORAGE_VERSION as CALIBRATION_STORAGE_VERSION
 from .heatpump_model import HeatPumpConfig
 from .helpers import extract_price_forecast_with_interval, max_offset_change
-from .optimizer import calculate_buffer_energy, optimize_offsets
 from .realtime_controller import RealtimeController, create_realtime_controller
 from .thermal_optimizer import (
     DEFAULT_OFFSET_MAX,
@@ -135,6 +127,7 @@ _UPDATE_FAILED_MESSAGES: dict[str, str] = {
         "Electricity price sensor {sensor} is unavailable "
         "(see the main price_sensor_unavailable repair issue)."
     ),
+    "thermal_optimizer_failed": "The thermal optimizer failed this cycle: {error}.",
 }
 
 
@@ -668,11 +661,6 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
         self._last_price: float | None = None
         self._current_buffer: float = 0.0  # Track actual buffer state
         self._current_offset: int = 0  # Track current offset for change constraint
-        # Which optimizer drives optimized_offset (phase 3, REDESIGN.md).
-        # Read from options first (select.py persists there, matching
-        # battery_controller's BatteryControlModeSelect), falling back to
-        # data, then the legacy default.
-        self._control_mode: str = config.get(CONF_CONTROL_MODE, DEFAULT_CONTROL_MODE)
         # Thermal calibration (phase 4, REDESIGN.md). Only set up when
         # entry_id is known (async_setup loads it from Store) - tests that
         # construct a coordinator without one, or without calling
@@ -685,19 +673,6 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
         # overhead for the majority of installations that have not opted in.
         self._realtime_controller: RealtimeController | None = None
         self._unsub_realtime = None
-
-    @property
-    def control_mode(self) -> str:
-        """Return the active control mode (legacy/follow_curve/optimize_v2)."""
-        return self._control_mode
-
-    @control_mode.setter
-    def control_mode(self, value: str) -> None:
-        """Set the active control mode; takes effect on the next update."""
-        if value not in CONTROL_MODES:
-            _LOGGER.warning("Ignoring unknown control mode: %s", value)
-            return
-        self._control_mode = value
 
     @property
     def thermal_calibration(self) -> ThermalCalibrationState | None:
@@ -834,15 +809,12 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
     async def _handle_realtime_update(self, now: datetime) -> None:
         """Periodic real-time update for the PV-surplus controller.
 
-        Runs every DEFAULT_REALTIME_INTERVAL_S seconds. Only active while
-        control_mode is optimize_v2 (the shadow price it needs only exists
-        there) and a full DP cycle has already published a thermal_v2
-        result this session - otherwise there is no planned offset or
-        shadow price to adjust around yet.
+        Runs every DEFAULT_REALTIME_INTERVAL_S seconds, once a full
+        optimization cycle has already published a thermal_v2 result this
+        session - otherwise there is no planned offset or shadow price to
+        adjust around yet.
         """
         if self._realtime_controller is None:
-            return
-        if self._control_mode != MODE_OPTIMIZE_V2:
             return
         if self.data is None:
             return
@@ -1002,9 +974,6 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
         offset_delta_t = int(
             self.config.get(CONF_OFFSET_DELTA_T, DEFAULT_OFFSET_DELTA_T)
         )
-        max_buffer_debt = float(
-            self.config.get(CONF_MAX_BUFFER_DEBT, DEFAULT_MAX_BUFFER_DEBT)
-        )
         k_factor = float(self.config.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
         base_cop = float(self.config.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
         outdoor_temp_coefficient = float(
@@ -1024,23 +993,17 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
         min_outdoor = float(self.config.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0))
         max_outdoor = float(self.config.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 20.0))
 
-        # Run optimization in executor (CPU-intensive)
-        _LOGGER.debug(
-            "Running optimization with %d demand points, buffer=%.2f, offset=%d",
-            len(demand_forecast),
-            self._current_buffer,
-            self._current_offset,
-        )
+        # "Do nothing" cost comparison (offset=0, plain heating curve) -
+        # independent of which optimizer runs below, used as the
+        # cost_savings baseline. Runs in executor since it loops the full
+        # planning window.
         result = await self.hass.async_add_executor_job(
-            self._run_optimization,
+            self._calculate_baseline,
             demand_forecast,
             price_forecast,
             temp_forecast,
             planning_window,
             time_base,
-            offset_delta_t,
-            max_buffer_debt,
-            price_interval,
             k_factor,
             base_cop,
             outdoor_temp_coefficient,
@@ -1049,120 +1012,70 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
             max_supply,
             min_outdoor,
             max_outdoor,
-            self._current_buffer,
-            self._current_offset,
         )
 
-        # --- Shadow mode: redesigned thermal optimizer (phase 2) --------
-        # Runs alongside the legacy optimizer above, using the exact same
-        # forecasts, and is exposed only as a diagnostic sensor
-        # (sensor_thermal_shadow.py) - it never drives anything yet. See
-        # docs/redesign/REDESIGN.md phase 2/3 and docs/algorithm/
-        # redesign-thermal-model.md for what it does and why.
-        try:
-            thermal_v2_result = await self.hass.async_add_executor_job(
-                self._run_thermal_v2_optimization,
-                demand_forecast,
-                price_forecast,
-                temp_forecast,
-                heat_data.get("solar_gain_forecast", []),
-                heat_data.get("indoor_temperature", 20.0),
-                time_base,
-                offset_delta_t,
-                min_supply,
-                max_supply,
-                min_outdoor,
-                max_outdoor,
-                self._current_offset,
-                heat_data.get("pv_production_forecast", []),
-                feed_in_price_forecast,
+        # The redesigned thermal optimizer (building_model.py/
+        # heatpump_model.py/thermal_optimizer.py) is the only optimizer -
+        # no legacy DP fallback. `_run_thermal_v2_optimization` never
+        # raises itself (it catches internally and reports
+        # `available: False`); a cycle where it's unavailable surfaces as
+        # an ordinary coordinator failure instead of silently reusing a
+        # different algorithm's answer.
+        thermal_v2_result = await self.hass.async_add_executor_job(
+            self._run_thermal_v2_optimization,
+            demand_forecast,
+            price_forecast,
+            temp_forecast,
+            heat_data.get("solar_gain_forecast", []),
+            heat_data.get("indoor_temperature", 20.0),
+            time_base,
+            offset_delta_t,
+            min_supply,
+            max_supply,
+            min_outdoor,
+            max_outdoor,
+            self._current_offset,
+            heat_data.get("pv_production_forecast", []),
+            feed_in_price_forecast,
+        )
+        if not thermal_v2_result.get("available"):
+            raise _update_failed(
+                "thermal_optimizer_failed",
+                translation_placeholders={"error": str(thermal_v2_result.get("error"))},
             )
-        except Exception as err:  # belt-and-braces: shadow mode must never
-            # take the legacy result down with it, even on a dispatch-level
-            # failure the inner try/except couldn't catch.
-            _LOGGER.warning("Thermal v2 shadow optimization dispatch failed: %s", err)
-            thermal_v2_result = {"available": False, "error": str(err)}
-        thermal_v2_result["legacy_total_cost_eur"] = result.get("total_cost")
         result["thermal_v2"] = thermal_v2_result
 
-        # --- Apply the active control mode (phase 3, REDESIGN.md) ---------
-        # Decides which engine's result actually reaches optimized_offset /
-        # optimized_offsets / future_supply_temperatures - i.e. what every
-        # downstream sensor, and any automation built on them, actually
-        # sees. Placed *before* the state-tracking block below, so
-        # self._current_offset/self._current_buffer always reflect what was
-        # really applied, whichever mode chose it - both engines read those
-        # as their own "previous offset" next cycle (see
-        # _run_thermal_v2_optimization's current_offset argument), so this
-        # is what keeps ramp-rate limiting physically correct across a mode
-        # switch instead of each engine drifting against its own private
-        # what-if history.
-        if self._control_mode == MODE_FOLLOW_CURVE:
-            horizon = len(result.get("optimized_offsets") or [0])
-            zero_offsets = [0] * max(horizon, 1)
-            result["optimized_offset"] = 0
-            result["optimized_offsets"] = zero_offsets
-            result["future_supply_temperatures"] = result.get(
-                "baseline_supply_temperatures", []
-            )
-            result["buffer_evolution"] = calculate_buffer_energy(
-                zero_offsets,
-                demand_forecast,
-                time_base=time_base,
-                buffer=self._current_buffer,
-            )
-            result["initial_buffer"] = round(self._current_buffer, 3)
-            result["total_cost"] = result.get("baseline_cost", 0.0)
-            result["cost_savings"] = 0.0
+        v2_offsets = thermal_v2_result.get("offsets", [])
+        v2_comfort_min = thermal_v2_result.get("building_comfort_min")
+        v2_mass = thermal_v2_result.get("building_thermal_mass_kwh_per_k")
+        v2_indoor_temps = thermal_v2_result.get("indoor_temps", [])
+        # Re-express the v2 indoor-temperature trajectory as "stored kWh
+        # above the comfort floor" so the existing heat_buffer sensor keeps
+        # the same physical meaning - see REDESIGN.md §2.1.B on why that
+        # floor-relative energy is the right equivalent of the legacy
+        # buffer, now backed by a real state variable.
+        if v2_comfort_min is not None and v2_mass is not None:
+            v2_buffer = [
+                round((t - v2_comfort_min) * v2_mass, 3) for t in v2_indoor_temps
+            ]
+        else:
+            v2_buffer = []
 
-        elif self._control_mode == MODE_OPTIMIZE_V2:
-            if thermal_v2_result.get("available"):
-                v2_offsets = thermal_v2_result.get("offsets", [])
-                v2_comfort_min = thermal_v2_result.get("building_comfort_min")
-                v2_mass = thermal_v2_result.get("building_thermal_mass_kwh_per_k")
-                v2_indoor_temps = thermal_v2_result.get("indoor_temps", [])
-                # Re-express the v2 indoor-temperature trajectory as
-                # "stored kWh above the comfort floor" so the existing
-                # heat_buffer sensor keeps the same physical meaning
-                # instead of going stale - see REDESIGN.md §2.1.B on why
-                # that floor-relative energy is the right equivalent of
-                # the legacy buffer, now backed by a real state variable.
-                if v2_comfort_min is not None and v2_mass is not None:
-                    v2_buffer = [
-                        round((t - v2_comfort_min) * v2_mass, 3)
-                        for t in v2_indoor_temps
-                    ]
-                else:
-                    v2_buffer = []
-
-                result["optimized_offset"] = v2_offsets[0] if v2_offsets else 0
-                result["optimized_offsets"] = v2_offsets
-                result["future_supply_temperatures"] = thermal_v2_result.get(
-                    "supply_temps", []
-                )
-                result["buffer_evolution"] = v2_buffer
-                result["initial_buffer"] = v2_buffer[0] if v2_buffer else 0.0
-                result["total_cost"] = thermal_v2_result.get("total_cost_eur", 0.0)
-                result["cost_savings"] = round(
-                    result.get("baseline_cost", 0.0)
-                    - thermal_v2_result.get("total_cost_eur", 0.0),
-                    3,
-                )
-            else:
-                _LOGGER.warning(
-                    "control_mode=optimize_v2 but the redesigned optimizer is "
-                    "unavailable (%s) - falling back to the legacy result this "
-                    "cycle so heating control is never left without a decision.",
-                    thermal_v2_result.get("error"),
-                )
-        # MODE_LEGACY (default): result is left exactly as _run_optimization
-        # produced it - zero behaviour change for every installation that
-        # has not explicitly switched control_mode.
+        result["optimized_offset"] = v2_offsets[0] if v2_offsets else 0
+        result["optimized_offsets"] = v2_offsets
+        result["future_supply_temperatures"] = thermal_v2_result.get("supply_temps", [])
+        result["buffer_evolution"] = v2_buffer
+        result["initial_buffer"] = v2_buffer[0] if v2_buffer else 0.0
+        result["total_cost"] = thermal_v2_result.get("total_cost_eur", 0.0)
+        result["cost_savings"] = round(
+            result.get("baseline_cost", 0.0)
+            - thermal_v2_result.get("total_cost_eur", 0.0),
+            3,
+        )
 
         # Phase 4 (REDESIGN.md): feed one real observation into thermal
         # calibration, using whatever `result` now says was actually
-        # applied (post mode-override, so the sample reflects reality
-        # regardless of which engine is currently driving).
+        # applied.
         await self._maybe_record_calibration_sample(
             indoor_temp=heat_data.get("indoor_temperature", INDOOR_TEMPERATURE),
             outdoor_temp=weather_data.get(
@@ -1177,14 +1090,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
             heat_pump_on=heat_pump_on,
         )
 
-        # Update tracked state for next optimization run. Note: buffer_evolution's
-        # units/semantics depend on the active control mode (legacy debt/surplus
-        # vs. the v2 comfort-floor-relative kWh above) - switching control_mode
-        # therefore seeds the *other* mode's next run with a value computed
-        # under different physics for one cycle. Bounded by max_buffer_debt on
-        # the legacy side and self-corrects within a planning window; a real
-        # unit conversion between the two is a refinement for later, not a
-        # correctness issue while control_mode is left alone (the common case).
+        # Update tracked state for next optimization run.
         new_offset = int(result.get("optimized_offset", 0))
         buffer_evolution = result.get("buffer_evolution", [])
         new_buffer = buffer_evolution[0] if buffer_evolution else self._current_buffer
@@ -1223,19 +1129,17 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
 
         # async_add_executor_job's return type is Any in this environment
         # (HomeAssistant is untyped - no py.typed here); result is genuinely
-        # the dict[str, Any] _run_optimization declares.
+        # the dict[str, Any] this method built up from _calculate_baseline
+        # and the thermal_v2 result.
         return cast(dict[str, Any], result)
 
-    def _run_optimization(
+    def _calculate_baseline(
         self,
         demand_forecast: list[float],
         price_forecast: list[float],
         temp_forecast: list[float],
         planning_window: int,
         time_base: int,
-        offset_delta_t: int,
-        max_buffer_debt: float,
-        price_interval: int,
         k_factor: float,
         base_cop: float,
         outdoor_temp_coefficient: float,
@@ -1244,139 +1148,55 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
         max_supply: float,
         min_outdoor: float,
         max_outdoor: float,
-        current_buffer: float,
-        current_offset: int,
     ) -> dict[str, Any]:
-        """Run DP optimization (blocking call in executor)."""
-        try:
-            # Limit forecasts to planning window
-            max_steps = planning_window
-            demand_limited = demand_forecast[:max_steps]
-            price_limited = price_forecast[:max_steps]
-            temp_limited = temp_forecast[:max_steps]
+        """Cost/supply-temperature of doing nothing (offset=0, plain
+        heating curve) - the "what would this cost without optimization"
+        comparison point `cost_savings` is measured against, independent of
+        which optimizer actually drives `optimized_offset` (blocking call
+        in executor).
+        """
+        max_steps = planning_window
+        demand_limited = demand_forecast[:max_steps]
+        price_limited = price_forecast[:max_steps]
+        temp_limited = temp_forecast[:max_steps]
+        step_hours = time_base / 60.0
+        horizon = min(len(demand_limited), len(price_limited), len(temp_limited))
 
-            # Call the optimizer with correct parameter names
-            offsets, buffer_evolution = optimize_offsets(
-                demand=demand_limited,
-                prices=price_limited,
-                base_cop=base_cop,
-                k_factor=k_factor,
-                cop_compensation_factor=cop_compensation,
-                buffer=current_buffer,  # Use actual buffer state
-                water_min=min_supply,
-                water_max=max_supply,
-                outdoor_temps=temp_limited,
-                humidity_forecast=None,  # Not available yet
-                outdoor_temp_coefficient=outdoor_temp_coefficient,
-                time_base=time_base,
-                outdoor_min=min_outdoor,
-                outdoor_max=max_outdoor,
-                max_buffer_debt=max_buffer_debt,  # Configurable heat debt limit
-                current_offset=current_offset,  # Constrain first step change
-                offset_delta_t=offset_delta_t,  # Minutes per 1°C offset change
+        baseline_supply_temps = []
+        baseline_cop_list = []
+        baseline_cost = 0.0
+
+        for i in range(horizon):
+            outdoor_temp = temp_limited[i]
+            base_temp = _calculate_supply_temp_from_curve(
+                outdoor_temp, min_supply, max_supply, min_outdoor, max_outdoor
             )
+            base_cop_value = _calculate_cop(
+                base_temp,
+                outdoor_temp,
+                base_cop,
+                k_factor,
+                outdoor_temp_coefficient,
+                cop_compensation,
+            )
+            baseline_supply_temps.append(round(base_temp, 1))
+            baseline_cop_list.append(round(base_cop_value, 3))
 
-            # Calculate future supply temperatures and COP for both baseline and optimized
-            future_supply_temps = []
-            baseline_supply_temps = []
-            baseline_cop_list = []
-            optimized_cop_list = []
-            step_hours = time_base / 60.0
+            demand = max(0.0, demand_limited[i])
+            if base_cop_value > 0:
+                baseline_cost += (
+                    (demand / base_cop_value) * step_hours * price_limited[i]
+                )
 
-            for i, offset in enumerate(offsets):
-                if i < len(temp_limited):
-                    outdoor_temp = temp_limited[i]
-                    base_temp = _calculate_supply_temp_from_curve(
-                        outdoor_temp, min_supply, max_supply, min_outdoor, max_outdoor
-                    )
-                    supply_temp = max(min(base_temp + offset, max_supply), min_supply)
-
-                    baseline_supply_temps.append(round(base_temp, 1))
-                    future_supply_temps.append(round(supply_temp, 1))
-                    baseline_cop_list.append(
-                        round(
-                            _calculate_cop(
-                                base_temp,
-                                outdoor_temp,
-                                base_cop,
-                                k_factor,
-                                outdoor_temp_coefficient,
-                                cop_compensation,
-                            ),
-                            3,
-                        )
-                    )
-                    optimized_cop_list.append(
-                        round(
-                            _calculate_cop(
-                                supply_temp,
-                                outdoor_temp,
-                                base_cop,
-                                k_factor,
-                                outdoor_temp_coefficient,
-                                cop_compensation,
-                            ),
-                            3,
-                        )
-                    )
-                else:
-                    # No temperature data, use min_supply as fallback. COP
-                    # falls back to the user's own configured base_cop
-                    # (not an unrelated hardcoded guess) for consistency
-                    # with every other COP figure this sensor reports.
-                    baseline_supply_temps.append(round(min_supply, 1))
-                    future_supply_temps.append(round(min_supply, 1))
-                    baseline_cop_list.append(base_cop)
-                    optimized_cop_list.append(base_cop)
-
-            # Calculate real costs: electricity cost = (heat_demand / COP) * time * price
-            baseline_cost = 0.0
-            optimized_cost = 0.0
-
-            for i in range(len(offsets)):
-                if i < len(demand_limited) and i < len(price_limited):
-                    demand = max(0.0, demand_limited[i])
-                    price = price_limited[i]
-                    b_cop = baseline_cop_list[i]
-                    o_cop = optimized_cop_list[i]
-
-                    if b_cop > 0:
-                        baseline_cost += (demand / b_cop) * step_hours * price
-                    if o_cop > 0:
-                        optimized_cost += (demand / o_cop) * step_hours * price
-
-            cost_savings = baseline_cost - optimized_cost
-
-            return {
-                "optimized_offset": round(offsets[0], 1) if offsets else 0.0,
-                "optimized_offsets": [round(v, 1) for v in offsets],
-                "buffer_evolution": [round(v, 3) for v in buffer_evolution],
-                "initial_buffer": round(current_buffer, 3),
-                "previous_offset": current_offset,
-                "future_supply_temperatures": future_supply_temps,
-                "baseline_supply_temperatures": baseline_supply_temps,
-                "baseline_cop": baseline_cop_list,
-                "optimized_cop": optimized_cop_list,
-                "baseline_cost": round(baseline_cost, 3),
-                "total_cost": round(optimized_cost, 3),
-                "cost_savings": round(cost_savings, 3),
-                "prices": [round(p, 5) for p in price_limited],
-                "demand_forecast": [round(d, 3) for d in demand_limited],
-                "outdoor_forecast": [round(t, 1) for t in temp_limited],
-                "timestamp": dt_util.utcnow(),
-            }
-
-        except Exception as err:
-            _LOGGER.error("Optimization failed: %s", err, exc_info=True)
-            # Return safe fallback
-            return {
-                "optimized_offset": 0.0,
-                "optimized_offsets": [0.0],
-                "buffer_evolution": [0.0],
-                "total_cost": 0.0,
-                "timestamp": dt_util.utcnow(),
-                "error": str(err),
-            }
+        return {
+            "baseline_supply_temperatures": baseline_supply_temps,
+            "baseline_cop": baseline_cop_list,
+            "baseline_cost": round(baseline_cost, 3),
+            "prices": [round(p, 5) for p in price_limited],
+            "demand_forecast": [round(d, 3) for d in demand_limited],
+            "outdoor_forecast": [round(t, 1) for t in temp_limited],
+            "timestamp": dt_util.utcnow(),
+        }
 
     def _read_power_consumption_kw(self) -> float | None:
         """Read the configured heat-pump electricity meter, in kW.
@@ -1494,15 +1314,13 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
         pv_production_forecast: list[float] | None = None,
         feed_in_price_forecast: list[float] | None = None,
     ) -> dict[str, Any]:
-        """Run the redesigned thermal DP optimizer (blocking call, executor).
+        """Run the thermal DP optimizer (blocking call, executor).
 
-        Shadow mode (docs/redesign/REDESIGN.md phase 2): runs alongside
-        `_run_optimization` above, against the exact same forecasts, but its
-        result only ever reaches a diagnostic sensor - never
-        `self._current_offset`/`self._current_buffer`. Any failure here
-        must never break the legacy optimization result this coordinator is
-        still driving, so every error is caught and reported as
-        `available: False` instead of propagating.
+        Every error is caught and reported as `available: False` instead of
+        propagating - the caller (`_async_update_data`) is what decides
+        that an unavailable result means the whole update cycle failed
+        (`_update_failed("thermal_optimizer_failed", ...)`), not this
+        method itself.
 
         `pv_production_forecast` (phase 5, REDESIGN.md §2.1.G) is passed
         straight through as `pv_surplus_kw`: this integration has no
@@ -1551,8 +1369,8 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
             # No dedicated heat-pump-capacity config key exists yet (phase
             # 5 territory). Sized with headroom above what the emitter can
             # use at the design point, the way an installer would sanity
-            # check pump vs. radiator sizing, rather than block shadow
-            # mode on a new required field.
+            # check pump vs. radiator sizing, rather than block optimization
+            # on a new required field.
             heatpump = HeatPumpConfig.from_config(
                 self.config, max_thermal_power_kw=emitter.nominal_power_kw * 1.3
             )
@@ -1612,10 +1430,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
                 "timestamp": dt_util.utcnow(),
             }
         except Exception as err:
-            _LOGGER.warning(
-                "Thermal v2 shadow optimization failed (legacy optimizer unaffected): %s",
-                err,
-            )
+            _LOGGER.warning("Thermal optimizer failed: %s", err)
             return {
                 "available": False,
                 "error": str(err),

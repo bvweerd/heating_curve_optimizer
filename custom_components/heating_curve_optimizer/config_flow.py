@@ -83,7 +83,6 @@ from .const import (
     CONF_PV_TILT,
     CONF_VENTILATION_TYPE,
     CONF_CEILING_HEIGHT,
-    CONF_MAX_BUFFER_DEBT,
     CONF_THERMAL_MASS_CLASS,
     CONF_EMITTER_TYPE,
     DEFAULT_INDOOR_TEMP_HYSTERESIS,
@@ -93,7 +92,6 @@ from .const import (
     DEFAULT_COP_AT_35,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_COP_COMPENSATION_FACTOR,
-    DEFAULT_MAX_BUFFER_DEBT,
     DEFAULT_PLANNING_WINDOW,
     DEFAULT_TARGET_INDOOR_TEMP,
     DEFAULT_TIME_BASE,
@@ -504,9 +502,6 @@ def _extract_sectioned_data(user_input: dict[str, Any]) -> dict[str, Any]:
             advanced.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
         ),
         CONF_TIME_BASE: int(advanced.get(CONF_TIME_BASE, DEFAULT_TIME_BASE)),
-        CONF_MAX_BUFFER_DEBT: float(
-            advanced.get(CONF_MAX_BUFFER_DEBT, DEFAULT_MAX_BUFFER_DEBT)
-        ),
         CONF_TARGET_INDOOR_TEMP: float(
             advanced.get(CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP)
         ),
@@ -819,10 +814,6 @@ def _build_sectioned_schema(
                 CONF_TIME_BASE, description=sv(CONF_TIME_BASE, DEFAULT_TIME_BASE)
             ): vol.Coerce(int),
             vol.Optional(
-                CONF_MAX_BUFFER_DEBT,
-                description=sv(CONF_MAX_BUFFER_DEBT, DEFAULT_MAX_BUFFER_DEBT),
-            ): vol.Coerce(float),
-            vol.Optional(
                 CONF_TARGET_INDOOR_TEMP,
                 description=sv(CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP),
             ): vol.Coerce(float),
@@ -910,7 +901,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.cop_compensation_factor: float = DEFAULT_COP_COMPENSATION_FACTOR
         self.planning_window: int = DEFAULT_PLANNING_WINDOW
         self.time_base: int = DEFAULT_TIME_BASE
-        self.max_buffer_debt: float = DEFAULT_MAX_BUFFER_DEBT
         self.target_indoor_temp: float = DEFAULT_TARGET_INDOOR_TEMP
         self.indoor_temp_hysteresis: float = DEFAULT_INDOOR_TEMP_HYSTERESIS
         self.offset_delta_t: int = DEFAULT_OFFSET_DELTA_T
@@ -1070,7 +1060,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_COP_COMPENSATION_FACTOR: self.cop_compensation_factor,
             CONF_PLANNING_WINDOW: self.planning_window,
             CONF_TIME_BASE: self.time_base,
-            CONF_MAX_BUFFER_DEBT: self.max_buffer_debt,
             CONF_TARGET_INDOOR_TEMP: self.target_indoor_temp,
             CONF_INDOOR_TEMP_HYSTERESIS: self.indoor_temp_hysteresis,
             CONF_OFFSET_DELTA_T: self.offset_delta_t,
@@ -1261,9 +1250,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             user_input.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
         )
         self.time_base = int(user_input.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
-        self.max_buffer_debt = float(
-            user_input.get(CONF_MAX_BUFFER_DEBT, DEFAULT_MAX_BUFFER_DEBT)
-        )
         self.target_indoor_temp = float(
             user_input.get(CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP)
         )
@@ -1329,10 +1315,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_TIME_BASE,
                     default=self.time_base or DEFAULT_TIME_BASE,
                 ): vol.Coerce(int),
-                vol.Optional(
-                    CONF_MAX_BUFFER_DEBT,
-                    default=self.max_buffer_debt or DEFAULT_MAX_BUFFER_DEBT,
-                ): vol.Coerce(float),
                 vol.Optional(
                     CONF_TARGET_INDOOR_TEMP,
                     default=self.target_indoor_temp or DEFAULT_TARGET_INDOOR_TEMP,
@@ -1529,7 +1511,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     }
                 ),
                 # Real-time PV-surplus controller (phase 5b, REDESIGN.md) -
-                # optional, only used when control_mode is optimize_v2.
+                # optional.
                 vol.Optional(
                     CONF_GRID_IMPORT_SENSOR, default=self.grid_import_sensor
                 ): selector(
@@ -1733,7 +1715,6 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):  # ty
         )
         self.planning_window = _get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
         self.time_base = _get(CONF_TIME_BASE, DEFAULT_TIME_BASE)
-        self.max_buffer_debt = _get(CONF_MAX_BUFFER_DEBT, DEFAULT_MAX_BUFFER_DEBT)
         self.target_indoor_temp = _get(
             CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP
         )

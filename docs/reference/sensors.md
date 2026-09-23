@@ -676,9 +676,9 @@ of polling:
 |-----------------------|-------------------|---------|
 | `WeatherDataCoordinator` (Outdoor Temperature) | 30 min | Time interval |
 | `HeatCalculationCoordinator` (Heat Loss, Solar Gain, Net Heat Loss, PV Production Forecast) | 5 min | Time interval, depends on weather coordinator's latest data |
-| `OptimizationCoordinator` (Heating Curve Offset, Optimized Supply Temperature, Heat Buffer, Cost Savings, thermal v2/calibration/realtime diagnostic sensors) | 15 min | Time interval, depends on heat coordinator's latest data; also refreshed immediately after a `control_mode` change |
+| `OptimizationCoordinator` (Heating Curve Offset, Optimized Supply Temperature, Heat Buffer, Cost Savings, calibration/realtime diagnostic sensors) | 15 min | Time interval, depends on heat coordinator's latest data |
 | Current Consumption Price, COP Delta, Heat Generation Delta, Heat Pump Thermal Power | Event-driven | Fires on the underlying price/power/supply-temperature sensor's own state change, not on a timer |
-| Real-time offset controller (`realtime_controller.py`) | 60 s | Time interval, only active when `grid_import_sensor`/`grid_export_sensor` are configured and `control_mode` is `optimize_v2` |
+| Real-time offset controller (`realtime_controller.py`) | 60 s | Time interval, only active when `grid_import_sensor`/`grid_export_sensor` are configured |
 | `GasBoilerCoordinator` (Gas Boiler Heat Pump Cost, Gas Cost, Cost Savings, Gas Boiler Preferred) | Event-driven, 15 min safety net | Fires on the gas or electricity price sensor's own state change; only active when a **Hybrid gas boiler** subentry is configured |
 
 ### Availability

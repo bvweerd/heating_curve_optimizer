@@ -1,6 +1,6 @@
 """Backward-induction DP optimizer over indoor temperature.
 
-Replaces the legacy `optimizer.optimize_offsets()` DP with one where the
+Replaces the original `optimize_offsets()` DP (removed) with one where the
 state is the actual physical quantity being managed (indoor temperature,
 via `building_model.BuildingConfig`) instead of a `buffer` value carried
 as DP payload. See docs/redesign/REDESIGN.md §2.1 for the bugs this fixes
