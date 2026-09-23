@@ -15,7 +15,7 @@
       "quadratic_cop": { "default": "mdi:alpha-c-circle" },
       "diagnostics": { "default": "mdi:information-outline" },
       "calibration": { "default": "mdi:tune" },
-      "current_electricity_price": { "default": "mdi:currency-eur" },
+      "current_consumption_price": { "default": "mdi:currency-eur" },
       "heat_pump_energy_daily": { "default": "mdi:fire" },
       "net_heat_loss_energy_daily": { "default": "mdi:fire-off" },
       "thermal_v2_offset": { "default": "mdi:chart-timeline-variant" },
