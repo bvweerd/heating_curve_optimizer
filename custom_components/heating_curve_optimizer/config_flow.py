@@ -90,6 +90,12 @@ from .const import (
     THERMAL_MASS_WH_PER_M2_K,
     EMITTER_EXPONENT_MAP,
     ZONE_SUBENTRY_TYPE,
+    GAS_SUBENTRY_TYPE,
+    CONF_GAS_PRICE_SENSOR,
+    CONF_GAS_BOILER_EFFICIENCY,
+    CONF_GAS_CALORIFIC_VALUE,
+    DEFAULT_GAS_BOILER_EFFICIENCY,
+    DEFAULT_GAS_CALORIFIC_VALUE_KWH_PER_M3,
 )
 
 STEP_SELECT_SOURCES = "select_sources"
@@ -261,6 +267,130 @@ else:
     HeatingZoneSubentryFlow = None  # type: ignore[assignment,misc]
 
 
+def _build_gas_boiler_subentry_schema(
+    defaults: dict[str, Any] | None = None,
+) -> vol.Schema:
+    """Build the schema for the (singleton) hybrid gas-boiler subentry.
+
+    A plain entity selector, not a dropdown filtered by device_class, for
+    the gas price sensor: Dutch dynamic-gas-price sensors don't reliably
+    carry device_class="monetary" the way electricity price sensors often
+    do.
+    """
+    defaults = defaults or {}
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_GAS_PRICE_SENSOR, default=defaults.get(CONF_GAS_PRICE_SENSOR)
+            ): selector({"entity": {"domain": "sensor"}}),
+            vol.Optional(
+                CONF_GAS_BOILER_EFFICIENCY,
+                default=defaults.get(
+                    CONF_GAS_BOILER_EFFICIENCY, DEFAULT_GAS_BOILER_EFFICIENCY
+                ),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_GAS_CALORIFIC_VALUE,
+                default=defaults.get(
+                    CONF_GAS_CALORIFIC_VALUE,
+                    DEFAULT_GAS_CALORIFIC_VALUE_KWH_PER_M3,
+                ),
+            ): vol.Coerce(float),
+        }
+    )
+
+
+def _validate_gas_boiler_subentry(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Validate and normalize the gas-boiler subentry's input."""
+    gas_price_sensor = user_input.get(CONF_GAS_PRICE_SENSOR)
+    if not gas_price_sensor:
+        raise vol.Invalid("gas_price_sensor_required")
+    efficiency = float(
+        user_input.get(CONF_GAS_BOILER_EFFICIENCY, DEFAULT_GAS_BOILER_EFFICIENCY)
+    )
+    if not (0.5 <= efficiency <= 1.2):
+        raise vol.Invalid("efficiency_out_of_range")
+    calorific_value = float(
+        user_input.get(CONF_GAS_CALORIFIC_VALUE, DEFAULT_GAS_CALORIFIC_VALUE_KWH_PER_M3)
+    )
+    if calorific_value <= 0:
+        raise vol.Invalid("calorific_value_must_be_positive")
+    return {
+        CONF_GAS_PRICE_SENSOR: gas_price_sensor,
+        CONF_GAS_BOILER_EFFICIENCY: efficiency,
+        CONF_GAS_CALORIFIC_VALUE: calorific_value,
+    }
+
+
+if _ConfigSubentryFlow is not None:
+
+    class HeatingGasBoilerSubentryFlow(_ConfigSubentryFlow):  # type: ignore[misc, valid-type]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
+        """Flow for adding or editing the (singleton) hybrid gas-boiler subentry.
+
+        Unlike HeatingZoneSubentryFlow (zero-to-many), a hybrid system has
+        exactly one physical gas boiler - async_step_user aborts before
+        showing the form if one is already configured, the same
+        application-level singleton pattern HA's own single-instance
+        integrations use for the main entry itself
+        (_abort_if_unique_id_configured), just applied at the subentry
+        level since ConfigSubentryFlow has no built-in cap.
+        """
+
+        async def async_step_user(
+            self, user_input: dict[str, Any] | None = None
+        ) -> SubentryFlowResult:
+            """Handle adding the gas boiler subentry."""
+            entry = self._get_entry()
+            existing = getattr(entry, "subentries", {})
+            if any(sub.subentry_type == GAS_SUBENTRY_TYPE for sub in existing.values()):
+                return self.async_abort(reason="single_instance_allowed")
+
+            errors: dict[str, str] = {}
+            if user_input is not None:
+                try:
+                    data = _validate_gas_boiler_subentry(user_input)
+                except vol.Invalid as err:
+                    errors["base"] = (
+                        str(err.error_message) or "invalid_gas_boiler_input"
+                    )
+                else:
+                    return self.async_create_entry(title="Gas Boiler", data=data)
+            return self.async_show_form(
+                step_id="user",
+                data_schema=_build_gas_boiler_subentry_schema(),
+                errors=errors,
+            )
+
+        async def async_step_reconfigure(
+            self, user_input: dict[str, Any] | None = None
+        ) -> SubentryFlowResult:
+            """Handle editing the gas boiler subentry."""
+            errors: dict[str, str] = {}
+            entry = self._get_entry()
+            subentry = self._get_reconfigure_subentry()
+            current_data = dict(subentry.data)
+
+            if user_input is not None:
+                try:
+                    data = _validate_gas_boiler_subentry(user_input)
+                except vol.Invalid as err:
+                    errors["base"] = (
+                        str(err.error_message) or "invalid_gas_boiler_input"
+                    )
+                else:
+                    return self.async_update_and_abort(
+                        entry, subentry, title="Gas Boiler", data=data
+                    )
+            return self.async_show_form(
+                step_id="reconfigure",
+                data_schema=_build_gas_boiler_subentry_schema(current_data),
+                errors=errors,
+            )
+
+else:
+    HeatingGasBoilerSubentryFlow = None  # type: ignore[assignment,misc]
+
+
 class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg, misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Handle a config flow for Heating Curve Optimizer."""
 
@@ -271,14 +401,21 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_supported_subentry_types(
         cls, config_entry: config_entries.ConfigEntry
     ) -> dict[str, type]:
-        """Return supported subentry types (phase 5c, REDESIGN.md).
+        """Return supported subentry types (phase 5c, REDESIGN.md; hybrid
+        gas-boiler comparison).
 
         Empty on an HA release too old to have ConfigSubentryFlow at all -
-        see HeatingZoneSubentryFlow's definition above.
+        see HeatingZoneSubentryFlow's/HeatingGasBoilerSubentryFlow's
+        definitions above. Each type is independently None-guarded (both
+        share the same HA-version gate today, but this stays correct if
+        that ever changes).
         """
-        if HeatingZoneSubentryFlow is None:
-            return {}
-        return {ZONE_SUBENTRY_TYPE: HeatingZoneSubentryFlow}
+        types: dict[str, type] = {}
+        if HeatingZoneSubentryFlow is not None:
+            types[ZONE_SUBENTRY_TYPE] = HeatingZoneSubentryFlow
+        if HeatingGasBoilerSubentryFlow is not None:
+            types[GAS_SUBENTRY_TYPE] = HeatingGasBoilerSubentryFlow
+        return types
 
     def __init__(self) -> None:
         super().__init__()
