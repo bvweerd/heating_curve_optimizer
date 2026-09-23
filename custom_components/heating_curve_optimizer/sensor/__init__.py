@@ -411,14 +411,14 @@ async def async_setup_entry(
             [
                 GasBoilerHeatPumpCostSensor(
                     coordinator=gas_boiler_coordinator,
-                    name="Heat Pump Cost",
+                    name="Gas Boiler Heat Pump Cost",
                     unique_id=f"{gas_boiler_entry_id}_heat_pump_cost",
                     icon="mdi:heat-pump",
                     device=gas_boiler_device,
                 ),
                 GasBoilerGasCostSensor(
                     coordinator=gas_boiler_coordinator,
-                    name="Gas Cost",
+                    name="Gas Boiler Gas Cost",
                     unique_id=f"{gas_boiler_entry_id}_gas_cost",
                     icon="mdi:fire",
                     device=gas_boiler_device,

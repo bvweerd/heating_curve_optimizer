@@ -114,6 +114,23 @@ class CalibrationSensor(BaseUtilitySensor):
         """Return extra attributes."""
         return self._extra_attrs
 
+    @property
+    def native_value(self) -> float | None:
+        """Return the calibration quality, or None while there isn't
+        enough history yet to compute one.
+
+        Overrides BaseUtilitySensor.native_value, whose `or 0.0` fallback
+        would otherwise collapse "not yet calculated" into the same 0.0
+        shown for a genuinely 0% calibration match - indistinguishable to
+        anyone just glancing at the state, and actively misleading on a
+        fresh install (reads as "badly miscalibrated" for the first few
+        days instead of "still gathering data"). The `status` attribute's
+        "Onvoldoende data voor kalibratie" fallback already explains this
+        in text; None here makes the primary state agree with it instead
+        of contradicting it.
+        """
+        return self._attr_native_value
+
     async def async_update(self) -> None:
         """Update the calibration sensor."""
         now = dt_util.utcnow()
@@ -188,20 +205,26 @@ class CalibrationSensor(BaseUtilitySensor):
                 calibration_quality = None
 
             self._attr_native_value = (
-                round(calibration_quality, 1) if calibration_quality else None
+                round(calibration_quality, 1)
+                if calibration_quality is not None
+                else None
             )
 
             # Build comprehensive attributes
             self._extra_attrs = {
                 "heat_loss_accuracy_pct": (
-                    round(heat_loss_accuracy, 1) if heat_loss_accuracy else None
+                    round(heat_loss_accuracy, 1)
+                    if heat_loss_accuracy is not None
+                    else None
                 ),
-                "cop_accuracy_pct": round(cop_accuracy, 1) if cop_accuracy else None,
+                "cop_accuracy_pct": (
+                    round(cop_accuracy, 1) if cop_accuracy is not None else None
+                ),
                 "storage_efficiency_current": DEFAULT_THERMAL_STORAGE_EFFICIENCY,
                 "storage_efficiency_recommended": storage_efficiency_recommendation,
                 # NEW: Graaddagen analysis results
                 "measured_u_value": (
-                    round(measured_u_value, 2) if measured_u_value else None
+                    round(measured_u_value, 2) if measured_u_value is not None else None
                 ),
                 "recommended_energy_label": energy_label_recommendation,
                 "current_energy_label": (

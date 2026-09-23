@@ -251,43 +251,24 @@ time_base_minutes: 60
 ### Current Electricity Price
 **Entity ID**: `sensor.heating_curve_optimizer_current_electricity_price`
 
-**Description**: Current electricity price with forecast
+**Description**: Current electricity **consumption** price - always mirrors
+your configured `consumption_price_sensor`'s current state, never the
+production/feed-in price. If you also want the production price at a
+glance, read your own `production_price_sensor` entity directly; this
+integration doesn't publish a separate sensor for it.
 
 **Unit**: €/kWh (or your configured currency)
 
-**Attributes**:
+**Attributes**: passed straight through from your underlying price sensor's
+own attributes (plus a normalized `forecast_prices` list when one can be
+extracted) - which attributes actually appear therefore depends entirely on
+which price integration you use. A Nordpool-style sensor typically exposes
+something like:
 ```yaml
-price_forecast: [0.25, 0.28, 0.35, 0.32, 0.28, 0.22]
-forecast_source: "nordpool"
-consumption_price: 0.25
-production_price: 0.08
-net_price: 0.17
+raw_today: [...]
+raw_tomorrow: [...]
+forecast_prices: [0.25, 0.28, 0.35, 0.32, 0.28, 0.22]
 ```
-
----
-
-### Net Power Consumption
-**Entity ID**: `sensor.heating_curve_optimizer_net_power_consumption`
-
-**Description**: Current net power (consumption - production)
-
-**Unit**: kW
-
-**Formula**:
-\\[ P_{net} = P_{consumption} - P_{production} \\]
-
-**Attributes**:
-```yaml
-consumption: 3.5  # kW
-production: 2.1  # kW (solar)
-net: 1.4  # kW
-```
-
-**Interpretation**:
-
-- **Positive**: Consuming from grid
-- **Zero**: Self-sufficient
-- **Negative**: Exporting to grid
 
 ---
 

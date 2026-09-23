@@ -119,12 +119,6 @@
       "heating_curve_offset": {
         "name": "Stooklijn offset"
       },
-      "heating_curve_min": {
-        "name": "Stooklijn minimum (aanvoertemperatuur)"
-      },
-      "heating_curve_max": {
-        "name": "Stooklijn maximum (aanvoertemperatuur)"
-      },
       "heat_curve_min_outdoor": {
         "name": "Stooklijn buitentemperatuur minimum"
       },
@@ -145,11 +139,6 @@
       }
     },
     "sensor": {
-      "heat_pump_cop": {
-        "state": {
-          "formula": "COP = (basale_COP + buitentemperatuur-coëfficiënt × T_buiten − k_factor × (T_aanvoer − 35)) × cop_compensatiefactor"
-        }
-      },
       "heating_curve_offset": {
         "name": "Stooklijn offset (geoptimaliseerd)"
       },
@@ -185,9 +174,6 @@
       },
       "heat_buffer": {
         "name": "Warmtebuffer (energie opslag)"
-      },
-      "net_power_consumption": {
-        "name": "Netto stroomverbruik"
       },
       "calibration": {
         "name": "Parameter Kalibratie"

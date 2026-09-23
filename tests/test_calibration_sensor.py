@@ -64,6 +64,35 @@ async def test_calibration_sensor_init(
 
 
 @pytest.mark.asyncio
+async def test_native_value_is_none_not_zero_when_no_data_yet(
+    hass: HomeAssistant, mock_config_entry, mock_device_info
+):
+    """Regression test: before enough history exists, native_value must be
+    None (shown as "Unknown"), never 0.0 - a real 0% calibration match and
+    "nothing calculated yet" must not be indistinguishable on the primary
+    state. None of the source sensors exist in `hass.states`, so every
+    validation step returns None and calibration_quality stays None."""
+    sensor = CalibrationSensor(
+        hass=hass,
+        name="Test Calibration",
+        unique_id="test_calibration",
+        device=mock_device_info,
+        entry=mock_config_entry,
+        heat_loss_sensor="sensor.does_not_exist",
+        thermal_power_sensor="sensor.does_not_exist_either",
+        outdoor_sensor=None,
+        indoor_sensor=None,
+        supply_temp_sensor=None,
+        cop_sensor=None,
+    )
+
+    await sensor.async_update()
+
+    assert sensor.native_value is None
+    assert sensor.available is True
+
+
+@pytest.mark.asyncio
 async def test_graaddagen_analysis(
     hass: HomeAssistant, mock_config_entry, mock_device_info
 ):
