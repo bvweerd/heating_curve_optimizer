@@ -76,7 +76,8 @@ async def async_setup_entry(
 
 
 class HeatingOptimizerClimate(
-    CoordinatorEntity[HeatCalculationCoordinator], ClimateEntity  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
+    CoordinatorEntity[HeatCalculationCoordinator],
+    ClimateEntity,  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
 ):
     """Climate entity reflecting/adjusting the target indoor temperature."""
 

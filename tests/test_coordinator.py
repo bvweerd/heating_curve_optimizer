@@ -1,7 +1,7 @@
 """Test the coordinator module."""
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import UpdateFailed
@@ -157,13 +157,39 @@ def test_update_failed_falls_back_on_ha_versions_without_translation_kwargs():
     update on that release - this is exercised for real (not mocked) by
     every other UpdateFailed-raising test in this file, since this HA
     release always takes the fallback branch."""
-    err = _update_failed("price_sensor_unavailable", {"sensor": "sensor.price"})
+    # Patch UpdateFailed so translation kwargs raise TypeError, simulating
+    # older HA versions.  On newer HA the real constructor calls
+    # async_get_hass() which blows up outside the HA event-loop thread.
+    _OrigUpdateFailed = UpdateFailed
+
+    def _reject_kwargs(*args, **kwargs):
+        if kwargs:
+            raise TypeError("UpdateFailed() got unexpected keyword arguments")
+        return _OrigUpdateFailed(*args)
+
+    with patch(
+        "custom_components.heating_curve_optimizer.coordinator.UpdateFailed",
+        side_effect=_reject_kwargs,
+    ):
+        err = _update_failed("price_sensor_unavailable", {"sensor": "sensor.price"})
     assert isinstance(err, UpdateFailed)
     assert str(err) == "Price sensor sensor.price is unavailable."
 
 
 def test_update_failed_without_placeholders():
-    err = _update_failed("no_price_sensor")
+    _OrigUpdateFailed = UpdateFailed
+
+    def _reject_kwargs(*args, **kwargs):
+        if kwargs:
+            raise TypeError("UpdateFailed() got unexpected keyword arguments")
+        return _OrigUpdateFailed(*args)
+
+    with patch(
+        "custom_components.heating_curve_optimizer.coordinator.UpdateFailed",
+        side_effect=_reject_kwargs,
+    ):
+        err = _update_failed("no_price_sensor")
+    assert isinstance(err, UpdateFailed)
     assert str(err) == "No electricity price sensor is configured."
 
 

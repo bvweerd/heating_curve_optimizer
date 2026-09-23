@@ -1,13 +1,15 @@
 """Tests for the PV-array subentry (config_flow.py).
 
-Same HA-version constraint as test_zone_subentry.py/test_gas_boiler_subentry.py:
 `HeatingPvArraySubentryFlow` subclasses `homeassistant.config_entries.
-ConfigSubentryFlow`, which does not exist in the HA release this repo's test
-environment can install (2024.3.x). So `HeatingPvArraySubentryFlow` is `None`
-here, and its step methods are unverified by this suite - what *is* verified
-is the pure validation logic, the title-generation logic, the graceful-
-degradation contract, and that all three subentry types are registered
-together.
+ConfigSubentryFlow`, which IS available in this HA version. So
+`HeatingPvArraySubentryFlow` is a real class here, and
+`async_get_supported_subentry_types` returns all three subentry types.
+
+What is verified here:
+- HeatingPvArraySubentryFlow is defined (not None)
+- async_get_supported_subentry_types includes PV_SUBENTRY_TYPE
+- the pure validation logic and title-generation logic
+- that all three subentry types are registered together
 """
 
 from __future__ import annotations
@@ -175,35 +177,32 @@ def test_build_pv_array_import_schema_always_offers_manual_entry():
     # vol.Schema wraps a dict of {marker: validator}; the "import_choice"
     # key must be present and default to manual entry, not to importing
     # the (only) detected array - importing should be an explicit choice.
-    (marker,) = [k for k in schema.schema if str(k) == "import_choice"]
+    (marker,) = (k for k in schema.schema if str(k) == "import_choice")
     assert marker.default() == _PV_IMPORT_CHOICE_MANUAL
 
 
-def test_heating_pv_array_subentry_flow_is_none_on_this_ha_release():
-    """Documents the environment constraint explained in the module
-    docstring, so a future upgrade of pytest-homeassistant-custom-component
-    that starts providing ConfigSubentryFlow is a visible, deliberate
-    change here rather than a silent one."""
-    assert HeatingPvArraySubentryFlow is None
+def test_heating_pv_array_subentry_flow_is_available():
+    """ConfigSubentryFlow is available in this HA version, so
+    HeatingPvArraySubentryFlow must be a real class (not None)."""
+    assert HeatingPvArraySubentryFlow is not None
 
 
-def test_async_get_supported_subentry_types_returns_empty_dict_gracefully():
+def test_async_get_supported_subentry_types_includes_pv_array():
     result = HeatingCurveOptimizerConfigFlow.async_get_supported_subentry_types(
         MagicMock()
     )
-    assert result == {}
+    assert PV_SUBENTRY_TYPE in result
 
 
 def test_all_three_subentry_types_share_the_same_ha_version_gate():
     """ZONE_SUBENTRY_TYPE, GAS_SUBENTRY_TYPE and PV_SUBENTRY_TYPE are
-    distinct keys, and all three subentry flow classes are None-gated by
-    the exact same HA-version check, so
-    async_get_supported_subentry_types is consistent (empty for all
-    three, or populated for all three) rather than mixing states."""
+    distinct keys, and all three subentry flow classes are gated by the
+    exact same HA-version check, so async_get_supported_subentry_types
+    is consistent (populated for all three) rather than mixing states."""
     assert len({ZONE_SUBENTRY_TYPE, GAS_SUBENTRY_TYPE, PV_SUBENTRY_TYPE}) == 3
     result = HeatingCurveOptimizerConfigFlow.async_get_supported_subentry_types(
         MagicMock()
     )
-    assert ZONE_SUBENTRY_TYPE not in result
-    assert GAS_SUBENTRY_TYPE not in result
-    assert PV_SUBENTRY_TYPE not in result
+    assert ZONE_SUBENTRY_TYPE in result
+    assert GAS_SUBENTRY_TYPE in result
+    assert PV_SUBENTRY_TYPE in result

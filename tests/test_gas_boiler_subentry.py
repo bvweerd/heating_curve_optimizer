@@ -1,12 +1,15 @@
 """Tests for the hybrid gas-boiler subentry (config_flow.py).
 
-Same HA-version constraint as test_zone_subentry.py: `HeatingGasBoilerSubentryFlow`
-subclasses `homeassistant.config_entries.ConfigSubentryFlow`, which does not
-exist in the HA release this repo's test environment can install (2024.3.x).
-So `HeatingGasBoilerSubentryFlow` is `None` here, and its step methods are
-unverified by this suite - what *is* verified is the pure validation logic,
-the graceful-degradation contract, and that both subentry types are
-registered together.
+`HeatingGasBoilerSubentryFlow` subclasses
+`homeassistant.config_entries.ConfigSubentryFlow`, which IS available in
+this HA version. So `HeatingGasBoilerSubentryFlow` is a real class here,
+and `async_get_supported_subentry_types` returns all three subentry types.
+
+What is verified here:
+- HeatingGasBoilerSubentryFlow is defined (not None)
+- async_get_supported_subentry_types includes GAS_SUBENTRY_TYPE
+- the pure validation logic
+- that both zone and gas subentry types are registered together
 """
 
 from __future__ import annotations
@@ -43,19 +46,17 @@ def test_build_gas_boiler_subentry_schema_honors_detected_default():
     assert field.default() == "sensor.current_gas_consumption_price"
 
 
-def test_heating_gas_boiler_subentry_flow_is_none_on_this_ha_release():
-    """Documents the environment constraint explained in the module
-    docstring, so a future upgrade of pytest-homeassistant-custom-component
-    that starts providing ConfigSubentryFlow is a visible, deliberate
-    change here rather than a silent one."""
-    assert HeatingGasBoilerSubentryFlow is None
+def test_heating_gas_boiler_subentry_flow_is_available():
+    """ConfigSubentryFlow is available in this HA version, so
+    HeatingGasBoilerSubentryFlow must be a real class (not None)."""
+    assert HeatingGasBoilerSubentryFlow is not None
 
 
-def test_async_get_supported_subentry_types_returns_empty_dict_gracefully():
+def test_async_get_supported_subentry_types_includes_gas_boiler():
     result = HeatingCurveOptimizerConfigFlow.async_get_supported_subentry_types(
         MagicMock()
     )
-    assert result == {}
+    assert GAS_SUBENTRY_TYPE in result
 
 
 def test_validate_gas_boiler_subentry_normalizes_input():
@@ -134,12 +135,12 @@ async def test_gas_boiler_subentry_absent_when_entry_lacks_subentries_attribute(
 
 def test_both_subentry_types_share_the_same_ha_version_gate():
     """ZONE_SUBENTRY_TYPE and GAS_SUBENTRY_TYPE are distinct keys, and both
-    subentry flow classes are None-gated by the exact same HA-version
-    check, so async_get_supported_subentry_types is consistent (empty for
-    both, or populated for both) rather than mixing states."""
+    subentry flow classes are gated by the exact same HA-version check, so
+    async_get_supported_subentry_types is consistent (populated for both)
+    rather than mixing states."""
     assert ZONE_SUBENTRY_TYPE != GAS_SUBENTRY_TYPE
     result = HeatingCurveOptimizerConfigFlow.async_get_supported_subentry_types(
         MagicMock()
     )
-    assert ZONE_SUBENTRY_TYPE not in result
-    assert GAS_SUBENTRY_TYPE not in result
+    assert ZONE_SUBENTRY_TYPE in result
+    assert GAS_SUBENTRY_TYPE in result

@@ -79,7 +79,13 @@ class CurrentElectricityPriceSensor(BaseUtilitySensor):
         self._attr_available = True
 
         self._attr_native_value = round(base_price, 8)
-        attrs: dict[str, Any] = dict(state.attributes)
+        attrs: dict[str, Any] = {}
+        # Only copy small, useful attributes from the source - avoid
+        # duplicating the full forecast arrays that push attributes past
+        # the 16 KB recorder limit.
+        for key in ("unit_of_measurement", "friendly_name", "device_class"):
+            if key in state.attributes:
+                attrs[key] = state.attributes[key]
         forecast = extract_price_forecast(state)
         if forecast:
             attrs["forecast_prices"] = forecast
@@ -154,25 +160,21 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
     async def async_update(self) -> None:
         p_state = self.hass.states.get(self.power_sensor)
         if p_state is None:
-            self._set_unavailable(
-                f"vermogenssensor {self.power_sensor} werd niet gevonden"
-            )
+            self._set_unavailable(f"power sensor {self.power_sensor} not found")
             return
         if p_state.state in ("unknown", "unavailable"):
             self._set_unavailable(
-                f"vermogenssensor {self.power_sensor} heeft status '{p_state.state}'"
+                f"power sensor {self.power_sensor} has state '{p_state.state}'"
             )
             return
 
         s_state = self.hass.states.get(self.supply_sensor)
         if s_state is None:
-            self._set_unavailable(
-                f"aanvoersensor {self.supply_sensor} werd niet gevonden"
-            )
+            self._set_unavailable(f"supply sensor {self.supply_sensor} not found")
             return
         if s_state.state in ("unknown", "unavailable"):
             self._set_unavailable(
-                f"aanvoersensor {self.supply_sensor} heeft status '{s_state.state}'"
+                f"supply sensor {self.supply_sensor} has state '{s_state.state}'"
             )
             return
 
@@ -184,7 +186,7 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
         sensor_name = entity_id or str(self.outdoor_sensor)
 
         if entity_id is None:
-            self._set_unavailable("geen buitensensor gevonden")
+            self._set_unavailable("no outdoor sensor found")
             return
 
         o_state = self.hass.states.get(entity_id)
@@ -197,32 +199,30 @@ class HeatPumpThermalPowerSensor(BaseUtilitySensor):
             sensor_name = entity_id
 
         if o_state is None:
-            self._set_unavailable(f"geen buitensensor gevonden ({sensor_name})")
+            self._set_unavailable(f"outdoor sensor not found ({sensor_name})")
             return
         if o_state.state in ("unknown", "unavailable"):
             self._set_unavailable(
-                f"buitensensor {sensor_name} heeft status '{o_state.state}'"
+                f"outdoor sensor {sensor_name} has state '{o_state.state}'"
             )
             return
 
         try:
             power = float(p_state.state)
         except ValueError:
-            self._set_unavailable(
-                f"waarde van vermogenssensor {self.power_sensor} is ongeldig"
-            )
+            self._set_unavailable(f"power sensor {self.power_sensor} has invalid value")
             return
         try:
             s_temp = float(s_state.state)
         except ValueError:
             self._set_unavailable(
-                f"waarde van aanvoersensor {self.supply_sensor} is ongeldig"
+                f"supply sensor {self.supply_sensor} has invalid value"
             )
             return
         try:
             o_temp = float(o_state.state)
         except ValueError:
-            self._set_unavailable(f"waarde van buitensensor {sensor_name} is ongeldig")
+            self._set_unavailable(f"outdoor sensor {sensor_name} has invalid value")
             return
         cop = (
             self.base_cop

@@ -1,4 +1,4 @@
-"""Test the calibration sensor with graaddagen analysis."""
+"""Test the calibration sensor with degree_days analysis."""
 
 import pytest
 from datetime import timedelta
@@ -107,7 +107,7 @@ def test_status_message_flags_missing_calibration_quality(
     """Regression test: when calibration_quality (the primary state) is
     None but a side metric like storage efficiency did produce a message,
     the status text must say the primary score is still missing - a
-    message list built purely from side metrics ("Thermische opslag: OK")
+    message list built purely from side metrics ("Thermal storage: OK")
     must not read as if calibration is complete while the main state is
     "Unknown"."""
     sensor = CalibrationSensor(
@@ -125,15 +125,15 @@ def test_status_message_flags_missing_calibration_quality(
         calibration_quality=None,
     )
 
-    assert status.startswith("Kalibratiescore: nog onvoldoende data")
-    assert "Thermische opslag" in status
+    assert status.startswith("Calibration score: insufficient data")
+    assert "Thermal storage" in status
 
 
 @pytest.mark.asyncio
-async def test_graaddagen_analysis(
+async def test_degree_days_analysis(
     hass: HomeAssistant, mock_config_entry, mock_device_info
 ):
-    """Test graaddagen correlation analysis."""
+    """Test degree_days correlation analysis."""
     sensor = CalibrationSensor(
         hass=hass,
         name="Test Calibration",
@@ -213,7 +213,7 @@ async def test_graaddagen_analysis(
 
         # Run analysis
         start_time = now - timedelta(days=7)
-        result = await sensor._analyze_graaddagen_correlation(start_time, now)
+        result = await sensor._analyze_degree_days_correlation(start_time, now)
 
         # Verify results
         assert result is not None
@@ -272,10 +272,10 @@ async def test_energy_label_recommendation(
         trend_analysis={"direction": "stable", "change_pct": 2.0},
     )
 
-    assert "Energielabel: Aanbevolen C (huidig: A+)" in status
-    assert "Warmteverlies: Goed" in status
-    assert "COP: Goed" in status  # 90% = Goed (85-95%)
-    assert "Trend: Stabiel" in status
+    assert "Energy label: Recommended C (current: A+)" in status
+    assert "Heat loss: Good" in status
+    assert "COP: Good" in status  # 90% = Good (85-95%)
+    assert "Trend: Stable" in status
 
     print(f"✅ Status message: {status}")
 

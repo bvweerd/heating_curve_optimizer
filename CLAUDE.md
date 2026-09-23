@@ -20,27 +20,31 @@ This document provides comprehensive guidance for AI assistants working on the H
 - Weather forecasts (temperature, solar radiation from open-meteo.com)
 - Electricity prices (consumption and production)
 - Heat pump COP (Coefficient of Performance)
-- Building characteristics (area, energy label, windows)
+- Building characteristics (area, energy label, thermal mass, emitter type)
 
 ### Core Functionality
-The integration uses **dynamic programming** to minimize electricity costs while meeting heat demand over a 6-hour planning horizon. It considers:
-- Variable electricity prices
-- Heat pump efficiency variations with temperature
-- Solar gain buffering (negative heat demand creates thermal buffer)
-- Physical constraints (temperature limits, rate of change)
+The integration uses **backward-induction dynamic programming** over indoor temperature to minimize electricity costs while maintaining comfort. It considers:
+- Variable electricity prices (import and feed-in)
+- Heat pump efficiency variations with temperature (COP model with Carnot cap)
+- Solar gain and PV surplus
+- Building thermal physics (1R1C model)
+- Comfort constraints (quadratic penalty outside comfort band)
+- Offset ramp-rate limits (configurable via `offset_delta_t`)
 
 ### Key Equation
 Heat pump COP is calculated as:
 ```
-COP = (base_cop + α × T_outdoor - k × (T_supply - 35)) × f
+COP = (base_cop + alpha * T_outdoor - k * (T_supply - 35)) * f
 ```
 Where:
-- `base_cop`: Base COP at 35°C supply temperature
-- `α`: Outdoor temperature coefficient (0.025)
+- `base_cop`: Base COP at 35 deg C supply temperature
+- `alpha`: Outdoor temperature coefficient (default 0.025)
 - `k`: k_factor (how COP declines as supply temperature rises)
-- `T_supply`: Supply temperature (°C)
-- `T_outdoor`: Outdoor temperature (°C)
+- `T_supply`: Supply temperature (deg C)
+- `T_outdoor`: Outdoor temperature (deg C)
 - `f`: cop_compensation_factor (adjusts theoretical COP to actual system)
+
+COP is clamped to the Carnot limit: `COP <= (T_supply + 273.15) / (T_supply - T_outdoor)`.
 
 ---
 
@@ -50,20 +54,33 @@ Where:
 /media/data/github/heating_curve_optimizer/
 ├── custom_components/
 │   └── heating_curve_optimizer/
-│       ├── __init__.py                 # Integration entry point, coordinator setup
-│       ├── binary_sensor.py            # Heat demand binary sensor
-│       ├── calibration_sensor.py       # Calibration sensor
-│       ├── config_flow.py              # UI configuration (1162 lines)
-│       ├── const.py                    # Constants and defaults
-│       ├── coordinator.py              # Data coordinators (Weather, Heat, Optimization)
+│       ├── __init__.py                 # Entry point, coordinator setup, subentry handling
+│       ├── binary_sensor.py            # Heat demand + gas boiler preferred sensors
+│       ├── building_model.py           # 1R1C thermal building model (BuildingConfig, EmitterConfig)
+│       ├── calibration.py              # Thermal calibration logic (UA/thermal mass learning)
+│       ├── calibration_sensor.py       # Calibration sensor entity
+│       ├── climate.py                  # Climate entity (target temp control)
+│       ├── companion_integrations.py   # Detection of battery_controller and other integrations
+│       ├── config_flow.py              # Multi-step + sectioned UI configuration
+│       ├── const.py                    # Constants, defaults, energy label mappings
+│       ├── coordinator.py              # Weather, Heat, Optimization coordinators
 │       ├── diagnostics.py              # Diagnostics export
-│       ├── entity.py                   # Base entity class
-│       ├── helpers.py                  # Helper functions
+│       ├── entity.py                   # Base entity class (BaseUtilitySensor)
+│       ├── gas_boiler_coordinator.py   # Gas boiler cost comparison coordinator
+│       ├── gas_boiler_model.py         # Gas boiler cost model
+│       ├── heatpump_model.py           # Heat pump efficiency model (HeatPumpConfig)
+│       ├── helpers.py                  # Helper functions (price extraction, supply temp calc)
 │       ├── manifest.json               # Integration manifest
-│       ├── optimizer.py                # Optimization algorithm (dynamic programming)
+│       ├── number.py                   # Number entities (target temp, hysteresis)
+│       ├── realtime_controller.py      # Real-time PV-surplus grid control
+│       ├── sensor_realtime_offset.py   # Real-time offset adjustment sensor
+│       ├── sensor_thermal_calibration.py # Thermal calibration sensor
+│       ├── thermal_optimizer.py        # DP optimizer over indoor temperature
 │       │
 │       ├── sensor/                     # MODULAR SENSOR STRUCTURE
-│       │   ├── __init__.py             # Sensor platform setup
+│       │   ├── __init__.py             # Sensor platform setup and entity registration
+│       │   ├── event_driven.py         # Event-driven sensors (price, thermal power, COP delta)
+│       │   ├── diagnostics_sensor.py   # Diagnostics sensor
 │       │   │
 │       │   ├── weather/                # Weather sensors
 │       │   │   └── outdoor_temperature.py
@@ -75,55 +92,54 @@ Where:
 │       │   │   └── net_heat_loss.py
 │       │   │
 │       │   ├── optimization/           # Optimization sensors
-│       │   │   ├── heating_curve_offset.py  # Core optimizer sensor
+│       │   │   ├── base.py             # Base class for optimization sensors
+│       │   │   ├── heating_curve_offset.py
 │       │   │   ├── optimized_supply_temperature.py
-│       │   │   └── heat_buffer.py
+│       │   │   ├── heat_buffer.py
+│       │   │   ├── cost_savings.py
+│       │   │   └── total_cost_savings.py
 │       │   │
 │       │   ├── cop/                    # COP sensors
 │       │   │   ├── quadratic_cop.py
 │       │   │   └── calculated_supply_temperature.py
 │       │   │
-│       │   └── diagnostics_sensor.py   # Diagnostics sensor
+│       │   ├── daily_utility/          # Daily energy tracking sensors
+│       │   │   ├── heat_pump_energy.py
+│       │   │   └── net_heat_loss_energy.py
+│       │   │
+│       │   └── gas_boiler/             # Gas boiler comparison sensors
+│       │       ├── base.py
+│       │       ├── heat_pump_cost.py
+│       │       ├── gas_cost.py
+│       │       └── cost_savings.py
 │       │
 │       └── translations/
 │           ├── en.json                 # English translations
 │           └── nl.json                 # Dutch translations
 │
-├── tests/                              # 18 test modules
+├── tests/                              # 35 test modules
 ├── .github/workflows/                  # CI/CD pipelines
 ├── .pre-commit-config.yaml             # Pre-commit hooks
 ├── .bumpversion.toml                   # Version management
 ├── setup.cfg                           # Tool configurations
 ├── requirements.txt                    # Development dependencies
-└── README.md                           # User documentation
+└── docs/                               # Documentation (MkDocs)
 ```
 
 ### Critical Files
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `coordinator.py` | 689 | Data update coordinators for weather, heat, and optimization |
-| `optimizer.py` | ~300 | Dynamic programming optimization algorithm |
-| `config_flow.py` | 1162 | Multi-step UI configuration flow |
-| `sensor/__init__.py` | ~180 | Sensor platform setup and entity registration |
-| `const.py` | 300+ | Configuration keys, defaults, energy label mappings |
-
-### Modular Sensor Architecture
-
-**All sensors are organized by function in separate files:**
-
-- **Weather**: `sensor/weather/outdoor_temperature.py` (~60 lines)
-- **Heat**: `sensor/heat/` (4 files, ~100 lines each)
-- **Optimization**: `sensor/optimization/` (3 files, ~80 lines each)
-- **COP**: `sensor/cop/` (2 files, ~90 lines each)
-- **Diagnostics**: `sensor/diagnostics_sensor.py` (~100 lines)
-
-**Benefits**:
-- ✅ Easy to find and modify specific sensors
-- ✅ Better testing isolation
-- ✅ Reduced merge conflicts
-- ✅ Improved IDE performance
-- ✅ Clear separation of concerns
+| `coordinator.py` | ~1480 | Weather, Heat, and Optimization coordinators |
+| `config_flow.py` | ~1970 | Multi-step + sectioned UI configuration, subentry flows |
+| `thermal_optimizer.py` | ~390 | Backward-induction DP over indoor temperature |
+| `sensor/__init__.py` | ~630 | Sensor platform setup and entity registration |
+| `sensor/event_driven.py` | ~650 | Event-driven sensors (price, thermal power, COP delta) |
+| `__init__.py` | ~490 | Entry point, zone/PV/gas subentry orchestration |
+| `const.py` | ~410 | Configuration keys, defaults, energy label mappings |
+| `building_model.py` | ~245 | 1R1C building thermal model |
+| `calibration_sensor.py` | ~780 | Thermal calibration entity |
+| `calibration.py` | ~285 | Calibration state machine and persistence |
 
 ---
 
@@ -133,185 +149,144 @@ Where:
 ```python
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool
 ```
-- Sets up config entry
-- Initializes `hass.data[DOMAIN]` with runtime state
-- Forwards setup to all platforms (sensor, number, binary_sensor)
-- Registers update listener for config changes
+- Sets up config entry with coordinator chain
+- Creates primary zone from first `ZONE_SUBENTRY_TYPE` subentry
+- Sets up additional zone subentries (each gets own coordinators + device)
+- Sets up PV array subentries and gas boiler subentry
+- Forwards to all platforms: `sensor`, `binary_sensor`, `number`, `climate`
+- Stores runtime data as a `HcoRuntimeData` dataclass in `hass.data[DOMAIN][entry_id]`
 
-**Important**: This integration is **config-entry only** (no YAML support).
+**Important**: This integration is **config-entry only** (no YAML support). Heating zones, PV arrays, and gas boiler are **config subentries**, added via the integration's device page after initial setup.
 
 ### `const.py` - Constants and Defaults
-Key constants to know:
+Key constants:
 - `DOMAIN = "heating_curve_optimizer"`
-- `PLATFORMS = ["sensor", "number", "binary_sensor"]`
-- `DEFAULT_PLANNING_WINDOW_HOURS = 6`
-- `DEFAULT_TIME_BASE_MINUTES = 60`
-- `U_VALUE_MAP`: Energy labels (A+++ to G) → U-values (0.18 to 2.5)
+- `PLATFORMS = ["sensor", "binary_sensor", "number", "climate"]`
+- `DEFAULT_PLANNING_WINDOW = 6` (hours)
+- `DEFAULT_TIME_BASE = 60` (minutes per step)
+- `ZONE_SUBENTRY_TYPE = "heating_zone"`
+- `PV_SUBENTRY_TYPE = "pv_array"`
+- `GAS_SUBENTRY_TYPE = "gas_boiler"`
 - `ENERGY_LABELS = ["A+++", "A++", "A+", "A", "B", "C", "D", "E", "F", "G"]`
 
-### `entity.py` - Base Entity Class
-```python
-class BaseUtilitySensor(SensorEntity, RestoreEntity)
-```
-All sensors inherit from this base class which provides:
-- State restoration from previous sessions
-- Availability management with logging
-- Value rounding and validation
-- Unavailability messages (Dutch language)
+### `thermal_optimizer.py` - Core Optimization Logic
+
+**Key Function**: `optimize_thermal_schedule(building, heatpump, emitter, ...)`
+
+**Algorithm**: Backward-induction dynamic programming over indoor temperature.
+
+**State Space**: `(T_indoor, previous_offset)` - indoor temperature IS the state, not a separate buffer.
+
+- **Offsets**: -4 to +4 deg C in 1 deg C increments
+- **Indoor temperature**: discretized in 0.5 deg C steps
+- **Ramp-rate limit**: `max_change = time_base // offset_delta_t`
+- **Comfort**: quadratic penalty outside `[comfort_min, comfort_max]`, hard floor penalty below
+- **Terminal value**: heat stored above comfort floor valued at end-of-horizon price/COP
+- **PV surplus**: priced at feed-in rate (default 0.07 EUR/kWh), not free
+
+**Key difference from old optimizer.py** (removed): The old DP used `(time_step, offset, cumulative_offset_sum)` with a separate buffer payload. The new DP uses physical indoor temperature as the state dimension, so energy conservation is enforced by construction.
+
+**Result**: `ThermalOptimizationResult` dataclass with offsets, supply temps, indoor temps, thermal/electrical power, costs, and shadow price.
+
+### `building_model.py` - Building Thermal Model
+
+**1R1C model** (analogous to battery_controller's battery model):
+- `BuildingConfig`: UA (W/K), thermal mass (kWh/K), comfort band
+- `EmitterConfig`: radiator/underfloor/fan coil characteristics
+- `next_indoor_temp()`: physics step function called thousands of times per DP run
+
+### `heatpump_model.py` - Heat Pump Model
+
+- `HeatPumpConfig`: base COP, k_factor, outdoor temp coefficient, compensation factor
+- `cop_at(supply_temp, outdoor_temp)`: COP with Carnot cap
+- Used by both thermal_optimizer.py and coordinator.py
 
 ### `coordinator.py` - Data Update Coordinators
 
 **Three coordinators manage data updates**:
 
 1. **`WeatherDataCoordinator`** (60-min interval)
-   - Fetches weather data from open-meteo.com API
-   - Provides current temperature + 24h forecast
-   - Provides solar radiation data
+   - Fetches weather + radiation data from open-meteo.com API
+   - Provides temperature + 48h forecast and solar radiation
 
 2. **`HeatCalculationCoordinator`** (depends on WeatherCoordinator)
-   - Calculates heat loss: `Q_loss = HTC × ΔT`
-   - Calculates solar gain through windows
-   - Calculates net heat loss (heat loss - solar gain)
-   - Provides PV production forecast
-   - **Calculates heat demand factor** based on target indoor temp vs actual
+   - Calculates heat loss, solar gain, net heat loss, PV production
+   - Tracks indoor temperature and heat demand factor
+   - Uses `BuildingConfig` for thermal calculations
 
 3. **`OptimizationCoordinator`** (depends on HeatCoordinator)
-   - Runs dynamic programming optimization
-   - Calculates optimal heating curve offsets
-   - **Tracks buffer state persistently** (not reset to 0 each run)
-   - **Tracks current offset** for smooth transitions
-   - Provides cost savings analysis
+   - Calls `optimize_thermal_schedule()` in executor thread
+   - Tracks `_current_offset` for smooth transitions
+   - Manages real-time controller (PV surplus offset adjustments)
+   - Provides thermal calibration data collection
+   - Handles buffer evolution (derived from indoor temperature trajectory)
 
-**Benefits of coordinator pattern**:
-- Efficient API calls (single fetch for multiple sensors)
-- Automatic update propagation to all sensors
-- Centralized error handling
+### `gas_boiler_coordinator.py` - Gas Boiler Comparison
 
-### `optimizer.py` - Core Optimization Logic
+Optional coordinator (requires `GAS_SUBENTRY_TYPE` subentry):
+- Compares heat pump electricity cost vs gas boiler cost
+- Uses current outdoor/supply temperature operating point
+- Provides cost savings and "gas cheaper" binary sensor
 
-**Location**: `custom_components/heating_curve_optimizer/optimizer.py`
+### `realtime_controller.py` - Real-time Grid Control
 
-**Key Function**: `optimize_offsets(demand_forecast, price_forecast, ...)`
-
-**Algorithm**: Dynamic Programming
-- **State Space**: `(time_step, offset, cumulative_offset_sum)`
-- **Offsets**: -4°C to +4°C in 1°C increments
-- **Constraints**:
-  - Maximum offset change: **configurable via `offset_delta_t`**
-    - Default: 10 min/°C → max 6°C change per 60-min step
-    - Formula: `max_change = time_base // offset_delta_t`
-  - Supply temperature must stay within min/max bounds
-  - Buffer cannot go below `-max_buffer_debt` (heat debt limit)
-- **State persistence**: Uses actual buffer and offset from previous run
-- **Objective**: Minimize total electricity cost while meeting heat demand
-- **Output**: Optimal offset sequence and buffer evolution
-
-**Key Data Structures**:
-```python
-# Dynamic programming table
-dp = {}  # (step, offset, cumulative_offset_sum) → (cost, parent_state, buffer)
-```
-
-### `sensor/` - Modular Sensor Structure
-
-**All sensors organized by category**:
-
-#### Weather Sensors (`sensor/weather/`)
-- **`CoordinatorOutdoorTemperatureSensor`** - Current temp + forecast from weather coordinator
-
-#### Heat Calculation Sensors (`sensor/heat/`)
-- **`CoordinatorHeatLossSensor`** - `Q_loss = HTC × ΔT` with detailed HTC breakdown
-- **`CoordinatorWindowSolarGainSensor`** - Solar gain through windows
-- **`CoordinatorPVProductionForecastSensor`** - PV production forecast
-- **`CoordinatorNetHeatLossSensor`** - `heat_loss - solar_gain` (can be negative)
-
-#### Optimization Sensors (`sensor/optimization/`)
-- **`CoordinatorHeatingCurveOffsetSensor`** - **CORE OPTIMIZER** - optimal offset
-- **`CoordinatorOptimizedSupplyTemperatureSensor`** - Optimized supply temperature
-- **`CoordinatorHeatBufferSensor`** - Thermal buffer tracking
-
-#### COP Sensors (`sensor/cop/`)
-- **`CoordinatorQuadraticCopSensor`** - Heat pump COP calculation
-- **`CoordinatorCalculatedSupplyTemperatureSensor`** - Supply temp based on heating curve
-
-#### Diagnostics
-- **`CoordinatorDiagnosticsSensor`** - Complete system diagnostics
-
-**How to add a new sensor**:
-1. Create file in appropriate subfolder (e.g., `sensor/heat/new_sensor.py`)
-2. Import in `sensor/__init__.py`
-3. Add to entities list in `async_setup_entry`
-4. Add translations to `en.json` and `nl.json`
+Optional (requires `CONF_GRID_IMPORT_SENSOR` or `CONF_GRID_EXPORT_SENSOR`):
+- Adjusts offset in real-time based on grid power flow
+- Uses shadow price from thermal optimizer
+- Clamps effective offset within [-4, +4] bounds
 
 ### `config_flow.py` - UI Configuration
 
-**Multi-Step Flow** (main entry - shared/infra config only):
+**Main entry flow** (shared/infrastructure config only):
 1. **Basic Settings**: power/grid sensors (dynamic discovery)
-2. **Source Selection**: consumption/production sensors (dynamic discovery)
+2. **Source Selection**: consumption/production sensors
 3. **Price Settings**: consumption/production price sensors
-4. **Heating Curve Settings**: heat pump COP parameters, heating curve limits
+4. **Heating Curve Settings**: COP parameters, heating curve limits
 5. **Finish**: Validation and entry creation
 
-**Features**:
-- Dynamic sensor discovery by device class
-- Validation at each step
-- Options flow for updating configuration
-- Defaults from `const.py`
+Supports both multi-step flow and modern single-page **sectioned form** (graceful degradation).
 
-**Heating zones are subentries, not part of the main flow.** Every zone -
-including the first - is added via **Add heating zone** on the
-integration's device page after setup (`HeatingZoneSubentryFlow`), not
-through the wizard above. Zone-specific settings (area, energy label,
-glass/window properties, ventilation type, ceiling height, thermal mass
-class, emitter type, target indoor temperature, hysteresis, indoor
-temperature sensor) live on the zone subentry, so every zone is configured
-identically. The first (oldest) zone subentry is the **primary zone**: it
-drives the main device's existing rich sensor set (COP, calibration,
-diagnostics, cost savings, heat buffer, ...) using the main entry's
-`entry_id` identity; any additional zone subentries get their own
-lightweight device with a smaller sensor set (offset, supply temperature,
-net heat loss). With zero zone subentries configured, the integration
-still loads, but `heat_coordinator`/`optimization_coordinator` are `None`
-and every dependent entity is skipped until a zone is added.
+**Subentry flows** (added via integration device page after setup):
+- `HeatingZoneSubentryFlow`: area, energy label, glass, ventilation, thermal mass, emitter, target temp, hysteresis, indoor sensor
+- `HeatingPvArraySubentryFlow`: peak power, orientation, tilt, efficiency, DC-coupled
+- `HeatingGasBoilerSubentryFlow`: gas price sensor, boiler efficiency, calorific value
+
+**Primary zone**: The first (oldest) zone subentry drives the main device's full sensor set. Additional zones get lightweight devices. With zero zones configured, the integration loads but `heat_coordinator`/`optimization_coordinator` are `None`.
 
 ### `number.py` - Manual Control Entities
 
 Three number entities for live temperature-setpoint control:
 
-1. **`TargetIndoorTemperatureNumber`**: Target indoor temperature (15-25°C, step 0.5°C)
-2. **`IndoorTempHysteresisLowerNumber`**: Hysteresis below target - heat pump ON (0.1-2.0°C, step 0.1°C)
-3. **`IndoorTempHysteresisUpperNumber`**: Hysteresis above target - heat pump OFF (0.1-2.0°C, step 0.1°C)
+1. **`TargetIndoorTemperatureNumber`**: Target indoor temperature (15-25 deg C, step 0.5)
+2. **`IndoorTempHysteresisLowerNumber`**: Hysteresis below target (0.1-2.0 deg C)
+3. **`IndoorTempHysteresisUpperNumber`**: Hysteresis above target (0.1-2.0 deg C)
 
-All three:
-- Restore state on restart via `RestoreEntity`
-- Sync to `hass.data[DOMAIN]["runtime"]`
-- Trigger sensor recalculation on change
+All three restore state on restart and sync to `hass.data[DOMAIN]["runtime"]`.
 
-**Heating curve bounds are config-flow-only, not number entities.** The
-manual offset and the heating curve's min/max supply/outdoor temperature
-bounds (`heating_curve_offset`, `heat_curve_min`, `heat_curve_max`,
-`heat_curve_min_outdoor`, `heat_curve_max_outdoor`) are set once via the
-setup wizard / options flow (`config_flow.py`'s heating-curve-settings
-step) and read from `ConfigEntry.data`/`.options` - there used to be five
-additional live number entities for these (`HeatingCurveOffsetNumber`,
-`HeatCurveMinNumber`, `HeatCurveMaxNumber`, `HeatCurveMinOutdoorNumber`,
-`HeatCurveMaxOutdoorNumber`), but they no longer exist in `number.py`; this
-section previously still described them, and `translations/en.json`/`nl.json`
-carried five now-removed orphaned `entity.number.*` keys for them.
+### `binary_sensor.py` - Binary Sensors
 
-### `binary_sensor.py` - Heat Demand Sensor
+- **`CoordinatorHeatDemandBinarySensor`**: ON when net heat loss > 0
+- **`GasBoilerPreferredBinarySensor`**: ON when gas boiler is cheaper than heat pump
+- Legacy `HeatDemandBinarySensor` fallback when coordinator unavailable
 
-**`HeatDemandBinarySensor`**:
-- State: `ON` when net heat loss > 0, `OFF` otherwise
-- Device class: `HEAT`
-- Used for automations requiring heat/no-heat logic
+### `sensor/` - Modular Sensor Structure
+
+**Weather**: `sensor/weather/outdoor_temperature.py`
+**Heat**: `sensor/heat/` - heat_loss, solar_gain, pv_production, net_heat_loss
+**Optimization**: `sensor/optimization/` - offset, supply temp, buffer, cost savings, total savings
+**COP**: `sensor/cop/` - quadratic COP, calculated supply temperature
+**Daily utility**: `sensor/daily_utility/` - heat pump energy, net heat loss energy
+**Gas boiler**: `sensor/gas_boiler/` - heat pump cost, gas cost, cost savings
+**Event-driven**: `sensor/event_driven.py` - price sensor, thermal power, COP delta, heat generation delta
+**Diagnostics**: `sensor/diagnostics_sensor.py`
+**Standalone**: `sensor_realtime_offset.py`, `sensor_thermal_calibration.py`
 
 ---
 
 ## Development Workflow
 
 ### Prerequisites
-- Python 3.12
+- Python 3.13+
 - Home Assistant development environment
 - pytest, pytest-asyncio, pytest-homeassistant-custom-component
 - pre-commit
@@ -319,29 +294,17 @@ carried five now-removed orphaned `entity.number.*` keys for them.
 ### Setting Up Development Environment
 
 ```bash
-# Install dependencies (for local development)
 pip install pre-commit
-
-# Install pre-commit hooks
 pre-commit install
-
-# IMPORTANT: Before pushing, always run
-pre-commit run --all-files
-
-# Install test dependencies
 pip install -r requirements.txt
-
-# Run tests
-pytest
 ```
 
 ### Pre-commit Hooks
 
 **Automatically runs on commit** (`.pre-commit-config.yaml`):
 1. **pyupgrade**: Upgrades Python syntax to 3.7+
-2. **black**: Code formatting (line length 88, safe mode)
-3. **codespell**: Spell checking
-4. **ruff**: Linting and auto-fix
+2. **codespell**: Spell checking (Dutch design docs in `docs/redesign/` and `docs/algorithm/` are excluded)
+3. **ruff**: Linting, auto-fix, and formatting
 
 **Manual run**:
 ```bash
@@ -350,27 +313,13 @@ pre-commit run --all-files
 
 ### Pre-Push Checklist
 
-**IMPORTANT: Always run these commands before pushing code:**
-
 ```bash
-# 1. Run pre-commit hooks to check code quality
+# 1. Run pre-commit hooks
 pre-commit run --all-files
 
-# 2. Run pytest to ensure all tests pass
+# 2. Run tests
 pytest
 ```
-
-**Why this workflow?**
-- **Pre-commit hooks**: Run locally and fix formatting/linting issues immediately
-- **Pytest**: Run locally to ensure all tests pass before pushing
-- This ensures code quality and prevents breaking changes
-
-**If pre-commit hooks fail:**
-1. Review the errors
-2. Fix the issues (many are auto-fixed by the hooks)
-3. Stage the fixed files: `git add .`
-4. Re-run: `pre-commit run --all-files`
-5. Repeat until all hooks pass
 
 ### CI/CD Pipelines
 
@@ -378,32 +327,27 @@ pytest
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `pytest.yml` | Push/PR | Runs test suite |
-| `precommit.yml` | Push/PR | Code quality checks, auto-commits fixes |
-| `hacs.yml` | Daily | HACS validation |
-| `hassfest.yml` | Daily | Home Assistant manifest validation |
+| `ci.yml` | Push/PR | Runs test suite + pre-commit checks |
+| `docs.yml` | Push to main | Deploys MkDocs documentation |
 | `release.yml` | Release publish | Creates release zip |
-
-**Important**: The `precommit.yml` workflow auto-commits fixes with message "chore: apply pre-commit fixes" using github-actions bot.
+| `bump-version.yml` | Manual | Bumps version via bumpversion |
+| `link-check.yml` | Schedule | Validates documentation links |
+| `stale.yml` | Schedule | Marks stale issues/PRs |
+| `label-issues.yml` | Issues | Auto-labels issues |
+| `label-prs.yml` | PRs | Auto-labels PRs |
+| `sync-labels.yml` | Manual | Syncs GitHub labels |
 
 ### Version Management
 
 **Bumpversion** (`.bumpversion.toml`):
 ```bash
-# Current version: 1.0.2
-# Bump patch: 1.0.2 → 1.0.3
-bumpversion patch
-
-# Bump minor: 1.0.2 → 1.1.0
-bumpversion minor
-
-# Bump major: 1.0.2 → 2.0.0
-bumpversion major
+# Current version: 2.0.0
+bumpversion patch  # 2.0.0 -> 2.0.1
+bumpversion minor  # 2.0.0 -> 2.1.0
+bumpversion major  # 2.0.0 -> 3.0.0
 ```
 
-Automatically updates:
-- `manifest.json` version field
-- `.bumpversion.toml` current_version
+Automatically updates `manifest.json` and `.bumpversion.toml`.
 
 ---
 
@@ -421,63 +365,23 @@ Automatically updates:
 testpaths = tests
 asyncio_mode = auto
 asyncio_default_fixture_loop_scope = function
-addopts = --disable-warnings --maxfail=1 -q -p syrupy --strict --cov=tests
 ```
 
 ### Test Structure
 
-**One test file per module** (18 test files):
-- `test_outdoor_temperature_sensor.py`
-- `test_heat_loss_sensor.py`
-- `test_net_heat_loss_sensor.py`
-- `test_heating_curve_offset_sensor.py` ← **Core optimization tests**
-- `test_quadratic_cop_sensor.py`
-- ... and 13 more
+**35 test files** covering all modules:
 
-### Example Test Pattern
-```python
-import pytest
-from unittest.mock import patch, MagicMock
-from custom_components.heating_curve_optimizer.sensor import HeatLossSensor
-
-@pytest.mark.asyncio
-async def test_heat_loss_sensor(hass):
-    """Test heat loss calculation."""
-    # Setup mock config entry
-    entry = MockConfigEntry(
-        domain="heating_curve_optimizer",
-        data={
-            "area_m2": 150,
-            "energy_label": "C",
-        }
-    )
-
-    # Setup outdoor temperature sensor
-    hass.states.async_set("sensor.outdoor_temperature", "5.0")
-    hass.states.async_set("sensor.indoor_temperature", "20.0")
-
-    # Create and update sensor
-    sensor = HeatLossSensor(hass, entry)
-    await sensor.async_update()
-
-    # Assert results
-    assert sensor.state is not None
-    assert sensor.state > 0  # Positive heat loss
-```
-
-### Critical Tests to Maintain
-
-**Optimization Tests** (`test_heating_curve_offset_sensor.py`):
-- Offset optimization with varying prices
-- Buffer evolution tracking
-- Constraint validation (offset limits, temperature bounds)
-- Edge cases (all high prices, all low prices, negative demand)
-
-**When adding new features**:
-1. Write tests first (TDD approach)
-2. Ensure coverage of edge cases
-3. Use mocking for external dependencies (API calls)
-4. Run full test suite before committing
+| Category | Test Files |
+|----------|------------|
+| Core | `test_init.py`, `test_coordinator.py`, `test_thermal_optimizer.py` |
+| Models | `test_building_model.py`, `test_heatpump_model.py`, `test_gas_boiler_model.py` |
+| Config | `test_config_flow.py`, `test_config_flow_sectioned.py` |
+| Subentries | `test_zone_subentry.py`, `test_pv_array_subentry.py`, `test_gas_boiler_subentry.py` |
+| Sensors | `test_modular_sensors.py`, `test_outdoor_temperature_sensor.py`, `test_heat_pump_thermal_power_sensor.py` |
+| Calibration | `test_calibration.py`, `test_calibration_sensor.py`, `test_calibration_wiring.py` |
+| Gas boiler | `test_gas_boiler_coordinator.py`, `test_gas_boiler_sensors.py` |
+| Real-time | `test_realtime_controller.py`, `test_realtime_wiring.py` |
+| Other | `test_diagnostics.py`, `test_helpers.py`, `test_const.py`, `test_entity.py`, `test_number.py`, `test_climate.py`, `test_binary_sensor.py`, `test_companion_integrations.py`, `test_scenario_real_world_data.py` |
 
 ---
 
@@ -485,155 +389,52 @@ async def test_heat_loss_sensor(hass):
 
 ### Style Guide
 
-**Tool Configurations** (`setup.cfg`):
-- **Black**: Line length 88, safe mode
-- **Flake8**: Ignores E501 (line too long), W503 (line break before operator), E203 (whitespace before ':')
-- **isort**: Black-compatible profile
-- **mypy**: Strict type checking, Python 3.12
+- **Formatter**: ruff-format (replaces black)
+- **Linter**: ruff (replaces flake8 + isort)
+- **Type checking**: mypy, Python 3.13
 
 ### Naming Conventions
 
 | Type | Convention | Example |
 |------|------------|---------|
-| Sensors | `{Purpose}Sensor` | `HeatLossSensor` |
+| Sensors | `Coordinator{Purpose}Sensor` | `CoordinatorHeatLossSensor` |
 | Unique IDs | `{entry_id}_{sensor_name}` | `abc123_heat_loss` |
-| Private methods | Prefix with `_` | `_optimize_offsets()` |
-| Constants | UPPER_SNAKE_CASE | `DEFAULT_PLANNING_WINDOW_HOURS` |
+| Private methods | Prefix with `_` | `_calculate_cop()` |
+| Constants | UPPER_SNAKE_CASE | `DEFAULT_PLANNING_WINDOW` |
 | Variables | snake_case | `outdoor_temp` |
-| Classes | PascalCase | `HeatingCurveOffsetSensor` |
-
-### Type Hints
-
-**Always use type hints**:
-```python
-from typing import Any, Dict, List, Optional
-from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import ConfigEntry
-
-async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry
-) -> bool:
-    """Set up from a config entry."""
-    ...
-```
+| Classes | PascalCase | `BuildingConfig` |
 
 ### Logging
 
-**Module-level logger**:
 ```python
 import logging
 _LOGGER = logging.getLogger(__name__)
 ```
 
-**Logging levels**:
-- `DEBUG`: Data values, API responses, calculations
-- `INFO`: Initialization, state changes
-- `WARNING`: Recoverable errors, missing optional data
-- `ERROR`: Unrecoverable errors, API failures
-
-**Example**:
-```python
-_LOGGER.debug("Calculated heat loss: %s kW", heat_loss)
-_LOGGER.warning("No price forecast available, using current price")
-_LOGGER.error("Failed to fetch weather data: %s", err)
-```
+Levels: `DEBUG` for data/calculations, `INFO` for init/state changes, `WARNING` for recoverable errors, `ERROR` for failures.
 
 ### Error Handling
 
-**Pattern for sensor updates**:
+Coordinators use `UpdateFailed` with translation support:
 ```python
-async def async_update(self) -> None:
-    """Update the sensor state."""
-    try:
-        # Fetch data
-        data = await self._fetch_data()
-
-        # Validate
-        if data is None:
-            self._attr_available = False
-            _LOGGER.warning("No data available")
-            return
-
-        # Calculate
-        self._attr_native_value = self._calculate(data)
-        self._attr_available = True
-
-    except Exception as err:
-        _LOGGER.error("Update failed: %s", err)
-        self._attr_available = False
+raise _update_failed("price_sensor_unavailable", {"sensor": sensor_id})
 ```
-
-**State validation**:
-```python
-# Check for unavailable states
-if state.state in ("unknown", "unavailable"):
-    _LOGGER.warning("Sensor %s unavailable", entity_id)
-    return None
-
-# Type coercion with fallback
-try:
-    value = float(state.state)
-except (ValueError, TypeError):
-    _LOGGER.warning("Invalid value: %s", state.state)
-    return None
-```
+This falls back to plain strings on HA versions that don't support `translation_domain`.
 
 ### Configuration Access
 
-**Preference order**: options → data → default
+**Preference order**: options -> data -> default
 ```python
-# Get value from config entry
 value = entry.options.get(KEY) or entry.data.get(KEY) or DEFAULT_VALUE
-
-# Store in hass.data
-hass.data.setdefault(DOMAIN, {})
-hass.data[DOMAIN][entry.entry_id] = entry.data
-hass.data[DOMAIN]["runtime"] = {}  # Runtime state shared by all entities
 ```
 
-### Async Patterns
-
-**Use async/await consistently**:
-```python
-# Fetch with timeout
-async with async_timeout.timeout(10):
-    response = await session.get(url)
-    data = await response.json()
-
-# Run CPU-intensive in executor
-result = await hass.async_add_executor_job(
-    self._calculate_statistics, data
-)
-
-# Track state changes
-self._unsub = async_track_state_change_event(
-    hass, [entity_id], self._handle_state_change
-)
-```
+Zone-specific config is merged: `zone_config = {**config, **subentry.data}`
 
 ### Translations
 
-**Use translation keys** (not hardcoded strings):
-```python
-# In sensor
-@property
-def translation_key(self) -> str:
-    return "heat_loss"
-
-# In translations/en.json
-{
-  "entity": {
-    "sensor": {
-      "heat_loss": {
-        "name": "Heat Loss"
-      }
-    }
-  }
-}
-```
-
 **Languages supported**: English (en), Dutch (nl)
+
+Use `strings.json` as the canonical source (HA copies to `translations/` at build time). Both `strings.json` and `translations/*.json` must stay in sync.
 
 ---
 
@@ -641,506 +442,133 @@ def translation_key(self) -> str:
 
 ### Adding a New Sensor
 
-**Example: Adding a new heat calculation sensor**
-
-1. **Create sensor file** in appropriate subfolder (e.g., `sensor/heat/new_heat_sensor.py`):
-```python
-"""New heat sensor description."""
-
-from __future__ import annotations
-
-from typing import Any
-
-from homeassistant.components.sensor import SensorStateClass
-from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
-from ...entity import BaseUtilitySensor
-
-
-class CoordinatorNewHeatSensor(CoordinatorEntity, BaseUtilitySensor):
-    """New heat sensor using heat calculation coordinator."""
-
-    def __init__(
-        self, coordinator, name: str, unique_id: str, icon: str, device: DeviceInfo
-    ):
-        """Initialize the sensor."""
-        CoordinatorEntity.__init__(self, coordinator)
-        BaseUtilitySensor.__init__(
-            self,
-            name=name,
-            unique_id=unique_id,
-            unit="kW",
-            device_class=None,
-            icon=icon,
-            visible=True,
-            device=device,
-            translation_key=name.lower().replace(" ", "_"),
-        )
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_should_poll = False
-
-    @property
-    def native_value(self):
-        """Return sensor value."""
-        if not self.coordinator.data:
-            return None
-        return self.coordinator.data.get("new_heat_value")
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return (
-            self.coordinator.last_update_success and self.coordinator.data is not None
-        )
-```
-
-2. **Import in `sensor/__init__.py`**:
-```python
-from .heat.new_heat_sensor import CoordinatorNewHeatSensor
-```
-
-3. **Add to entities list** in `sensor/__init__.py` → `async_setup_entry`:
-```python
-entities.append(
-    CoordinatorNewHeatSensor(
-        coordinator=heat_coordinator,
-        name="New Heat Sensor",
-        unique_id=f"{entry.entry_id}_new_heat_sensor",
-        icon="mdi:fire",
-        device=device,
-    )
-)
-```
-
-4. **Add translations** to `en.json` and `nl.json`:
-```json
-{
-  "entity": {
-    "sensor": {
-      "new_heat_sensor": {
-        "name": "New Heat Sensor"
-      }
-    }
-  }
-}
-```
-
-5. **Create test file** `tests/test_new_heat_sensor.py`:
-```python
-@pytest.mark.asyncio
-async def test_new_heat_sensor(hass):
-    """Test new heat sensor."""
-    # Test implementation
-```
-
-6. **Run tests and pre-commit**:
-```bash
-pytest tests/test_new_heat_sensor.py -v
-pre-commit run --all-files
-```
-
-### Adding a Configuration Option
-
-1. **Add constant** to `const.py`:
-```python
-CONF_NEW_OPTION = "new_option"
-DEFAULT_NEW_OPTION = 42
-```
-
-2. **Add to config flow** in `config_flow.py`:
-```python
-# In _show_basic_settings_form
-schema = vol.Schema({
-    ...
-    vol.Optional(CONF_NEW_OPTION, default=DEFAULT_NEW_OPTION): vol.Coerce(int),
-})
-```
-
-3. **Add translations** to `en.json` and `nl.json`:
-```json
-{
-  "config": {
-    "step": {
-      "basic_settings": {
-        "data": {
-          "new_option": "New Option"
-        },
-        "data_description": {
-          "new_option": "Description of new option"
-        }
-      }
-    }
-  }
-}
-```
-
-4. **Access in sensor**:
-```python
-new_option = self._entry.options.get(CONF_NEW_OPTION) or \
-             self._entry.data.get(CONF_NEW_OPTION) or \
-             DEFAULT_NEW_OPTION
-```
+1. Create file in appropriate subfolder (e.g., `sensor/heat/new_sensor.py`)
+2. Import in `sensor/__init__.py`
+3. Add to entities list in `async_setup_entry`
+4. Add translations to `strings.json`, `translations/en.json`, and `translations/nl.json`
+5. Create test file `tests/test_new_sensor.py`
+6. Run `pre-commit run --all-files` and `pytest`
 
 ### Modifying the Optimization Algorithm
 
-**Location**: `sensor.py:1719-1836` (`_optimize_offsets` method)
+**Location**: `thermal_optimizer.py` (`optimize_thermal_schedule` function)
 
 **Key considerations**:
-1. **State space**: Currently `(time_step, offset, cumulative_offset_sum)`
-   - Adding dimensions increases computation exponentially
-2. **Constraints**: Ensure all constraints are validated
-3. **Buffer management**: Track buffer evolution to prevent negative values
-4. **Testing**: Add tests for new edge cases
+1. **State space**: `(T_indoor, previous_offset)` - adding dimensions increases computation exponentially
+2. **Building physics**: `building_model.py`'s `next_indoor_temp()` is the transition function
+3. **Testing**: `tests/test_thermal_optimizer.py` includes brute-force reference tests
+4. This module is pure Python (no HA dependency) for easy testing
 
-**Example modification** (adding comfort constraint):
-```python
-# In _optimize_offsets method
-for next_offset in range(max(-4, offset - 1), min(5, offset + 2)):
-    # Existing constraints
-    ...
+### Adding a Configuration Option
 
-    # Comfort constraint - avoid too-cold supply temps during occupied hours
-    if hour in occupied_hours and supply_temp < comfort_min_temp:
-        continue  # Skip this state
-
-    # Rest of algorithm
-    ...
-```
-
-### Debugging Sensor Issues
-
-1. **Enable debug logging** in Home Assistant `configuration.yaml`:
-```yaml
-logger:
-  default: info
-  logs:
-    custom_components.heating_curve_optimizer: debug
-```
-
-2. **Check diagnostics**:
-   - Go to Settings → Devices & Services → Heating Curve Optimizer
-   - Click "Download Diagnostics"
-   - Review JSON output for sensor states and attributes
-
-3. **Use DiagnosticsSensor**:
-```python
-# Access diagnostic data programmatically
-diagnostic_sensor = hass.states.get("sensor.heating_curve_optimizer_diagnostics")
-diagnostics = diagnostic_sensor.attributes
-```
-
-4. **Common issues**:
-   - **Sensor unavailable**: Check dependency sensors are available
-   - **Wrong values**: Verify unit conversions (W vs kW, °C vs K)
-   - **No optimization**: Check price forecast extraction
-   - **API failures**: Verify internet connectivity, check open-meteo.com status
+1. Add constant to `const.py`: `CONF_NEW_OPTION = "new_option"` + `DEFAULT_NEW_OPTION = 42`
+2. Add to appropriate config flow step or subentry flow in `config_flow.py`
+3. Add translations to `strings.json`, `translations/en.json`, and `translations/nl.json`
+4. Access via `config.get(CONF_NEW_OPTION, DEFAULT_NEW_OPTION)`
 
 ---
 
 ## Troubleshooting Guide
 
-### Common Issues
+### 1. Sensor Shows "Unavailable"
 
-#### 1. Sensor Shows "Unavailable"
+**Common causes**:
+- Dependency sensor unavailable or in `unknown` state
+- API call failed (open-meteo.com timeout)
+- No heating zone subentry configured yet
+- Missing required config values (area, energy label)
+
+**Debug**: Enable debug logging:
+```yaml
+logger:
+  logs:
+    custom_components.heating_curve_optimizer: debug
+```
+
+### 2. Optimization Not Running
 
 **Causes**:
-- Dependency sensor unavailable
-- API call failed (open-meteo.com)
-- Invalid state from source sensor
-- Configuration missing required values
+- No price forecast available (check price sensor attributes)
+- Heat coordinator has no data (check weather API)
+- No zone subentry configured (optimization requires a heating zone)
 
-**Debug**:
-```python
-# Check logs for specific unavailability message
-_LOGGER.debug("OutdoorTemperatureSensor not beschikbaar: %s", reason)
+**Price forecast formats supported** (in order):
+1. `raw_today` / `raw_tomorrow` attributes
+2. `forecast_prices` attribute
+3. `net_prices_today` / `net_prices_tomorrow` attributes
+4. Fallback: current price only
 
-# Verify dependencies
-outdoor_temp = hass.states.get("sensor.outdoor_temperature")
-if outdoor_temp is None or outdoor_temp.state in ("unknown", "unavailable"):
-    # Dependency unavailable
-```
+### 3. Gas Boiler Comparison Error
 
-**Fix**:
-- Verify all required sensors exist and have valid states
-- Check Home Assistant internet connectivity
-- Review configuration for missing required fields
+"No operating point available yet" is expected at startup until the optimization coordinator has produced at least one result with outdoor/supply temperature data.
 
-#### 2. Optimization Not Running
+### 4. Real-time Offset Unavailable
 
-**Causes**:
-- No price forecast available
-- Net heat loss sensor unavailable
-- Invalid forecast format
+Expected until: grid import/export sensors are configured AND reporting, at least one full optimization cycle completes, AND the real-time controller produces its first adjustment. This sensor is disabled by default (opt-in diagnostic).
 
-**Debug**:
-```python
-# Check price forecast extraction
-_LOGGER.debug("Price forecast: %s", price_forecast)
-_LOGGER.debug("Demand forecast: %s", demand_forecast)
+### 5. Pre-commit Hooks Failing
 
-# Verify forecast lengths match
-if len(price_forecast) != len(demand_forecast):
-    _LOGGER.warning("Forecast length mismatch")
-```
-
-**Fix**:
-- Ensure price sensor has forecast attributes (raw_today/raw_tomorrow, forecast_prices, or net_prices_today/tomorrow)
-- Verify net heat loss sensor updates correctly
-- Check time_base configuration matches forecast intervals
-
-#### 3. COP Values Seem Wrong
-
-**Causes**:
-- Incorrect k_factor for heat pump type
-- Wrong cop_compensation_factor
-- Supply temperature sensor misconfigured
-
-**Debug**:
-```python
-# Log COP calculation components
-_LOGGER.debug("COP calculation: base=%s, outdoor=%s, supply=%s, k=%s, comp=%s",
-              base_cop, outdoor_temp, supply_temp, k_factor, cop_compensation)
-```
-
-**Fix**:
-- Adjust k_factor (typical range: 0.01-0.05)
-- Calibrate cop_compensation_factor against actual measurements
-- Verify supply temperature sensor accuracy
-
-#### 4. Tests Failing
-
-**Common test issues**:
 ```bash
-# Mock not working
-# Solution: Ensure mocks are patched at correct import path
-@patch('custom_components.heating_curve_optimizer.sensor.aiohttp.ClientSession')
-
-# Async test not recognized
-# Solution: Add @pytest.mark.asyncio decorator
-
-# Snapshot mismatch
-# Solution: Update snapshots if change is intentional
-pytest --snapshot-update
-```
-
-#### 5. Pre-commit Hooks Failing
-
-**Black formatting**:
-```bash
-# Run black manually
-black custom_components/ tests/
-
-# Check what would change
-black --check custom_components/ tests/
-```
-
-**Ruff linting**:
-```bash
-# Auto-fix issues
+# Auto-fix most issues
 ruff check --fix custom_components/ tests/
-
-# Show all issues
-ruff check custom_components/ tests/
-```
-
-**Codespell**:
-```bash
-# Add word to ignore list in .pre-commit-config.yaml
-- repo: https://github.com/codespell-project/codespell
-  hooks:
-    - id: codespell
-      args: [--ignore-words-list=hass,additional,some]
-```
-
-### Performance Issues
-
-#### 1. Slow Updates
-
-**Causes**:
-- API calls blocking main thread
-- CPU-intensive calculations on event loop
-- Too frequent updates
-
-**Solutions**:
-```python
-# Use executor for CPU-intensive work
-result = await hass.async_add_executor_job(
-    self._expensive_calculation, data
-)
-
-# Add timeout to API calls
-async with async_timeout.timeout(10):
-    response = await session.get(url)
-
-# Reduce update frequency
-SCAN_INTERVAL = timedelta(minutes=5)
-```
-
-#### 2. High Memory Usage
-
-**Causes**:
-- Large forecast histories stored in attributes
-- Circular references preventing garbage collection
-- Unsubscribed event listeners
-
-**Solutions**:
-```python
-# Limit attribute sizes
-self._attr_extra_state_attributes = {
-    "forecast": forecast[-24:],  # Only last 24 hours
-}
-
-# Properly unsubscribe
-async def async_will_remove_from_hass(self) -> None:
-    """Cleanup."""
-    if self._unsub:
-        self._unsub()
-
-# Avoid circular references
-# Use weakref or store entity_id instead of entity object
+ruff format custom_components/ tests/
 ```
 
 ---
 
-## Architecture Insights for AI Assistants
+## Architecture Insights
 
-### Sensor Dependency Graph
+### Coordinator Dependency Chain
 
 ```
-OutdoorTemperatureSensor (fetches from API)
-    ↓
-HeatLossSensor
-    ↓
-NetHeatLossSensor ← WindowSolarGainSensor
-    ↓
-HeatingCurveOffsetSensor ← CurrentElectricityPriceSensor
-    ↓
-OptimizedSupplyTemperatureSensor
+WeatherDataCoordinator (60-min, open-meteo.com API)
+    |
+    v
+HeatCalculationCoordinator (depends on weather)
+    |       Calculates: heat loss, solar gain, net heat loss, PV production
+    v
+OptimizationCoordinator (depends on heat + price sensor)
+    |       Calls: optimize_thermal_schedule() in executor
+    |       Manages: real-time controller, thermal calibration
+    v
+GasBoilerCoordinator (optional, depends on optimization + gas price)
 ```
 
-**Important**: When modifying sensors, consider downstream dependencies. Changes to `OutdoorTemperatureSensor` affect all dependent sensors.
+### Subentry Architecture
+
+Modelled on battery_controller's pattern:
+
+- **Heating zones** (`ZONE_SUBENTRY_TYPE`): Each zone gets own `HeatCalculationCoordinator` + `OptimizationCoordinator` + device. Primary zone (first/oldest) drives the main device's full sensor set.
+- **PV arrays** (`PV_SUBENTRY_TYPE`): Multiple arrays at different orientations. Data passed to coordinator as `config["pv_arrays"]` list.
+- **Gas boiler** (`GAS_SUBENTRY_TYPE`): Singleton. Optional hybrid cost comparison.
 
 ### State Management
 
-**Two storage locations**:
-1. **`hass.data[DOMAIN][entry_id]`**: Configuration data (immutable during runtime)
-2. **`hass.data[DOMAIN]["runtime"]`**: Runtime state (mutable, shared by all entities)
-
-**Runtime state includes**:
-- Manual offset overrides
-- Min/max temperature limits
-- Heating curve parameters
-
-**Why?**: Number entities and sensors need to share state for manual overrides to work.
-
-### Time Base and Resampling
-
-**Key concept**: All forecasts are resampled to `time_base` (default 60 minutes).
-
-**Method**: `_resample_forecast(forecast, time_base)`
-- Handles different source intervals (5 min, 15 min, 30 min, 60 min)
-- Uses averaging for downsampling, interpolation for upsampling
-- Logs warnings when time base doesn't match
-
-**Why?**: Different data sources (prices, weather, production) may have different intervals. Resampling ensures alignment for optimization.
-
-### Buffer System
-
-The buffer system supports both positive (solar) buffer and negative (heat debt).
-
-**Two buffer mechanisms**:
-
-1. **Solar buffer (positive)**: Excess heat from solar gain stored in thermal mass
+Runtime data stored as `HcoRuntimeData` dataclass:
 ```python
-if demand < 0:  # Solar gain exceeds heat loss
-    buffer += abs(demand)  # Store excess in buffer
+@dataclass
+class HcoRuntimeData:
+    weather_coordinator: WeatherDataCoordinator
+    heat_coordinator: HeatCalculationCoordinator | None
+    optimization_coordinator: OptimizationCoordinator | None
+    zones: dict[str, dict[str, Any]]
+    gas_boiler_coordinator: GasBoilerCoordinator | None
+    ...
 ```
 
-2. **Heat debt (negative)**: Allowed temperature reduction during expensive hours
-```python
-# Negative buffer allowed up to max_buffer_debt (default 5.0 kWh)
-if buffer >= -max_buffer_debt:
-    # Can reduce heating during expensive hours
-    # Debt must be repaid during cheaper hours
-```
+### Thermal Model (1R1C)
 
-**Key changes**:
-- Buffer constraint changed from `buffer >= 0` to `buffer >= -max_buffer_debt`
-- Allows optimizer to create "heat debt" by reducing heating during high prices
-- Debt must be compensated within planning horizon (typically 6-12 hours)
-- Configurable via `max_buffer_debt` parameter (default: 5.0 kWh)
+The building is modelled as a single-node RC network:
+- **R** = 1/UA (thermal resistance, from energy label + ventilation)
+- **C** = thermal mass (from area, thermal mass class: light/medium/heavy)
+- **State**: indoor temperature
+- **Inputs**: outdoor temp, solar gain, heat pump power, offset
 
-**Why?**: Enables cost optimization through temporal load shifting. Building's thermal mass provides inertia allowing temporary under-heating during expensive hours without immediate comfort loss.
+`BuildingConfig.next_indoor_temp()` is the physics step function.
 
 ### Price Forecast Extraction
 
-**Three supported formats** (in order of preference):
-1. **`raw_today` / `raw_tomorrow`** attributes
-2. **`forecast_prices`** attribute
-3. **`net_prices_today` / `net_prices_tomorrow`** attributes
-
-**Fallback**: Current price if no forecast available
-
-**Why?**: Different price integrations use different attribute names. Supporting multiple formats improves compatibility.
-
-### External API Integration
-
-**open-meteo.com** endpoints:
-- **Weather**: `https://api.open-meteo.com/v1/forecast?latitude=X&longitude=Y&hourly=temperature_2m&forecast_days=2`
-- **Radiation**: `https://api.open-meteo.com/v1/forecast?latitude=X&longitude=Y&hourly=shortwave_radiation&forecast_days=2`
-
-**Caching**:
-- Radiation history cached to reduce API calls
-- 10-second timeout for resilience
-- Graceful degradation on failure (sensor becomes unavailable)
-
-**Rate limits**: None (free tier), but respectful caching implemented
-
----
-
-## Best Practices for AI Assistants
-
-### When Adding Features
-
-1. **Check existing patterns**: Review similar sensors before implementing
-2. **Follow dependency order**: Ensure dependencies are available before use
-3. **Add comprehensive tests**: Test normal cases, edge cases, and error cases
-4. **Update translations**: Both en.json and nl.json
-5. **Document in docstrings**: Explain complex logic
-6. **Consider performance**: Use executor for CPU-intensive work
-7. **Validate inputs**: Check for None, "unknown", "unavailable"
-8. **Log appropriately**: Debug for data, Warning for recoverable errors, Error for failures
-9. **Run pre-commit hooks**: Always run `pre-commit run --all-files` before pushing
-
-### When Fixing Bugs
-
-1. **Reproduce first**: Write a failing test that demonstrates the bug
-2. **Check logs**: Review debug logs for root cause
-3. **Consider side effects**: Changes may affect dependent sensors
-4. **Test edge cases**: None values, unavailable states, API failures
-5. **Update tests**: Ensure test coverage includes the fix
-
-### When Refactoring
-
-1. **Run tests first**: Ensure all tests pass before starting
-2. **Refactor incrementally**: Small changes, test after each
-3. **Maintain API compatibility**: Don't break existing config entries
-4. **Update documentation**: Keep CLAUDE.md in sync
-5. **Check performance**: Profile if changing hot paths (optimization loop)
-
-### Code Review Checklist
-
-- [ ] Type hints on all functions
-- [ ] Docstrings on public methods
-- [ ] Error handling with try/except
-- [ ] Logging at appropriate levels
-- [ ] Tests added/updated
-- [ ] Translations added (en.json, nl.json)
-- [ ] Pre-commit hooks pass
-- [ ] No hardcoded values (use const.py)
-- [ ] Async/await used correctly
-- [ ] State restoration implemented (if stateful)
+Handled by `helpers.py:extract_price_forecast()` and `extract_price_forecast_with_interval()`. Supports multiple price integration formats for maximum compatibility.
 
 ---
 
@@ -1149,75 +577,53 @@ if buffer >= -max_buffer_debt:
 ### File Locations
 | Purpose | Location |
 |---------|----------|
-| Add weather sensor | `sensor/weather/new_sensor.py` |
-| Add heat sensor | `sensor/heat/new_sensor.py` |
-| Add optimization sensor | `sensor/optimization/new_sensor.py` |
-| Add COP sensor | `sensor/cop/new_sensor.py` |
-| Register sensor | `sensor/__init__.py` (import + add to entities list) |
-| Add coordinator logic | `coordinator.py` (WeatherDataCoordinator, HeatCalculationCoordinator, OptimizationCoordinator) |
-| Modify optimization algorithm | `optimizer.py` (optimize_offsets function) |
+| Modify optimization algorithm | `thermal_optimizer.py` |
+| Add/modify building physics | `building_model.py` |
+| Add/modify COP model | `heatpump_model.py` |
+| Add coordinator logic | `coordinator.py` |
+| Add weather sensor | `sensor/weather/` |
+| Add heat sensor | `sensor/heat/` |
+| Add optimization sensor | `sensor/optimization/` |
+| Add COP sensor | `sensor/cop/` |
+| Add gas boiler sensor | `sensor/gas_boiler/` |
+| Register sensor | `sensor/__init__.py` |
 | Add config option | `config_flow.py` + `const.py` |
-| Add constant | `const.py` |
-| Add translation | `translations/*.json` |
-| Add test | `tests/test_*.py` |
+| Add translation | `strings.json` + `translations/*.json` |
 
 ### Useful Commands
 ```bash
-# IMPORTANT: Always run before pushing
-pre-commit run --all-files
-
-# Tests run automatically in CI (complex local setup required)
-# See .github/workflows/pytest.yml for CI test configuration
-
-# Manual formatting (pre-commit handles this automatically)
-black custom_components/ tests/
-
-# Manual linting (pre-commit handles this automatically)
-ruff check --fix custom_components/ tests/
-
-# Bump version
-bumpversion patch  # 1.0.2 → 1.0.3
+pre-commit run --all-files    # Lint + format
+pytest                        # Run tests
+pytest tests/test_thermal_optimizer.py -v  # Run specific test
+bumpversion patch             # Bump version
 ```
 
 ### Key Configuration Keys
 ```python
-# From const.py
-CONF_AREA_M2 = "area_m2"
-CONF_ENERGY_LABEL = "energy_label"
-CONF_K_FACTOR = "k_factor"
-CONF_COP_COMPENSATION_FACTOR = "cop_compensation_factor"
-CONF_GLASS_EAST_M2 = "glass_east_m2"
-CONF_GLASS_WEST_M2 = "glass_west_m2"
-CONF_GLASS_SOUTH_M2 = "glass_south_m2"
-CONF_GLASS_U_VALUE = "glass_u_value"
-CONF_PLANNING_WINDOW = "planning_window"
-CONF_TIME_BASE = "time_base"
-CONF_MAX_BUFFER_DEBT = "max_buffer_debt"
+# Main entry (shared)
+CONF_CONSUMPTION_PRICE_SENSOR   CONF_PRODUCTION_PRICE_SENSOR
+CONF_K_FACTOR                   CONF_BASE_COP
+CONF_COP_COMPENSATION_FACTOR    CONF_OUTDOOR_TEMP_COEFFICIENT
+CONF_HEAT_CURVE_MIN/MAX         CONF_HEAT_CURVE_MIN/MAX_OUTDOOR
+CONF_PLANNING_WINDOW            CONF_TIME_BASE
+CONF_OFFSET_DELTA_T             CONF_POWER_CONSUMPTION
+CONF_GRID_IMPORT_SENSOR         CONF_GRID_EXPORT_SENSOR
 
-# Temperature control (January 2025)
-CONF_TARGET_INDOOR_TEMP = "target_indoor_temp"      # Default: 20.0°C
-CONF_INDOOR_TEMP_HYSTERESIS = "indoor_temp_hysteresis"  # Default: 0.5°C
-CONF_OFFSET_DELTA_T = "offset_delta_t"              # Default: 10 min/°C
-```
+# Zone subentry
+CONF_AREA_M2                    CONF_ENERGY_LABEL
+CONF_GLASS_EAST/WEST/SOUTH_M2  CONF_GLASS_U_VALUE
+CONF_VENTILATION_TYPE           CONF_CEILING_HEIGHT
+CONF_THERMAL_MASS_CLASS         CONF_EMITTER_TYPE
+CONF_TARGET_INDOOR_TEMP         CONF_INDOOR_TEMP_HYSTERESIS_LOWER/UPPER
+CONF_INDOOR_TEMPERATURE_SENSOR
 
-### Critical Sensor Methods
-```python
-# Update sensor state
-async def async_update(self) -> None
+# PV subentry
+CONF_PV_PEAK_POWER_KWP         CONF_PV_ORIENTATION
+CONF_PV_TILT                    CONF_PV_EFFICIENCY_FACTOR
 
-# Restore previous state
-async def async_added_to_hass(self) -> None
-
-# Cleanup on removal
-async def async_will_remove_from_hass(self) -> None
-
-# Define unique identifier
-@property
-def unique_id(self) -> str
-
-# Define translation key
-@property
-def translation_key(self) -> str
+# Gas boiler subentry
+CONF_GAS_PRICE_SENSOR           CONF_GAS_BOILER_EFFICIENCY
+CONF_GAS_CALORIFIC_VALUE
 ```
 
 ---
@@ -1231,126 +637,6 @@ def translation_key(self) -> str
 
 ---
 
-## Architecture Changes (December 2023)
-
-### Major Refactoring: Modular Sensor Structure
-
-**What Changed**:
-- **BEFORE**: Single `sensor.py` file (3485 lines) with all 17 sensor implementations
-- **AFTER**: Modular structure with sensors organized in subfolders by function
-
-**Migration Summary**:
-1. Created `sensor/` directory with category subfolders (weather, heat, optimization, cop)
-2. Split all sensors into individual files (~60-120 lines each)
-3. Created `sensor/__init__.py` as platform entry point
-4. Removed legacy `sensor.py` and `coordinator_sensors.py` (backed up as `_*_legacy_backup.py`)
-5. Updated CLAUDE.md documentation to reflect new structure
-
-**Benefits**:
-- ✅ **Maintainability**: Each sensor in ~100 lines vs 3500-line monolith
-- ✅ **Discoverability**: Clear categorization by function
-- ✅ **Testing**: Better isolation for unit tests
-- ✅ **Collaboration**: Reduced merge conflicts
-- ✅ **IDE Performance**: Faster loading and navigation
-
-**Migration Path for Developers**:
-- All sensor imports now come from `sensor/` submodules
-- Coordinator pattern remains unchanged
-- Tests will need minor import path updates
-- No changes to configuration or user-facing functionality
-
----
-
-## Architecture Changes (January 2025)
-
-### New Features: Temperature Control and Optimizer Improvements
-
-**What Changed**:
-
-#### 1. Target Indoor Temperature Control
-- Added `TargetIndoorTemperatureNumber` entity (15-25°C, step 0.5°C)
-- Added `IndoorTempHysteresisNumber` entity (0.1-2.0°C, step 0.1°C)
-- Heat demand is now modulated based on actual vs target indoor temperature
-
-**Heat Demand Factor Calculation**:
-```python
-# In HeatCalculationCoordinator
-lower_bound = target_temp - hysteresis
-upper_bound = target_temp + hysteresis
-
-if indoor_temp <= lower_bound:
-    # Below target: increase demand proportionally
-    temp_deficit = lower_bound - indoor_temp
-    heat_demand_factor = 1.0 + (temp_deficit * 0.5)
-elif indoor_temp >= upper_bound:
-    # Above target: no heat demand
-    heat_demand_factor = 0.0
-else:
-    # Within hysteresis band: linear interpolation
-    heat_demand_factor = (upper_bound - indoor_temp) / (2 * hysteresis)
-```
-
-#### 2. Optimizer State Persistence
-- Buffer energy no longer resets to 0 each optimization run
-- `OptimizationCoordinator` now tracks `_current_buffer` and `_current_offset`
-- Enables better cost optimization through continuous state tracking
-
-```python
-# In OptimizationCoordinator
-self._current_buffer: float = 0.0  # Persists between runs
-self._current_offset: int = 0      # Persists between runs
-
-# After optimization, update state from results
-if optimized_offsets:
-    self._current_offset = optimized_offsets[0]
-if buffer_evolution:
-    self._current_buffer = buffer_evolution[0]
-```
-
-#### 3. Configurable Offset Change Speed
-- Added `offset_delta_t` config option (default: 10 minutes per °C change)
-- Formula: `max_offset_change = time_base // offset_delta_t`
-- At time_base=60 and offset_delta_t=10: max 6°C change per step
-- At time_base=60 and offset_delta_t=60: max 1°C change per step
-
-```python
-# In optimizer.py
-def optimize_offsets(
-    ...
-    current_offset: int = 0,
-    offset_delta_t: int = 10,
-) -> tuple[list[int], list[float]]:
-    max_offset_change = max(1, time_base // max(1, offset_delta_t))
-```
-
-#### 4. Calibration Sensor Improvements
-- Implemented `_validate_storage_efficiency()` (was placeholder returning None)
-- Uses entity registry lookup for correct entity IDs
-- Reduced data requirements (5+ samples instead of 10+)
-- Added comprehensive logging for debugging
-
-**Storage Efficiency Calculation**:
-```python
-label_efficiency_map = {
-    "A+++": 0.20, "A++": 0.18, "A+": 0.17, "A": 0.16,
-    "B": 0.15, "C": 0.14, "D": 0.13, "E": 0.12, "F": 0.11, "G": 0.10,
-}
-base_efficiency = label_efficiency_map.get(energy_label, 0.15)
-area_factor = min(1.2, max(0.8, area_m2 / 150))
-recommended_efficiency = round(base_efficiency * area_factor, 2)
-```
-
-**Files Modified**:
-- `optimizer.py` - Added `current_offset` and `offset_delta_t` parameters
-- `coordinator.py` - Buffer/offset state tracking, heat demand factor
-- `number.py` - NEW: Temperature control entities
-- `const.py` - New constants for temperature control
-- `config_flow.py` - New config options in both flows
-- `calibration_sensor.py` - Storage efficiency implementation
-- `translations/en.json` and `nl.json` - New translations
-
----
-
-**Last Updated**: 2025-01-24
-**Version**: 2.1.0 (temperature-control-and-optimizer-improvements)
+**Last Updated**: 2026-09-23
+**Version**: 2.0.0
 **Maintainer**: @bvweerd

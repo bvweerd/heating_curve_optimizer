@@ -12,7 +12,8 @@ from ...entity import BaseUtilitySensor
 
 
 class CoordinatorCalculatedSupplyTemperatureSensor(
-    CoordinatorEntity, BaseUtilitySensor  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
+    CoordinatorEntity,
+    BaseUtilitySensor,  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
 ):
     """Calculated supply temperature based on heating curve and outdoor temp."""
 

@@ -96,7 +96,7 @@ class BaseUtilitySensor(SensorEntity, RestoreEntity):  # type: ignore[misc]  # H
         if self._last_unavailable_reason == reason:
             return
         self._last_unavailable_reason = reason
-        _LOGGER.log(level, "%s is niet beschikbaar: %s", self._friendly_name(), reason)
+        _LOGGER.log(level, "%s is unavailable: %s", self._friendly_name(), reason)
 
     def _mark_available(self) -> None:
         """Reset availability state."""

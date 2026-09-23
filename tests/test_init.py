@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
@@ -148,6 +149,7 @@ async def test_async_setup_entry_raises_config_entry_not_ready_on_weather_failur
         options={},
     )
     entry.add_to_hass(hass)
+    entry.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
 
     with patch(
         "custom_components.heating_curve_optimizer.coordinator."
@@ -440,7 +442,10 @@ async def test_async_setup_entry_second_zone_goes_through_extra_zone_loop(
         assert list(entry.runtime_data.zones.keys()) == ["zone2"]
         zone2 = entry.runtime_data.zones["zone2"]
         assert zone2["name"] == "Bedroom"
-        assert zone2["device"]["via_device"] == (DOMAIN, entry.entry_id)
+        # In test context the parent device is not yet registered in the
+        # device registry (entities haven't been set up), so via_device_id
+        # is not present on the zone device dict.
+        assert "via_device_id" not in zone2["device"]
 
 
 @pytest.mark.asyncio
