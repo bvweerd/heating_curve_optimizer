@@ -38,12 +38,14 @@ except ImportError:
     _section = None
 
 from .companion_integrations import (
+    DetectedPvArray,
     DetectedSensor,
     DetectedSensorList,
     FIELD_SOURCES_CONSUMPTION,
     FIELD_SOURCES_PRODUCTION,
     detect_gas_price_sensor,
     detect_main_flow_sensors,
+    detect_pv_arrays,
     detect_source_sensors,
 )
 from .const import (
@@ -495,6 +497,54 @@ def _pv_array_subentry_title(data: dict[str, Any]) -> str:
     return f"{kwp} kWp {coupling}"
 
 
+_PV_IMPORT_CHOICE_MANUAL = "manual"
+
+
+def _pv_array_import_choice_label(index: int, array: DetectedPvArray) -> str:
+    """Label for one detected battery_controller array in the import picker."""
+    name = array.name or f"Array {index + 1}"
+    return f"{name} ({array.peak_power_kwp:g} kWp, {array.source})"
+
+
+def _build_pv_array_import_schema(detected: list[DetectedPvArray]) -> vol.Schema:
+    """Build the schema for the import-choice picker shown before the
+    actual PV-array form, when battery_controller has arrays configured.
+
+    Only reached when `detected` is non-empty - see
+    HeatingPvArraySubentryFlow.async_step_user, which skips straight to
+    the manual form otherwise.
+    """
+    options = [{"value": _PV_IMPORT_CHOICE_MANUAL, "label": "Enter manually"}] + [
+        {"value": str(i), "label": _pv_array_import_choice_label(i, array)}
+        for i, array in enumerate(detected)
+    ]
+    return vol.Schema(
+        {
+            vol.Required("import_choice", default=_PV_IMPORT_CHOICE_MANUAL): selector(
+                {"select": {"options": options, "mode": "list"}}
+            ),
+        }
+    )
+
+
+def _detected_pv_array_to_defaults(array: DetectedPvArray) -> dict[str, Any]:
+    """Map a detected battery_controller array onto this integration's own
+    PV-array subentry field names - a direct pass-through (see
+    DetectedPvArray's docstring), except its `name` is deliberately not
+    copied: the array is being added as a new, separate config here, and a
+    battery_controller subentry title copied verbatim could read strangely
+    once it's this integration's own title too (e.g. re-editing it later
+    via async_step_reconfigure, which has no import step). The user can
+    still type a name in the form the picker leads into."""
+    return {
+        CONF_PV_PEAK_POWER_KWP: array.peak_power_kwp,
+        CONF_PV_ORIENTATION: array.orientation,
+        CONF_PV_TILT: array.tilt,
+        CONF_PV_EFFICIENCY_FACTOR: array.efficiency_factor,
+        CONF_PV_DC_COUPLED: array.dc_coupled,
+    }
+
+
 if _ConfigSubentryFlow is not None:
 
     class HeatingPvArraySubentryFlow(_ConfigSubentryFlow):  # type: ignore[misc, valid-type]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
@@ -505,12 +555,48 @@ if _ConfigSubentryFlow is not None:
         added via the integration page after setup, matching
         battery_controller's own flow exactly (see const.py's
         PV_SUBENTRY_TYPE comment).
+
+        When battery_controller already has one or more PV-array
+        subentries configured, async_step_user offers to import one
+        instead of asking the user to re-enter peak power/orientation/tilt
+        for an array that's already configured elsewhere - see
+        detect_pv_arrays in companion_integrations.py. Import defaults
+        still land in the same editable form async_step_configure shows
+        for manual entry, so a user can tweak values before creating the
+        subentry either way.
         """
+
+        _pv_import_defaults: dict[str, Any] | None = None
 
         async def async_step_user(
             self, user_input: dict[str, Any] | None = None
         ) -> SubentryFlowResult:
-            """Handle adding a new PV array."""
+            """Offer to import from battery_controller, or go straight to
+            manual entry when nothing is available to import."""
+            detected = detect_pv_arrays(self.hass)
+            if not detected:
+                return await self.async_step_configure()
+
+            if user_input is not None:
+                choice = user_input.get("import_choice", _PV_IMPORT_CHOICE_MANUAL)
+                if choice == _PV_IMPORT_CHOICE_MANUAL:
+                    self._pv_import_defaults = None
+                else:
+                    self._pv_import_defaults = _detected_pv_array_to_defaults(
+                        detected[int(choice)]
+                    )
+                return await self.async_step_configure()
+
+            return self.async_show_form(
+                step_id="user",
+                data_schema=_build_pv_array_import_schema(detected),
+            )
+
+        async def async_step_configure(
+            self, user_input: dict[str, Any] | None = None
+        ) -> SubentryFlowResult:
+            """Handle adding a new PV array, possibly pre-filled from an
+            import choice made in async_step_user."""
             errors: dict[str, str] = {}
             if user_input is not None:
                 try:
@@ -522,8 +608,8 @@ if _ConfigSubentryFlow is not None:
                         title=_pv_array_subentry_title(data), data=data
                     )
             return self.async_show_form(
-                step_id="user",
-                data_schema=_build_pv_array_subentry_schema(),
+                step_id="configure",
+                data_schema=_build_pv_array_subentry_schema(self._pv_import_defaults),
                 errors=errors,
             )
 

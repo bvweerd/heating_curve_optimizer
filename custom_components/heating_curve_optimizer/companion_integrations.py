@@ -27,6 +27,9 @@ from homeassistant.helpers import entity_registry as er
 from .const import (
     CONF_SOURCE_TYPE,
     CONF_SOURCES,
+    DEFAULT_PV_EFFICIENCY_FACTOR,
+    DEFAULT_PV_ORIENTATION_DEG,
+    DEFAULT_PV_TILT,
     SOURCE_TYPE_CONSUMPTION,
     SOURCE_TYPE_PRODUCTION,
 )
@@ -95,6 +98,27 @@ class DetectedSensorList:
     for the power/price fields."""
 
     entity_ids: list[str]
+    source: str
+
+
+@dataclass
+class DetectedPvArray:
+    """One battery_controller PV-array subentry's physical parameters -
+    for HeatingPvArraySubentryFlow's import step, as opposed to
+    DetectedSensor/DetectedSensorList's single entity_id fields. Unlike
+    those, this is not an entity_id at all: it carries the array's own
+    structural config (peak_power_kwp/orientation/tilt/efficiency_factor/
+    dc_coupled), field-for-field identical to this integration's own
+    PV-array subentry schema (see const.py's PV_SUBENTRY_TYPE comment and
+    _validate_pv_array_subentry in config_flow.py), so it can prefill that
+    schema directly without any remapping."""
+
+    name: str
+    peak_power_kwp: float
+    orientation: float
+    tilt: float
+    efficiency_factor: float
+    dc_coupled: bool
     source: str
 
 
@@ -266,6 +290,50 @@ def _bc_pv_subentry_production_sensors(hass: HomeAssistant) -> list[str]:
         if sensor:
             sensors.append(str(sensor))
     return sensors
+
+
+def detect_pv_arrays(hass: HomeAssistant) -> list[DetectedPvArray]:
+    """Every battery_controller PV-array subentry, as import candidates for
+    this integration's own HeatingPvArraySubentryFlow.
+
+    Unlike `_bc_pv_subentry_production_sensors` (which only pulls out the
+    measured-production entity_id for the flat CONF_SOURCES lists), this
+    reads the array's own physical parameters - peak_power_kwp/orientation/
+    tilt/efficiency_factor/dc_coupled - so a user who already configured
+    an array in battery_controller doesn't have to re-enter its numbers a
+    second time for this integration's own PV production forecast. Field
+    names are a direct match (see DetectedPvArray's docstring), so this is
+    a straight read-through, not a remapping. `peak_power_kwp` is required
+    by battery_controller's own subentry schema; a subentry missing or
+    malformed on that one field is skipped rather than guessed at, since a
+    fabricated peak power would silently poison the forecast.
+    """
+    entries = hass.config_entries.async_entries(BATTERY_CONTROLLER_DOMAIN)
+    if not entries:
+        return []
+    detected: list[DetectedPvArray] = []
+    for subentry in getattr(entries[0], "subentries", {}).values():
+        if getattr(subentry, "subentry_type", None) != _BC_PV_SUBENTRY_TYPE:
+            continue
+        data = subentry.data
+        try:
+            peak_power_kwp = float(data["peak_power_kwp"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        detected.append(
+            DetectedPvArray(
+                name=str(getattr(subentry, "title", "") or ""),
+                peak_power_kwp=peak_power_kwp,
+                orientation=float(data.get("orientation", DEFAULT_PV_ORIENTATION_DEG)),
+                tilt=float(data.get("tilt", DEFAULT_PV_TILT)),
+                efficiency_factor=float(
+                    data.get("efficiency_factor", DEFAULT_PV_EFFICIENCY_FACTOR)
+                ),
+                dc_coupled=bool(data.get("dc_coupled", False)),
+                source=_BATTERY_CONTROLLER_SOURCE,
+            )
+        )
+    return detected
 
 
 def detect_source_sensors(hass: HomeAssistant) -> dict[str, DetectedSensorList]:

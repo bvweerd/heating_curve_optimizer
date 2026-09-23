@@ -17,9 +17,16 @@ from unittest.mock import MagicMock
 import pytest
 import voluptuous as vol
 
+from custom_components.heating_curve_optimizer.companion_integrations import (
+    DetectedPvArray,
+)
 from custom_components.heating_curve_optimizer.config_flow import (
     HeatingCurveOptimizerConfigFlow,
     HeatingPvArraySubentryFlow,
+    _PV_IMPORT_CHOICE_MANUAL,
+    _build_pv_array_import_schema,
+    _detected_pv_array_to_defaults,
+    _pv_array_import_choice_label,
     _pv_array_subentry_title,
     _validate_pv_array_subentry,
 )
@@ -104,6 +111,72 @@ def test_pv_array_subentry_title_falls_back_to_kwp_and_coupling():
         _pv_array_subentry_title({"peak_power_kwp": 2.0, "dc_coupled": False})
         == "2.0 kWp AC"
     )
+
+
+def _array(
+    name: str = "South roof",
+    peak_power_kwp: float = 3.0,
+    orientation: float = 180.0,
+    tilt: float = 35.0,
+    efficiency_factor: float = 0.85,
+    dc_coupled: bool = False,
+) -> DetectedPvArray:
+    return DetectedPvArray(
+        name=name,
+        peak_power_kwp=peak_power_kwp,
+        orientation=orientation,
+        tilt=tilt,
+        efficiency_factor=efficiency_factor,
+        dc_coupled=dc_coupled,
+        source="Battery Controller",
+    )
+
+
+def test_detected_pv_array_to_defaults_maps_fields_directly():
+    """A straight pass-through onto this integration's own field names -
+    no remapping - except `name`, which is deliberately not copied (see
+    _detected_pv_array_to_defaults's docstring)."""
+    defaults = _detected_pv_array_to_defaults(
+        _array(
+            name="East roof",
+            peak_power_kwp=4.2,
+            orientation=90.0,
+            tilt=30.0,
+            efficiency_factor=0.9,
+            dc_coupled=True,
+        )
+    )
+    assert defaults == {
+        "peak_power_kwp": 4.2,
+        "orientation": 90.0,
+        "tilt": 30.0,
+        "efficiency_factor": 0.9,
+        "dc_coupled": True,
+    }
+    assert "name" not in defaults
+
+
+def test_pv_array_import_choice_label_uses_name_and_kwp():
+    label = _pv_array_import_choice_label(
+        0, _array(name="South roof", peak_power_kwp=3.5)
+    )
+    assert "South roof" in label
+    assert "3.5" in label
+    assert "Battery Controller" in label
+
+
+def test_pv_array_import_choice_label_falls_back_when_unnamed():
+    label = _pv_array_import_choice_label(2, _array(name=""))
+    assert "Array 3" in label
+
+
+def test_build_pv_array_import_schema_always_offers_manual_entry():
+    schema = _build_pv_array_import_schema([_array()])
+    # vol.Schema wraps a dict of {marker: validator}; the "import_choice"
+    # key must be present and default to manual entry, not to importing
+    # the (only) detected array - importing should be an explicit choice.
+    (marker,) = [k for k in schema.schema if str(k) == "import_choice"]
+    assert marker.default() == _PV_IMPORT_CHOICE_MANUAL
 
 
 def test_heating_pv_array_subentry_flow_is_none_on_this_ha_release():
