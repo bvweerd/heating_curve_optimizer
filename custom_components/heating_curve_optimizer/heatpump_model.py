@@ -83,6 +83,19 @@ class HeatPumpConfig:
         COP = (base + outdoor_coefficient * T_outdoor
                     - k_factor * (T_supply - 35)) * compensation_factor
               * defrost_factor(T_outdoor, humidity)
+
+        Clamped above by the Carnot COP for lifting heat from
+        `outdoor_temp` to `supply_temp` (`T_hot_K / (T_hot_K - T_cold_K)`,
+        the second-law upper bound no real heat pump can exceed). The
+        linear formula above is a fit for typical operating ranges and has
+        no such ceiling built in - at a small lift (mild outdoor temp with
+        a low supply temp), combined with an aggressively tuned
+        `k_factor`/`base_cop_at_35`, it can report a COP no real machine
+        could deliver, which the optimizer would then chase as free heat.
+        Real heat pumps land well under this limit (accepted for typical
+        default parameters/operating ranges - see tests), so this only
+        engages for a lift small enough, or parameters extreme enough,
+        that the linear fit runs away from what physics allows.
         """
         cop = (
             self.base_cop_at_35
@@ -90,6 +103,10 @@ class HeatPumpConfig:
             - self.k_factor * (supply_temp - 35.0)
         ) * self.cop_compensation_factor
         cop *= calculate_defrost_factor(outdoor_temp, humidity)
+        lift_k = supply_temp - outdoor_temp
+        if lift_k > 0.1:
+            carnot_cop = (supply_temp + 273.15) / lift_k
+            cop = min(cop, carnot_cop)
         return max(self.min_cop, cop)
 
     def electrical_power_kw(

@@ -370,3 +370,37 @@ def test_optimize_offsets_buffer_debt_limit():
     # All buffer values should be >= -max_buffer_debt
     for buffer_val in buffers:
         assert buffer_val >= -2.0, f"Buffer {buffer_val} exceeds debt limit"
+
+
+def test_optimize_offsets_respects_base_cop_parameter():
+    """base_cop must actually drive the DP's cost model.
+
+    A code review found the coordinator wiring a config-review bug: it
+    passed the user's configured base_cop into a dead `base_temp` kwarg
+    that `optimize_offsets` never used, while the DP's own internal COP
+    calc hardcoded DEFAULT_COP_AT_35 regardless of what was passed in -
+    so no matter what a user configured, the optimizer always assumed a
+    4.2 COP. This must never regress: a heat pump with a much better or
+    worse COP has a different cost trade-off for pre-heating during a
+    cheap period before an expensive one, so the chosen plan must differ.
+    """
+    demand = [1.0] * 6
+    prices = [0.10, 0.10, 0.40, 0.40, 0.10, 0.10]
+    outdoor_temps = [5.0] * 6
+    common_kwargs = dict(
+        demand=demand,
+        prices=prices,
+        outdoor_temps=outdoor_temps,
+        k_factor=0.11,
+        cop_compensation_factor=1.0,
+        water_min=25.0,
+        water_max=50.0,
+        outdoor_min=-10.0,
+        outdoor_max=15.0,
+        time_base=60,
+    )
+
+    offsets_low_cop, buffers_low_cop = optimize_offsets(base_cop=1.0, **common_kwargs)
+    offsets_high_cop, buffers_high_cop = optimize_offsets(base_cop=8.0, **common_kwargs)
+
+    assert (offsets_low_cop, buffers_low_cop) != (offsets_high_cop, buffers_high_cop)

@@ -164,12 +164,22 @@ def _calculate_cop(
     outdoor_temp_coefficient: float,
     cop_compensation: float,
 ) -> float:
-    """Calculate COP from supply and outdoor temperatures."""
+    """Calculate COP from supply and outdoor temperatures.
+
+    Clamped above by the Carnot COP for the actual lift (see
+    heatpump_model.HeatPumpConfig.cop_at for the full rationale) so the
+    displayed baseline/optimized COP and cost-savings figures can't run
+    ahead of what a real heat pump could deliver at a small lift.
+    """
     cop = (
         base_cop
         + outdoor_temp_coefficient * outdoor_temp
         - k_factor * (supply_temp - 35)
     ) * cop_compensation
+    lift_k = supply_temp - outdoor_temp
+    if lift_k > 0.1:
+        carnot_cop = (supply_temp + 273.15) / lift_k
+        cop = min(cop, carnot_cop)
     return max(0.5, cop)
 
 
@@ -1212,7 +1222,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
             offsets, buffer_evolution = optimize_offsets(
                 demand=demand_limited,
                 prices=price_limited,
-                base_temp=base_cop,
+                base_cop=base_cop,
                 k_factor=k_factor,
                 cop_compensation_factor=cop_compensation,
                 buffer=current_buffer,  # Use actual buffer state

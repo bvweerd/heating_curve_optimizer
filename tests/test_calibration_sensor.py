@@ -215,6 +215,58 @@ async def test_energy_label_recommendation(
 
 
 @pytest.mark.asyncio
+async def test_validate_cop_uses_configured_base_cop(
+    hass: HomeAssistant, mock_device_info
+):
+    """_validate_cop must compare against the user's configured base_cop,
+    not the module default.
+
+    A code review found this hardcoding DEFAULT_COP_AT_35 (4.2) instead of
+    reading CONF_BASE_COP like every other parameter in the same function
+    - so a user with a real base_cop far from 4.2 would see this
+    diagnostic report a permanent mismatch even when the live COP sensor
+    is perfectly correct.
+    """
+    entry = MagicMock()
+    entry.entry_id = "test_entry"
+    entry.data = {
+        CONF_AREA_M2: 150,
+        CONF_ENERGY_LABEL: "C",
+        "base_cop": 3.0,
+        "k_factor": 0.0,
+        "outdoor_temp_coefficient": 0.0,
+        "cop_compensation_factor": 1.0,
+    }
+    entry.options = {}
+
+    sensor = CalibrationSensor(
+        hass=hass,
+        name="Test Calibration",
+        unique_id="test_calibration",
+        device=mock_device_info,
+        entry=entry,
+        heat_loss_sensor="sensor.heat_loss",
+        thermal_power_sensor="sensor.thermal_power",
+        outdoor_sensor="sensor.outdoor_temp",
+        indoor_sensor="sensor.indoor_temp",
+        supply_temp_sensor="sensor.supply_temp",
+        cop_sensor="sensor.cop",
+    )
+
+    # With k_factor=0 and outdoor_temp_coefficient=0, theoretical COP
+    # reduces to exactly base_cop - so a cop_sensor reading that exactly
+    # matches the configured base_cop (3.0, not the 4.2 default) must
+    # score 100% accuracy.
+    hass.states.async_set("sensor.cop", "3.0")
+    hass.states.async_set("sensor.outdoor_temp", "7.0")
+    hass.states.async_set("sensor.supply_temp", "35.0")
+
+    accuracy = await sensor._validate_cop(dt_util.utcnow(), dt_util.utcnow())
+
+    assert accuracy == pytest.approx(100.0, abs=0.1)
+
+
+@pytest.mark.asyncio
 async def test_trend_analysis(hass: HomeAssistant, mock_config_entry, mock_device_info):
     """Test long-term trend analysis."""
     sensor = CalibrationSensor(

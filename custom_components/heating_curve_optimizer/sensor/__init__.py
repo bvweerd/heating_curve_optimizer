@@ -458,6 +458,8 @@ def _setup_event_driven_sensors(
             device=device,
             k_factor=k_factor,
             base_cop=base_cop,
+            outdoor_temp_coefficient=outdoor_temp_coefficient,
+            cop_compensation_factor=cop_compensation_factor,
         )
         entities.append(thermal_power_sensor)
 
