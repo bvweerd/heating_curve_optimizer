@@ -15,12 +15,19 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity import DeviceInfo
 
-from .const import CONF_CONTROL_MODE, DOMAIN, PLATFORMS, ZONE_SUBENTRY_TYPE
+from .const import (
+    CONF_CONTROL_MODE,
+    DOMAIN,
+    GAS_SUBENTRY_TYPE,
+    PLATFORMS,
+    ZONE_SUBENTRY_TYPE,
+)
 from .coordinator import (
     WeatherDataCoordinator,
     HeatCalculationCoordinator,
     OptimizationCoordinator,
 )
+from .gas_boiler_coordinator import GasBoilerCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,6 +75,12 @@ class HeatingCurveOptimizerData:
     config: dict[str, Any]
     device: DeviceInfo
     zones: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Hybrid gas-boiler cost comparison (optional, GAS_SUBENTRY_TYPE-gated -
+    # see gas_boiler_coordinator.py). None for every installation that
+    # hasn't configured the subentry - the common case.
+    gas_boiler_coordinator: GasBoilerCoordinator | None = None
+    gas_boiler_device: DeviceInfo | None = None
+    gas_boiler_subentry_id: str | None = None
     # entry.options exactly as they stood at setup - _update_listener compares
     # the live entry.options against this (outside _NO_RELOAD_KEYS) to tell a
     # runtime-only change from one that needs a reload. Never mutated after
@@ -242,6 +255,68 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         hass.async_create_task(_trigger_zone_first_optimization())
 
+    # 5. Hybrid gas-boiler cost comparison (optional, singleton subentry -
+    # see config_flow.py's HeatingGasBoilerSubentryFlow). Whole-house scope
+    # (not per zone - one physical boiler), fully additive: only reads the
+    # main entry's heat/optimization coordinators, never instantiated at
+    # all without the subentry, so this is zero-impact for every
+    # installation that hasn't configured it.
+    gas_boiler_coordinator: GasBoilerCoordinator | None = None
+    gas_boiler_device: DeviceInfo | None = None
+    gas_boiler_subentry_id: str | None = None
+    gas_boiler_subentries = [
+        (subentry_id, subentry)
+        for subentry_id, subentry in getattr(entry, "subentries", {}).items()
+        if subentry.subentry_type == GAS_SUBENTRY_TYPE
+    ]
+    if gas_boiler_subentries:
+        if len(gas_boiler_subentries) > 1:
+            # The config_flow singleton guard should prevent this, but
+            # never crash setup over a bypassed guarantee - just use the
+            # first one and ignore the rest.
+            _LOGGER.warning(
+                "Multiple gas_boiler subentries found on entry %s; using the "
+                "first one",
+                entry.entry_id,
+            )
+        gas_boiler_subentry_id, gas_boiler_subentry = gas_boiler_subentries[0]
+        gas_boiler_config = {**config, **gas_boiler_subentry.data}
+
+        new_gas_boiler_coordinator = GasBoilerCoordinator(
+            hass,
+            heat_coordinator,
+            optimization_coordinator,
+            gas_boiler_config,
+            entry.entry_id,
+        )
+        await new_gas_boiler_coordinator.async_setup()
+        gas_boiler_coordinator = new_gas_boiler_coordinator
+
+        gas_boiler_device = DeviceInfo(
+            identifiers={(DOMAIN, f"{entry.entry_id}_gas_boiler")},
+            name=gas_boiler_subentry.title,
+            manufacturer="Custom",
+            model="Hybrid Gas Boiler",
+            sw_version=_MANIFEST.get("version", "unknown"),
+            via_device=(DOMAIN, entry.entry_id),
+        )
+
+        async def _trigger_gas_boiler_first_refresh(
+            coordinator: GasBoilerCoordinator = new_gas_boiler_coordinator,
+        ) -> None:
+            """Trigger the first comparison after a short delay.
+
+            Deliberately not async_config_entry_first_refresh(): a broken
+            or missing gas price sensor must never block the whole
+            integration's setup via ConfigEntryNotReady - this is an
+            optional add-on, not a required dependency.
+            """
+            await asyncio.sleep(5)
+            _LOGGER.info("Triggering first gas boiler comparison run")
+            await coordinator.async_request_refresh()
+
+        hass.async_create_task(_trigger_gas_boiler_first_refresh())
+
     # Store coordinators and config on the entry itself (quality_scale's
     # runtime-data rule) rather than in hass.data[DOMAIN][entry.entry_id].
     entry.runtime_data = HeatingCurveOptimizerData(
@@ -251,6 +326,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config=config,
         device=device,
         zones=zones,
+        gas_boiler_coordinator=gas_boiler_coordinator,
+        gas_boiler_device=gas_boiler_device,
+        gas_boiler_subentry_id=gas_boiler_subentry_id,
         options=dict(entry.options),
     )
 
@@ -320,6 +398,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             zone_optimization_coordinator = zone_data.get("optimization_coordinator")
             if zone_optimization_coordinator:
                 await zone_optimization_coordinator.async_shutdown()
+
+        if runtime_data.gas_boiler_coordinator is not None:
+            await runtime_data.gas_boiler_coordinator.async_shutdown()
 
     unload_ok = bool(await hass.config_entries.async_unload_platforms(entry, PLATFORMS))
     if unload_ok:
