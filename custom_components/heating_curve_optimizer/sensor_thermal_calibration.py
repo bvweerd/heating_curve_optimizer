@@ -84,6 +84,7 @@ class ThermalCalibrationSensor(CoordinatorEntity, BaseUtilitySensor):  # type: i
             "applied": applied,
             "sample_count": data.get("calibration_sample_count", 0),
             "min_samples_to_apply": MIN_SAMPLES_TO_APPLY,
+            "last_result": data.get("calibration_last_result"),
             "learned_ua_w_per_k": (
                 data.get("building_ua_w_per_k") if applied else None
             ),

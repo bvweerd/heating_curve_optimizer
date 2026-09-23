@@ -81,6 +81,14 @@ from .const import (
 from .building_model import BuildingConfig, EmitterConfig
 from .calibration import ThermalCalibrationState
 from .calibration import STORAGE_VERSION as CALIBRATION_STORAGE_VERSION
+from .calibration import (
+    MIN_INDOOR_TEMP_DELTA_C,
+    RESULT_ELAPSED_GAP,
+    RESULT_MISSING_BUILDING_CONFIG,
+    RESULT_NO_INDOOR_SENSOR,
+    RESULT_NO_POWER_READING,
+    RESULT_STEP_TOO_SMALL,
+)
 from .heatpump_model import HeatPumpConfig
 from .helpers import extract_price_forecast_with_interval, max_offset_change
 from .realtime_controller import RealtimeController, create_realtime_controller
@@ -1264,10 +1272,10 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
         never this one's - `self._last_calibration_snapshot` carries it
         forward.
         """
-        if (
-            self._calibration is None
-            or not self.heat_coordinator.has_real_indoor_sensor
-        ):
+        if self._calibration is None:
+            return
+        if not self.heat_coordinator.has_real_indoor_sensor:
+            self._calibration.last_result = RESULT_NO_INDOOR_SENSOR
             return
 
         now = dt_util.utcnow()
@@ -1280,14 +1288,26 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
             )
 
         previous = self._last_calibration_snapshot
-        if previous is not None and previous.get("heat_and_solar_kw") is not None:
+        if previous is None:
+            pass  # First cycle ever - nothing to compare against yet.
+        elif previous.get("heat_and_solar_kw") is None:
+            self._calibration.last_result = RESULT_NO_POWER_READING
+        else:
             elapsed_hours = (now - previous["timestamp"]).total_seconds() / 3600.0
             # Skip startup gaps (near-zero elapsed) and long outages (HA
             # restart, network loss) - both make the observed rate
             # meaningless rather than merely noisy.
-            if 0.05 <= elapsed_hours <= 3.0:
+            if not (0.05 <= elapsed_hours <= 3.0):
+                self._calibration.last_result = RESULT_ELAPSED_GAP
+            else:
                 building = BuildingConfig.from_config(self.config)
-                if building.area_m2 > 0:
+                if building.area_m2 <= 0:
+                    self._calibration.last_result = RESULT_MISSING_BUILDING_CONFIG
+                elif (
+                    abs(indoor_temp - previous["indoor_temp"]) < MIN_INDOOR_TEMP_DELTA_C
+                ):
+                    self._calibration.last_result = RESULT_STEP_TOO_SMALL
+                else:
                     delta_t = previous["indoor_temp"] - previous["outdoor_temp"]
                     rate_c_per_h = (
                         indoor_temp - previous["indoor_temp"]
@@ -1442,6 +1462,9 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
                 ),
                 "calibration_sample_count": (
                     calibration.sample_count if calibration is not None else 0
+                ),
+                "calibration_last_result": (
+                    calibration.last_result if calibration is not None else None
                 ),
                 "timestamp": dt_util.utcnow(),
             }

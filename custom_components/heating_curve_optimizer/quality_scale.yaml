@@ -256,7 +256,15 @@ rules:
     comment: Single device per config entry via DeviceInfo, all entities linked to it.
   diagnostics:
     status: done
-    comment: diagnostics.py implements async_get_config_entry_diagnostics.
+    comment: >-
+      diagnostics.py implements async_get_config_entry_diagnostics.
+      TO_REDACT lists every entity-id-valued config key (price/power/indoor
+      and supply temperature sensors, sources), mirroring
+      battery_controller's own redaction list. The dump also includes
+      entry.subentries (zone/gas-boiler/PV-array, redacted the same way)
+      and a per-coordinator "calibration" section (sample_count,
+      last_result, learned values) so a bug report doesn't need the
+      stored_data.optimization blob cross-referenced by hand.
   discovery-update-info:
     status: exempt
     comment: No discoverable network devices.
