@@ -158,6 +158,7 @@ When you have solar panels or other production:
 - :white_check_mark: A redesigned thermal optimizer (1R1C building model + backward-induction DP), selectable per-installation via the `control_mode` select entity without losing today's behavior as the default
 - :white_check_mark: Learned thermal calibration (UA / thermal mass) from real operation, when an indoor-temperature sensor is configured
 - :white_check_mark: Real-time PV-surplus response, when household grid import/export sensors are configured
+- :white_check_mark: Hybrid heat-pump + gas-boiler cost comparison, via an optional gas boiler subentry
 
 ## Use Cases
 
@@ -176,6 +177,12 @@ When you have solar panels or other production:
   to `optimize_v2` on a live installation to compare it against the
   proven legacy optimizer, with `legacy` remaining the safe default and
   one click away to revert.
+- **Hybrid heat pump + gas boiler systems** - get an advisory signal for
+  when your gas boiler is genuinely cheaper than the heat pump right now
+  (never just because gas happens to be cheap - it's only shown when heat
+  is actually needed), so your own automation can switch over during
+  extended high electricity prices. See
+  [Configuration Guide](configuration.md#hybrid-gas-boiler-comparison-optional-subentry).
 
 ## Documentation Structure
 

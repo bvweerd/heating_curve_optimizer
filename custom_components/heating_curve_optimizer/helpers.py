@@ -276,9 +276,15 @@ def calculate_defrost_factor(outdoor_temp: float, humidity: float = 80.0) -> flo
                 frosting_threshold - 3.0
             )
     else:
-        # Below freezing: -10 to 0°C
-        # Moderate frosting, less severe than near-zero temperatures
-        base_penalty = 0.12  # 12% COP loss
+        # Below freezing: -10 to 0°C. Colder air holds less absolute
+        # moisture even at the same relative humidity, so frosting tapers
+        # off toward -10°C - but it must start from the SAME penalty the
+        # 0-3°C branch above gives at outdoor_temp=0 (base_penalty=0.25,
+        # temp_factor=1.0), or the two branches disagree at their shared
+        # boundary and cop_multiplier jumps discontinuously right at the
+        # freezing point (found in review; was base_penalty=0.12 here,
+        # a ~2x mismatch against the 0.25 the other branch gives at 0°C).
+        base_penalty = 0.25
         temp_factor = (outdoor_temp + 10) / 10.0
 
     # Adjust for humidity (Dutch climate typically 75-90% RH in winter)

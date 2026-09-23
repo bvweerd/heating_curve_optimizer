@@ -35,7 +35,7 @@ def optimize_offsets(
     demand: list[float],
     prices: list[float],
     *,
-    base_temp: float = 35.0,
+    base_cop: float = DEFAULT_COP_AT_35,
     k_factor: float = DEFAULT_K_FACTOR,
     cop_compensation_factor: float = 1.0,
     buffer: float = 0.0,
@@ -74,12 +74,16 @@ def optimize_offsets(
     minutes per 1°C offset change. Lower values allow faster changes.
     At time_base=60 and offset_delta_t=10: max 6°C change per step.
     At time_base=60 and offset_delta_t=60: max 1°C change per step.
+
+    The ``base_cop`` parameter is the heat pump's COP at 35°C supply
+    temperature (``CONF_BASE_COP``), used by the internal COP model that
+    drives every cost comparison the DP makes.
     """
     _LOGGER.debug(
-        "Optimizing offsets demand=%s prices=%s base=%s k=%s comp=%s buffer=%s outdoor_temps=%s humidity=%s",
+        "Optimizing offsets demand=%s prices=%s base_cop=%s k=%s comp=%s buffer=%s outdoor_temps=%s humidity=%s",
         demand,
         prices,
-        base_temp,
+        base_cop,
         k_factor,
         cop_compensation_factor,
         buffer,
@@ -132,13 +136,21 @@ def optimize_offsets(
 
         # COP formula: base + outdoor_effect - supply_temp_effect
         cop_base = (
-            DEFAULT_COP_AT_35
+            base_cop
             + outdoor_temp_coefficient * outdoor_temp
             - k_factor * (supply_temp - 35)
         ) * cop_compensation_factor
 
         # Apply defrost factor
         cop_adjusted = cop_base * defrost_factors[time_step]
+
+        # Carnot ceiling: no real heat pump can exceed the theoretical
+        # maximum COP for lifting heat from outdoor_temp to supply_temp.
+        # See heatpump_model.HeatPumpConfig.cop_at for the full rationale.
+        lift_k = supply_temp - outdoor_temp
+        if lift_k > 0.1:
+            carnot_cop = (supply_temp + 273.15) / lift_k
+            cop_adjusted = min(cop_adjusted, carnot_cop)
 
         return max(0.5, cop_adjusted)  # Ensure COP doesn't go below 0.5
 

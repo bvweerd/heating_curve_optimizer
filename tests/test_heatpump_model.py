@@ -63,6 +63,34 @@ def test_electrical_power_increases_for_same_heat_at_higher_supply_temp():
     assert high > low
 
 
+def test_cop_clamped_by_carnot_limit_at_large_lift():
+    """An aggressively-tuned linear fit (high base COP, no temperature
+    decline) must not be allowed to exceed the Carnot COP for the actual
+    outdoor-to-supply lift - no real heat pump can beat the second-law
+    limit, regardless of what the linear approximation says."""
+    hp = HeatPumpConfig(
+        base_cop_at_35=8.0,
+        k_factor=0.0,
+        outdoor_temp_coefficient=0.0,
+        cop_compensation_factor=1.0,
+        min_cop=0.5,
+    )
+    cop = hp.cop_at(supply_temp=40.0, outdoor_temp=-30.0)
+    carnot_cop = (40.0 + 273.15) / (40.0 - (-30.0))
+    assert cop <= carnot_cop + 1e-9
+    assert cop < 8.0  # would be exactly 8.0 unclamped (k_factor=0, no outdoor effect)
+
+
+def test_cop_unaffected_by_carnot_limit_in_typical_operating_range():
+    """Default parameters at realistic operating points must stay well
+    under the Carnot limit - the ceiling should not engage in normal
+    operation."""
+    hp = HeatPumpConfig()
+    cop = hp.cop_at(supply_temp=45.0, outdoor_temp=-10.0)
+    carnot_cop = (45.0 + 273.15) / (45.0 - (-10.0))
+    assert cop < carnot_cop
+
+
 def test_from_config_reads_expected_keys():
     config = {
         "base_cop": 4.5,

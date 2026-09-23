@@ -291,6 +291,7 @@ class CalibrationSensor(BaseUtilitySensor):
                 self._entry.options.get(key, self._entry.data.get(key, default))
             )
 
+        base_cop = _get_config("base_cop", DEFAULT_COP_AT_35)
         k_factor = _get_config("k_factor", DEFAULT_K_FACTOR)
         cop_compensation = _get_config("cop_compensation_factor", 1.0)
         outdoor_coef = _get_config(
@@ -299,9 +300,7 @@ class CalibrationSensor(BaseUtilitySensor):
 
         # Calculate theoretical COP
         theoretical_cop = (
-            DEFAULT_COP_AT_35
-            + outdoor_coef * outdoor_temp
-            - k_factor * (supply_temp - 35)
+            base_cop + outdoor_coef * outdoor_temp - k_factor * (supply_temp - 35)
         ) * cop_compensation
 
         if theoretical_cop <= 0:

@@ -185,7 +185,12 @@ rules:
       emitter_type, including their value tables and an explicit note
       on which ones are exposed by the UI wizard vs. the Control Mode
       select entity (see docs-installation-parameters below).
-      docs/configuration.md links to it.
+      docs/configuration.md links to it. Also gained a "Hybrid Gas Boiler
+      Comparison (optional subentry)" section covering gas_price_sensor,
+      gas_boiler_efficiency and gas_calorific_value_kwh_per_m3 (defaults,
+      Dutch G-gas HHV rationale), the cost formula, and the
+      heat_currently_needed real-vs-modeled signal priority that gates
+      the recommendation.
   docs-installation-parameters:
     status: done
     comment: |
@@ -269,6 +274,9 @@ rules:
       HeatCalculationCoordinator 5 min, OptimizationCoordinator 15 min,
       plus the event-driven sensors (price/COP-delta/thermal-power) and
       the 60 s real-time controller loop, each with its actual trigger.
+      Row added for GasBoilerCoordinator (event-driven on either price
+      sensor's state change, 15 min safety-net poll) once the hybrid
+      gas-boiler subentry landed.
   docs-examples:
     status: done
     comment: |
@@ -288,6 +296,11 @@ rules:
       HA release, and removal not deleting the calibration Store file.
       docs/redesign/REDESIGN.md still has the deeper design-rationale
       version of these for contributors; this is the user-facing one.
+      Extended with three more once the hybrid gas-boiler feature
+      landed: the comparison is instantaneous-only (no gas-price
+      forecast or hysteresis smoothing), one gas boiler per config entry
+      rather than per zone, and the DP optimizers remaining unaware of
+      the gas boiler (phase 2, not implemented).
   docs-supported-devices:
     status: exempt
     comment: Software-only integration; works with any heat pump via HA automations.
@@ -298,7 +311,9 @@ rules:
       session for the pre-redesign items) extended this session with the
       redesign's own features: heating-zone subentries, the redesigned
       thermal optimizer/control_mode, learned thermal calibration, and
-      real-time PV-surplus response.
+      real-time PV-surplus response. Further extended with the hybrid
+      heat-pump + gas-boiler cost comparison (optional gas boiler
+      subentry), also added as its own "Use Cases" bullet.
   docs-troubleshooting:
     status: done
     comment: docs/troubleshooting.md, docs/quick-start.md.

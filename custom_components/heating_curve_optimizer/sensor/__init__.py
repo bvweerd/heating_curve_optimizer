@@ -68,6 +68,9 @@ from ..sensor_thermal_shadow import (
 )
 from ..sensor_thermal_calibration import ThermalCalibrationSensor
 from ..sensor_realtime_offset import RealtimeOffsetAdjustmentSensor
+from .gas_boiler.heat_pump_cost import GasBoilerHeatPumpCostSensor
+from .gas_boiler.gas_cost import GasBoilerGasCostSensor
+from .gas_boiler.cost_savings import GasBoilerCostSavingsSensor
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -393,6 +396,44 @@ async def async_setup_entry(
             config_subentry_id=subentry_id,
         )
 
+    # Hybrid gas-boiler comparison (optional, singleton subentry - see
+    # __init__.py's gas boiler setup). Absent for every installation that
+    # hasn't configured it. Enabled by default (unlike the phase-2/4/5
+    # diagnostic sensors, which stay disabled-by-default extras added to
+    # every install) - the subentry itself is the opt-in signal, so hiding
+    # these again would just be redundant friction.
+    gas_boiler_coordinator = runtime_data.gas_boiler_coordinator
+    gas_boiler_device = runtime_data.gas_boiler_device
+    gas_boiler_subentry_id = runtime_data.gas_boiler_subentry_id
+    if gas_boiler_coordinator is not None and gas_boiler_device is not None:
+        gas_boiler_entry_id = f"{entry.entry_id}_gas_boiler"
+        async_add_entities(
+            [
+                GasBoilerHeatPumpCostSensor(
+                    coordinator=gas_boiler_coordinator,
+                    name="Heat Pump Cost",
+                    unique_id=f"{gas_boiler_entry_id}_heat_pump_cost",
+                    icon="mdi:heat-pump",
+                    device=gas_boiler_device,
+                ),
+                GasBoilerGasCostSensor(
+                    coordinator=gas_boiler_coordinator,
+                    name="Gas Cost",
+                    unique_id=f"{gas_boiler_entry_id}_gas_cost",
+                    icon="mdi:fire",
+                    device=gas_boiler_device,
+                ),
+                GasBoilerCostSavingsSensor(
+                    coordinator=gas_boiler_coordinator,
+                    name="Gas Boiler Cost Savings",
+                    unique_id=f"{gas_boiler_entry_id}_cost_savings",
+                    icon="mdi:piggy-bank-outline",
+                    device=gas_boiler_device,
+                ),
+            ],
+            config_subentry_id=gas_boiler_subentry_id,
+        )
+
 
 def _setup_event_driven_sensors(
     hass: HomeAssistant,
@@ -458,6 +499,8 @@ def _setup_event_driven_sensors(
             device=device,
             k_factor=k_factor,
             base_cop=base_cop,
+            outdoor_temp_coefficient=outdoor_temp_coefficient,
+            cop_compensation_factor=cop_compensation_factor,
         )
         entities.append(thermal_power_sensor)
 
