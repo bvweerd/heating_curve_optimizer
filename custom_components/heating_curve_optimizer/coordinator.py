@@ -587,8 +587,14 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  
         system_efficiency = 0.85
 
         # Tilt factor (how much radiation is affected by panel angle)
-        # Optimal tilt for Netherlands is ~35°
-        tilt_factor = 1.0 if pv_tilt == 35 else max(0.7, 1.0 - abs(pv_tilt - 35) * 0.01)
+        # Optimal tilt for Netherlands is ~35° (DEFAULT_PV_TILT) - compared
+        # against that shared constant rather than a second hardcoded 35 so
+        # the two can't silently drift apart.
+        tilt_factor = (
+            1.0
+            if pv_tilt == DEFAULT_PV_TILT
+            else max(0.7, 1.0 - abs(pv_tilt - DEFAULT_PV_TILT) * 0.01)
+        )
 
         # Orientation factors for PV panels
         orientation_factors = {
@@ -1283,11 +1289,14 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
                         )
                     )
                 else:
-                    # No temperature data, use min_supply as fallback
+                    # No temperature data, use min_supply as fallback. COP
+                    # falls back to the user's own configured base_cop
+                    # (not an unrelated hardcoded guess) for consistency
+                    # with every other COP figure this sensor reports.
                     baseline_supply_temps.append(round(min_supply, 1))
                     future_supply_temps.append(round(min_supply, 1))
-                    baseline_cop_list.append(3.0)
-                    optimized_cop_list.append(3.0)
+                    baseline_cop_list.append(base_cop)
+                    optimized_cop_list.append(base_cop)
 
             # Calculate real costs: electricity cost = (heat_demand / COP) * time * price
             baseline_cost = 0.0
