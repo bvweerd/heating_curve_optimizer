@@ -23,6 +23,20 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import selector
 import voluptuous as vol
 
+# homeassistant.data_entry_flow.section() (single-screen collapsible field
+# groups, used by battery_controller's config_flow.py) landed in HA well
+# after this integration's floor version, and does not exist at all in the
+# HA release this repo's test environment can install (2024.3.x - a
+# package-index ceiling, not a real HA release date; confirmed by direct
+# import attempt). Same graceful-degradation policy as _ConfigSubentryFlow
+# below: the modern single-page sectioned form is only used when `section`
+# is importable, otherwise async_step_user falls through to today's
+# multi-step wizard, completely unchanged - see _build_sectioned_schema.
+try:
+    from homeassistant.data_entry_flow import section as _section
+except ImportError:
+    _section = None
+
 from .companion_integrations import (
     DetectedSensor,
     detect_gas_price_sensor,
@@ -91,6 +105,8 @@ from .const import (
     DOMAIN,
     ENERGY_LABELS,
     SOURCE_TYPES,
+    SOURCE_TYPE_CONSUMPTION,
+    SOURCE_TYPE_PRODUCTION,
     VENTILATION_TYPES,
     THERMAL_MASS_WH_PER_M2_K,
     EMITTER_EXPONENT_MAP,
@@ -399,6 +415,132 @@ if _ConfigSubentryFlow is not None:
 
 else:
     HeatingGasBoilerSubentryFlow = None  # type: ignore[assignment,misc]
+
+
+def _extract_sectioned_data(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Flatten a single-page sectioned form submission (see
+    `_build_sectioned_schema`) back into a flat dict keyed by the same
+    strings as both the CONF_* constants and this flow's own `self.*`
+    attribute names (a 1:1 naming convention already used throughout this
+    file, e.g. `CONF_AREA_M2 == "area_m2" == self.area_m2`) - the caller
+    applies it with `for key, value in flat.items(): setattr(self, key,
+    value)`.
+
+    Mirrors `_apply_basic_input`/`_apply_heating_curve_input`'s coercion
+    and defaulting exactly, just reading from nested per-section dicts
+    instead of one flat `user_input`. Pure function - no dependency on
+    `_section`/HA version, so it's fully unit-testable regardless of
+    whether `section` itself is importable on this environment's HA.
+
+    `CONF_SOURCES`/`self.configs` is deliberately not included here - see
+    `_build_configs_from_sources` - it needs both flattened source lists
+    at once and has no single corresponding `self` attribute.
+    """
+    building = user_input.get("building", {})
+    envelope = user_input.get("envelope", {})
+    sensors = user_input.get("sensors", {})
+    curve = user_input.get("heat_pump_and_curve", {})
+    advanced = user_input.get("advanced", {})
+
+    return {
+        CONF_AREA_M2: float(building[CONF_AREA_M2]),
+        CONF_ENERGY_LABEL: building[CONF_ENERGY_LABEL],
+        CONF_CONSUMPTION_PRICE_SENSOR: building[CONF_CONSUMPTION_PRICE_SENSOR],
+        CONF_PRODUCTION_PRICE_SENSOR: building[CONF_PRODUCTION_PRICE_SENSOR],
+        CONF_GLASS_EAST_M2: float(envelope.get(CONF_GLASS_EAST_M2, 0)),
+        CONF_GLASS_WEST_M2: float(envelope.get(CONF_GLASS_WEST_M2, 0)),
+        CONF_GLASS_SOUTH_M2: float(envelope.get(CONF_GLASS_SOUTH_M2, 0)),
+        CONF_GLASS_U_VALUE: float(envelope.get(CONF_GLASS_U_VALUE, 1.2)),
+        CONF_VENTILATION_TYPE: envelope.get(
+            CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE
+        ),
+        CONF_CEILING_HEIGHT: float(
+            envelope.get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT)
+        ),
+        CONF_THERMAL_MASS_CLASS: envelope.get(
+            CONF_THERMAL_MASS_CLASS, DEFAULT_THERMAL_MASS_CLASS
+        ),
+        CONF_EMITTER_TYPE: envelope.get(CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE),
+        CONF_PV_EAST_WP: float(envelope.get(CONF_PV_EAST_WP, 0)),
+        CONF_PV_SOUTH_WP: float(envelope.get(CONF_PV_SOUTH_WP, 0)),
+        CONF_PV_WEST_WP: float(envelope.get(CONF_PV_WEST_WP, 0)),
+        CONF_PV_TILT: float(envelope.get(CONF_PV_TILT, DEFAULT_PV_TILT)),
+        CONF_INDOOR_TEMPERATURE_SENSOR: sensors.get(CONF_INDOOR_TEMPERATURE_SENSOR),
+        CONF_POWER_CONSUMPTION: sensors.get(CONF_POWER_CONSUMPTION),
+        CONF_SUPPLY_TEMPERATURE_SENSOR: sensors.get(CONF_SUPPLY_TEMPERATURE_SENSOR),
+        CONF_GRID_IMPORT_SENSOR: sensors.get(CONF_GRID_IMPORT_SENSOR),
+        CONF_GRID_EXPORT_SENSOR: sensors.get(CONF_GRID_EXPORT_SENSOR),
+        CONF_K_FACTOR: float(curve.get(CONF_K_FACTOR, DEFAULT_K_FACTOR)),
+        CONF_BASE_COP: float(curve.get(CONF_BASE_COP, DEFAULT_COP_AT_35)),
+        CONF_OUTDOOR_TEMP_COEFFICIENT: float(
+            curve.get(CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT)
+        ),
+        CONF_COP_COMPENSATION_FACTOR: float(
+            curve.get(CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR)
+        ),
+        CONF_HEAT_CURVE_MIN_OUTDOOR: float(
+            curve.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
+        ),
+        CONF_HEAT_CURVE_MAX_OUTDOOR: float(
+            curve.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
+        ),
+        CONF_HEATING_CURVE_OFFSET: float(
+            curve.get(CONF_HEATING_CURVE_OFFSET, DEFAULT_HEATING_CURVE_OFFSET)
+        ),
+        CONF_HEAT_CURVE_MIN: float(
+            curve.get(CONF_HEAT_CURVE_MIN, DEFAULT_HEAT_CURVE_MIN)
+        ),
+        CONF_HEAT_CURVE_MAX: float(
+            curve.get(CONF_HEAT_CURVE_MAX, DEFAULT_HEAT_CURVE_MAX)
+        ),
+        CONF_OFFSET_DELTA_T: int(
+            curve.get(CONF_OFFSET_DELTA_T, DEFAULT_OFFSET_DELTA_T)
+        ),
+        CONF_PLANNING_WINDOW: int(
+            advanced.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
+        ),
+        CONF_TIME_BASE: int(advanced.get(CONF_TIME_BASE, DEFAULT_TIME_BASE)),
+        CONF_MAX_BUFFER_DEBT: float(
+            advanced.get(CONF_MAX_BUFFER_DEBT, DEFAULT_MAX_BUFFER_DEBT)
+        ),
+        CONF_TARGET_INDOOR_TEMP: float(
+            advanced.get(CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP)
+        ),
+        CONF_INDOOR_TEMP_HYSTERESIS: float(
+            advanced.get(CONF_INDOOR_TEMP_HYSTERESIS, DEFAULT_INDOOR_TEMP_HYSTERESIS)
+        ),
+    }
+
+
+def _build_configs_from_sources(
+    consumption_entities: list[str], production_entities: list[str]
+) -> list[dict[str, Any]]:
+    """Build the `self.configs` list directly from the two flattened
+    consumption/production multi-select fields - the one-shot equivalent
+    of `_update_source_config`'s incremental, step-based building used by
+    the legacy multi-step wizard.
+
+    Only includes a block for a source_type that actually has entities,
+    matching `_update_source_config`'s own behaviour of never storing an
+    empty block - the "at least one source configured" validation still
+    happens in the caller, same as the legacy flow's own "no_blocks" check.
+    """
+    configs: list[dict[str, Any]] = []
+    if consumption_entities:
+        configs.append(
+            {
+                CONF_SOURCE_TYPE: SOURCE_TYPE_CONSUMPTION,
+                CONF_SOURCES: consumption_entities,
+            }
+        )
+    if production_entities:
+        configs.append(
+            {
+                CONF_SOURCE_TYPE: SOURCE_TYPE_PRODUCTION,
+                CONF_SOURCES: production_entities,
+            }
+        )
+    return configs
 
 
 class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg, misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
