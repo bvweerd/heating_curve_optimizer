@@ -1,6 +1,8 @@
 """Tests for companion_integrations.py - detecting battery_controller /
 dynamic_energy_contract_calculator settings during setup."""
 
+from types import SimpleNamespace
+
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -14,8 +16,11 @@ from custom_components.heating_curve_optimizer.companion_integrations import (
     FIELD_GRID_IMPORT_SENSOR,
     FIELD_POWER_CONSUMPTION,
     FIELD_PRODUCTION_PRICE_SENSOR,
+    FIELD_SOURCES_CONSUMPTION,
+    FIELD_SOURCES_PRODUCTION,
     detect_gas_price_sensor,
     detect_main_flow_sensors,
+    detect_source_sensors,
 )
 
 
@@ -154,3 +159,104 @@ async def test_options_override_data_for_battery_controller(hass: HomeAssistant)
     detected = detect_main_flow_sensors(hass)
 
     assert detected[FIELD_CONSUMPTION_PRICE_SENSOR].entity_id == "sensor.new_price"
+
+
+def _decc_source_subentry(source_type: str, sources: list[str]) -> SimpleNamespace:
+    """A fake DECC source subentry - just needs a `.data` dict with the same
+    key/value shape DECC's real ConfigSubentry objects carry."""
+    return SimpleNamespace(data={"source_type": source_type, "sources": sources})
+
+
+@pytest.mark.asyncio
+async def test_no_companion_integrations_has_no_source_candidates(
+    hass: HomeAssistant,
+):
+    assert detect_source_sensors(hass) == {}
+
+
+@pytest.mark.asyncio
+async def test_decc_source_subentries_detected_per_source_type(hass: HomeAssistant):
+    decc_entry = MockConfigEntry(domain=DECC_DOMAIN, data={})
+    decc_entry.add_to_hass(hass)
+    decc_entry.subentries = {
+        "sub1": _decc_source_subentry(
+            "Electricity consumption", ["sensor.consumption_kwh"]
+        ),
+        "sub2": _decc_source_subentry(
+            "Electricity production", ["sensor.production_kwh"]
+        ),
+        "sub3": _decc_source_subentry("Gas consumption", ["sensor.gas_m3"]),
+    }
+
+    detected = detect_source_sensors(hass)
+
+    assert detected[FIELD_SOURCES_CONSUMPTION].entity_ids == ["sensor.consumption_kwh"]
+    assert detected[FIELD_SOURCES_CONSUMPTION].source == (
+        "Dynamic Energy Contract Calculator"
+    )
+    assert detected[FIELD_SOURCES_PRODUCTION].entity_ids == ["sensor.production_kwh"]
+
+
+@pytest.mark.asyncio
+async def test_decc_only_consumption_configured_falls_back_for_production(
+    hass: HomeAssistant,
+):
+    """DECC has a consumption source subentry but no production one -
+    production falls back to battery_controller's flat list."""
+    decc_entry = MockConfigEntry(domain=DECC_DOMAIN, data={})
+    decc_entry.add_to_hass(hass)
+    decc_entry.subentries = {
+        "sub1": _decc_source_subentry(
+            "Electricity consumption", ["sensor.consumption_kwh"]
+        ),
+    }
+    bc_entry = MockConfigEntry(
+        domain=BATTERY_CONTROLLER_DOMAIN,
+        data={"electricity_production_sensors": ["sensor.pv_production"]},
+    )
+    bc_entry.add_to_hass(hass)
+
+    detected = detect_source_sensors(hass)
+
+    assert detected[FIELD_SOURCES_CONSUMPTION].entity_ids == ["sensor.consumption_kwh"]
+    assert detected[FIELD_SOURCES_CONSUMPTION].source == (
+        "Dynamic Energy Contract Calculator"
+    )
+    assert detected[FIELD_SOURCES_PRODUCTION].entity_ids == ["sensor.pv_production"]
+    assert detected[FIELD_SOURCES_PRODUCTION].source == "Battery Controller"
+
+
+@pytest.mark.asyncio
+async def test_battery_controller_only_detects_both_source_lists(
+    hass: HomeAssistant,
+):
+    bc_entry = MockConfigEntry(
+        domain=BATTERY_CONTROLLER_DOMAIN,
+        data={
+            "electricity_consumption_sensors": ["sensor.consumption"],
+            "electricity_production_sensors": ["sensor.production"],
+        },
+    )
+    bc_entry.add_to_hass(hass)
+
+    detected = detect_source_sensors(hass)
+
+    assert detected[FIELD_SOURCES_CONSUMPTION].entity_ids == ["sensor.consumption"]
+    assert detected[FIELD_SOURCES_PRODUCTION].entity_ids == ["sensor.production"]
+    assert detected[FIELD_SOURCES_CONSUMPTION].source == "Battery Controller"
+
+
+@pytest.mark.asyncio
+async def test_decc_subentry_missing_sources_key_is_skipped_not_crashed(
+    hass: HomeAssistant,
+):
+    """A subentry with the right source_type but a malformed/empty sources
+    list must be skipped cleanly, not raise."""
+    decc_entry = MockConfigEntry(domain=DECC_DOMAIN, data={})
+    decc_entry.add_to_hass(hass)
+    decc_entry.subentries = {
+        "sub1": SimpleNamespace(data={"source_type": "Electricity consumption"}),
+        "sub2": _decc_source_subentry("Electricity consumption", []),
+    }
+
+    assert detect_source_sensors(hass) == {}

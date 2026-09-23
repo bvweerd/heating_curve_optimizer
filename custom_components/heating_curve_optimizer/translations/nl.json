@@ -71,6 +71,7 @@
         }
       },
       "user": {
+        "title": "Heating Curve Optimizer instellen",
         "data": {
           "energy_label": "Energielabel",
           "pv_east_wp": "PV-panelen oost (Wp)",
@@ -83,6 +84,117 @@
           "pv_south_wp": "Totaal piekvermogen van op het zuiden gerichte PV-panelen in Wp",
           "pv_west_wp": "Totaal piekvermogen van op het westen gerichte PV-panelen in Wp",
           "pv_tilt": "Hellingshoek van PV-panelen (0=horizontaal, 90=verticaal, typisch: 35°)"
+        },
+        "sections": {
+          "building": {
+            "name": "Woning & prijzen",
+            "description": "Vereist om de integratie aan te maken.",
+            "data": {
+              "area_m2": "Vloeroppervlak (m²)",
+              "energy_label": "Energielabel",
+              "consumption_price_sensor": "Elektriciteit verbruiksprijs sensor",
+              "production_price_sensor": "Elektriciteit productieprijs sensor"
+            },
+            "data_description": {
+              "consumption_price_sensor": "Sensor met elektriciteit inkoopprijs forecast-attributen",
+              "production_price_sensor": "Sensor met elektriciteit teruglever-/verkoopprijs forecast-attributen"
+            }
+          },
+          "envelope": {
+            "name": "Bouwschil & PV",
+            "description": "Glasoppervlakken, isolatie, ventilatie en zonnepanelen - verbetert de nauwkeurigheid van warmteverlies en zonnewinst.",
+            "data": {
+              "glass_east_m2": "Glasoppervlak oost (m²)",
+              "glass_west_m2": "Glasoppervlak west (m²)",
+              "glass_south_m2": "Glasoppervlak zuid (m²)",
+              "glass_u_value": "Glas U-waarde (W/m²K)",
+              "ventilation_type": "Ventilatietype",
+              "ceiling_height": "Plafondhoogte (m)",
+              "thermal_mass_class": "Thermische massa klasse",
+              "emitter_type": "Type warmteafgever",
+              "pv_east_wp": "PV-panelen oost (Wp)",
+              "pv_south_wp": "PV-panelen zuid (Wp)",
+              "pv_west_wp": "PV-panelen west (Wp)",
+              "pv_tilt": "PV-panelen hellingshoek (graden)"
+            },
+            "data_description": {
+              "glass_u_value": "Warmtedoorgangscoëfficiënt van het glas (standaard: 1,2)",
+              "ventilation_type": "Type ventilatiesysteem in de woning voor berekening van ventilatieverliezen",
+              "ceiling_height": "Gemiddelde plafondhoogte voor berekening van gebouwvolume (standaard: 2,5m)",
+              "thermal_mass_class": "Bouwgewichtklasse, gebruikt door de herontworpen optimizer (optimize_v2) in plaats van de op het energielabel gebaseerde schatting (standaard: medium)",
+              "emitter_type": "Hoe het afgiftevermogen van de warmteafgever afneemt bij lagere aanvoertemperatuur, gebruikt door de herontworpen optimizer (optimize_v2) (standaard: radiator)",
+              "pv_east_wp": "Totaal piekvermogen van op het oosten gerichte PV-panelen in Wp",
+              "pv_south_wp": "Totaal piekvermogen van op het zuiden gerichte PV-panelen in Wp",
+              "pv_west_wp": "Totaal piekvermogen van op het westen gerichte PV-panelen in Wp",
+              "pv_tilt": "Hellingshoek van PV-panelen (0=horizontaal, 90=verticaal, typisch: 35°)"
+            }
+          },
+          "sensors": {
+            "name": "Energiebronnen & sensoren",
+            "description": "Welke sensoren uw elektriciteitsverbruik/-productie meten, plus eventuele optionele realtime sensoren.",
+            "data": {
+              "sources_consumption": "Elektriciteitsverbruik sensoren",
+              "sources_production": "Elektriciteitsproductie sensoren",
+              "indoor_temperature_sensor": "Binnentemperatuur sensor",
+              "power_consumption": "Warmtepomp vermogensverbruik sensor",
+              "supply_temperature_sensor": "Aanvoertemperatuur sensor",
+              "grid_import_sensor": "Netafname vermogen sensor (W of kW, realtime PV-overschot regeling)",
+              "grid_export_sensor": "Netteruglevering vermogen sensor (W of kW, realtime PV-overschot regeling)"
+            },
+            "data_description": {
+              "sources_consumption": "Energiesensoren (kWh) die elektriciteitsverbruik meten - minstens één verbruiks- of productiebron is verplicht",
+              "sources_production": "Energiesensoren (kWh) die elektriciteitsproductie meten (bijv. zonnepanelen)",
+              "indoor_temperature_sensor": "Sensor die de werkelijke binnentemperatuur meet",
+              "power_consumption": "Sensor die het vermogensverbruik van de warmtepomp meet",
+              "supply_temperature_sensor": "Sensor die de aanvoertemperatuur van de warmtepomp meet"
+            }
+          },
+          "heat_pump_and_curve": {
+            "name": "Warmtepomp & stooklijn",
+            "description": "COP-eigenschappen en de fysieke grenzen van de stooklijn.",
+            "data": {
+              "k_factor": "K-factor (COP afname per °C aanvoertemp verhoging)",
+              "base_cop": "Basale COP bij 35°C aanvoertemperatuur",
+              "outdoor_temp_coefficient": "Buitentemperatuur-coëfficiënt",
+              "cop_compensation_factor": "COP-compensatiefactor",
+              "heat_curve_min_outdoor": "Minimum buitentemperatuur (°C)",
+              "heat_curve_max_outdoor": "Maximum buitentemperatuur (°C)",
+              "heating_curve_offset": "Handmatige stooklijn offset (°C)",
+              "heat_curve_min": "Minimum aanvoertemperatuur (°C)",
+              "heat_curve_max": "Maximum aanvoertemperatuur (°C)",
+              "offset_delta_t": "Offset wijzigingssnelheid (min/°C)"
+            },
+            "data_description": {
+              "k_factor": "Hoeveel de COP afneemt per °C verhoging van de aanvoertemperatuur (typisch: 0,01-0,11)",
+              "base_cop": "COP van de warmtepomp bij 35°C aanvoertemperatuur (typisch: 3,5-5,0)",
+              "outdoor_temp_coefficient": "Hoeveel de COP toeneemt per °C stijging van de buitentemperatuur (typisch: 0,025-0,08)",
+              "cop_compensation_factor": "Factor om theoretische COP aan te passen aan werkelijke systeemprestaties (typisch: 0,8-1,2)",
+              "heat_curve_min_outdoor": "Minimum buitentemperatuur voor stooklijn (standaard: -20°C)",
+              "heat_curve_max_outdoor": "Maximum buitentemperatuur voor stooklijn (standaard: 15°C)",
+              "heating_curve_offset": "Handmatige offset om toe te voegen aan geoptimaliseerde stooklijn (bereik: -4 tot +4°C, standaard: 0)",
+              "heat_curve_min": "Minimum toegestane aanvoertemperatuur (standaard: 20°C)",
+              "heat_curve_max": "Maximum toegestane aanvoertemperatuur (standaard: 45°C)",
+              "offset_delta_t": "Minuten nodig per 1°C offset verandering. Lager = snellere respons (standaard: 10, bereik: 5-60)"
+            }
+          },
+          "advanced": {
+            "name": "Geavanceerd",
+            "description": "Planningsvenster van de optimizer en doeltemperatuur-instellingen - standaardwaarden werken voor de meeste installaties.",
+            "data": {
+              "planning_window": "Planningsvenster (uren)",
+              "time_base": "Tijdsbasis (minuten per stap)",
+              "max_buffer_debt": "Maximale warmteschuld (kWh)",
+              "target_indoor_temp": "Gewenste kamertemperatuur (°C)",
+              "indoor_temp_hysteresis": "Kamertemperatuur hysterese (°C)"
+            },
+            "data_description": {
+              "planning_window": "Optimalisatie planningshorizon in uren (standaard: 6)",
+              "time_base": "Tijdsinterval voor optimalisatie in minuten (standaard: 60)",
+              "max_buffer_debt": "Maximale toegestane warmteschuld voor kostenoptimalisatie. Maakt het mogelijk om verwarming te verlagen tijdens dure uren en later te compenseren (standaard: 5,0 kWh)",
+              "target_indoor_temp": "Gewenste kamertemperatuur setpoint (standaard: 20°C)",
+              "indoor_temp_hysteresis": "Temperatuurband rond setpoint waarin verwarming moduleert (standaard: 0,5°C)"
+            }
+          }
         }
       },
       "detected_integrations": {
@@ -93,7 +205,9 @@
           "grid_import_sensor": "Gedetecteerde netafname-sensor gebruiken",
           "grid_export_sensor": "Gedetecteerde netteruglevering-sensor gebruiken",
           "consumption_price_sensor": "Gedetecteerde verbruiksprijssensor gebruiken",
-          "production_price_sensor": "Gedetecteerde productieprijssensor gebruiken"
+          "production_price_sensor": "Gedetecteerde productieprijssensor gebruiken",
+          "sources_consumption": "Gedetecteerde verbruikssensoren gebruiken",
+          "sources_production": "Gedetecteerde productiesensoren gebruiken"
         }
       }
     },
