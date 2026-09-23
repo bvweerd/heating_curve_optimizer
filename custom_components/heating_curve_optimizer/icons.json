@@ -18,8 +18,6 @@
       "current_consumption_price": { "default": "mdi:currency-eur" },
       "heat_pump_energy_daily": { "default": "mdi:fire" },
       "net_heat_loss_energy_daily": { "default": "mdi:fire-off" },
-      "thermal_v2_offset": { "default": "mdi:chart-timeline-variant" },
-      "thermal_v2_cost_comparison": { "default": "mdi:scale-balance" },
       "thermal_calibration": { "default": "mdi:tune" },
       "realtime_offset_adjustment": { "default": "mdi:solar-power-variant" },
       "gas_boiler_heat_pump_cost": { "default": "mdi:heat-pump" },
@@ -38,16 +36,6 @@
         "state": {
           "on": "mdi:gas-burner",
           "off": "mdi:heat-pump"
-        }
-      }
-    },
-    "select": {
-      "control_mode": {
-        "default": "mdi:cog-transfer",
-        "state": {
-          "legacy": "mdi:calculator-variant",
-          "follow_curve": "mdi:chart-bell-curve",
-          "optimize_v2": "mdi:chart-timeline-variant"
         }
       }
     }

@@ -74,10 +74,33 @@ MIN_SAMPLES_TO_APPLY = 30
 # CALIBRATION_ACCEPT_MIN/MAX in battery_controller's efficiency_calibration.py.
 PLAUSIBLE_RATIO_BOUNDS = (0.3, 3.0)
 
+# A step whose observed indoor-temperature change is smaller than this is
+# mostly sensor-quantization noise, not signal - most HA temperature
+# sensors report to 0.1°C, so a step needs to move the reading by a few
+# multiples of that to be trustworthy. Mirrors
+# CALIBRATION_MIN_DELTA_KWH/CALIBRATION_SOC_QUANTUM_FACTOR in
+# battery_controller's efficiency_calibration.py: the floor is on the raw
+# observed delta (here, °C), not on the derived rate (°C/h) - dividing a
+# quantized delta by a short elapsed window would otherwise amplify the
+# same quantization noise into an apparently large rate.
+MIN_INDOOR_TEMP_DELTA_C = 0.3
+
 RESULT_NO_RESULT = "no_result"
 RESULT_FITTED = "fitted"
 RESULT_IMPLAUSIBLE = "implausible"
 RESULT_SINGULAR = "singular"
+# Set directly by coordinator.py's _maybe_record_calibration_sample for a
+# skip that happens before a sample ever reaches record_sample - mirrors
+# battery_controller's richer last_result vocabulary
+# (CALIBRATION_NO_SOC_SOURCE/..._STEP_INCOMPLETE/etc. in
+# efficiency_calibration.py), so a user can tell "never had the chance to
+# learn anything because X isn't configured/ready" apart from "learned
+# something, then rejected it."
+RESULT_NO_INDOOR_SENSOR = "no_indoor_sensor"
+RESULT_NO_POWER_READING = "no_power_reading"
+RESULT_ELAPSED_GAP = "elapsed_gap"
+RESULT_MISSING_BUILDING_CONFIG = "missing_building_config"
+RESULT_STEP_TOO_SMALL = "step_too_small"
 
 
 def fit_ua_and_thermal_mass(

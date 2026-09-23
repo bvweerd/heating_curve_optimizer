@@ -10,7 +10,37 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
 
-TO_REDACT: set[str] = set()
+from .const import (
+    CONF_CONSUMPTION_PRICE_SENSOR,
+    CONF_GAS_PRICE_SENSOR,
+    CONF_GRID_EXPORT_SENSOR,
+    CONF_GRID_IMPORT_SENSOR,
+    CONF_INDOOR_TEMPERATURE_SENSOR,
+    CONF_POWER_CONSUMPTION,
+    CONF_PRICE_SENSOR,
+    CONF_PRODUCTION_PRICE_SENSOR,
+    CONF_SOURCES,
+    CONF_SUPPLY_TEMPERATURE_SENSOR,
+)
+
+# Sensor entity IDs may be considered private; redact them. Every config key
+# that holds an entity ID (or a list of them) belongs here - diagnostics get
+# pasted into public issue trackers. Mirrors battery_controller's own
+# TO_REDACT/its comment: that file recorded a real past bug where an entry
+# was misspelled and silently redacted nothing, which is why this list is
+# built from the constants rather than from literal strings.
+TO_REDACT: set[str] = {
+    CONF_CONSUMPTION_PRICE_SENSOR,
+    CONF_GAS_PRICE_SENSOR,
+    CONF_GRID_EXPORT_SENSOR,
+    CONF_GRID_IMPORT_SENSOR,
+    CONF_INDOOR_TEMPERATURE_SENSOR,
+    CONF_POWER_CONSUMPTION,
+    CONF_PRICE_SENSOR,
+    CONF_PRODUCTION_PRICE_SENSOR,
+    CONF_SOURCES,
+    CONF_SUPPLY_TEMPERATURE_SENSOR,
+}
 
 
 def _serialize_state(state: State | None) -> dict[str, Any]:
@@ -41,6 +71,26 @@ def _serialize_mapping(data: Mapping[str, Any] | None) -> dict[str, Any]:
     return {key: value for key, value in data.items()}
 
 
+def _serialize_calibration(optimization_coordinator: Any) -> dict[str, Any] | None:
+    """Return a coordinator's thermal-calibration state directly, without
+    requiring a diagnostics reader to cross-reference the `stored_data`
+    payload by hand. `None` when calibration was never set up (no real
+    indoor temperature sensor configured - see coordinator.py's
+    `async_setup`), not an empty dict, so it is distinguishable from "set
+    up but never sampled yet"."""
+
+    calibration = getattr(optimization_coordinator, "_calibration", None)
+    if calibration is None:
+        return None
+    return {
+        "sample_count": calibration.sample_count,
+        "applied": calibration.applied,
+        "last_result": calibration.last_result,
+        "learned_ua_w_per_k": calibration.learned_ua_w_per_k,
+        "learned_thermal_mass_kwh_per_k": calibration.learned_thermal_mass_kwh_per_k,
+    }
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
@@ -48,6 +98,7 @@ async def async_get_config_entry_diagnostics(
 
     runtime_data = getattr(entry, "runtime_data", None)
     stored_data: dict[str, Any] = {}
+    calibration_data: dict[str, Any] = {}
     if runtime_data is not None:
         stored_data = {
             "config": _serialize_mapping(runtime_data.config),
@@ -68,6 +119,15 @@ async def async_get_config_entry_diagnostics(
             ),
             "zones": sorted(runtime_data.zones.keys()),
         }
+
+        main_calibration = _serialize_calibration(runtime_data.optimization_coordinator)
+        if main_calibration is not None:
+            calibration_data["main"] = main_calibration
+        for zone_id, zone_data in runtime_data.zones.items():
+            zone_optimization_coordinator = zone_data.get("optimization_coordinator")
+            zone_calibration = _serialize_calibration(zone_optimization_coordinator)
+            if zone_calibration is not None:
+                calibration_data[zone_id] = zone_calibration
 
     ent_reg = er.async_get(hass)
 
@@ -108,8 +168,16 @@ async def async_get_config_entry_diagnostics(
             "title": entry.title,
             "data": async_redact_data(dict(entry.data), TO_REDACT),
             "options": async_redact_data(dict(entry.options), TO_REDACT),
+            "subentries": {
+                sub.title: {
+                    "type": sub.subentry_type,
+                    "data": async_redact_data(dict(sub.data), TO_REDACT),
+                }
+                for sub in getattr(entry, "subentries", {}).values()
+            },
         },
         "stored_data": stored_data,
+        "calibration": calibration_data,
         "sensors": sensors,
     }
 

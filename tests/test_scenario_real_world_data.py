@@ -15,10 +15,10 @@ September temperatures, real solar radiation curve), not the clean
 step-function prices most of the other tests use.
 
 This is not a regression test for any specific bug - it is a sanity
-check that the whole pipeline (legacy DP optimizer, thermal-v2 shadow
-optimizer, heat-loss/solar-gain calculation) produces plausible,
-internally-consistent results end to end against real data, the way
-`docs/examples/*.md` do for humans reading the docs.
+check that the whole pipeline (thermal optimizer, heat-loss/solar-gain
+calculation) produces plausible, internally-consistent results end to end
+against real data, the way `docs/examples/*.md` do for humans reading the
+docs.
 """
 
 from __future__ import annotations
@@ -63,8 +63,6 @@ PRICE_FORECAST = [
     0.4096, 0.4065, 0.3826, 0.3514, 0.3246, 0.3122, 0.3445, 0.3309, 0.323,
 ]  # fmt: skip
 
-PEAK_PRICE_HOUR = 4  # 0.8168 €/kWh
-
 BASE_CONFIG = {
     "area_m2": 150,
     "energy_label": "C",
@@ -89,133 +87,6 @@ def _demand_forecast_from_real_weather() -> list[float]:
         max(0.0, htc_w_per_k * (target_indoor - outdoor) / 1000.0)
         for outdoor in TEMPERATURE_FORECAST
     ]
-
-
-def _run_legacy_optimization(
-    coordinator: OptimizationCoordinator,
-    *,
-    demand_forecast: list[float],
-    price_forecast: list[float],
-    planning_window: int,
-) -> dict:
-    return coordinator._run_optimization(
-        demand_forecast=demand_forecast,
-        price_forecast=price_forecast,
-        temp_forecast=TEMPERATURE_FORECAST,
-        planning_window=planning_window,
-        time_base=60,
-        offset_delta_t=10,
-        max_buffer_debt=5.0,
-        price_interval=60,
-        k_factor=0.03,
-        base_cop=3.5,
-        outdoor_temp_coefficient=0.025,
-        cop_compensation=0.9,
-        min_supply=25.0,
-        max_supply=50.0,
-        min_outdoor=-10.0,
-        max_outdoor=18.0,
-        current_buffer=0.0,
-        current_offset=0,
-    )
-
-
-@pytest.mark.asyncio
-async def test_legacy_optimizer_never_worse_than_baseline_on_real_data(
-    hass: HomeAssistant,
-):
-    """A real DP optimization run against the real price/weather/demand
-    data above must produce a real, finite cost that is never worse than
-    doing nothing (the baseline/no-optimization cost) - the one
-    invariant that must hold regardless of how much headroom this
-    particular real day's price curve happens to offer.
-
-    On this specific day the price spread (0.19-0.82 €/kWh, ~2.7x) and
-    mild September demand (well within the heating curve's normal
-    operating range) turn out not to be enough for the legacy optimizer
-    to find any benefit in moving the offset off 0 at all - a genuine,
-    honestly-reported finding from real data, not a synthetic worst
-    case. test_legacy_optimizer_shifts_load_under_amplified_real_prices
-    below confirms the shifting mechanism itself still works once the
-    incentive is large enough, using the same real weather/demand.
-    """
-    heat_coordinator = MagicMock()
-    coordinator = OptimizationCoordinator(hass, heat_coordinator, dict(BASE_CONFIG))
-
-    demand_forecast = _demand_forecast_from_real_weather()
-    planning_window = 8  # covers the real price spike at hour 4
-
-    result = _run_legacy_optimization(
-        coordinator,
-        demand_forecast=demand_forecast,
-        price_forecast=PRICE_FORECAST,
-        planning_window=planning_window,
-    )
-
-    assert len(result["optimized_offsets"]) == planning_window
-    assert result["total_cost"] <= result["baseline_cost"] + 1e-6
-    assert result["cost_savings"] >= 0.0
-
-
-@pytest.mark.asyncio
-async def test_legacy_optimizer_shifts_load_under_real_winter_conditions(
-    hass: HomeAssistant,
-):
-    """Same real diurnal weather shape and the exact real price curve
-    from above, but shifted down 20°C (a real September day's hour-by-
-    hour temperature swing, translated to a winter day - not amplified
-    prices, an amplified *reason to care about them*).
-
-    This is the finding that motivated this test in the first place:
-    on the actual mild September day the diagnostics came from, the
-    outdoor temperature (14.6-21°C) sits at or above the heating curve's
-    own max_outdoor (15°C in BASE_CONFIG) for most of the day, so the
-    heat pump is already running at or near minimum output regardless of
-    price - there is nothing for a heating-curve-offset optimizer to
-    leverage, which is exactly why the flat-offset result above is
-    correct, not a bug. Winter-shifted temperatures put the heat pump
-    back in its normal operating range, where offset changes actually
-    move the needle on cost - and that is where load-shifting away from
-    the real evening price spike should become visible."""
-    heat_coordinator = MagicMock()
-    coordinator = OptimizationCoordinator(hass, heat_coordinator, dict(BASE_CONFIG))
-
-    winter_temp_forecast = [t - 20.0 for t in TEMPERATURE_FORECAST]
-    htc_w_per_k = calculate_htc_from_energy_label("C", 150)
-    demand_forecast = [
-        max(0.0, htc_w_per_k * (20.0 - outdoor) / 1000.0)
-        for outdoor in winter_temp_forecast
-    ]
-    planning_window = 8
-
-    result = coordinator._run_optimization(
-        demand_forecast=demand_forecast,
-        price_forecast=PRICE_FORECAST,
-        temp_forecast=winter_temp_forecast,
-        planning_window=planning_window,
-        time_base=60,
-        offset_delta_t=10,
-        max_buffer_debt=5.0,
-        price_interval=60,
-        k_factor=0.11,
-        base_cop=4.2,
-        outdoor_temp_coefficient=0.08,
-        cop_compensation=1.0,
-        min_supply=20.0,
-        max_supply=45.0,
-        min_outdoor=-10.0,
-        max_outdoor=15.0,
-        current_buffer=0.0,
-        current_offset=0,
-    )
-
-    offsets = result["optimized_offsets"]
-    windowed_prices = PRICE_FORECAST[:planning_window]
-    cheapest_hour_in_window = windowed_prices.index(min(windowed_prices))
-
-    assert offsets[PEAK_PRICE_HOUR] < offsets[cheapest_hour_in_window]
-    assert result["total_cost"] < result["baseline_cost"]
-    assert result["cost_savings"] > 0.0
 
 
 @pytest.mark.asyncio

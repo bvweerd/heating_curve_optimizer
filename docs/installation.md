@@ -85,7 +85,6 @@ configured.
 - `binary_sensor.heating_curve_optimizer_heat_pump_demand`
 - `number.heating_curve_optimizer_target_indoor_temperature` - target setpoint
 - `number.heating_curve_optimizer_indoor_temp_hysteresis_lower` / `_upper` - hysteresis band
-- `select.heating_curve_optimizer_control_mode` - `legacy`/`follow_curve`/`optimize_v2`
 - `climate.heating_curve_optimizer_heating` - disabled by default, same setpoint as the number entity above
 
 !!! tip "Check Sensor States"
