@@ -96,7 +96,11 @@ async def test_async_setup_entry(hass: HomeAssistant):
             assert runtime_data.weather_coordinator is weather_instance
             assert runtime_data.heat_coordinator is heat_instance
             assert runtime_data.optimization_coordinator is opt_instance
-            assert runtime_data.config == {**entry.data, **entry.options}
+            assert runtime_data.config == {
+                **entry.data,
+                **entry.options,
+                "pv_arrays": [],
+            }
             assert runtime_data.device is not None
 
             # Verify coordinators were initialized

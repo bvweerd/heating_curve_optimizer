@@ -8,22 +8,14 @@
           "ceiling_height": "Plafondhoogte (m)",
           "thermal_mass_class": "Thermische massa klasse",
           "emitter_type": "Type warmteafgever",
-          "pv_east_wp": "PV-panelen oost (Wp)",
-          "pv_south_wp": "PV-panelen zuid (Wp)",
-          "pv_west_wp": "PV-panelen west (Wp)",
-          "pv_tilt": "PV-panelen hellingshoek (graden)",
           "grid_import_sensor": "Netafname vermogen sensor (W of kW, realtime PV-overschot regeling)",
           "grid_export_sensor": "Netteruglevering vermogen sensor (W of kW, realtime PV-overschot regeling)"
         },
         "data_description": {
           "ventilation_type": "Type ventilatiesysteem in de woning voor berekening van ventilatieverliezen",
           "ceiling_height": "Gemiddelde plafondhoogte voor berekening van gebouwvolume (standaard: 2,5m)",
-          "thermal_mass_class": "Bouwgewichtklasse, gebruikt door de herontworpen optimizer (optimize_v2) in plaats van de op het energielabel gebaseerde schatting (standaard: medium)",
-          "emitter_type": "Hoe het afgiftevermogen van de warmteafgever afneemt bij lagere aanvoertemperatuur, gebruikt door de herontworpen optimizer (optimize_v2) (standaard: radiator)",
-          "pv_east_wp": "Totaal piekvermogen van op het oosten gerichte PV-panelen in Wp",
-          "pv_south_wp": "Totaal piekvermogen van op het zuiden gerichte PV-panelen in Wp",
-          "pv_west_wp": "Totaal piekvermogen van op het westen gerichte PV-panelen in Wp",
-          "pv_tilt": "Hellingshoek van PV-panelen (0=horizontaal, 90=verticaal, typisch: 35°)"
+          "thermal_mass_class": "Bouwgewichtklasse, gebruikt in plaats van de op het energielabel gebaseerde schatting (standaard: medium)",
+          "emitter_type": "Hoe het afgiftevermogen van de warmteafgever afneemt bij lagere aanvoertemperatuur (standaard: radiator)"
         }
       },
       "heating_curve_settings": {
@@ -71,17 +63,7 @@
       "user": {
         "title": "Heating Curve Optimizer instellen",
         "data": {
-          "energy_label": "Energielabel",
-          "pv_east_wp": "PV-panelen oost (Wp)",
-          "pv_south_wp": "PV-panelen zuid (Wp)",
-          "pv_west_wp": "PV-panelen west (Wp)",
-          "pv_tilt": "PV-panelen hellingshoek (graden)"
-        },
-        "data_description": {
-          "pv_east_wp": "Totaal piekvermogen van op het oosten gerichte PV-panelen in Wp",
-          "pv_south_wp": "Totaal piekvermogen van op het zuiden gerichte PV-panelen in Wp",
-          "pv_west_wp": "Totaal piekvermogen van op het westen gerichte PV-panelen in Wp",
-          "pv_tilt": "Hellingshoek van PV-panelen (0=horizontaal, 90=verticaal, typisch: 35°)"
+          "energy_label": "Energielabel"
         },
         "sections": {
           "building": {
@@ -99,8 +81,8 @@
             }
           },
           "envelope": {
-            "name": "Bouwschil & PV",
-            "description": "Glasoppervlakken, isolatie, ventilatie en zonnepanelen - verbetert de nauwkeurigheid van warmteverlies en zonnewinst.",
+            "name": "Bouwschil",
+            "description": "Glasoppervlakken, isolatie en ventilatie - verbetert de nauwkeurigheid van warmteverlies en zonnewinst. Zonnepanelen voeg je apart toe, als PV-array, vanaf de integratiepagina na het instellen.",
             "data": {
               "glass_east_m2": "Glasoppervlak oost (m²)",
               "glass_west_m2": "Glasoppervlak west (m²)",
@@ -109,22 +91,14 @@
               "ventilation_type": "Ventilatietype",
               "ceiling_height": "Plafondhoogte (m)",
               "thermal_mass_class": "Thermische massa klasse",
-              "emitter_type": "Type warmteafgever",
-              "pv_east_wp": "PV-panelen oost (Wp)",
-              "pv_south_wp": "PV-panelen zuid (Wp)",
-              "pv_west_wp": "PV-panelen west (Wp)",
-              "pv_tilt": "PV-panelen hellingshoek (graden)"
+              "emitter_type": "Type warmteafgever"
             },
             "data_description": {
               "glass_u_value": "Warmtedoorgangscoëfficiënt van het glas (standaard: 1,2)",
               "ventilation_type": "Type ventilatiesysteem in de woning voor berekening van ventilatieverliezen",
               "ceiling_height": "Gemiddelde plafondhoogte voor berekening van gebouwvolume (standaard: 2,5m)",
-              "thermal_mass_class": "Bouwgewichtklasse, gebruikt door de herontworpen optimizer (optimize_v2) in plaats van de op het energielabel gebaseerde schatting (standaard: medium)",
-              "emitter_type": "Hoe het afgiftevermogen van de warmteafgever afneemt bij lagere aanvoertemperatuur, gebruikt door de herontworpen optimizer (optimize_v2) (standaard: radiator)",
-              "pv_east_wp": "Totaal piekvermogen van op het oosten gerichte PV-panelen in Wp",
-              "pv_south_wp": "Totaal piekvermogen van op het zuiden gerichte PV-panelen in Wp",
-              "pv_west_wp": "Totaal piekvermogen van op het westen gerichte PV-panelen in Wp",
-              "pv_tilt": "Hellingshoek van PV-panelen (0=horizontaal, 90=verticaal, typisch: 35°)"
+              "thermal_mass_class": "Bouwgewichtklasse, gebruikt in plaats van de op het energielabel gebaseerde schatting (standaard: medium)",
+              "emitter_type": "Hoe het afgiftevermogen van de warmteafgever afneemt bij lagere aanvoertemperatuur (standaard: radiator)"
             }
           },
           "sensors": {
@@ -442,6 +416,50 @@
       "abort": {
         "single_instance_allowed": "Er kan maar een hybride gas-cv worden geconfigureerd.",
         "reconfigure_successful": "Hybride gas-cv bijgewerkt."
+      }
+    },
+    "pv_array": {
+      "entry_type": "PV-array",
+      "flow_title": "PV-array",
+      "initiate_flow": {
+        "user": "PV-array toevoegen"
+      },
+      "step": {
+        "user": {
+          "title": "PV-array toevoegen",
+          "description": "Voeg één zonnepaneel-array toe. Panelen die een andere kant op wijzen of een andere hellingshoek hebben, voeg je toe als aparte array; hun verwachte opbrengst wordt bij elkaar opgeteld.",
+          "data": {
+            "name": "Naam array (optioneel)",
+            "peak_power_kwp": "Piekvermogen (kWp)",
+            "orientation": "Oriëntatie (graden, 180 = zuid)",
+            "tilt": "Hellingshoek (graden, 0 = plat, 90 = verticaal)",
+            "efficiency_factor": "Systeemrendement (omvormer/bekabeling/temperatuurverliezen)",
+            "dc_coupled": "DC-gekoppeld (bijv. hybride omvormer met batterij)"
+          },
+          "data_description": {
+            "peak_power_kwp": "Totaal piekvermogen (STC) van deze array in kWp",
+            "orientation": "Kompasrichting waar de panelen naar wijzen - 0/360 = noord, 90 = oost, 180 = zuid, 270 = west",
+            "efficiency_factor": "Typische waarde: 0,85"
+          }
+        },
+        "reconfigure": {
+          "title": "PV-array bewerken",
+          "description": "Werk de configuratie van deze array bij.",
+          "data": {
+            "name": "Naam array (optioneel)",
+            "peak_power_kwp": "Piekvermogen (kWp)",
+            "orientation": "Oriëntatie (graden, 180 = zuid)",
+            "tilt": "Hellingshoek (graden, 0 = plat, 90 = verticaal)",
+            "efficiency_factor": "Systeemrendement (omvormer/bekabeling/temperatuurverliezen)",
+            "dc_coupled": "DC-gekoppeld (bijv. hybride omvormer met batterij)"
+          }
+        }
+      },
+      "error": {
+        "invalid_pv_array_input": "Ongeldige PV-array configuratie. Controleer piekvermogen, oriëntatie en hellingshoek."
+      },
+      "abort": {
+        "reconfigure_successful": "PV-array bijgewerkt."
       }
     }
   },

@@ -77,10 +77,11 @@ from .const import (
     CONF_CONSUMPTION_PRICE_SENSOR,
     CONF_PRODUCTION_PRICE_SENSOR,
     CONF_PRICE_SETTINGS,
-    CONF_PV_EAST_WP,
-    CONF_PV_SOUTH_WP,
-    CONF_PV_WEST_WP,
+    CONF_PV_PEAK_POWER_KWP,
+    CONF_PV_ORIENTATION,
     CONF_PV_TILT,
+    CONF_PV_EFFICIENCY_FACTOR,
+    CONF_PV_DC_COUPLED,
     CONF_VENTILATION_TYPE,
     CONF_CEILING_HEIGHT,
     CONF_THERMAL_MASS_CLASS,
@@ -89,6 +90,8 @@ from .const import (
     DEFAULT_K_FACTOR,
     DEFAULT_OFFSET_DELTA_T,
     DEFAULT_PV_TILT,
+    DEFAULT_PV_ORIENTATION_DEG,
+    DEFAULT_PV_EFFICIENCY_FACTOR,
     DEFAULT_COP_AT_35,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_COP_COMPENSATION_FACTOR,
@@ -114,6 +117,7 @@ from .const import (
     EMITTER_EXPONENT_MAP,
     ZONE_SUBENTRY_TYPE,
     GAS_SUBENTRY_TYPE,
+    PV_SUBENTRY_TYPE,
     CONF_GAS_PRICE_SENSOR,
     CONF_GAS_BOILER_EFFICIENCY,
     CONF_GAS_CALORIFIC_VALUE,
@@ -419,6 +423,141 @@ else:
     HeatingGasBoilerSubentryFlow = None  # type: ignore[assignment,misc]
 
 
+def _build_pv_array_subentry_schema(
+    defaults: dict[str, Any] | None = None,
+) -> vol.Schema:
+    """Build the schema for a PV-array subentry.
+
+    Field-for-field match with battery_controller's own
+    `BatteryControllerPVSubentryFlow` (peak_power_kwp/orientation/tilt/
+    efficiency_factor/dc_coupled) - see const.py's PV_SUBENTRY_TYPE
+    comment for why - minus its two external-sensor-override fields
+    (pv_forecast_sensors/pv_measured_production_sensor), a separate
+    feature question this integration has no existing concept for.
+    """
+    defaults = defaults or {}
+    return vol.Schema(
+        {
+            vol.Optional("name", default=defaults.get("name", "")): str,
+            vol.Required(
+                CONF_PV_PEAK_POWER_KWP,
+                default=defaults.get(CONF_PV_PEAK_POWER_KWP, 1.0),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.01)),
+            vol.Required(
+                CONF_PV_ORIENTATION,
+                default=defaults.get(CONF_PV_ORIENTATION, DEFAULT_PV_ORIENTATION_DEG),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0, max=360)),
+            vol.Required(
+                CONF_PV_TILT,
+                default=defaults.get(CONF_PV_TILT, DEFAULT_PV_TILT),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0, max=90)),
+            vol.Optional(
+                CONF_PV_EFFICIENCY_FACTOR,
+                default=defaults.get(
+                    CONF_PV_EFFICIENCY_FACTOR, DEFAULT_PV_EFFICIENCY_FACTOR
+                ),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=1.0)),
+            vol.Optional(
+                CONF_PV_DC_COUPLED,
+                default=defaults.get(CONF_PV_DC_COUPLED, False),
+            ): bool,
+        }
+    )
+
+
+def _validate_pv_array_subentry(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Validate and normalize a PV-array subentry's input."""
+    schema = _build_pv_array_subentry_schema()
+    validated = schema(user_input)
+    result: dict[str, Any] = {}
+    if name := str(validated.get("name", "")).strip():
+        result["name"] = name
+    result.update(
+        {
+            CONF_PV_PEAK_POWER_KWP: float(validated[CONF_PV_PEAK_POWER_KWP]),
+            CONF_PV_ORIENTATION: float(validated[CONF_PV_ORIENTATION]),
+            CONF_PV_TILT: float(validated[CONF_PV_TILT]),
+            CONF_PV_EFFICIENCY_FACTOR: float(
+                validated.get(CONF_PV_EFFICIENCY_FACTOR, DEFAULT_PV_EFFICIENCY_FACTOR)
+            ),
+            CONF_PV_DC_COUPLED: bool(validated.get(CONF_PV_DC_COUPLED, False)),
+        }
+    )
+    return result
+
+
+def _pv_array_subentry_title(data: dict[str, Any]) -> str:
+    """Generate a display title for a PV-array subentry."""
+    if name := str(data.get("name", "")).strip():
+        return name
+    kwp = data[CONF_PV_PEAK_POWER_KWP]
+    coupling = "DC" if data.get(CONF_PV_DC_COUPLED) else "AC"
+    return f"{kwp} kWp {coupling}"
+
+
+if _ConfigSubentryFlow is not None:
+
+    class HeatingPvArraySubentryFlow(_ConfigSubentryFlow):  # type: ignore[misc, valid-type]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
+        """Flow for adding or editing a PV-array subentry.
+
+        Zero-to-many, like HeatingZoneSubentryFlow - a home can have
+        several arrays at different orientations, each its own subentry
+        added via the integration page after setup, matching
+        battery_controller's own flow exactly (see const.py's
+        PV_SUBENTRY_TYPE comment).
+        """
+
+        async def async_step_user(
+            self, user_input: dict[str, Any] | None = None
+        ) -> SubentryFlowResult:
+            """Handle adding a new PV array."""
+            errors: dict[str, str] = {}
+            if user_input is not None:
+                try:
+                    data = _validate_pv_array_subentry(user_input)
+                except vol.Invalid:
+                    errors["base"] = "invalid_pv_array_input"
+                else:
+                    return self.async_create_entry(
+                        title=_pv_array_subentry_title(data), data=data
+                    )
+            return self.async_show_form(
+                step_id="user",
+                data_schema=_build_pv_array_subentry_schema(),
+                errors=errors,
+            )
+
+        async def async_step_reconfigure(
+            self, user_input: dict[str, Any] | None = None
+        ) -> SubentryFlowResult:
+            """Handle editing an existing PV array."""
+            errors: dict[str, str] = {}
+            entry = self._get_entry()
+            subentry = self._get_reconfigure_subentry()
+            current_data = dict(subentry.data)
+
+            if user_input is not None:
+                try:
+                    data = _validate_pv_array_subentry(user_input)
+                except vol.Invalid:
+                    errors["base"] = "invalid_pv_array_input"
+                else:
+                    return self.async_update_and_abort(
+                        entry,
+                        subentry,
+                        title=_pv_array_subentry_title(data),
+                        data=data,
+                    )
+            return self.async_show_form(
+                step_id="reconfigure",
+                data_schema=_build_pv_array_subentry_schema(current_data),
+                errors=errors,
+            )
+
+else:
+    HeatingPvArraySubentryFlow = None  # type: ignore[assignment,misc]
+
+
 def _extract_sectioned_data(user_input: dict[str, Any]) -> dict[str, Any]:
     """Flatten a single-page sectioned form submission (see
     `_build_sectioned_schema`) back into a flat dict keyed by the same
@@ -463,10 +602,6 @@ def _extract_sectioned_data(user_input: dict[str, Any]) -> dict[str, Any]:
             CONF_THERMAL_MASS_CLASS, DEFAULT_THERMAL_MASS_CLASS
         ),
         CONF_EMITTER_TYPE: envelope.get(CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE),
-        CONF_PV_EAST_WP: float(envelope.get(CONF_PV_EAST_WP, 0)),
-        CONF_PV_SOUTH_WP: float(envelope.get(CONF_PV_SOUTH_WP, 0)),
-        CONF_PV_WEST_WP: float(envelope.get(CONF_PV_WEST_WP, 0)),
-        CONF_PV_TILT: float(envelope.get(CONF_PV_TILT, DEFAULT_PV_TILT)),
         CONF_INDOOR_TEMPERATURE_SENSOR: sensors.get(CONF_INDOOR_TEMPERATURE_SENSOR),
         CONF_POWER_CONSUMPTION: sensors.get(CONF_POWER_CONSUMPTION),
         CONF_SUPPLY_TEMPERATURE_SENSOR: sensors.get(CONF_SUPPLY_TEMPERATURE_SENSOR),
@@ -656,18 +791,6 @@ def _build_sectioned_schema(
                     }
                 }
             ),
-            vol.Optional(
-                CONF_PV_EAST_WP, description=sv(CONF_PV_EAST_WP, 0.0)
-            ): vol.Coerce(float),
-            vol.Optional(
-                CONF_PV_SOUTH_WP, description=sv(CONF_PV_SOUTH_WP, 0.0)
-            ): vol.Coerce(float),
-            vol.Optional(
-                CONF_PV_WEST_WP, description=sv(CONF_PV_WEST_WP, 0.0)
-            ): vol.Coerce(float),
-            vol.Optional(
-                CONF_PV_TILT, description=sv(CONF_PV_TILT, DEFAULT_PV_TILT)
-            ): vol.Coerce(float),
         }
     )
 
@@ -851,19 +974,21 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         cls, config_entry: config_entries.ConfigEntry
     ) -> dict[str, type]:
         """Return supported subentry types (phase 5c, REDESIGN.md; hybrid
-        gas-boiler comparison).
+        gas-boiler comparison; PV arrays).
 
         Empty on an HA release too old to have ConfigSubentryFlow at all -
-        see HeatingZoneSubentryFlow's/HeatingGasBoilerSubentryFlow's
-        definitions above. Each type is independently None-guarded (both
-        share the same HA-version gate today, but this stays correct if
-        that ever changes).
+        see HeatingZoneSubentryFlow's/HeatingGasBoilerSubentryFlow's/
+        HeatingPvArraySubentryFlow's definitions above. Each type is
+        independently None-guarded (all three share the same HA-version
+        gate today, but this stays correct if that ever changes).
         """
         types: dict[str, type] = {}
         if HeatingZoneSubentryFlow is not None:
             types[ZONE_SUBENTRY_TYPE] = HeatingZoneSubentryFlow
         if HeatingGasBoilerSubentryFlow is not None:
             types[GAS_SUBENTRY_TYPE] = HeatingGasBoilerSubentryFlow
+        if HeatingPvArraySubentryFlow is not None:
+            types[PV_SUBENTRY_TYPE] = HeatingPvArraySubentryFlow
         return types
 
     def __init__(self) -> None:
@@ -886,10 +1011,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.ceiling_height: float = DEFAULT_CEILING_HEIGHT
         self.thermal_mass_class: str = DEFAULT_THERMAL_MASS_CLASS
         self.emitter_type: str = DEFAULT_EMITTER_TYPE
-        self.pv_east_wp: float | None = None
-        self.pv_south_wp: float | None = None
-        self.pv_west_wp: float | None = None
-        self.pv_tilt: float = DEFAULT_PV_TILT
         self.power_consumption: str | None = None
         self.indoor_temperature_sensor: str | None = None
         self.supply_temperature_sensor: str | None = None
@@ -1045,10 +1166,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_CEILING_HEIGHT: self.ceiling_height,
             CONF_THERMAL_MASS_CLASS: self.thermal_mass_class,
             CONF_EMITTER_TYPE: self.emitter_type,
-            CONF_PV_EAST_WP: self.pv_east_wp,
-            CONF_PV_SOUTH_WP: self.pv_south_wp,
-            CONF_PV_WEST_WP: self.pv_west_wp,
-            CONF_PV_TILT: self.pv_tilt,
             CONF_INDOOR_TEMPERATURE_SENSOR: self.indoor_temperature_sensor,
             CONF_POWER_CONSUMPTION: self.power_consumption,
             CONF_SUPPLY_TEMPERATURE_SENSOR: self.supply_temperature_sensor,
@@ -1383,10 +1500,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_THERMAL_MASS_CLASS, DEFAULT_THERMAL_MASS_CLASS
         )
         self.emitter_type = user_input.get(CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE)
-        self.pv_east_wp = float(user_input.get(CONF_PV_EAST_WP, 0))
-        self.pv_south_wp = float(user_input.get(CONF_PV_SOUTH_WP, 0))
-        self.pv_west_wp = float(user_input.get(CONF_PV_WEST_WP, 0))
-        self.pv_tilt = float(user_input.get(CONF_PV_TILT, DEFAULT_PV_TILT))
         self.indoor_temperature_sensor = user_input.get(CONF_INDOOR_TEMPERATURE_SENSOR)
         self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
         self.grid_import_sensor = user_input.get(CONF_GRID_IMPORT_SENSOR)
@@ -1475,18 +1588,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         }
                     }
                 ),
-                vol.Optional(
-                    CONF_PV_EAST_WP, default=self.pv_east_wp or 0.0
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_PV_SOUTH_WP, default=self.pv_south_wp or 0.0
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_PV_WEST_WP, default=self.pv_west_wp or 0.0
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_PV_TILT, default=self.pv_tilt or DEFAULT_PV_TILT
-                ): vol.Coerce(float),
                 vol.Optional(
                     CONF_INDOOR_TEMPERATURE_SENSOR,
                     default=self.indoor_temperature_sensor,
@@ -1696,10 +1797,6 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):  # ty
             CONF_THERMAL_MASS_CLASS, DEFAULT_THERMAL_MASS_CLASS
         )
         self.emitter_type = _get(CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE)
-        self.pv_east_wp = _get(CONF_PV_EAST_WP, 0)
-        self.pv_south_wp = _get(CONF_PV_SOUTH_WP, 0)
-        self.pv_west_wp = _get(CONF_PV_WEST_WP, 0)
-        self.pv_tilt = _get(CONF_PV_TILT, DEFAULT_PV_TILT)
         self.indoor_temperature_sensor = _get(CONF_INDOOR_TEMPERATURE_SENSOR)
         self.power_consumption = _get(CONF_POWER_CONSUMPTION)
         self.supply_temperature_sensor = _get(CONF_SUPPLY_TEMPERATURE_SENSOR)

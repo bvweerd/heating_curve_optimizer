@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from datetime import datetime, timedelta
 from typing import Any, cast
 
@@ -46,10 +47,10 @@ from .const import (
     CONF_HEAT_CURVE_MAX,
     CONF_HEAT_CURVE_MIN_OUTDOOR,
     CONF_HEAT_CURVE_MAX_OUTDOOR,
-    CONF_PV_EAST_WP,
-    CONF_PV_SOUTH_WP,
-    CONF_PV_WEST_WP,
+    CONF_PV_PEAK_POWER_KWP,
+    CONF_PV_ORIENTATION,
     CONF_PV_TILT,
+    CONF_PV_EFFICIENCY_FACTOR,
     CONF_POWER_CONSUMPTION,
     CONF_VENTILATION_TYPE,
     CONF_CEILING_HEIGHT,
@@ -71,6 +72,8 @@ from .const import (
     DEFAULT_VENTILATION_TYPE,
     DEFAULT_CEILING_HEIGHT,
     DEFAULT_PV_TILT,
+    DEFAULT_PV_ORIENTATION_DEG,
+    DEFAULT_PV_EFFICIENCY_FACTOR,
     DOMAIN,
     INDOOR_TEMPERATURE,
     calculate_htc_from_energy_label,
@@ -583,53 +586,66 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  
         return current_solar, solar_forecast
 
     def _calculate_pv_production(self, radiation_forecast: list[float]) -> list[float]:
-        """Calculate PV production forecast (blocking call)."""
-        pv_east = float(self.config.get(CONF_PV_EAST_WP, 0))
-        pv_south = float(self.config.get(CONF_PV_SOUTH_WP, 0))
-        pv_west = float(self.config.get(CONF_PV_WEST_WP, 0))
-        pv_tilt = float(self.config.get(CONF_PV_TILT, DEFAULT_PV_TILT))
+        """Calculate PV production forecast (blocking call).
 
-        total_pv = pv_east + pv_south + pv_west
-
-        if total_pv == 0 or not radiation_forecast:
+        Sums each configured PV-array subentry's own peak_power_kwp/
+        orientation/tilt/efficiency_factor (const.py's PV_SUBENTRY_TYPE) -
+        a smooth generalization of the old fixed east/south/west buckets to
+        continuous orientation degrees, not a full solar-position model
+        (battery_controller's forecast_models.py does that; deliberately
+        out of scope here - "configure the same way", not "the same
+        forecast algorithm").
+        """
+        pv_arrays = self.config.get("pv_arrays") or []
+        if not pv_arrays or not radiation_forecast:
             return [0.0] * len(radiation_forecast)
-
-        # System efficiency (inverter + wiring + temperature losses)
-        system_efficiency = 0.85
-
-        # Tilt factor (how much radiation is affected by panel angle)
-        # Optimal tilt for Netherlands is ~35° (DEFAULT_PV_TILT) - compared
-        # against that shared constant rather than a second hardcoded 35 so
-        # the two can't silently drift apart.
-        tilt_factor = (
-            1.0
-            if pv_tilt == DEFAULT_PV_TILT
-            else max(0.7, 1.0 - abs(pv_tilt - DEFAULT_PV_TILT) * 0.01)
-        )
-
-        # Orientation factors for PV panels
-        orientation_factors = {
-            "east": 0.65,
-            "south": 1.0,
-            "west": 0.65,
-        }
 
         pv_forecast = []
         for radiation in radiation_forecast:
-            # Calculate production for each orientation
-            # Formula: Power (W) = Wp * (radiation / 1000) * efficiency
-            # radiation is in W/m², 1000 W/m² is STC (Standard Test Conditions)
-            production = (
-                (
-                    pv_east * radiation * orientation_factors["east"]
-                    + pv_south * radiation * orientation_factors["south"]
-                    + pv_west * radiation * orientation_factors["west"]
+            production = 0.0
+            for array in pv_arrays:
+                peak_power_kwp = float(array.get(CONF_PV_PEAK_POWER_KWP, 0))
+                if peak_power_kwp <= 0:
+                    continue
+                orientation = float(
+                    array.get(CONF_PV_ORIENTATION, DEFAULT_PV_ORIENTATION_DEG)
                 )
-                * tilt_factor
-                * system_efficiency
-                / 1000
-                / 1000
-            )  # First /1000 for STC, second for W to kW
+                tilt = float(array.get(CONF_PV_TILT, DEFAULT_PV_TILT))
+                efficiency_factor = float(
+                    array.get(CONF_PV_EFFICIENCY_FACTOR, DEFAULT_PV_EFFICIENCY_FACTOR)
+                )
+
+                # 0.65 + 0.35*cos(orientation - south): south (180°) gives
+                # 1.0, east/west (90°/270°) give 0.65 - matching the old
+                # fixed-bucket model's own values exactly at those three
+                # angles, smoothly interpolated (and extrapolated to
+                # north, 0.30) in between rather than a discontinuous
+                # 3-bucket lookup.
+                orientation_factor = 0.65 + 0.35 * math.cos(
+                    math.radians(orientation - 180.0)
+                )
+                # Tilt factor (how much radiation is affected by panel
+                # angle). Optimal tilt for Netherlands is ~35°
+                # (DEFAULT_PV_TILT) - compared against that shared
+                # constant rather than a second hardcoded 35 so the two
+                # can't silently drift apart.
+                tilt_factor = (
+                    1.0
+                    if tilt == DEFAULT_PV_TILT
+                    else max(0.7, 1.0 - abs(tilt - DEFAULT_PV_TILT) * 0.01)
+                )
+
+                # Formula: Power (kW) = kWp * (radiation / 1000) * factors
+                # radiation is in W/m², 1000 W/m² is STC (Standard Test
+                # Conditions).
+                production += (
+                    peak_power_kwp
+                    * radiation
+                    * orientation_factor
+                    * tilt_factor
+                    * efficiency_factor
+                    / 1000
+                )
 
             pv_forecast.append(max(0.0, production))
 

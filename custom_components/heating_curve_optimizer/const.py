@@ -152,14 +152,24 @@ VENTILATION_TYPES: dict[str, dict[str, float | str]] = {
     },
 }
 
-# PV panel configuration
-CONF_PV_EAST_WP = "pv_east_wp"
-CONF_PV_SOUTH_WP = "pv_south_wp"
-CONF_PV_WEST_WP = "pv_west_wp"
-CONF_PV_TILT = "pv_tilt"
+# PV arrays, as config subentries - matches battery_controller's own
+# PV_SUBENTRY_TYPE/BatteryControllerPVSubentryFlow field-for-field
+# (peak_power_kwp/orientation/tilt/efficiency_factor/dc_coupled), so a
+# home with several arrays at different orientations is modelled as
+# several subentries instead of the old fixed east/south/west Wp numbers -
+# added via the integration page after setup, like this integration's own
+# zone/gas-boiler subentries. No migration from the old fixed fields: this
+# integration has no deployed installs yet to preserve behaviour for.
+PV_SUBENTRY_TYPE = "pv_array"
+CONF_PV_PEAK_POWER_KWP = "peak_power_kwp"
+CONF_PV_ORIENTATION = "orientation"  # degrees, 0-360, 180 = south
+CONF_PV_TILT = "tilt"  # degrees, 0-90
+CONF_PV_EFFICIENCY_FACTOR = "efficiency_factor"
+CONF_PV_DC_COUPLED = "dc_coupled"
 
-# Default PV tilt angle (degrees) - typical for Netherlands
-DEFAULT_PV_TILT = 35
+DEFAULT_PV_ORIENTATION_DEG = 180.0  # south-facing
+DEFAULT_PV_TILT = 35.0  # degrees - typical for Netherlands
+DEFAULT_PV_EFFICIENCY_FACTOR = 0.85
 
 # Allowed energy labels
 ENERGY_LABELS = ["A+++", "A++", "A+", "A", "B", "C", "D", "E", "F", "G"]

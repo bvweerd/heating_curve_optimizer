@@ -19,6 +19,7 @@ from .const import (
     DOMAIN,
     GAS_SUBENTRY_TYPE,
     PLATFORMS,
+    PV_SUBENTRY_TYPE,
     ZONE_SUBENTRY_TYPE,
 )
 from .coordinator import (
@@ -148,6 +149,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Merge options and data for configuration
     config = {**entry.data, **entry.options}
+
+    # PV arrays, as config subentries (see const.py's PV_SUBENTRY_TYPE
+    # comment) - each array's own peak_power_kwp/orientation/tilt/
+    # efficiency_factor, read by HeatCalculationCoordinator._calculate_pv_
+    # production. getattr guards HA releases old enough to predate
+    # ConfigEntry.subentries entirely; such an install simply has no PV
+    # arrays (config_flow.py's HeatingPvArraySubentryFlow isn't offered
+    # there either), not a crash.
+    config["pv_arrays"] = [
+        dict(subentry.data)
+        for subentry in getattr(entry, "subentries", {}).values()
+        if getattr(subentry, "subentry_type", None) == PV_SUBENTRY_TYPE
+    ]
 
     # Initialize coordinators
     _LOGGER.debug("Initializing coordinators for entry %s", entry.entry_id)

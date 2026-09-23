@@ -48,10 +48,6 @@ from custom_components.heating_curve_optimizer.const import (
     CONF_PLANNING_WINDOW,
     CONF_POWER_CONSUMPTION,
     CONF_PRODUCTION_PRICE_SENSOR,
-    CONF_PV_EAST_WP,
-    CONF_PV_SOUTH_WP,
-    CONF_PV_TILT,
-    CONF_PV_WEST_WP,
     CONF_SOURCE_TYPE,
     CONF_SOURCES,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
@@ -71,7 +67,6 @@ from custom_components.heating_curve_optimizer.const import (
     DEFAULT_OFFSET_DELTA_T,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_PLANNING_WINDOW,
-    DEFAULT_PV_TILT,
     DEFAULT_TARGET_INDOOR_TEMP,
     DEFAULT_THERMAL_MASS_CLASS,
     DEFAULT_TIME_BASE,
@@ -109,10 +104,6 @@ def test_extract_sectioned_data_minimal_input_uses_defaults():
     assert flat[CONF_CEILING_HEIGHT] == DEFAULT_CEILING_HEIGHT
     assert flat[CONF_THERMAL_MASS_CLASS] == DEFAULT_THERMAL_MASS_CLASS
     assert flat[CONF_EMITTER_TYPE] == DEFAULT_EMITTER_TYPE
-    assert flat[CONF_PV_EAST_WP] == 0.0
-    assert flat[CONF_PV_SOUTH_WP] == 0.0
-    assert flat[CONF_PV_WEST_WP] == 0.0
-    assert flat[CONF_PV_TILT] == DEFAULT_PV_TILT
     assert flat[CONF_INDOOR_TEMPERATURE_SENSOR] is None
     assert flat[CONF_POWER_CONSUMPTION] is None
     assert flat[CONF_SUPPLY_TEMPERATURE_SENSOR] is None
@@ -151,10 +142,6 @@ def test_extract_sectioned_data_full_input_round_trips_exactly():
             CONF_CEILING_HEIGHT: 3.0,
             CONF_THERMAL_MASS_CLASS: "heavy",
             CONF_EMITTER_TYPE: "underfloor",
-            CONF_PV_EAST_WP: 1000,
-            CONF_PV_SOUTH_WP: 3000,
-            CONF_PV_WEST_WP: 1000,
-            CONF_PV_TILT: 40,
         },
         "sensors": {
             CONF_INDOOR_TEMPERATURE_SENSOR: "sensor.indoor",
