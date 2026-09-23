@@ -3,19 +3,8 @@
     "step": {
       "basic": {
         "data": {
-          "energy_label": "Energielabel",
-          "ventilation_type": "Ventilatietype",
-          "ceiling_height": "Plafondhoogte (m)",
-          "thermal_mass_class": "Thermische massa klasse",
-          "emitter_type": "Type warmteafgever",
           "grid_import_sensor": "Netafname vermogen sensor (W of kW, realtime PV-overschot regeling)",
           "grid_export_sensor": "Netteruglevering vermogen sensor (W of kW, realtime PV-overschot regeling)"
-        },
-        "data_description": {
-          "ventilation_type": "Type ventilatiesysteem in de woning voor berekening van ventilatieverliezen",
-          "ceiling_height": "Gemiddelde plafondhoogte voor berekening van gebouwvolume (standaard: 2,5m)",
-          "thermal_mass_class": "Bouwgewichtklasse, gebruikt in plaats van de op het energielabel gebaseerde schatting (standaard: medium)",
-          "emitter_type": "Hoe het afgiftevermogen van de warmteafgever afneemt bij lagere aanvoertemperatuur (standaard: radiator)"
         }
       },
       "heating_curve_settings": {
@@ -29,10 +18,6 @@
           "cop_compensation_factor": "COP-compensatiefactor",
           "planning_window": "Planningsvenster (uren)",
           "time_base": "Tijdsbasis (minuten per stap)",
-          "target_indoor_temp": "Gewenste kamertemperatuur (°C)",
-          "indoor_temp_hysteresis": "Kamertemperatuur hysterese (°C)",
-          "indoor_temp_hysteresis_lower": "Onderste hysterese - warmtepomp AAN (°C)",
-          "indoor_temp_hysteresis_upper": "Bovenste hysterese - warmtepomp UIT (°C)",
           "offset_delta_t": "Offset wijzigingssnelheid (min/°C)",
           "heat_curve_min_outdoor": "Minimum buitentemperatuur (°C)",
           "heat_curve_max_outdoor": "Maximum buitentemperatuur (°C)",
@@ -48,10 +33,6 @@
           "cop_compensation_factor": "Factor om theoretische COP aan te passen aan werkelijke systeemprestaties (typisch: 0,8-1,2)",
           "planning_window": "Optimalisatie planningshorizon in uren (standaard: 6)",
           "time_base": "Tijdsinterval voor optimalisatie in minuten (standaard: 60)",
-          "target_indoor_temp": "Gewenste kamertemperatuur setpoint (standaard: 20°C)",
-          "indoor_temp_hysteresis": "Temperatuurband rond setpoint waarin verwarming moduleert (standaard: 0,5°C)",
-          "indoor_temp_hysteresis_lower": "Hoeveel graden onder setpoint voordat warmtepomp AAN gaat (standaard: 0,3°C)",
-          "indoor_temp_hysteresis_upper": "Hoeveel graden boven setpoint voordat warmtepomp UIT gaat (standaard: 0,5°C)",
           "offset_delta_t": "Minuten nodig per 1°C offset verandering. Lager = snellere respons (standaard: 10, bereik: 5-60)",
           "heat_curve_min_outdoor": "Minimum buitentemperatuur voor stooklijn (standaard: -20°C)",
           "heat_curve_max_outdoor": "Maximum buitentemperatuur voor stooklijn (standaard: 15°C)",
@@ -62,16 +43,11 @@
       },
       "user": {
         "title": "Heating Curve Optimizer instellen",
-        "data": {
-          "energy_label": "Energielabel"
-        },
         "sections": {
           "building": {
-            "name": "Woning & prijzen",
-            "description": "Vereist om de integratie aan te maken.",
+            "name": "Prijzen",
+            "description": "Vereist om de integratie aan te maken. Verwarmingszones (oppervlak, energielabel, bouwschil, doeltemperatuur) voeg je daarna toe vanaf de integratiepagina - zie \"Verwarmingszone toevoegen\".",
             "data": {
-              "area_m2": "Vloeroppervlak (m²)",
-              "energy_label": "Energielabel",
               "consumption_price_sensor": "Elektriciteit verbruiksprijs sensor",
               "production_price_sensor": "Elektriciteit productieprijs sensor"
             },
@@ -80,34 +56,12 @@
               "production_price_sensor": "Sensor met elektriciteit teruglever-/verkoopprijs forecast-attributen"
             }
           },
-          "envelope": {
-            "name": "Bouwschil",
-            "description": "Glasoppervlakken, isolatie en ventilatie - verbetert de nauwkeurigheid van warmteverlies en zonnewinst. Zonnepanelen voeg je apart toe, als PV-array, vanaf de integratiepagina na het instellen.",
-            "data": {
-              "glass_east_m2": "Glasoppervlak oost (m²)",
-              "glass_west_m2": "Glasoppervlak west (m²)",
-              "glass_south_m2": "Glasoppervlak zuid (m²)",
-              "glass_u_value": "Glas U-waarde (W/m²K)",
-              "ventilation_type": "Ventilatietype",
-              "ceiling_height": "Plafondhoogte (m)",
-              "thermal_mass_class": "Thermische massa klasse",
-              "emitter_type": "Type warmteafgever"
-            },
-            "data_description": {
-              "glass_u_value": "Warmtedoorgangscoëfficiënt van het glas (standaard: 1,2)",
-              "ventilation_type": "Type ventilatiesysteem in de woning voor berekening van ventilatieverliezen",
-              "ceiling_height": "Gemiddelde plafondhoogte voor berekening van gebouwvolume (standaard: 2,5m)",
-              "thermal_mass_class": "Bouwgewichtklasse, gebruikt in plaats van de op het energielabel gebaseerde schatting (standaard: medium)",
-              "emitter_type": "Hoe het afgiftevermogen van de warmteafgever afneemt bij lagere aanvoertemperatuur (standaard: radiator)"
-            }
-          },
           "sensors": {
             "name": "Energiebronnen & sensoren",
             "description": "Welke sensoren uw elektriciteitsverbruik/-productie meten, plus eventuele optionele realtime sensoren.",
             "data": {
               "sources_consumption": "Elektriciteitsverbruik sensoren",
               "sources_production": "Elektriciteitsproductie sensoren",
-              "indoor_temperature_sensor": "Binnentemperatuur sensor",
               "power_consumption": "Warmtepomp vermogensverbruik sensor",
               "supply_temperature_sensor": "Aanvoertemperatuur sensor",
               "grid_import_sensor": "Netafname vermogen sensor (W of kW, realtime PV-overschot regeling)",
@@ -116,7 +70,6 @@
             "data_description": {
               "sources_consumption": "Energiesensoren (kWh) die elektriciteitsverbruik meten - minstens één verbruiks- of productiebron is verplicht",
               "sources_production": "Energiesensoren (kWh) die elektriciteitsproductie meten (bijv. zonnepanelen)",
-              "indoor_temperature_sensor": "Sensor die de werkelijke binnentemperatuur meet",
               "power_consumption": "Sensor die het vermogensverbruik van de warmtepomp meet",
               "supply_temperature_sensor": "Sensor die de aanvoertemperatuur van de warmtepomp meet"
             }
@@ -151,18 +104,14 @@
           },
           "advanced": {
             "name": "Geavanceerd",
-            "description": "Planningsvenster van de optimizer en doeltemperatuur-instellingen - standaardwaarden werken voor de meeste installaties.",
+            "description": "Planningsvenster van de optimizer - standaardwaarden werken voor de meeste installaties.",
             "data": {
               "planning_window": "Planningsvenster (uren)",
-              "time_base": "Tijdsbasis (minuten per stap)",
-              "target_indoor_temp": "Gewenste kamertemperatuur (°C)",
-              "indoor_temp_hysteresis": "Kamertemperatuur hysterese (°C)"
+              "time_base": "Tijdsbasis (minuten per stap)"
             },
             "data_description": {
               "planning_window": "Optimalisatie planningshorizon in uren (standaard: 6)",
-              "time_base": "Tijdsinterval voor optimalisatie in minuten (standaard: 60)",
-              "target_indoor_temp": "Gewenste kamertemperatuur setpoint (standaard: 20°C)",
-              "indoor_temp_hysteresis": "Temperatuurband rond setpoint waarin verwarming moduleert (standaard: 0,5°C)"
+              "time_base": "Tijdsinterval voor optimalisatie in minuten (standaard: 60)"
             }
           }
         }
@@ -185,7 +134,6 @@
       "already_configured": "Apparaat is al geconfigureerd"
     },
     "error": {
-      "missing_basic": "Vul de basisinstellingen in (oppervlakte en energielabel) voordat je afrondt.",
       "no_blocks": "Voeg minstens één verbruiks- of productiebron toe voordat je afrondt.",
       "cannot_connect": "Kon open-meteo.com niet bereiken. Controleer de internetverbinding en probeer het opnieuw."
     }
@@ -344,13 +292,32 @@
       "step": {
         "user": {
           "title": "Verwarmingszone toevoegen",
-          "description": "Configureer een extra ruimte of verwarmingscircuit. Prijssensor, curvegrenzen en warmtepompparameters worden gedeeld met de hoofdconfiguratie - hier stel je alleen in wat per ruimte verschilt.",
+          "description": "Configureer een ruimte of verwarmingscircuit - elke zone, ook de eerste, wordt op deze manier ingesteld. Prijssensor, curvegrenzen en warmtepompparameters worden gedeeld met de hoofdconfiguratie.",
           "data": {
             "name": "Zonenaam",
             "area_m2": "Vloeroppervlak (m²)",
             "energy_label": "Energielabel",
+            "glass_east_m2": "Glasoppervlak oost (m²)",
+            "glass_west_m2": "Glasoppervlak west (m²)",
+            "glass_south_m2": "Glasoppervlak zuid (m²)",
+            "glass_u_value": "Glas U-waarde (W/m²K)",
+            "ventilation_type": "Ventilatietype",
+            "ceiling_height": "Plafondhoogte (m)",
+            "thermal_mass_class": "Thermische massa klasse",
+            "emitter_type": "Type warmteafgever",
             "target_indoor_temp": "Gewenste binnentemperatuur (°C)",
+            "indoor_temp_hysteresis_lower": "Onderste hysterese - warmtepomp AAN (°C)",
+            "indoor_temp_hysteresis_upper": "Bovenste hysterese - warmtepomp UIT (°C)",
             "indoor_temperature_sensor": "Binnentemperatuursensor (optioneel)"
+          },
+          "data_description": {
+            "glass_u_value": "Warmtedoorgangscoëfficiënt van het glas (standaard: 1,2)",
+            "ventilation_type": "Type ventilatiesysteem in de woning voor berekening van ventilatieverliezen",
+            "ceiling_height": "Gemiddelde plafondhoogte voor berekening van gebouwvolume (standaard: 2,5m)",
+            "thermal_mass_class": "Bouwgewichtklasse, gebruikt in plaats van de op het energielabel gebaseerde schatting (standaard: medium)",
+            "emitter_type": "Hoe het afgiftevermogen van de warmteafgever afneemt bij lagere aanvoertemperatuur (standaard: radiator)",
+            "indoor_temp_hysteresis_lower": "Hoeveel graden onder setpoint voordat warmtepomp AAN gaat (standaard: 0,3°C)",
+            "indoor_temp_hysteresis_upper": "Hoeveel graden boven setpoint voordat warmtepomp UIT gaat (standaard: 0,5°C)"
           }
         },
         "reconfigure": {
@@ -360,8 +327,27 @@
             "name": "Zonenaam",
             "area_m2": "Vloeroppervlak (m²)",
             "energy_label": "Energielabel",
+            "glass_east_m2": "Glasoppervlak oost (m²)",
+            "glass_west_m2": "Glasoppervlak west (m²)",
+            "glass_south_m2": "Glasoppervlak zuid (m²)",
+            "glass_u_value": "Glas U-waarde (W/m²K)",
+            "ventilation_type": "Ventilatietype",
+            "ceiling_height": "Plafondhoogte (m)",
+            "thermal_mass_class": "Thermische massa klasse",
+            "emitter_type": "Type warmteafgever",
             "target_indoor_temp": "Gewenste binnentemperatuur (°C)",
+            "indoor_temp_hysteresis_lower": "Onderste hysterese - warmtepomp AAN (°C)",
+            "indoor_temp_hysteresis_upper": "Bovenste hysterese - warmtepomp UIT (°C)",
             "indoor_temperature_sensor": "Binnentemperatuursensor (optioneel)"
+          },
+          "data_description": {
+            "glass_u_value": "Warmtedoorgangscoëfficiënt van het glas (standaard: 1,2)",
+            "ventilation_type": "Type ventilatiesysteem in de woning voor berekening van ventilatieverliezen",
+            "ceiling_height": "Gemiddelde plafondhoogte voor berekening van gebouwvolume (standaard: 2,5m)",
+            "thermal_mass_class": "Bouwgewichtklasse, gebruikt in plaats van de op het energielabel gebaseerde schatting (standaard: medium)",
+            "emitter_type": "Hoe het afgiftevermogen van de warmteafgever afneemt bij lagere aanvoertemperatuur (standaard: radiator)",
+            "indoor_temp_hysteresis_lower": "Hoeveel graden onder setpoint voordat warmtepomp AAN gaat (standaard: 0,3°C)",
+            "indoor_temp_hysteresis_upper": "Hoeveel graden boven setpoint voordat warmtepomp UIT gaat (standaard: 0,5°C)"
           }
         }
       },

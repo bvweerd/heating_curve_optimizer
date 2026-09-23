@@ -36,7 +36,25 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up number entities from a config entry."""
+    """Set up number entities from a config entry.
+
+    Target temperature/hysteresis are zone-specific settings (every zone,
+    including the first, is a subentry now - see __init__.py's
+    _find_primary_zone_subentry) - they're read from the primary zone's
+    own coordinator config (`heat_coordinator.config`, already merged with
+    that subentry's data), not from `entry.data`/`.options` directly,
+    which no longer carry them at all. No primary zone configured yet ->
+    nothing to control, so no entities are created.
+    """
+    runtime_data = getattr(entry, "runtime_data", None)
+    heat_coordinator = runtime_data.heat_coordinator if runtime_data else None
+    if heat_coordinator is None:
+        _LOGGER.debug(
+            "Skipping number entities for %s: no primary heating zone configured yet",
+            entry.entry_id,
+        )
+        return
+
     device = DeviceInfo(
         identifiers={(DOMAIN, entry.entry_id)},
         name="Heating Curve Optimizer",
@@ -44,7 +62,7 @@ async def async_setup_entry(
         model="Virtual",
     )
 
-    config = {**entry.data, **entry.options}
+    config = heat_coordinator.config
 
     # Get initial values with fallback to legacy symmetric hysteresis
     legacy_hysteresis = config.get(

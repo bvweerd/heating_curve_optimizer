@@ -64,11 +64,14 @@ optimization cycle.
 | `thermal_mass_class` | select | `light`, `medium`, `heavy` | `medium` | Building thermal mass class, used instead of the energy-label-derived estimate when set. See the table below for the underlying Wh/m²K values. |
 | `emitter_type` | select | `radiator`, `underfloor`, `fan_coil` | `radiator` | Heat emitter type - controls how emitter output falls off as supply temperature drops (EN 442-style exponent). See the table below. |
 
-!!! note "Advanced parameters in the Basic Settings step"
-    `thermal_mass_class`, `emitter_type` and `grid_import_sensor`/
-    `grid_export_sensor` are all asked for in the **Basic Settings** step of
-    the UI setup flow and options flow (`_build_basic_schema` in
-    `config_flow.py`), alongside area/energy label/glazing.
+!!! note "Where these are configured"
+    `grid_import_sensor`/`grid_export_sensor` are asked for in the
+    **Basic Settings** step of the UI setup flow and options flow
+    (`_build_basic_schema` in `config_flow.py`). `thermal_mass_class` and
+    `emitter_type` are per heating zone, not shared: every zone, including
+    the first, is set up via **Add heating zone** on the integration page
+    after setup (`HeatingZoneSubentryFlow`), alongside its own area,
+    energy label and glazing - see [Configuration](../configuration.md).
 
 ### Thermal Mass Class → Wh/m²K
 

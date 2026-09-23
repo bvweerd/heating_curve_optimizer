@@ -89,8 +89,123 @@ async def async_setup_entry(
     device = runtime_data.device
     config = runtime_data.config
 
+    # Primary heating zone's full sensor catalog (see __init__.py's
+    # _find_primary_zone_subentry) - heat_coordinator/optimization_coordinator
+    # are None when no zone subentry is configured yet, a valid, if
+    # useless, state: nothing to build sensors from.
+    if heat_coordinator is not None and optimization_coordinator is not None:
+        entities = _build_primary_zone_entities(
+            hass,
+            entry,
+            config,
+            device,
+            weather_coordinator,
+            heat_coordinator,
+            optimization_coordinator,
+        )
+        _LOGGER.debug("Adding %d sensor entities", len(entities))
+        async_add_entities(entities)
+    else:
+        _LOGGER.debug(
+            "Skipping primary heating zone sensors for %s: no primary "
+            "heating zone configured yet",
+            entry.entry_id,
+        )
+
+    # Per-zone core sensors (phase 5c, REDESIGN.md): each zone's own
+    # optimizer output, associated with its own subentry/device via
+    # config_subentry_id. Scoped to the core "what did this zone's own
+    # optimizer decide" sensors for a first cut - not the full catalog of
+    # diagnostic/shadow/calibration sensors the primary zone gets (see
+    # docs/redesign/REDESIGN.md phase 5c).
+    for subentry_id, zone_data in runtime_data.zones.items():
+        zone_optimization_coordinator = zone_data.get("optimization_coordinator")
+        zone_heat_coordinator = zone_data.get("heat_coordinator")
+        zone_device = zone_data.get("device")
+        if not (
+            zone_optimization_coordinator and zone_heat_coordinator and zone_device
+        ):
+            continue
+        zone_entry_id = f"{entry.entry_id}_{subentry_id}"
+        async_add_entities(
+            [
+                CoordinatorHeatingCurveOffsetSensor(
+                    coordinator=zone_optimization_coordinator,
+                    name="Heating Curve Offset",
+                    unique_id=f"{zone_entry_id}_heating_curve_offset",
+                    icon="mdi:chart-line",
+                    device=zone_device,
+                ),
+                CoordinatorOptimizedSupplyTemperatureSensor(
+                    coordinator=zone_optimization_coordinator,
+                    name="Optimized Supply Temperature",
+                    unique_id=f"{zone_entry_id}_optimized_supply_temperature",
+                    icon="mdi:thermometer-chevron-up",
+                    device=zone_device,
+                ),
+                CoordinatorNetHeatLossSensor(
+                    coordinator=zone_heat_coordinator,
+                    name="Net Heat Loss",
+                    unique_id=f"{zone_entry_id}_net_heat_loss",
+                    icon="mdi:fire-off",
+                    device=zone_device,
+                ),
+            ],
+            config_subentry_id=subentry_id,
+        )
+
+    # Hybrid gas-boiler comparison (optional, singleton subentry - see
+    # __init__.py's gas boiler setup). Absent for every installation that
+    # hasn't configured it. Enabled by default (unlike the phase-2/4/5
+    # diagnostic sensors, which stay disabled-by-default extras added to
+    # every install) - the subentry itself is the opt-in signal, so hiding
+    # these again would just be redundant friction.
+    gas_boiler_coordinator = runtime_data.gas_boiler_coordinator
+    gas_boiler_device = runtime_data.gas_boiler_device
+    gas_boiler_subentry_id = runtime_data.gas_boiler_subentry_id
+    if gas_boiler_coordinator is not None and gas_boiler_device is not None:
+        gas_boiler_entry_id = f"{entry.entry_id}_gas_boiler"
+        async_add_entities(
+            [
+                GasBoilerHeatPumpCostSensor(
+                    coordinator=gas_boiler_coordinator,
+                    name="Gas Boiler Heat Pump Cost",
+                    unique_id=f"{gas_boiler_entry_id}_heat_pump_cost",
+                    icon="mdi:heat-pump",
+                    device=gas_boiler_device,
+                ),
+                GasBoilerGasCostSensor(
+                    coordinator=gas_boiler_coordinator,
+                    name="Gas Boiler Gas Cost",
+                    unique_id=f"{gas_boiler_entry_id}_gas_cost",
+                    icon="mdi:fire",
+                    device=gas_boiler_device,
+                ),
+                GasBoilerCostSavingsSensor(
+                    coordinator=gas_boiler_coordinator,
+                    name="Gas Boiler Cost Savings",
+                    unique_id=f"{gas_boiler_entry_id}_cost_savings",
+                    icon="mdi:piggy-bank-outline",
+                    device=gas_boiler_device,
+                ),
+            ],
+            config_subentry_id=gas_boiler_subentry_id,
+        )
+
+
+def _build_primary_zone_entities(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    config: dict[str, Any],
+    device: DeviceInfo,
+    weather_coordinator: Any,
+    heat_coordinator: Any,
+    optimization_coordinator: Any,
+) -> list[Any]:
+    """Build the primary heating zone's full sensor catalog (unchanged
+    from before every zone became a subentry - see async_setup_entry)."""
     # Sensor list
-    entities = []
+    entities: list[Any] = []
 
     # Weather sensors
     entities.append(
@@ -328,88 +443,7 @@ async def async_setup_entry(
         )
     )
 
-    _LOGGER.debug("Adding %d sensor entities", len(entities))
-    async_add_entities(entities)
-
-    # Per-zone core sensors (phase 5c, REDESIGN.md): each zone's own
-    # optimizer output, associated with its own subentry/device via
-    # config_subentry_id. Scoped to the core "what did this zone's own
-    # optimizer decide" sensors for a first cut - not the full catalog of
-    # diagnostic/shadow/calibration sensors the main entry gets (see
-    # docs/redesign/REDESIGN.md phase 5c).
-    for subentry_id, zone_data in runtime_data.zones.items():
-        zone_optimization_coordinator = zone_data.get("optimization_coordinator")
-        zone_heat_coordinator = zone_data.get("heat_coordinator")
-        zone_device = zone_data.get("device")
-        if not (
-            zone_optimization_coordinator and zone_heat_coordinator and zone_device
-        ):
-            continue
-        zone_entry_id = f"{entry.entry_id}_{subentry_id}"
-        async_add_entities(
-            [
-                CoordinatorHeatingCurveOffsetSensor(
-                    coordinator=zone_optimization_coordinator,
-                    name="Heating Curve Offset",
-                    unique_id=f"{zone_entry_id}_heating_curve_offset",
-                    icon="mdi:chart-line",
-                    device=zone_device,
-                ),
-                CoordinatorOptimizedSupplyTemperatureSensor(
-                    coordinator=zone_optimization_coordinator,
-                    name="Optimized Supply Temperature",
-                    unique_id=f"{zone_entry_id}_optimized_supply_temperature",
-                    icon="mdi:thermometer-chevron-up",
-                    device=zone_device,
-                ),
-                CoordinatorNetHeatLossSensor(
-                    coordinator=zone_heat_coordinator,
-                    name="Net Heat Loss",
-                    unique_id=f"{zone_entry_id}_net_heat_loss",
-                    icon="mdi:fire-off",
-                    device=zone_device,
-                ),
-            ],
-            config_subentry_id=subentry_id,
-        )
-
-    # Hybrid gas-boiler comparison (optional, singleton subentry - see
-    # __init__.py's gas boiler setup). Absent for every installation that
-    # hasn't configured it. Enabled by default (unlike the phase-2/4/5
-    # diagnostic sensors, which stay disabled-by-default extras added to
-    # every install) - the subentry itself is the opt-in signal, so hiding
-    # these again would just be redundant friction.
-    gas_boiler_coordinator = runtime_data.gas_boiler_coordinator
-    gas_boiler_device = runtime_data.gas_boiler_device
-    gas_boiler_subentry_id = runtime_data.gas_boiler_subentry_id
-    if gas_boiler_coordinator is not None and gas_boiler_device is not None:
-        gas_boiler_entry_id = f"{entry.entry_id}_gas_boiler"
-        async_add_entities(
-            [
-                GasBoilerHeatPumpCostSensor(
-                    coordinator=gas_boiler_coordinator,
-                    name="Gas Boiler Heat Pump Cost",
-                    unique_id=f"{gas_boiler_entry_id}_heat_pump_cost",
-                    icon="mdi:heat-pump",
-                    device=gas_boiler_device,
-                ),
-                GasBoilerGasCostSensor(
-                    coordinator=gas_boiler_coordinator,
-                    name="Gas Boiler Gas Cost",
-                    unique_id=f"{gas_boiler_entry_id}_gas_cost",
-                    icon="mdi:fire",
-                    device=gas_boiler_device,
-                ),
-                GasBoilerCostSavingsSensor(
-                    coordinator=gas_boiler_coordinator,
-                    name="Gas Boiler Cost Savings",
-                    unique_id=f"{gas_boiler_entry_id}_cost_savings",
-                    icon="mdi:piggy-bank-outline",
-                    device=gas_boiler_device,
-                ),
-            ],
-            config_subentry_id=gas_boiler_subentry_id,
-        )
+    return entities
 
 
 def _setup_event_driven_sensors(
