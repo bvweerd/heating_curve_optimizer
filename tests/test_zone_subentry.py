@@ -1,22 +1,14 @@
 """Tests for the heating-zone subentry (phase 5c, docs/redesign/REDESIGN.md).
 
 `HeatingZoneSubentryFlow` itself (config_flow.py) subclasses
-`homeassistant.config_entries.ConfigSubentryFlow`, which does not exist in
-the Home Assistant release this repo's test environment can install
-(2024.3.x - a package-index ceiling in this sandbox, not a real HA release
-date; ConfigSubentryFlow landed in HA well after that). So
-`HeatingZoneSubentryFlow` is `None` here, and its step methods
-(async_step_user/async_step_reconfigure) are unverified by this suite -
-they were written to mirror battery_controller's
-BatteryControllerBatterySubentryFlow, which is proven working against a
-live install per the config_entry diagnostics shared 2026-09-22, but that
-is not the same as this repo's own tests exercising them.
+`homeassistant.config_entries.ConfigSubentryFlow`, which IS available in
+this HA version. So `HeatingZoneSubentryFlow` is a real class here, and
+`async_get_supported_subentry_types` returns all three subentry types.
 
-What *is* verified here, and does not depend on ConfigSubentryFlow at all:
+What is verified here:
+- HeatingZoneSubentryFlow is defined (not None)
+- async_get_supported_subentry_types includes ZONE_SUBENTRY_TYPE
 - the pure validation/schema-default logic (_validate_zone_subentry)
-- the graceful-degradation contract itself: HeatingZoneSubentryFlow is
-  None and async_get_supported_subentry_types returns {} rather than
-  raising, on an HA release old enough to lack the base class
 - __init__.py's zone-instantiation loop, using getattr(entry,
   "subentries", {}) so setup does not fail on HA without the attribute
 """
@@ -38,19 +30,17 @@ from custom_components.heating_curve_optimizer.config_flow import (
 from custom_components.heating_curve_optimizer.const import ZONE_SUBENTRY_TYPE
 
 
-def test_heating_zone_subentry_flow_is_none_on_this_ha_release():
-    """Documents the environment constraint explained in the module
-    docstring, so a future upgrade of pytest-homeassistant-custom-component
-    that starts providing ConfigSubentryFlow is a visible, deliberate
-    change here rather than a silent one."""
-    assert HeatingZoneSubentryFlow is None
+def test_heating_zone_subentry_flow_is_available():
+    """ConfigSubentryFlow is available in this HA version, so
+    HeatingZoneSubentryFlow must be a real class (not None)."""
+    assert HeatingZoneSubentryFlow is not None
 
 
-def test_async_get_supported_subentry_types_returns_empty_dict_gracefully():
+def test_async_get_supported_subentry_types_includes_zone():
     result = HeatingCurveOptimizerConfigFlow.async_get_supported_subentry_types(
         MagicMock()
     )
-    assert result == {}
+    assert ZONE_SUBENTRY_TYPE in result
 
 
 def test_validate_zone_subentry_normalizes_input():

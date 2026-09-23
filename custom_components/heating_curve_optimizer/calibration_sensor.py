@@ -61,7 +61,7 @@ class CalibrationSensor(BaseUtilitySensor):
     1. Theoretical heat loss matches actual heat pump production
     2. COP calculations are realistic
     3. Thermal storage efficiency is appropriate
-    4. Energy label setting matches measured performance (graaddagen correlation)
+    4. Energy label setting matches measured performance (degree_days correlation)
     5. Long-term trends in system performance
 
     It provides recommendations for parameter adjustments including energy label.
@@ -153,7 +153,7 @@ class CalibrationSensor(BaseUtilitySensor):
         anyone just glancing at the state, and actively misleading on a
         fresh install (reads as "badly miscalibrated" for the first few
         days instead of "still gathering data"). The `status` attribute's
-        "Onvoldoende data voor kalibratie" fallback already explains this
+        "Insufficient data for calibration" fallback already explains this
         in text; None here makes the primary state agree with it instead
         of contradicting it.
         """
@@ -196,16 +196,16 @@ class CalibrationSensor(BaseUtilitySensor):
             )
 
             # NEW: Graaddagen correlation analysis (7 days)
-            graaddagen_analysis = await self._analyze_graaddagen_correlation(
+            degree_days_analysis = await self._analyze_degree_days_correlation(
                 start_time, now
             )
 
             # NEW: Energy label recommendation based on measured U-value
             energy_label_recommendation = None
             measured_u_value = None
-            if graaddagen_analysis:
-                measured_u_value = graaddagen_analysis.get("measured_u_value")
-                energy_label_recommendation = graaddagen_analysis.get(
+            if degree_days_analysis:
+                measured_u_value = degree_days_analysis.get("measured_u_value")
+                energy_label_recommendation = degree_days_analysis.get(
                     "recommended_label"
                 )
 
@@ -217,7 +217,7 @@ class CalibrationSensor(BaseUtilitySensor):
             if heat_loss_accuracy is not None:
                 calibration_quality = heat_loss_accuracy
             elif measured_u_value is not None and self._entry:
-                # Use graaddagen analysis if available
+                # Use degree_days analysis if available
                 configured_label = self._get_zone_value(CONF_ENERGY_LABEL, "C")
                 configured_u = U_VALUE_MAP.get(configured_label, 0.80)
                 if configured_u > 0:
@@ -256,14 +256,14 @@ class CalibrationSensor(BaseUtilitySensor):
                 "current_energy_label": (
                     self._get_zone_value(CONF_ENERGY_LABEL) if self._entry else None
                 ),
-                "graaddagen_samples": (
-                    graaddagen_analysis.get("sample_count")
-                    if graaddagen_analysis
+                "degree_days_samples": (
+                    degree_days_analysis.get("sample_count")
+                    if degree_days_analysis
                     else None
                 ),
-                "graaddagen_correlation": (
-                    round(graaddagen_analysis.get("correlation", 0), 2)
-                    if graaddagen_analysis
+                "degree_days_correlation": (
+                    round(degree_days_analysis.get("correlation", 0), 2)
+                    if degree_days_analysis
                     else None
                 ),
                 # NEW: Trend analysis
@@ -414,10 +414,10 @@ class CalibrationSensor(BaseUtilitySensor):
             _LOGGER.debug("Storage efficiency validation failed: %s", err)
             return None
 
-    async def _analyze_graaddagen_correlation(
+    async def _analyze_degree_days_correlation(
         self, start_time: datetime, end_time: datetime
     ) -> dict[str, Any] | None:
-        """Analyze correlation between graaddagen and thermal heat production.
+        """Analyze correlation between degree_days and thermal heat production.
 
         Calculates actual U-value from historical data and recommends energy label.
         Returns dict with:
@@ -490,7 +490,7 @@ class CalibrationSensor(BaseUtilitySensor):
                 )
 
             if not thermal_history or not outdoor_history:
-                _LOGGER.debug("No historical data available for graaddagen analysis")
+                _LOGGER.debug("No historical data available for degree_days analysis")
                 return None
 
             thermal_states = thermal_history.get(self.thermal_power_sensor, [])
@@ -554,7 +554,7 @@ class CalibrationSensor(BaseUtilitySensor):
                     except (ValueError, TypeError):
                         continue
 
-            # Calculate daily averages and graaddagen
+            # Calculate daily averages and degree_days
             # dict[str, Any]: genuinely heterogeneous (date, float fields
             # mixed) - narrower per-field access is cast explicitly below.
             valid_days: list[dict[str, Any]] = []
@@ -579,7 +579,7 @@ class CalibrationSensor(BaseUtilitySensor):
                     else indoor_temp_default
                 )
 
-                # Calculate graaddagen for this day
+                # Calculate degree_days for this day
                 delta_t = avg_indoor - avg_outdoor
                 if delta_t > 0:  # Only heating days
                     # Convert kW to kWh/day (24 hours)
@@ -588,7 +588,7 @@ class CalibrationSensor(BaseUtilitySensor):
                         {
                             "date": date_key,
                             "thermal_kwh": thermal_kwh_day,
-                            "graaddagen": delta_t,
+                            "degree_days": delta_t,
                             "outdoor_temp": avg_outdoor,
                             "indoor_temp": avg_indoor,
                         }
@@ -608,7 +608,7 @@ class CalibrationSensor(BaseUtilitySensor):
 
             u_times_a_values = []
             for day in valid_days:
-                u_times_a = day["thermal_kwh"] / (day["graaddagen"] * 24)
+                u_times_a = day["thermal_kwh"] / (day["degree_days"] * 24)
                 u_times_a_values.append(u_times_a * 1000)  # Convert kW to W
 
             # Calculate average U×A and U-value
@@ -713,31 +713,31 @@ class CalibrationSensor(BaseUtilitySensor):
 
         if heat_loss_accuracy is not None:
             if heat_loss_accuracy >= 95:
-                messages.append("Warmteverlies: Uitstekend")
+                messages.append("Heat loss: Excellent")
             elif heat_loss_accuracy >= 85:
-                messages.append("Warmteverlies: Goed")
+                messages.append("Heat loss: Good")
             elif heat_loss_accuracy >= 70:
-                messages.append("Warmteverlies: Redelijk")
+                messages.append("Heat loss: Fair")
             else:
-                messages.append("Warmteverlies: Kalibratie nodig")
+                messages.append("Heat loss: Calibration needed")
 
         if cop_accuracy is not None:
             if cop_accuracy >= 95:
-                messages.append("COP: Uitstekend")
+                messages.append("COP: Excellent")
             elif cop_accuracy >= 85:
-                messages.append("COP: Goed")
+                messages.append("COP: Good")
             elif cop_accuracy >= 70:
-                messages.append("COP: Redelijk")
+                messages.append("COP: Fair")
             else:
-                messages.append("COP: Kalibratie nodig")
+                messages.append("COP: Calibration needed")
 
         if storage_recommendation is not None:
             current = DEFAULT_THERMAL_STORAGE_EFFICIENCY
             if abs(storage_recommendation - current) < 0.05:
-                messages.append("Thermische opslag: OK")
+                messages.append("Thermal storage: OK")
             else:
                 messages.append(
-                    f"Thermische opslag: Pas aan naar {storage_recommendation:.2f}"
+                    f"Thermal storage: Adjust to {storage_recommendation:.2f}"
                 )
 
         # NEW: Energy label recommendation
@@ -746,32 +746,32 @@ class CalibrationSensor(BaseUtilitySensor):
                 current_label = self._get_zone_value(CONF_ENERGY_LABEL, "C")
                 if energy_label_recommendation != current_label:
                     messages.append(
-                        f"Energielabel: Aanbevolen {energy_label_recommendation} "
-                        f"(huidig: {current_label})"
+                        f"Energy label: Recommended {energy_label_recommendation} "
+                        f"(current: {current_label})"
                     )
                 else:
-                    messages.append(f"Energielabel: Correct ({current_label})")
+                    messages.append(f"Energy label: Correct ({current_label})")
 
         # NEW: Trend analysis
         if trend_analysis:
             direction = trend_analysis.get("direction")
             change_pct = trend_analysis.get("change_pct", 0)
             if direction == "improving":
-                messages.append(f"Trend: Verbeterend (+{change_pct:.1f}%)")
+                messages.append(f"Trend: Improving (+{change_pct:.1f}%)")
             elif direction == "degrading":
-                messages.append(f"Trend: Verslechterend ({change_pct:.1f}%)")
+                messages.append(f"Trend: Degrading ({change_pct:.1f}%)")
             else:
-                messages.append("Trend: Stabiel")
+                messages.append("Trend: Stable")
 
         if not messages:
-            return "Onvoldoende data voor kalibratie"
+            return "Insufficient data for calibration"
 
         # The primary state (this sensor's %) is calibration_quality itself,
         # not any of the sub-scores above - if it's still None, the status
         # text must say so up front, otherwise a message list built purely
-        # from side metrics like "Thermische opslag: OK" reads as if
+        # from side metrics like "Thermal storage: OK" reads as if
         # calibration is complete while the main state shows "Unknown".
         if calibration_quality is None:
-            messages.insert(0, "Kalibratiescore: nog onvoldoende data")
+            messages.insert(0, "Calibration score: insufficient data")
 
         return ", ".join(messages)

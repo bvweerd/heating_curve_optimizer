@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import Any, cast
 
 import aiohttp
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, Event
 from homeassistant.helpers import issue_registry as ir, storage
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -208,13 +209,18 @@ def _calculate_cop(
 class WeatherDataCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Coordinator for weather and radiation data from open-meteo.com."""
 
-    def __init__(self, hass: HomeAssistant):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry | None = None,
+    ):
         """Initialize the weather data coordinator."""
         super().__init__(
             hass,
             _LOGGER,
             name="Weather Data",
             update_interval=timedelta(minutes=30),
+            config_entry=config_entry,
         )
         self.latitude = hass.config.latitude
         self.longitude = hass.config.longitude
@@ -313,6 +319,7 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  
         weather_coordinator: WeatherDataCoordinator,
         config: dict[str, Any],
         entry_id: str,
+        config_entry: ConfigEntry | None = None,
     ):
         """Initialize the heat calculation coordinator."""
         super().__init__(
@@ -320,6 +327,7 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  
             _LOGGER,
             name="Heat Calculations",
             update_interval=timedelta(minutes=5),
+            config_entry=config_entry,
         )
         self.weather_coordinator = weather_coordinator
         self.config = config
@@ -669,6 +677,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
         heat_coordinator: HeatCalculationCoordinator,
         config: dict[str, Any],
         entry_id: str = "",
+        config_entry: ConfigEntry | None = None,
     ):
         """Initialize the optimization coordinator."""
         super().__init__(
@@ -676,6 +685,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
             _LOGGER,
             name="Heating Optimization",
             update_interval=timedelta(minutes=15),
+            config_entry=config_entry,
         )
         self.heat_coordinator = heat_coordinator
         self.config = config

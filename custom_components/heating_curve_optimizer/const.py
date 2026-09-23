@@ -174,7 +174,7 @@ DEFAULT_PV_EFFICIENCY_FACTOR = 0.85
 # Allowed energy labels
 ENERGY_LABELS = ["A+++", "A++", "A+", "A", "B", "C", "D", "E", "F", "G"]
 
-# Mapping energielabel -> primary energy consumption (kWh/m²/year)
+# Mapping energy label -> primary energy consumption (kWh/m²/year)
 # Based on NTA 8800 standard (since Jan 2021)
 # Using midpoint values for each label range
 ENERGY_LABEL_CONSUMPTION = {
@@ -209,7 +209,7 @@ HEATING_FRACTION_MAP = {
 # Average value for Dutch climate
 HEATING_DEGREE_DAYS_NL = 2900
 
-# Binnentemperatuur in °C voor warmteverliesberekening
+# Indoor temperature in °C for heat loss calculation
 INDOOR_TEMPERATURE = 21.0
 
 # Legacy U-value map (deprecated, kept for backward compatibility)

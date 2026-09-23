@@ -27,6 +27,22 @@ from custom_components.heating_curve_optimizer.config_flow import (
     _test_api_connection,
 )
 
+# Force the legacy multi-step wizard (not the single-page sectioned form)
+# for all tests in this module. The sectioned form is only available when
+# homeassistant.data_entry_flow.section is importable, which it is in this
+# test environment's HA version. These tests exercise the multi-step flow.
+_patch_section = patch(
+    "custom_components.heating_curve_optimizer.config_flow._section", None
+)
+pytestmark = pytest.mark.usefixtures()
+
+
+@pytest.fixture(autouse=True)
+def _disable_sectioned_form():
+    """Disable the single-page sectioned form for all tests."""
+    with _patch_section:
+        yield
+
 
 @pytest.mark.asyncio
 async def test_show_user_form(hass: HomeAssistant):

@@ -12,7 +12,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.entity import DeviceInfo
 
 from .const import (
@@ -205,7 +205,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 1. Weather data coordinator (API calls to open-meteo) - shared by
     # every zone, including the primary one, regardless of whether any
     # zone is configured yet.
-    weather_coordinator = WeatherDataCoordinator(hass)
+    weather_coordinator = WeatherDataCoordinator(hass, config_entry=entry)
     await weather_coordinator.async_config_entry_first_refresh()
 
     # Create device info for all entities. Built unconditionally, even with
@@ -237,13 +237,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         primary_config = {**config, **primary_subentry.data}
 
         heat_coordinator = HeatCalculationCoordinator(
-            hass, weather_coordinator, primary_config, entry.entry_id
+            hass,
+            weather_coordinator,
+            primary_config,
+            entry.entry_id,
+            config_entry=entry,
         )
         await heat_coordinator.async_setup()
         await heat_coordinator.async_config_entry_first_refresh()
 
         optimization_coordinator = OptimizationCoordinator(
-            hass, heat_coordinator, primary_config, entry.entry_id
+            hass,
+            heat_coordinator,
+            primary_config,
+            entry.entry_id,
+            config_entry=entry,
         )
         await optimization_coordinator.async_setup()
         primary_optimization_coordinator: OptimizationCoordinator = (
@@ -273,6 +281,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # here - it already has its own coordinator pair under the entry's own
     # identity, not a zone-suffixed one.
     zones: dict[str, dict[str, Any]] = {}
+    # Look up the parent device's registry ID for via_device_id on child
+    # devices (zones, gas boiler). The parent device was registered above
+    # via its DeviceInfo identifiers; dr.async_get resolves the tuple to
+    # the actual device-registry ID string that via_device_id expects.
+    dev_reg = dr.async_get(hass)
+    parent_device = dev_reg.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
+    parent_device_id = parent_device.id if parent_device else None
     # getattr guards HA releases old enough to predate ConfigEntry.subentries
     # entirely (see config_flow.py's HeatingZoneSubentryFlow comment) -
     # setup must not fail for installations with no zones configured just
@@ -287,13 +302,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         zone_entry_id = f"{entry.entry_id}_{subentry_id}"
 
         zone_heat_coordinator = HeatCalculationCoordinator(
-            hass, weather_coordinator, zone_config, zone_entry_id
+            hass,
+            weather_coordinator,
+            zone_config,
+            zone_entry_id,
+            config_entry=entry,
         )
         await zone_heat_coordinator.async_setup()
         await zone_heat_coordinator.async_config_entry_first_refresh()
 
         zone_optimization_coordinator = OptimizationCoordinator(
-            hass, zone_heat_coordinator, zone_config, zone_entry_id
+            hass,
+            zone_heat_coordinator,
+            zone_config,
+            zone_entry_id,
+            config_entry=entry,
         )
         await zone_optimization_coordinator.async_setup()
 
@@ -303,7 +326,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             manufacturer="Custom",
             model="Heating Zone",
             sw_version=_MANIFEST.get("version", "unknown"),
-            via_device=(DOMAIN, entry.entry_id),
+            **({"via_device_id": parent_device_id} if parent_device_id else {}),
         )
 
         zones[subentry_id] = {
@@ -363,6 +386,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             optimization_coordinator,
             gas_boiler_config,
             entry.entry_id,
+            config_entry=entry,
         )
         await new_gas_boiler_coordinator.async_setup()
         gas_boiler_coordinator = new_gas_boiler_coordinator
@@ -373,7 +397,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             manufacturer="Custom",
             model="Hybrid Gas Boiler",
             sw_version=_MANIFEST.get("version", "unknown"),
-            via_device=(DOMAIN, entry.entry_id),
+            **({"via_device_id": parent_device_id} if parent_device_id else {}),
         )
 
         async def _trigger_gas_boiler_first_refresh(
