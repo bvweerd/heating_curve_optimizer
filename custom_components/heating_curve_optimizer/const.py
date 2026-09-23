@@ -41,6 +41,28 @@ CONF_SUPPLY_TEMPERATURE_SENSOR = "supply_temperature_sensor"
 # between rooms (area, insulation, its own thermostat) is per-zone.
 ZONE_SUBENTRY_TYPE = "heating_zone"
 
+# Hybrid gas-boiler cost comparison, as a singleton config subentry (unlike
+# ZONE_SUBENTRY_TYPE, capped at one instance in HeatingGasBoilerSubentryFlow
+# - a hybrid system has exactly one physical gas boiler). Entirely optional
+# and zero-impact when absent: no gas_boiler_coordinator is created, no
+# entities are added, nothing changes for an installation that hasn't
+# configured it. See gas_boiler_model.py / gas_boiler_coordinator.py.
+GAS_SUBENTRY_TYPE = "gas_boiler"
+CONF_GAS_PRICE_SENSOR = "gas_price_sensor"
+CONF_GAS_BOILER_EFFICIENCY = "gas_boiler_efficiency"
+CONF_GAS_CALORIFIC_VALUE = "gas_calorific_value_kwh_per_m3"
+
+# 90%: typical Dutch HR-combi boiler at non-optimal (higher) return
+# temperatures. A well-tuned condensing unit at a low return temperature can
+# reach ~1.07 (107%, HHV/bovenwaarde-based) - user-adjustable per appliance,
+# this is a conservative rather than optimistic default.
+DEFAULT_GAS_BOILER_EFFICIENCY = 0.90
+# Dutch G-gas bovenwaarde (higher heating value/HHV), ~35.17 MJ/m3 - the
+# standard value Dutch grid operators publish, not the lower heating value
+# (~8.8 kWh/m3) some appliance datasheets quote instead. User-adjustable
+# since it varies slightly by gas quality/grid.
+DEFAULT_GAS_CALORIFIC_VALUE_KWH_PER_M3 = 9.77
+
 # Real-time grid power (phase 5b, docs/redesign/REDESIGN.md): positive =
 # import, negative = export. Optional - the realtime_controller.py loop is
 # inactive unless at least one of these is configured, mirroring how

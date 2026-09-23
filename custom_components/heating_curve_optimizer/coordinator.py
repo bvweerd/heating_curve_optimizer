@@ -97,6 +97,14 @@ from .thermal_optimizer import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Below this, the heat pump's electricity meter reading is treated as
+# "confirmed idle" rather than "actively running" (standby/parasitic draw
+# noise floor, not a real heating cycle). Used by
+# OptimizationCoordinator._async_update_data's heat_pump_actively_running
+# field - the hybrid gas-boiler feature's primary "is heat needed right now"
+# signal when a power sensor is configured.
+IDLE_POWER_THRESHOLD_KW = 0.1
+
 # Plain-English fallback for each UpdateFailed translation_key, mirroring
 # strings.json's "exceptions" messages - used only on an HA release old
 # enough that UpdateFailed still extends plain Exception rather than
@@ -117,6 +125,16 @@ _UPDATE_FAILED_MESSAGES: dict[str, str] = {
     "no_price_sensor": "No electricity price sensor is configured.",
     "price_sensor_unavailable": "Price sensor {sensor} is unavailable.",
     "price_data_extraction_failed": "Cannot extract price data from sensor {sensor}.",
+    "no_gas_price_sensor": "No gas price sensor is configured.",
+    "gas_price_sensor_unavailable": "Gas price sensor {sensor} is unavailable.",
+    "gas_boiler_operating_point_unavailable": (
+        "No operating point (outdoor/supply temperature) available yet for "
+        "the gas boiler comparison."
+    ),
+    "gas_boiler_electricity_price_unavailable": (
+        "Electricity price sensor {sensor} is unavailable "
+        "(see the main price_sensor_unavailable repair issue)."
+    ),
 }
 
 
@@ -1189,6 +1207,19 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
             # memory from the previous baseline is discarded rather than
             # carried forward and silently compounding.
             self._realtime_controller.reset()
+
+        # Real (not modeled) confirmation of whether the heat pump is
+        # currently drawing power - the hybrid gas-boiler feature (if
+        # configured) uses this as its primary signal for "is heat actually
+        # needed right now", preferring it over the demand-factor estimate
+        # since it reflects what the appliance is actually doing. None means
+        # "no power sensor configured/available", distinct from a confirmed
+        # idle reading.
+        power_kw = self._read_power_consumption_kw()
+        result["heat_pump_power_kw"] = power_kw
+        result["heat_pump_actively_running"] = (
+            power_kw > IDLE_POWER_THRESHOLD_KW if power_kw is not None else None
+        )
 
         # async_add_executor_job's return type is Any in this environment
         # (HomeAssistant is untyped - no py.typed here); result is genuinely

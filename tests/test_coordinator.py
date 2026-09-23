@@ -8,6 +8,7 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.heating_curve_optimizer.const import DOMAIN
 from custom_components.heating_curve_optimizer.coordinator import (
+    IDLE_POWER_THRESHOLD_KW,
     HeatCalculationCoordinator,
     OptimizationCoordinator,
     _update_failed,
@@ -164,3 +165,44 @@ def test_update_failed_falls_back_on_ha_versions_without_translation_kwargs():
 def test_update_failed_without_placeholders():
     err = _update_failed("no_price_sensor")
     assert str(err) == "No electricity price sensor is configured."
+
+
+@pytest.mark.asyncio
+async def test_heat_pump_actively_running_reflects_real_power_reading(
+    hass: HomeAssistant,
+):
+    """OptimizationCoordinator.data's heat_pump_power_kw/
+    heat_pump_actively_running fields - the hybrid gas-boiler feature's
+    primary "is heat needed right now" signal - must reflect the real
+    CONF_POWER_CONSUMPTION reading, thresholded against
+    IDLE_POWER_THRESHOLD_KW, not a modeled estimate."""
+    heat_coordinator = MagicMock()
+    config = {
+        "consumption_price_sensor": "sensor.price",
+        "power_consumption": "sensor.hp_power",
+    }
+    coordinator = OptimizationCoordinator(hass, heat_coordinator, config, "test_entry")
+
+    hass.states.async_set("sensor.hp_power", "1500", {"unit_of_measurement": "W"})
+    power_kw = coordinator._read_power_consumption_kw()
+    assert power_kw == pytest.approx(1.5)
+    assert power_kw > IDLE_POWER_THRESHOLD_KW
+
+    hass.states.async_set("sensor.hp_power", "0.02", {"unit_of_measurement": "kW"})
+    idle_power_kw = coordinator._read_power_consumption_kw()
+    assert idle_power_kw is not None
+    assert idle_power_kw <= IDLE_POWER_THRESHOLD_KW
+
+
+@pytest.mark.asyncio
+async def test_heat_pump_power_kw_none_when_no_sensor_configured(
+    hass: HomeAssistant,
+):
+    """Missing/unconfigured power sensor must read as None (unknown),
+    never as a false "confirmed idle" - the gas-boiler feature falls back
+    to the modeled demand signal only when this is genuinely None."""
+    heat_coordinator = MagicMock()
+    config = {"consumption_price_sensor": "sensor.price"}
+    coordinator = OptimizationCoordinator(hass, heat_coordinator, config, "test_entry")
+
+    assert coordinator._read_power_consumption_kw() is None
