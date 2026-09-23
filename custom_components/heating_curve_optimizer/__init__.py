@@ -61,8 +61,16 @@ class HeatingCurveOptimizerData:
     """
 
     weather_coordinator: WeatherDataCoordinator
-    heat_coordinator: HeatCalculationCoordinator
-    optimization_coordinator: OptimizationCoordinator
+    # None when no heating-zone subentry exists yet (see
+    # _find_primary_zone_subentry) - a valid, if useless, state matching
+    # battery_controller's own "zero batteries configured" precedent. Every
+    # zone, including the first, is now a subentry; the primary (first,
+    # oldest) one drives these two coordinators and keeps this entry's own
+    # identity (entry.entry_id) rather than a zone-suffixed one, so nothing
+    # downstream (unique_ids, calibration storage keys, number.py, climate.py)
+    # needs to change just because that data now comes from a subentry.
+    heat_coordinator: HeatCalculationCoordinator | None
+    optimization_coordinator: OptimizationCoordinator | None
     config: dict[str, Any]
     device: DeviceInfo
     zones: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -121,6 +129,13 @@ async def _async_handle_reset_thermal_calibration(
                 entry.entry_id,
             )
             continue
+        if runtime_data.optimization_coordinator is None:
+            _LOGGER.warning(
+                "Skipping thermal calibration reset for entry %s: "
+                "no primary heating zone configured yet",
+                entry.entry_id,
+            )
+            continue
         await runtime_data.optimization_coordinator.async_reset_thermal_calibration()
 
 
@@ -138,6 +153,27 @@ def _async_register_services(hass: HomeAssistant) -> None:
         _handle,
         schema=_SERVICE_RESET_SCHEMA,
     )
+
+
+def _find_primary_zone_subentry(entry: ConfigEntry) -> tuple[str, Any] | None:
+    """The first (oldest, iteration-order) heating-zone subentry, or None.
+
+    Every heating zone, including what used to be the implicit "zone 1"
+    baked into the main entry's own data, is now a ZONE_SUBENTRY_TYPE
+    subentry - see config_flow.py's HeatingZoneSubentryFlow. The primary
+    zone is the one whose data feeds the entry's own (non-zone-suffixed)
+    HeatCalculationCoordinator/OptimizationCoordinator pair; any other
+    zone subentry goes through the ordinary "extra zone" loop below,
+    unchanged. If a user later deletes the primary zone, whichever
+    subentry is now first silently becomes primary on the next reload -
+    an accepted limitation, not solved by a migration (none exists; see
+    docs/redesign/REDESIGN.md and this integration's "no deployment yet"
+    development stance).
+    """
+    for subentry_id, subentry in getattr(entry, "subentries", {}).items():
+        if subentry.subentry_type == ZONE_SUBENTRY_TYPE:
+            return subentry_id, subentry
+    return None
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -166,34 +202,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Initialize coordinators
     _LOGGER.debug("Initializing coordinators for entry %s", entry.entry_id)
 
-    # 1. Weather data coordinator (API calls to open-meteo)
+    # 1. Weather data coordinator (API calls to open-meteo) - shared by
+    # every zone, including the primary one, regardless of whether any
+    # zone is configured yet.
     weather_coordinator = WeatherDataCoordinator(hass)
     await weather_coordinator.async_config_entry_first_refresh()
 
-    # 2. Heat calculation coordinator (depends on weather coordinator)
-    heat_coordinator = HeatCalculationCoordinator(
-        hass, weather_coordinator, config, entry.entry_id
-    )
-    await heat_coordinator.async_setup()
-    await heat_coordinator.async_config_entry_first_refresh()
-
-    # 3. Optimization coordinator (depends on heat coordinator)
-    optimization_coordinator = OptimizationCoordinator(
-        hass, heat_coordinator, config, entry.entry_id
-    )
-    await optimization_coordinator.async_setup()
-
-    # Trigger first optimization async (don't block startup)
-    # This allows sensors to be available immediately while optimization runs in background
-    async def _trigger_first_optimization() -> None:
-        """Trigger first optimization after a short delay."""
-        await asyncio.sleep(5)  # Give sensors time to initialize
-        _LOGGER.info("Triggering first optimization run")
-        await optimization_coordinator.async_request_refresh()
-
-    hass.async_create_task(_trigger_first_optimization())
-
-    # Create device info for all entities
+    # Create device info for all entities. Built unconditionally, even with
+    # zero zones configured yet, so the integration has a device page the
+    # user can add their first heating zone from.
     device = DeviceInfo(
         identifiers={(DOMAIN, entry.entry_id)},
         name="Heating Curve Optimizer",
@@ -202,12 +219,59 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         sw_version=_MANIFEST.get("version", "unknown"),
     )
 
+    # 2/3. Primary heating-zone coordinators (see _find_primary_zone_subentry).
+    # Every zone, including this one, is a ZONE_SUBENTRY_TYPE subentry now -
+    # the primary zone's data is merged in on top of the shared config, the
+    # same way every "extra" zone's is, but it keeps the entry's own
+    # (non-zone-suffixed) identity so unique_ids/calibration storage/device
+    # stay exactly as they were before this zone lived in a subentry.
+    # None/None when no zone subentry exists yet - a valid, if useless,
+    # state (matches battery_controller's own "zero batteries" precedent):
+    # every platform that depends on these must handle None gracefully.
+    heat_coordinator: HeatCalculationCoordinator | None = None
+    optimization_coordinator: OptimizationCoordinator | None = None
+    primary = _find_primary_zone_subentry(entry)
+    primary_subentry_id: str | None = None
+    if primary is not None:
+        primary_subentry_id, primary_subentry = primary
+        primary_config = {**config, **primary_subentry.data}
+
+        heat_coordinator = HeatCalculationCoordinator(
+            hass, weather_coordinator, primary_config, entry.entry_id
+        )
+        await heat_coordinator.async_setup()
+        await heat_coordinator.async_config_entry_first_refresh()
+
+        optimization_coordinator = OptimizationCoordinator(
+            hass, heat_coordinator, primary_config, entry.entry_id
+        )
+        await optimization_coordinator.async_setup()
+        primary_optimization_coordinator: OptimizationCoordinator = (
+            optimization_coordinator
+        )
+
+        # Trigger first optimization async (don't block startup) - allows
+        # sensors to be available immediately while optimization runs in
+        # background.
+        async def _trigger_first_optimization(
+            coordinator: OptimizationCoordinator = primary_optimization_coordinator,
+        ) -> None:
+            """Trigger first optimization after a short delay."""
+            await asyncio.sleep(5)  # Give sensors time to initialize
+            _LOGGER.info("Triggering first optimization run")
+            await coordinator.async_request_refresh()
+
+        hass.async_create_task(_trigger_first_optimization())
+
     # 4. Additional heating-zone subentries (phase 5c, REDESIGN.md), modelled
     # on battery_controller's per-battery/per-PV-array subentry devices. Each
     # zone gets its own HeatCalculationCoordinator/OptimizationCoordinator
     # pair and device, sharing the main entry's price sensor, heating curve
-    # limits and heat pump parameters (only area/energy label/indoor sensor/
-    # target temperature are per-zone - see ZONE_SUBENTRY_TYPE's comment).
+    # limits and heat pump parameters (only area/energy label/envelope/
+    # indoor sensor/target temperature are per-zone - see
+    # ZONE_SUBENTRY_TYPE's comment). The primary zone (above) is excluded
+    # here - it already has its own coordinator pair under the entry's own
+    # identity, not a zone-suffixed one.
     zones: dict[str, dict[str, Any]] = {}
     # getattr guards HA releases old enough to predate ConfigEntry.subentries
     # entirely (see config_flow.py's HeatingZoneSubentryFlow comment) -
@@ -215,6 +279,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # because their HA is too old to have the attribute at all.
     for subentry_id, subentry in getattr(entry, "subentries", {}).items():
         if subentry.subentry_type != ZONE_SUBENTRY_TYPE:
+            continue
+        if subentry_id == primary_subentry_id:
             continue
 
         zone_config = {**config, **subentry.data}
@@ -262,9 +328,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 5. Hybrid gas-boiler cost comparison (optional, singleton subentry -
     # see config_flow.py's HeatingGasBoilerSubentryFlow). Whole-house scope
     # (not per zone - one physical boiler), fully additive: only reads the
-    # main entry's heat/optimization coordinators, never instantiated at
+    # primary zone's heat/optimization coordinators, never instantiated at
     # all without the subentry, so this is zero-impact for every
-    # installation that hasn't configured it.
+    # installation that hasn't configured it. Also skipped entirely when no
+    # primary zone exists yet - there is nothing for it to compare against.
     gas_boiler_coordinator: GasBoilerCoordinator | None = None
     gas_boiler_device: DeviceInfo | None = None
     gas_boiler_subentry_id: str | None = None
@@ -273,7 +340,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for subentry_id, subentry in getattr(entry, "subentries", {}).items()
         if subentry.subentry_type == GAS_SUBENTRY_TYPE
     ]
-    if gas_boiler_subentries:
+    if (
+        gas_boiler_subentries
+        and heat_coordinator is not None
+        and (optimization_coordinator is not None)
+    ):
         if len(gas_boiler_subentries) > 1:
             # The config_flow singleton guard should prevent this, but
             # never crash setup over a bypassed guarantee - just use the
@@ -382,8 +453,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry, "runtime_data", None
     )
     if runtime_data is not None:
-        await runtime_data.heat_coordinator.async_shutdown()
-        await runtime_data.optimization_coordinator.async_shutdown()
+        if runtime_data.heat_coordinator is not None:
+            await runtime_data.heat_coordinator.async_shutdown()
+        if runtime_data.optimization_coordinator is not None:
+            await runtime_data.optimization_coordinator.async_shutdown()
 
         for zone_data in runtime_data.zones.values():
             zone_heat_coordinator = zone_data.get("heat_coordinator")

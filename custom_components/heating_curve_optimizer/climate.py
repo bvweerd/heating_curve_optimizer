@@ -56,9 +56,20 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the climate entity from a config entry."""
+    """Set up the climate entity from a config entry.
+
+    No entity is created without a primary heating zone (see __init__.py's
+    _find_primary_zone_subentry) - there is no target temperature to
+    reflect/adjust until one is configured.
+    """
     runtime_data = entry.runtime_data
-    heat_coordinator: HeatCalculationCoordinator = runtime_data.heat_coordinator
+    heat_coordinator = runtime_data.heat_coordinator
+    if heat_coordinator is None:
+        _LOGGER.debug(
+            "Skipping climate entity for %s: no primary heating zone configured yet",
+            entry.entry_id,
+        )
+        return
     device: DeviceInfo = runtime_data.device
 
     async_add_entities([HeatingOptimizerClimate(hass, entry, device, heat_coordinator)])

@@ -3,15 +3,8 @@
     "step": {
       "basic": {
         "data": {
-          "energy_label": "Energy label",
-          "ventilation_type": "Ventilation type",
-          "ceiling_height": "Ceiling height (m)",
           "grid_import_sensor": "Grid import power sensor (W or kW, real-time PV-surplus control)",
           "grid_export_sensor": "Grid export power sensor (W or kW, real-time PV-surplus control)"
-        },
-        "data_description": {
-          "ventilation_type": "Type of ventilation system for calculating ventilation heat loss",
-          "ceiling_height": "Average ceiling height for calculating building volume (default: 2.5m)"
         }
       },
       "heating_curve_settings": {
@@ -25,10 +18,6 @@
           "cop_compensation_factor": "COP compensation factor",
           "planning_window": "Planning window (hours)",
           "time_base": "Time base (minutes per step)",
-          "target_indoor_temp": "Target indoor temperature (°C)",
-          "indoor_temp_hysteresis": "Indoor temperature hysteresis (°C)",
-          "indoor_temp_hysteresis_lower": "Lower hysteresis - heat pump ON (°C)",
-          "indoor_temp_hysteresis_upper": "Upper hysteresis - heat pump OFF (°C)",
           "offset_delta_t": "Offset change speed (min/°C)",
           "heat_curve_min_outdoor": "Minimum outdoor temperature (°C)",
           "heat_curve_max_outdoor": "Maximum outdoor temperature (°C)",
@@ -44,10 +33,6 @@
           "cop_compensation_factor": "Factor to adjust theoretical COP to actual system performance (typical: 0.8-1.2)",
           "planning_window": "Optimization planning horizon in hours (default: 6)",
           "time_base": "Time interval for optimization in minutes (default: 60)",
-          "target_indoor_temp": "Desired room temperature setpoint (default: 20°C)",
-          "indoor_temp_hysteresis": "Temperature band around setpoint where heating modulates (default: 0.5°C)",
-          "indoor_temp_hysteresis_lower": "How far below target temp before heat pump turns ON (default: 0.3°C)",
-          "indoor_temp_hysteresis_upper": "How far above target temp before heat pump turns OFF (default: 0.5°C)",
           "offset_delta_t": "Minutes required per 1°C offset change. Lower = faster response (default: 10, range: 5-60)",
           "heat_curve_min_outdoor": "Minimum outdoor temperature for heating curve (default: -20°C)",
           "heat_curve_max_outdoor": "Maximum outdoor temperature for heating curve (default: 15°C)",
@@ -55,18 +40,12 @@
           "heat_curve_min": "Minimum allowed supply temperature (default: 20°C)",
           "heat_curve_max": "Maximum allowed supply temperature (default: 45°C)"
         }
-      },
-      "user": {
-        "data": {
-          "energy_label": "Energy label"
-        }
       }
     },
     "abort": {
       "already_configured": "Device is already configured"
     },
     "error": {
-      "missing_basic": "Please fill in the basic settings (area and energy label) before finishing.",
       "no_blocks": "Add at least one consumption or production source before finishing.",
       "cannot_connect": "Could not reach open-meteo.com. Check the internet connection and try again."
     }
@@ -213,13 +192,32 @@
       "step": {
         "user": {
           "title": "Add heating zone",
-          "description": "Configure an additional room or heating circuit. Price sensor, heating curve limits and heat pump parameters are shared from the main configuration - only what differs between rooms is set here.",
+          "description": "Configure a room or heating circuit - every zone, including the first, is set up this way. Price sensor, heating curve limits and heat pump parameters are shared from the main configuration.",
           "data": {
             "name": "Zone name",
             "area_m2": "Floor area (m²)",
             "energy_label": "Energy label",
+            "glass_east_m2": "East-facing glass area (m²)",
+            "glass_west_m2": "West-facing glass area (m²)",
+            "glass_south_m2": "South-facing glass area (m²)",
+            "glass_u_value": "Glass U-value (W/m²K)",
+            "ventilation_type": "Ventilation type",
+            "ceiling_height": "Ceiling height (m)",
+            "thermal_mass_class": "Thermal mass class",
+            "emitter_type": "Heat emitter type",
             "target_indoor_temp": "Target indoor temperature (°C)",
+            "indoor_temp_hysteresis_lower": "Lower hysteresis - heat pump ON (°C)",
+            "indoor_temp_hysteresis_upper": "Upper hysteresis - heat pump OFF (°C)",
             "indoor_temperature_sensor": "Indoor temperature sensor (optional)"
+          },
+          "data_description": {
+            "glass_u_value": "Heat transfer coefficient of the glass (default: 1.2)",
+            "ventilation_type": "Type of ventilation system for calculating ventilation heat loss",
+            "ceiling_height": "Average ceiling height for calculating building volume (default: 2.5m)",
+            "thermal_mass_class": "Construction weight class, used instead of the energy-label-derived estimate (default: medium)",
+            "emitter_type": "How emitter output falls off as supply temperature drops (default: radiator)",
+            "indoor_temp_hysteresis_lower": "How far below target temp before heat pump turns ON (default: 0.3°C)",
+            "indoor_temp_hysteresis_upper": "How far above target temp before heat pump turns OFF (default: 0.5°C)"
           }
         },
         "reconfigure": {
@@ -229,8 +227,27 @@
             "name": "Zone name",
             "area_m2": "Floor area (m²)",
             "energy_label": "Energy label",
+            "glass_east_m2": "East-facing glass area (m²)",
+            "glass_west_m2": "West-facing glass area (m²)",
+            "glass_south_m2": "South-facing glass area (m²)",
+            "glass_u_value": "Glass U-value (W/m²K)",
+            "ventilation_type": "Ventilation type",
+            "ceiling_height": "Ceiling height (m)",
+            "thermal_mass_class": "Thermal mass class",
+            "emitter_type": "Heat emitter type",
             "target_indoor_temp": "Target indoor temperature (°C)",
+            "indoor_temp_hysteresis_lower": "Lower hysteresis - heat pump ON (°C)",
+            "indoor_temp_hysteresis_upper": "Upper hysteresis - heat pump OFF (°C)",
             "indoor_temperature_sensor": "Indoor temperature sensor (optional)"
+          },
+          "data_description": {
+            "glass_u_value": "Heat transfer coefficient of the glass (default: 1.2)",
+            "ventilation_type": "Type of ventilation system for calculating ventilation heat loss",
+            "ceiling_height": "Average ceiling height for calculating building volume (default: 2.5m)",
+            "thermal_mass_class": "Construction weight class, used instead of the energy-label-derived estimate (default: medium)",
+            "emitter_type": "How emitter output falls off as supply temperature drops (default: radiator)",
+            "indoor_temp_hysteresis_lower": "How far below target temp before heat pump turns ON (default: 0.3°C)",
+            "indoor_temp_hysteresis_upper": "How far above target temp before heat pump turns OFF (default: 0.5°C)"
           }
         }
       },

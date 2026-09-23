@@ -15,7 +15,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_AREA_M2, CONF_ENERGY_LABEL, DOMAIN
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -203,14 +203,12 @@ async def async_setup_entry(
 ) -> None:
     """Set up the binary sensors for a config entry."""
 
-    if not entry.data.get(CONF_AREA_M2) or not entry.data.get(CONF_ENERGY_LABEL):
-        _LOGGER.debug(
-            "Skipping heat demand binary sensor for %s because heat loss configuration is missing",
-            entry.entry_id,
-        )
-        return
-
-    # Check if coordinators are available
+    # Check if coordinators are available. heat_coordinator is None when no
+    # primary heating-zone subentry is configured yet (see
+    # __init__.py's _find_primary_zone_subentry) - a valid, if useless,
+    # state that falls through to the legacy fallback below rather than
+    # crashing on a raw entry.data lookup for fields that no longer live
+    # there at all (every zone, including the first, is a subentry now).
     runtime_data = getattr(entry, "runtime_data", None)
     heat_coordinator = runtime_data.heat_coordinator if runtime_data else None
     device = runtime_data.device if runtime_data else None

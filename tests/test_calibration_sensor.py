@@ -18,14 +18,22 @@ from custom_components.heating_curve_optimizer.const import (
 
 @pytest.fixture
 def mock_config_entry():
-    """Create a mock config entry."""
+    """Create a mock config entry.
+
+    area_m2/energy_label are zone-specific settings now (every zone,
+    including the first, is a subentry - see __init__.py's
+    _find_primary_zone_subentry), read by CalibrationSensor via
+    `runtime_data.heat_coordinator.config` rather than `entry.data`/
+    `.options` directly (see `_get_zone_value`).
+    """
     entry = MagicMock()
     entry.entry_id = "test_entry"
-    entry.data = {
+    entry.data = {}
+    entry.options = {}
+    entry.runtime_data.heat_coordinator.config = {
         CONF_AREA_M2: 159,
         CONF_ENERGY_LABEL: "A+",
     }
-    entry.options = {}
     return entry
 
 

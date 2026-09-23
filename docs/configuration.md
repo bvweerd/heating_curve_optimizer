@@ -4,7 +4,10 @@ This guide explains all configuration options for the Heating Curve Optimizer in
 
 ## Configuration Flow
 
-The integration uses a multi-step configuration wizard:
+The integration uses a multi-step configuration wizard for the shared,
+whole-house settings (sensors, sources, price settings), followed by at
+least one heating-zone subentry added from the integration page for the
+building/room settings:
 
 ```mermaid
 graph LR
@@ -12,12 +15,23 @@ graph LR
     B --> C[Source Selection]
     C --> D[Price Settings]
     D --> E[Complete]
+    E --> F["Add heating zone(s)"]
 
     style A fill:#4caf50,stroke:#333,stroke-width:2px
-    style E fill:#4caf50,stroke:#333,stroke-width:2px
+    style F fill:#4caf50,stroke:#333,stroke-width:2px
 ```
 
-## Step 1: Basic Settings
+!!! note "Every heating zone, including the first, is a subentry"
+    Area, energy label, glazing, ventilation, thermal mass, emitter type,
+    target indoor temperature and its indoor temperature sensor are **not**
+    part of the setup wizard - they're configured per heating zone, via
+    **Add heating zone** on the integration's device page after setup
+    (Settings → Devices & services → Heating Curve Optimizer → "+"). A home
+    with one heating zone still needs that one subentry added; nothing
+    works before it exists. The field descriptions below still apply -
+    they've just moved from the wizard into that subentry form.
+
+## Heating Zone Settings
 
 ### Building Parameters
 
@@ -183,7 +197,7 @@ Heat pump type guidelines:
 !!! warning "Performance Consideration"
     Planning window of 24 hours with 15-minute time base creates 96 time steps, which may be computationally intensive.
 
-## Step 2: Source Selection
+## Wizard Step 1: Source Selection
 
 Select the sensors that provide power consumption and production data.
 
@@ -210,7 +224,7 @@ Select the sensors that provide power consumption and production data.
     - Net price calculation (consumption price - production price)
     - Optimized heating during peak production
 
-## Step 3: Price Settings
+## Wizard Step 2: Price Settings
 
 Configure electricity price sensors for optimization.
 
@@ -367,10 +381,10 @@ Production Price: (none)
 
 ## Advanced: Thermal Optimizer Settings
 
-Beyond the setup wizard above, a few settings refine the thermal
-optimizer or enable the real-time PV-surplus controller
-(`grid_import_sensor`/`grid_export_sensor`): `thermal_mass_class`,
-`emitter_type`, `grid_import_sensor`, `grid_export_sensor`. See
+A few settings refine the thermal optimizer or enable the real-time
+PV-surplus controller. `grid_import_sensor`/`grid_export_sensor` are in
+the setup wizard's Basic Settings step; `thermal_mass_class`/
+`emitter_type` are per heating zone (see "Add heating zone" above). See
 [Configuration Reference](reference/configuration.md#thermal-optimizer-parameters)
 for the full parameter table, valid values and what each one changes.
 

@@ -57,7 +57,8 @@ from .const import (
     CONF_GLASS_U_VALUE,
     CONF_GLASS_WEST_M2,
     CONF_INDOOR_TEMPERATURE_SENSOR,
-    CONF_INDOOR_TEMP_HYSTERESIS,
+    CONF_INDOOR_TEMP_HYSTERESIS_LOWER,
+    CONF_INDOOR_TEMP_HYSTERESIS_UPPER,
     CONF_OFFSET_DELTA_T,
     CONF_PLANNING_WINDOW,
     CONF_TARGET_INDOOR_TEMP,
@@ -88,7 +89,8 @@ from .const import (
     CONF_CEILING_HEIGHT,
     CONF_THERMAL_MASS_CLASS,
     CONF_EMITTER_TYPE,
-    DEFAULT_INDOOR_TEMP_HYSTERESIS,
+    DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER,
+    DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER,
     DEFAULT_K_FACTOR,
     DEFAULT_OFFSET_DELTA_T,
     DEFAULT_PV_TILT,
@@ -167,10 +169,12 @@ def _build_zone_subentry_schema(
 ) -> vol.Schema:
     """Build the schema for a heating-zone subentry (phase 5c, REDESIGN.md).
 
-    Deliberately narrow: only what plausibly differs *between rooms* in the
-    same home (floor area, insulation, its own thermostat, its own target
-    temperature). Price sensor, heating curve limits and heat pump
-    parameters are shared from the main entry - see const.py's
+    Every heating zone - including what used to be the implicit "zone 1"
+    baked into the main entry's own data - is configured the same way,
+    through this schema: floor area, insulation/envelope, ventilation,
+    thermal mass, emitter type, its own thermostat/target temperature and
+    comfort band. Price sensor, heating curve limits and heat pump
+    parameters remain shared from the main entry - see const.py's
     ZONE_SUBENTRY_TYPE comment.
     """
     defaults = defaults or {}
@@ -192,11 +196,79 @@ def _build_zone_subentry_schema(
                 }
             ),
             vol.Optional(
+                CONF_GLASS_EAST_M2, default=defaults.get(CONF_GLASS_EAST_M2, 0.0)
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_GLASS_WEST_M2, default=defaults.get(CONF_GLASS_WEST_M2, 0.0)
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_GLASS_SOUTH_M2, default=defaults.get(CONF_GLASS_SOUTH_M2, 0.0)
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_GLASS_U_VALUE, default=defaults.get(CONF_GLASS_U_VALUE, 1.2)
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_VENTILATION_TYPE,
+                default=defaults.get(CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE),
+            ): selector(
+                {
+                    "select": {
+                        "options": list(VENTILATION_TYPES),
+                        "mode": "dropdown",
+                        "translation_key": "ventilation_type",
+                    }
+                }
+            ),
+            vol.Optional(
+                CONF_CEILING_HEIGHT,
+                default=defaults.get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_THERMAL_MASS_CLASS,
+                default=defaults.get(
+                    CONF_THERMAL_MASS_CLASS, DEFAULT_THERMAL_MASS_CLASS
+                ),
+            ): selector(
+                {
+                    "select": {
+                        "options": list(THERMAL_MASS_WH_PER_M2_K),
+                        "mode": "dropdown",
+                        "translation_key": "thermal_mass_class",
+                    }
+                }
+            ),
+            vol.Optional(
+                CONF_EMITTER_TYPE,
+                default=defaults.get(CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE),
+            ): selector(
+                {
+                    "select": {
+                        "options": list(EMITTER_EXPONENT_MAP),
+                        "mode": "dropdown",
+                        "translation_key": "emitter_type",
+                    }
+                }
+            ),
+            vol.Optional(
                 CONF_TARGET_INDOOR_TEMP,
                 default=defaults.get(
                     CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP
                 ),
             ): vol.Coerce(float),
+            vol.Optional(
+                CONF_INDOOR_TEMP_HYSTERESIS_LOWER,
+                default=defaults.get(
+                    CONF_INDOOR_TEMP_HYSTERESIS_LOWER,
+                    DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER,
+                ),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=2.0)),
+            vol.Optional(
+                CONF_INDOOR_TEMP_HYSTERESIS_UPPER,
+                default=defaults.get(
+                    CONF_INDOOR_TEMP_HYSTERESIS_UPPER,
+                    DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER,
+                ),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=2.0)),
             vol.Optional(
                 CONF_INDOOR_TEMPERATURE_SENSOR,
                 default=defaults.get(CONF_INDOOR_TEMPERATURE_SENSOR),
@@ -219,8 +291,34 @@ def _validate_zone_subentry(user_input: dict[str, Any]) -> dict[str, Any]:
         "name": name,
         CONF_AREA_M2: area_m2,
         CONF_ENERGY_LABEL: user_input[CONF_ENERGY_LABEL],
+        CONF_GLASS_EAST_M2: float(user_input.get(CONF_GLASS_EAST_M2, 0.0)),
+        CONF_GLASS_WEST_M2: float(user_input.get(CONF_GLASS_WEST_M2, 0.0)),
+        CONF_GLASS_SOUTH_M2: float(user_input.get(CONF_GLASS_SOUTH_M2, 0.0)),
+        CONF_GLASS_U_VALUE: float(user_input.get(CONF_GLASS_U_VALUE, 1.2)),
+        CONF_VENTILATION_TYPE: user_input.get(
+            CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE
+        ),
+        CONF_CEILING_HEIGHT: float(
+            user_input.get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT)
+        ),
+        CONF_THERMAL_MASS_CLASS: user_input.get(
+            CONF_THERMAL_MASS_CLASS, DEFAULT_THERMAL_MASS_CLASS
+        ),
+        CONF_EMITTER_TYPE: user_input.get(CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE),
         CONF_TARGET_INDOOR_TEMP: float(
             user_input.get(CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP)
+        ),
+        CONF_INDOOR_TEMP_HYSTERESIS_LOWER: float(
+            user_input.get(
+                CONF_INDOOR_TEMP_HYSTERESIS_LOWER,
+                DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER,
+            )
+        ),
+        CONF_INDOOR_TEMP_HYSTERESIS_UPPER: float(
+            user_input.get(
+                CONF_INDOOR_TEMP_HYSTERESIS_UPPER,
+                DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER,
+            )
         ),
         CONF_INDOOR_TEMPERATURE_SENSOR: user_input.get(CONF_INDOOR_TEMPERATURE_SENSOR),
     }
@@ -649,9 +747,11 @@ def _extract_sectioned_data(user_input: dict[str, Any]) -> dict[str, Any]:
     `_build_sectioned_schema`) back into a flat dict keyed by the same
     strings as both the CONF_* constants and this flow's own `self.*`
     attribute names (a 1:1 naming convention already used throughout this
-    file, e.g. `CONF_AREA_M2 == "area_m2" == self.area_m2`) - the caller
+    file, e.g. `CONF_K_FACTOR == "k_factor" == self.k_factor`) - the caller
     applies it with `for key, value in flat.items(): setattr(self, key,
-    value)`.
+    value)`. Only shared/infra fields - every zone's own settings (area,
+    envelope, ventilation, thermal mass, emitter type, target temperature,
+    hysteresis, indoor sensor) are collected via a zone subentry instead.
 
     Mirrors `_apply_basic_input`/`_apply_heating_curve_input`'s coercion
     and defaulting exactly, just reading from nested per-section dicts
@@ -664,31 +764,13 @@ def _extract_sectioned_data(user_input: dict[str, Any]) -> dict[str, Any]:
     at once and has no single corresponding `self` attribute.
     """
     building = user_input.get("building", {})
-    envelope = user_input.get("envelope", {})
     sensors = user_input.get("sensors", {})
     curve = user_input.get("heat_pump_and_curve", {})
     advanced = user_input.get("advanced", {})
 
     return {
-        CONF_AREA_M2: float(building[CONF_AREA_M2]),
-        CONF_ENERGY_LABEL: building[CONF_ENERGY_LABEL],
         CONF_CONSUMPTION_PRICE_SENSOR: building[CONF_CONSUMPTION_PRICE_SENSOR],
         CONF_PRODUCTION_PRICE_SENSOR: building[CONF_PRODUCTION_PRICE_SENSOR],
-        CONF_GLASS_EAST_M2: float(envelope.get(CONF_GLASS_EAST_M2, 0)),
-        CONF_GLASS_WEST_M2: float(envelope.get(CONF_GLASS_WEST_M2, 0)),
-        CONF_GLASS_SOUTH_M2: float(envelope.get(CONF_GLASS_SOUTH_M2, 0)),
-        CONF_GLASS_U_VALUE: float(envelope.get(CONF_GLASS_U_VALUE, 1.2)),
-        CONF_VENTILATION_TYPE: envelope.get(
-            CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE
-        ),
-        CONF_CEILING_HEIGHT: float(
-            envelope.get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT)
-        ),
-        CONF_THERMAL_MASS_CLASS: envelope.get(
-            CONF_THERMAL_MASS_CLASS, DEFAULT_THERMAL_MASS_CLASS
-        ),
-        CONF_EMITTER_TYPE: envelope.get(CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE),
-        CONF_INDOOR_TEMPERATURE_SENSOR: sensors.get(CONF_INDOOR_TEMPERATURE_SENSOR),
         CONF_POWER_CONSUMPTION: sensors.get(CONF_POWER_CONSUMPTION),
         CONF_SUPPLY_TEMPERATURE_SENSOR: sensors.get(CONF_SUPPLY_TEMPERATURE_SENSOR),
         CONF_GRID_IMPORT_SENSOR: sensors.get(CONF_GRID_IMPORT_SENSOR),
@@ -723,12 +805,6 @@ def _extract_sectioned_data(user_input: dict[str, Any]) -> dict[str, Any]:
             advanced.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
         ),
         CONF_TIME_BASE: int(advanced.get(CONF_TIME_BASE, DEFAULT_TIME_BASE)),
-        CONF_TARGET_INDOOR_TEMP: float(
-            advanced.get(CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP)
-        ),
-        CONF_INDOOR_TEMP_HYSTERESIS: float(
-            advanced.get(CONF_INDOOR_TEMP_HYSTERESIS, DEFAULT_INDOOR_TEMP_HYSTERESIS)
-        ),
     }
 
 
@@ -784,18 +860,6 @@ def _build_sectioned_schema(
 
     building_schema = vol.Schema(
         {
-            vol.Required(CONF_AREA_M2, description=sv(CONF_AREA_M2)): vol.Coerce(float),
-            vol.Required(
-                CONF_ENERGY_LABEL, description=sv(CONF_ENERGY_LABEL)
-            ): selector(
-                {
-                    "select": {
-                        "options": ENERGY_LABELS,
-                        "mode": "dropdown",
-                        "custom_value": False,
-                    }
-                }
-            ),
             vol.Required(
                 CONF_CONSUMPTION_PRICE_SENSOR,
                 description=sv(CONF_CONSUMPTION_PRICE_SENSOR),
@@ -817,63 +881,6 @@ def _build_sectioned_schema(
                         "options": price_sensors,
                         "multiple": False,
                         "mode": "dropdown",
-                    }
-                }
-            ),
-        }
-    )
-
-    envelope_schema = vol.Schema(
-        {
-            vol.Optional(
-                CONF_GLASS_EAST_M2, description=sv(CONF_GLASS_EAST_M2, 0.0)
-            ): vol.Coerce(float),
-            vol.Optional(
-                CONF_GLASS_WEST_M2, description=sv(CONF_GLASS_WEST_M2, 0.0)
-            ): vol.Coerce(float),
-            vol.Optional(
-                CONF_GLASS_SOUTH_M2, description=sv(CONF_GLASS_SOUTH_M2, 0.0)
-            ): vol.Coerce(float),
-            vol.Optional(
-                CONF_GLASS_U_VALUE, description=sv(CONF_GLASS_U_VALUE, 1.2)
-            ): vol.Coerce(float),
-            vol.Optional(
-                CONF_VENTILATION_TYPE,
-                description=sv(CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE),
-            ): selector(
-                {
-                    "select": {
-                        "options": list(VENTILATION_TYPES.keys()),
-                        "mode": "dropdown",
-                        "translation_key": "ventilation_type",
-                    }
-                }
-            ),
-            vol.Optional(
-                CONF_CEILING_HEIGHT,
-                description=sv(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT),
-            ): vol.Coerce(float),
-            vol.Optional(
-                CONF_THERMAL_MASS_CLASS,
-                description=sv(CONF_THERMAL_MASS_CLASS, DEFAULT_THERMAL_MASS_CLASS),
-            ): selector(
-                {
-                    "select": {
-                        "options": list(THERMAL_MASS_WH_PER_M2_K.keys()),
-                        "mode": "dropdown",
-                        "translation_key": "thermal_mass_class",
-                    }
-                }
-            ),
-            vol.Optional(
-                CONF_EMITTER_TYPE,
-                description=sv(CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE),
-            ): selector(
-                {
-                    "select": {
-                        "options": list(EMITTER_EXPONENT_MAP.keys()),
-                        "mode": "dropdown",
-                        "translation_key": "emitter_type",
                     }
                 }
             ),
@@ -902,18 +909,6 @@ def _build_sectioned_schema(
                     "select": {
                         "options": energy_sensors,
                         "multiple": True,
-                        "mode": "dropdown",
-                    }
-                }
-            ),
-            vol.Optional(
-                CONF_INDOOR_TEMPERATURE_SENSOR,
-                description=sv(CONF_INDOOR_TEMPERATURE_SENSOR),
-            ): selector(
-                {
-                    "select": {
-                        "options": temp_sensors,
-                        "multiple": False,
                         "mode": "dropdown",
                     }
                 }
@@ -1022,16 +1017,6 @@ def _build_sectioned_schema(
             vol.Optional(
                 CONF_TIME_BASE, description=sv(CONF_TIME_BASE, DEFAULT_TIME_BASE)
             ): vol.Coerce(int),
-            vol.Optional(
-                CONF_TARGET_INDOOR_TEMP,
-                description=sv(CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP),
-            ): vol.Coerce(float),
-            vol.Optional(
-                CONF_INDOOR_TEMP_HYSTERESIS,
-                description=sv(
-                    CONF_INDOOR_TEMP_HYSTERESIS, DEFAULT_INDOOR_TEMP_HYSTERESIS
-                ),
-            ): vol.Coerce(float),
         }
     )
 
@@ -1039,7 +1024,6 @@ def _build_sectioned_schema(
     return vol.Schema(
         {
             vol.Required("building"): _section(building_schema, {"collapsed": False}),
-            vol.Optional("envelope"): _section(envelope_schema, {"collapsed": True}),
             vol.Optional("sensors"): _section(sensors_schema, {"collapsed": True}),
             vol.Optional("heat_pump_and_curve"): _section(
                 curve_schema, {"collapsed": True}
@@ -1087,18 +1071,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.price_settings: dict[str, Any] = {}
         self.consumption_price_sensor: str | None = None
         self.production_price_sensor: str | None = None
-        self.area_m2: float | None = None
-        self.energy_label: str | None = None
-        self.glass_east_m2: float | None = None
-        self.glass_west_m2: float | None = None
-        self.glass_south_m2: float | None = None
-        self.glass_u_value: float | None = None
-        self.ventilation_type: str = DEFAULT_VENTILATION_TYPE
-        self.ceiling_height: float = DEFAULT_CEILING_HEIGHT
-        self.thermal_mass_class: str = DEFAULT_THERMAL_MASS_CLASS
-        self.emitter_type: str = DEFAULT_EMITTER_TYPE
         self.power_consumption: str | None = None
-        self.indoor_temperature_sensor: str | None = None
         self.supply_temperature_sensor: str | None = None
         self.grid_import_sensor: str | None = None
         self.grid_export_sensor: str | None = None
@@ -1108,8 +1081,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.cop_compensation_factor: float = DEFAULT_COP_COMPENSATION_FACTOR
         self.planning_window: int = DEFAULT_PLANNING_WINDOW
         self.time_base: int = DEFAULT_TIME_BASE
-        self.target_indoor_temp: float = DEFAULT_TARGET_INDOOR_TEMP
-        self.indoor_temp_hysteresis: float = DEFAULT_INDOOR_TEMP_HYSTERESIS
         self.offset_delta_t: int = DEFAULT_OFFSET_DELTA_T
         self.heat_curve_min_outdoor: float = -20.0
         self.heat_curve_max_outdoor: float = 15.0
@@ -1142,12 +1113,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if choice == STEP_PRICE_SETTINGS:
                 return await self.async_step_price_settings()
             if choice == "finish":
-                if self.area_m2 is None:
-                    return self.async_show_form(
-                        step_id="user",
-                        data_schema=self._schema_user(),
-                        errors={"base": "missing_basic"},
-                    )
                 if not self.configs:
                     return self.async_show_form(
                         step_id="user",
@@ -1236,23 +1201,19 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def _build_entry_data(
         self, consumption_price_sensor: str | None, production_price_sensor: str | None
     ) -> dict[str, Any]:
-        """Build entry data dictionary from instance attributes."""
+        """Build entry data dictionary from instance attributes.
+
+        Zone-specific settings (area, envelope, ventilation, thermal mass,
+        emitter type, target temperature, hysteresis, indoor sensor) are
+        deliberately not part of this dict - every heating zone, including
+        the first, is configured through a zone subentry
+        (HeatingZoneSubentryFlow) instead, never on the main entry itself.
+        """
         return {
             CONF_CONFIGS: self.configs,
             CONF_PRICE_SENSOR: consumption_price_sensor,
             CONF_CONSUMPTION_PRICE_SENSOR: consumption_price_sensor,
             CONF_PRODUCTION_PRICE_SENSOR: production_price_sensor,
-            CONF_AREA_M2: self.area_m2,
-            CONF_ENERGY_LABEL: self.energy_label,
-            CONF_GLASS_EAST_M2: self.glass_east_m2,
-            CONF_GLASS_WEST_M2: self.glass_west_m2,
-            CONF_GLASS_SOUTH_M2: self.glass_south_m2,
-            CONF_GLASS_U_VALUE: self.glass_u_value,
-            CONF_VENTILATION_TYPE: self.ventilation_type,
-            CONF_CEILING_HEIGHT: self.ceiling_height,
-            CONF_THERMAL_MASS_CLASS: self.thermal_mass_class,
-            CONF_EMITTER_TYPE: self.emitter_type,
-            CONF_INDOOR_TEMPERATURE_SENSOR: self.indoor_temperature_sensor,
             CONF_POWER_CONSUMPTION: self.power_consumption,
             CONF_SUPPLY_TEMPERATURE_SENSOR: self.supply_temperature_sensor,
             CONF_GRID_IMPORT_SENSOR: self.grid_import_sensor,
@@ -1263,8 +1224,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_COP_COMPENSATION_FACTOR: self.cop_compensation_factor,
             CONF_PLANNING_WINDOW: self.planning_window,
             CONF_TIME_BASE: self.time_base,
-            CONF_TARGET_INDOOR_TEMP: self.target_indoor_temp,
-            CONF_INDOOR_TEMP_HYSTERESIS: self.indoor_temp_hysteresis,
             CONF_OFFSET_DELTA_T: self.offset_delta_t,
             CONF_HEAT_CURVE_MIN_OUTDOOR: self.heat_curve_min_outdoor,
             CONF_HEAT_CURVE_MAX_OUTDOOR: self.heat_curve_max_outdoor,
@@ -1453,12 +1412,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             user_input.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
         )
         self.time_base = int(user_input.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
-        self.target_indoor_temp = float(
-            user_input.get(CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP)
-        )
-        self.indoor_temp_hysteresis = float(
-            user_input.get(CONF_INDOOR_TEMP_HYSTERESIS, DEFAULT_INDOOR_TEMP_HYSTERESIS)
-        )
         self.offset_delta_t = int(
             user_input.get(CONF_OFFSET_DELTA_T, DEFAULT_OFFSET_DELTA_T)
         )
@@ -1519,15 +1472,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     default=self.time_base or DEFAULT_TIME_BASE,
                 ): vol.Coerce(int),
                 vol.Optional(
-                    CONF_TARGET_INDOOR_TEMP,
-                    default=self.target_indoor_temp or DEFAULT_TARGET_INDOOR_TEMP,
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_INDOOR_TEMP_HYSTERESIS,
-                    default=self.indoor_temp_hysteresis
-                    or DEFAULT_INDOOR_TEMP_HYSTERESIS,
-                ): vol.Coerce(float),
-                vol.Optional(
                     CONF_OFFSET_DELTA_T,
                     default=self.offset_delta_t or DEFAULT_OFFSET_DELTA_T,
                 ): vol.Coerce(int),
@@ -1569,123 +1513,21 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     def _apply_basic_input(self, user_input: dict[str, Any]) -> None:
-        """Apply basic settings from user input."""
-        self.area_m2 = float(user_input[CONF_AREA_M2])
-        self.energy_label = user_input[CONF_ENERGY_LABEL]
-        self.glass_east_m2 = float(user_input.get(CONF_GLASS_EAST_M2, 0))
-        self.glass_west_m2 = float(user_input.get(CONF_GLASS_WEST_M2, 0))
-        self.glass_south_m2 = float(user_input.get(CONF_GLASS_SOUTH_M2, 0))
-        self.glass_u_value = float(user_input.get(CONF_GLASS_U_VALUE, 1.2))
-        self.ventilation_type = user_input.get(
-            CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE
-        )
-        self.ceiling_height = float(
-            user_input.get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT)
-        )
-        self.thermal_mass_class = user_input.get(
-            CONF_THERMAL_MASS_CLASS, DEFAULT_THERMAL_MASS_CLASS
-        )
-        self.emitter_type = user_input.get(CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE)
-        self.indoor_temperature_sensor = user_input.get(CONF_INDOOR_TEMPERATURE_SENSOR)
+        """Apply basic settings from user input.
+
+        Zone-specific fields (area, envelope, ventilation, thermal mass,
+        emitter type, indoor sensor) are collected via a zone subentry
+        instead - see HeatingZoneSubentryFlow.
+        """
         self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
         self.grid_import_sensor = user_input.get(CONF_GRID_IMPORT_SENSOR)
         self.grid_export_sensor = user_input.get(CONF_GRID_EXPORT_SENSOR)
 
-    def _build_basic_schema(
-        self,
-        power_sensors: list[str],
-        temp_sensors: list[str],
-        *,
-        with_defaults: bool = False,
-    ) -> vol.Schema:
-        """Build schema for basic settings."""
-        area_field = (
-            vol.Required(CONF_AREA_M2, default=self.area_m2)
-            if with_defaults
-            else vol.Required(CONF_AREA_M2)
-        )
-        label_field = (
-            vol.Required(CONF_ENERGY_LABEL, default=self.energy_label)
-            if with_defaults
-            else vol.Required(CONF_ENERGY_LABEL)
-        )
-
+    def _build_basic_schema(self, power_sensors: list[str]) -> vol.Schema:
+        """Build schema for basic settings (shared/infra sensors only -
+        zone-specific fields live in HeatingZoneSubentryFlow instead)."""
         return vol.Schema(
             {
-                area_field: vol.Coerce(float),
-                label_field: selector(
-                    {
-                        "select": {
-                            "options": ENERGY_LABELS,
-                            "mode": "dropdown",
-                            "custom_value": False,
-                        }
-                    }
-                ),
-                vol.Optional(
-                    CONF_GLASS_EAST_M2, default=self.glass_east_m2 or 0.0
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_GLASS_WEST_M2, default=self.glass_west_m2 or 0.0
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_GLASS_SOUTH_M2, default=self.glass_south_m2 or 0.0
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_GLASS_U_VALUE, default=self.glass_u_value or 1.2
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_VENTILATION_TYPE,
-                    default=self.ventilation_type or DEFAULT_VENTILATION_TYPE,
-                ): selector(
-                    {
-                        "select": {
-                            "options": list(VENTILATION_TYPES.keys()),
-                            "mode": "dropdown",
-                            "translation_key": "ventilation_type",
-                        }
-                    }
-                ),
-                vol.Optional(
-                    CONF_CEILING_HEIGHT,
-                    default=self.ceiling_height or DEFAULT_CEILING_HEIGHT,
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_THERMAL_MASS_CLASS,
-                    default=self.thermal_mass_class or DEFAULT_THERMAL_MASS_CLASS,
-                ): selector(
-                    {
-                        "select": {
-                            "options": list(THERMAL_MASS_WH_PER_M2_K.keys()),
-                            "mode": "dropdown",
-                            "translation_key": "thermal_mass_class",
-                        }
-                    }
-                ),
-                vol.Optional(
-                    CONF_EMITTER_TYPE,
-                    default=self.emitter_type or DEFAULT_EMITTER_TYPE,
-                ): selector(
-                    {
-                        "select": {
-                            "options": list(EMITTER_EXPONENT_MAP.keys()),
-                            "mode": "dropdown",
-                            "translation_key": "emitter_type",
-                        }
-                    }
-                ),
-                vol.Optional(
-                    CONF_INDOOR_TEMPERATURE_SENSOR,
-                    default=self.indoor_temperature_sensor,
-                ): selector(
-                    {
-                        "select": {
-                            "options": temp_sensors,
-                            "multiple": False,
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
                 vol.Optional(
                     CONF_POWER_CONSUMPTION, default=self.power_consumption
                 ): selector(
@@ -1732,8 +1574,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self.async_step_user()
 
         power_sensors = self._get_power_sensors()
-        temp_sensors = self._get_temperature_sensors()
-        schema = self._build_basic_schema(power_sensors, temp_sensors)
+        schema = self._build_basic_schema(power_sensors)
 
         return self.async_show_form(step_id=STEP_BASIC, data_schema=schema)
 
@@ -1871,19 +1712,6 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):  # ty
         def _get(key: str, default: Any = None) -> Any:
             return config_entry.options.get(key, config_entry.data.get(key, default))
 
-        self.area_m2 = _get(CONF_AREA_M2)
-        self.energy_label = _get(CONF_ENERGY_LABEL)
-        self.glass_east_m2 = _get(CONF_GLASS_EAST_M2)
-        self.glass_west_m2 = _get(CONF_GLASS_WEST_M2)
-        self.glass_south_m2 = _get(CONF_GLASS_SOUTH_M2)
-        self.glass_u_value = _get(CONF_GLASS_U_VALUE, 1.2)
-        self.ventilation_type = _get(CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE)
-        self.ceiling_height = _get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT)
-        self.thermal_mass_class = _get(
-            CONF_THERMAL_MASS_CLASS, DEFAULT_THERMAL_MASS_CLASS
-        )
-        self.emitter_type = _get(CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE)
-        self.indoor_temperature_sensor = _get(CONF_INDOOR_TEMPERATURE_SENSOR)
         self.power_consumption = _get(CONF_POWER_CONSUMPTION)
         self.supply_temperature_sensor = _get(CONF_SUPPLY_TEMPERATURE_SENSOR)
         self.grid_import_sensor = _get(CONF_GRID_IMPORT_SENSOR)
@@ -1898,12 +1726,6 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):  # ty
         )
         self.planning_window = _get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
         self.time_base = _get(CONF_TIME_BASE, DEFAULT_TIME_BASE)
-        self.target_indoor_temp = _get(
-            CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP
-        )
-        self.indoor_temp_hysteresis = _get(
-            CONF_INDOOR_TEMP_HYSTERESIS, DEFAULT_INDOOR_TEMP_HYSTERESIS
-        )
         self.offset_delta_t = _get(CONF_OFFSET_DELTA_T, DEFAULT_OFFSET_DELTA_T)
         self.heat_curve_min_outdoor = _get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
         self.heat_curve_max_outdoor = _get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
@@ -2026,12 +1848,6 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):  # ty
             if choice == STEP_PRICE_SETTINGS:
                 return await self.async_step_price_settings()
             if choice == "finish":
-                if self.area_m2 is None:
-                    return self.async_show_form(
-                        step_id="user",
-                        data_schema=self._schema_user(),
-                        errors={"base": "missing_basic"},
-                    )
                 if not self.configs:
                     return self.async_show_form(
                         step_id="user",
@@ -2090,10 +1906,7 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):  # ty
             return await self.async_step_user()
 
         power_sensors = self._get_power_sensors()
-        temp_sensors = self._get_temperature_sensors()
-        schema = self._build_basic_schema(
-            power_sensors, temp_sensors, with_defaults=True
-        )
+        schema = self._build_basic_schema(power_sensors)
 
         return self.async_show_form(step_id=STEP_BASIC, data_schema=schema)
 
