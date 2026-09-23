@@ -259,23 +259,28 @@ dp = {}  # (step, offset, cumulative_offset_sum) → (cost, parent_state, buffer
 
 ### `number.py` - Manual Control Entities
 
-Seven number entities for control and override:
+Three number entities for live temperature-setpoint control:
 
-**Temperature Setpoint Control**:
 1. **`TargetIndoorTemperatureNumber`**: Target indoor temperature (15-25°C, step 0.5°C)
-2. **`IndoorTempHysteresisNumber`**: Hysteresis band for heat demand (0.1-2.0°C, step 0.1°C)
+2. **`IndoorTempHysteresisLowerNumber`**: Hysteresis below target - heat pump ON (0.1-2.0°C, step 0.1°C)
+3. **`IndoorTempHysteresisUpperNumber`**: Hysteresis above target - heat pump OFF (0.1-2.0°C, step 0.1°C)
 
-**Heating Curve Override**:
-3. **`HeatingCurveOffsetNumber`**: Manual offset (-4 to +4°C)
-4. **`HeatCurveMinNumber`**: Min supply temp (20-45°C)
-5. **`HeatCurveMaxNumber`**: Max supply temp (35-60°C)
-6. **`HeatCurveMinOutdoorNumber`**: Min outdoor temp (-20 to 5°C)
-7. **`HeatCurveMaxOutdoorNumber`**: Max outdoor temp (5 to 20°C)
-
-All entities:
+All three:
 - Restore state on restart via `RestoreEntity`
 - Sync to `hass.data[DOMAIN]["runtime"]`
 - Trigger sensor recalculation on change
+
+**Heating curve bounds are config-flow-only, not number entities.** The
+manual offset and the heating curve's min/max supply/outdoor temperature
+bounds (`heating_curve_offset`, `heat_curve_min`, `heat_curve_max`,
+`heat_curve_min_outdoor`, `heat_curve_max_outdoor`) are set once via the
+setup wizard / options flow (`config_flow.py`'s heating-curve-settings
+step) and read from `ConfigEntry.data`/`.options` - there used to be five
+additional live number entities for these (`HeatingCurveOffsetNumber`,
+`HeatCurveMinNumber`, `HeatCurveMaxNumber`, `HeatCurveMinOutdoorNumber`,
+`HeatCurveMaxOutdoorNumber`), but they no longer exist in `number.py`; this
+section previously still described them, and `translations/en.json`/`nl.json`
+carried five now-removed orphaned `entity.number.*` keys for them.
 
 ### `binary_sensor.py` - Heat Demand Sensor
 

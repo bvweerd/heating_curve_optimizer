@@ -150,7 +150,7 @@ You should see **17 sensors**:
 | `heat_loss` | Numeric (kW) | Current heat loss |
 | `net_heat_loss` | Numeric (kW) | After solar gain |
 | `heating_curve_offset` | -4 to +4 | **Main optimization output** |
-| `current_electricity_price` | Numeric (€/kWh) | Current price |
+| `current_consumption_price` | Numeric (€/kWh) | Current price |
 
 !!! warning "Sensor Unavailable?"
     If sensors show "unavailable":
@@ -245,7 +245,7 @@ cards:
         name: Optimal Offset
       - entity: sensor.heating_curve_optimizer_heat_buffer
         name: Thermal Buffer
-      - entity: sensor.heating_curve_optimizer_current_electricity_price
+      - entity: sensor.heating_curve_optimizer_current_consumption_price
         name: Current Price
 
   - type: history-graph

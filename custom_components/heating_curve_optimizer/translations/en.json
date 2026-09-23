@@ -119,12 +119,6 @@
       "heating_curve_offset": {
         "name": "Heating curve offset"
       },
-      "heating_curve_min": {
-        "name": "Heating curve minimum (supply temp)"
-      },
-      "heating_curve_max": {
-        "name": "Heating curve maximum (supply temp)"
-      },
       "heat_curve_min_outdoor": {
         "name": "Heating curve outdoor temp minimum"
       },
@@ -145,11 +139,6 @@
       }
     },
     "sensor": {
-      "heat_pump_cop": {
-        "state": {
-          "formula": "COP = (base_cop + outdoor_temp_coefficient × T_outdoor − k_factor × (T_supply − 35)) × cop_compensation_factor"
-        }
-      },
       "heating_curve_offset": {
         "name": "Heating curve offset (optimized)"
       },
@@ -186,9 +175,6 @@
       "heat_buffer": {
         "name": "Heat buffer (energy storage)"
       },
-      "net_power_consumption": {
-        "name": "Net power consumption"
-      },
       "calibration": {
         "name": "Parameter Calibration"
       },
@@ -213,9 +199,6 @@
       "diagnostics": {
         "name": "Diagnostics"
       },
-      "current_electricity_price": {
-        "name": "Current electricity price"
-      },
       "heat_pump_thermal_power": {
         "name": "Heat pump thermal power"
       },
@@ -233,6 +216,9 @@
       },
       "gas_boiler_cost_savings": {
         "name": "Gas boiler cost savings"
+      },
+      "current_consumption_price": {
+        "name": "Current consumption price"
       }
     },
     "select": {

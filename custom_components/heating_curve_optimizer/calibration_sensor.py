@@ -93,6 +93,13 @@ class CalibrationSensor(BaseUtilitySensor):
             device=device,
             translation_key="calibration",
         )
+        # Opt-in diagnostic, matching sensor_thermal_calibration.py's newer,
+        # more clearly-labeled "Thermal calibration (experimental)" sibling:
+        # a derived "% match" score isn't self-explanatory to a casual user
+        # without reading the docs, and both sensors cover overlapping
+        # ground - only one needs to be on by default, and neither should
+        # be the default.
+        self._attr_entity_registry_enabled_default = False
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self.hass = hass
         self._entry = entry
@@ -113,6 +120,23 @@ class CalibrationSensor(BaseUtilitySensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra attributes."""
         return self._extra_attrs
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the calibration quality, or None while there isn't
+        enough history yet to compute one.
+
+        Overrides BaseUtilitySensor.native_value, whose `or 0.0` fallback
+        would otherwise collapse "not yet calculated" into the same 0.0
+        shown for a genuinely 0% calibration match - indistinguishable to
+        anyone just glancing at the state, and actively misleading on a
+        fresh install (reads as "badly miscalibrated" for the first few
+        days instead of "still gathering data"). The `status` attribute's
+        "Onvoldoende data voor kalibratie" fallback already explains this
+        in text; None here makes the primary state agree with it instead
+        of contradicting it.
+        """
+        return self._attr_native_value
 
     async def async_update(self) -> None:
         """Update the calibration sensor."""
@@ -188,20 +212,26 @@ class CalibrationSensor(BaseUtilitySensor):
                 calibration_quality = None
 
             self._attr_native_value = (
-                round(calibration_quality, 1) if calibration_quality else None
+                round(calibration_quality, 1)
+                if calibration_quality is not None
+                else None
             )
 
             # Build comprehensive attributes
             self._extra_attrs = {
                 "heat_loss_accuracy_pct": (
-                    round(heat_loss_accuracy, 1) if heat_loss_accuracy else None
+                    round(heat_loss_accuracy, 1)
+                    if heat_loss_accuracy is not None
+                    else None
                 ),
-                "cop_accuracy_pct": round(cop_accuracy, 1) if cop_accuracy else None,
+                "cop_accuracy_pct": (
+                    round(cop_accuracy, 1) if cop_accuracy is not None else None
+                ),
                 "storage_efficiency_current": DEFAULT_THERMAL_STORAGE_EFFICIENCY,
                 "storage_efficiency_recommended": storage_efficiency_recommendation,
                 # NEW: Graaddagen analysis results
                 "measured_u_value": (
-                    round(measured_u_value, 2) if measured_u_value else None
+                    round(measured_u_value, 2) if measured_u_value is not None else None
                 ),
                 "recommended_energy_label": energy_label_recommendation,
                 "current_energy_label": (
@@ -238,6 +268,7 @@ class CalibrationSensor(BaseUtilitySensor):
                     storage_efficiency_recommendation,
                     energy_label_recommendation,
                     trend_analysis,
+                    calibration_quality,
                 ),
             }
 
@@ -666,6 +697,7 @@ class CalibrationSensor(BaseUtilitySensor):
         storage_recommendation: float | None,
         energy_label_recommendation: str | None = None,
         trend_analysis: dict[str, Any] | None = None,
+        calibration_quality: float | None = None,
     ) -> str:
         """Generate human-readable status message."""
         messages = []
@@ -726,5 +758,13 @@ class CalibrationSensor(BaseUtilitySensor):
 
         if not messages:
             return "Onvoldoende data voor kalibratie"
+
+        # The primary state (this sensor's %) is calibration_quality itself,
+        # not any of the sub-scores above - if it's still None, the status
+        # text must say so up front, otherwise a message list built purely
+        # from side metrics like "Thermische opslag: OK" reads as if
+        # calibration is complete while the main state shows "Unknown".
+        if calibration_quality is None:
+            messages.insert(0, "Kalibratiescore: nog onvoldoende data")
 
         return ", ".join(messages)

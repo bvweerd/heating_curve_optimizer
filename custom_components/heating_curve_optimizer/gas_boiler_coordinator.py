@@ -42,7 +42,6 @@ from .coordinator import (
 )
 from .gas_boiler_model import GasBoilerConfig, compare_heat_pump_and_gas
 from .heatpump_model import HeatPumpConfig
-from .helpers import extract_price_forecast_with_interval
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -103,15 +102,17 @@ class GasBoilerCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA b
         """Read the current gas price. No forecast support (see module
         docstring's design note): gas contracts reprice far less often
         than electricity, so only the current value is ever consumed even
-        when the sensor happens to carry forecast attributes."""
+        when the sensor happens to carry forecast attributes. Always reads
+        `state.state` directly for that reason - a forecast array's [0] is
+        the price at the start of the forecast window (e.g. midnight), not
+        "now", so it must never be used as a stand-in for the current price
+        (matches coordinator.py's own `current_price = float(price_state.state)`
+        convention for the same "current price" use case)."""
         if not self._gas_price_sensor:
             return None
         state = self.hass.states.get(self._gas_price_sensor)
         if not state or state.state in ("unknown", "unavailable"):
             return None
-        forecast, _ = extract_price_forecast_with_interval(state)
-        if forecast:
-            return forecast[0]
         try:
             return float(state.state)
         except (ValueError, TypeError):

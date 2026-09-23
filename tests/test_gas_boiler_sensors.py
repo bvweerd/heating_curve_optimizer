@@ -1,6 +1,9 @@
 """Tests for the hybrid gas-boiler cost comparison entities
 (sensor/gas_boiler/*.py and binary_sensor.py's GasBoilerPreferredBinarySensor)."""
 
+import json
+from pathlib import Path
+
 import pytest
 from unittest.mock import MagicMock
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -190,3 +193,34 @@ async def test_binary_sensor_unavailable_when_data_none(hass, device_info):
     )
     assert sensor.available is False
     assert sensor.is_on is False
+
+
+@pytest.mark.parametrize(
+    "sensor_cls,name",
+    [
+        (GasBoilerHeatPumpCostSensor, "Gas Boiler Heat Pump Cost"),
+        (GasBoilerGasCostSensor, "Gas Boiler Gas Cost"),
+        (GasBoilerCostSavingsSensor, "Gas Boiler Cost Savings"),
+    ],
+)
+def test_translation_key_matches_the_actual_sensor_init_name(sensor_cls, name):
+    """Regression test for a real bug an ultrareview caught: these sensors
+    derive translation_key from name.lower().replace(" ", "_")
+    (sensor/gas_boiler/base.py) - if sensor/__init__.py's async_setup_entry
+    ever passes a different `name=` than what translations/en.json's
+    entity.sensor key was written for, the translation silently stops
+    resolving (HA falls back to the literal `name=` string, so nothing
+    crashes - Dutch users would just silently see the English fallback
+    name instead of the nl.json translation). This locks the two together:
+    the `name` sensor/__init__.py actually passes must derive the exact
+    translation_key entity.sensor already has an entry for."""
+    derived_key = name.lower().replace(" ", "_")
+    en_path = (
+        Path(__file__).parent.parent
+        / "custom_components/heating_curve_optimizer/translations/en.json"
+    )
+    translations = json.loads(en_path.read_text())
+    assert derived_key in translations["entity"]["sensor"], (
+        f"{sensor_cls.__name__}: translation_key '{derived_key}' (derived from "
+        f"name={name!r}) has no entity.sensor.{derived_key} entry in en.json"
+    )

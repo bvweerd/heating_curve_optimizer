@@ -59,8 +59,66 @@ async def test_calibration_sensor_init(
 
     assert sensor.name == "Test Calibration"
     assert sensor.unique_id == "test_calibration"
+    assert sensor.entity_registry_enabled_default is False
     assert sensor.heat_loss_sensor == "sensor.heat_loss"
     assert sensor.thermal_power_sensor == "sensor.thermal_power"
+
+
+@pytest.mark.asyncio
+async def test_native_value_is_none_not_zero_when_no_data_yet(
+    hass: HomeAssistant, mock_config_entry, mock_device_info
+):
+    """Regression test: before enough history exists, native_value must be
+    None (shown as "Unknown"), never 0.0 - a real 0% calibration match and
+    "nothing calculated yet" must not be indistinguishable on the primary
+    state. None of the source sensors exist in `hass.states`, so every
+    validation step returns None and calibration_quality stays None."""
+    sensor = CalibrationSensor(
+        hass=hass,
+        name="Test Calibration",
+        unique_id="test_calibration",
+        device=mock_device_info,
+        entry=mock_config_entry,
+        heat_loss_sensor="sensor.does_not_exist",
+        thermal_power_sensor="sensor.does_not_exist_either",
+        outdoor_sensor=None,
+        indoor_sensor=None,
+        supply_temp_sensor=None,
+        cop_sensor=None,
+    )
+
+    await sensor.async_update()
+
+    assert sensor.native_value is None
+    assert sensor.available is True
+
+
+def test_status_message_flags_missing_calibration_quality(
+    hass: HomeAssistant, mock_config_entry, mock_device_info
+):
+    """Regression test: when calibration_quality (the primary state) is
+    None but a side metric like storage efficiency did produce a message,
+    the status text must say the primary score is still missing - a
+    message list built purely from side metrics ("Thermische opslag: OK")
+    must not read as if calibration is complete while the main state is
+    "Unknown"."""
+    sensor = CalibrationSensor(
+        hass=hass,
+        name="Test Calibration",
+        unique_id="test_calibration",
+        device=mock_device_info,
+        entry=mock_config_entry,
+    )
+
+    status = sensor._get_status_message(
+        heat_loss_accuracy=None,
+        cop_accuracy=None,
+        storage_recommendation=0.20,
+        calibration_quality=None,
+    )
+
+    assert status.startswith("Kalibratiescore: nog onvoldoende data")
+    assert "Thermische opslag" in status
 
 
 @pytest.mark.asyncio
