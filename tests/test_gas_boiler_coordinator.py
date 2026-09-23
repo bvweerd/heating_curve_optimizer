@@ -79,6 +79,26 @@ async def test_computes_correct_comparison(hass: HomeAssistant):
 
 
 @pytest.mark.asyncio
+async def test_gas_price_ignores_forecast_attribute_uses_state(hass: HomeAssistant):
+    """Regression test: the gas price must always come from state.state,
+    never from a forecast_prices[0] the sensor happens to also carry -
+    forecast[0] is the price at the start of the forecast window (e.g.
+    midnight), not "now", and this feature is documented as instantaneous-
+    only (module docstring, docs/reference/configuration.md)."""
+    hass.states.async_set(
+        "sensor.gas_price",
+        "1.20",
+        {"forecast_prices": [0.10, 0.20, 0.30]},
+    )
+    hass.states.async_set("sensor.elec_price", "0.35")
+    coordinator = _make_coordinator(hass)
+
+    data = await coordinator._async_update_data()
+
+    assert data["gas_price_eur_per_m3"] == pytest.approx(1.20)
+
+
+@pytest.mark.asyncio
 async def test_prefer_gas_boiler_true_when_needed_and_cheaper(hass: HomeAssistant):
     """A high electricity price with a low gas price and heat pump
     confirmed actively running -> prefer_gas_boiler must be True."""
