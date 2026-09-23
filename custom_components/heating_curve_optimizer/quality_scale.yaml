@@ -350,7 +350,7 @@ rules:
       same way HA does at runtime, and cross-checked against
       translations/en.json's entity.<platform>.* keys. Found and fixed 7
       real gaps: outdoor_temperature, quadratic_cop, diagnostics,
-      current_electricity_price, heat_pump_thermal_power,
+      current_consumption_price, heat_pump_thermal_power,
       heat_pump_energy_daily, net_heat_loss_energy_daily - these sensors
       were rendering without a proper translated name. Also found (left
       alone - out of scope, not a coverage gap) an orphaned

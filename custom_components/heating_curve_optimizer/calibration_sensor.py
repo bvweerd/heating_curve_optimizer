@@ -93,6 +93,13 @@ class CalibrationSensor(BaseUtilitySensor):
             device=device,
             translation_key="calibration",
         )
+        # Opt-in diagnostic, matching sensor_thermal_calibration.py's newer,
+        # more clearly-labeled "Thermal calibration (experimental)" sibling:
+        # a derived "% match" score isn't self-explanatory to a casual user
+        # without reading the docs, and both sensors cover overlapping
+        # ground - only one needs to be on by default, and neither should
+        # be the default.
+        self._attr_entity_registry_enabled_default = False
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self.hass = hass
         self._entry = entry
@@ -261,6 +268,7 @@ class CalibrationSensor(BaseUtilitySensor):
                     storage_efficiency_recommendation,
                     energy_label_recommendation,
                     trend_analysis,
+                    calibration_quality,
                 ),
             }
 
@@ -689,6 +697,7 @@ class CalibrationSensor(BaseUtilitySensor):
         storage_recommendation: float | None,
         energy_label_recommendation: str | None = None,
         trend_analysis: dict[str, Any] | None = None,
+        calibration_quality: float | None = None,
     ) -> str:
         """Generate human-readable status message."""
         messages = []
@@ -749,5 +758,13 @@ class CalibrationSensor(BaseUtilitySensor):
 
         if not messages:
             return "Onvoldoende data voor kalibratie"
+
+        # The primary state (this sensor's %) is calibration_quality itself,
+        # not any of the sub-scores above - if it's still None, the status
+        # text must say so up front, otherwise a message list built purely
+        # from side metrics like "Thermische opslag: OK" reads as if
+        # calibration is complete while the main state shows "Unknown".
+        if calibration_quality is None:
+            messages.insert(0, "Kalibratiescore: nog onvoldoende data")
 
         return ", ".join(messages)

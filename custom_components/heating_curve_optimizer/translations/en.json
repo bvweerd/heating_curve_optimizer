@@ -199,9 +199,6 @@
       "diagnostics": {
         "name": "Diagnostics"
       },
-      "current_electricity_price": {
-        "name": "Current electricity price"
-      },
       "heat_pump_thermal_power": {
         "name": "Heat pump thermal power"
       },
@@ -219,6 +216,9 @@
       },
       "gas_boiler_cost_savings": {
         "name": "Gas boiler cost savings"
+      },
+      "current_consumption_price": {
+        "name": "Current consumption price"
       }
     },
     "select": {

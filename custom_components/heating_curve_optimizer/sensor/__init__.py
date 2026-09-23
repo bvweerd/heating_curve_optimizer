@@ -452,7 +452,13 @@ def _setup_event_driven_sensors(
         entities.append(
             CurrentElectricityPriceSensor(
                 hass=hass,
-                name="Current Electricity Price",
+                # Always mirrors consumption_price_sensor specifically (see
+                # source_type=SOURCE_TYPE_CONSUMPTION below) - named to say
+                # so explicitly, since this integration has no separate
+                # sensor for the production/feed-in price and a generic
+                # "Current Electricity Price" name would leave a user with
+                # asymmetric buy/sell tariffs guessing which one this is.
+                name="Current Consumption Price",
                 unique_id=f"{entry.entry_id}_current_electricity_price",
                 price_sensor=consumption_price_sensor,
                 source_type=SOURCE_TYPE_CONSUMPTION,

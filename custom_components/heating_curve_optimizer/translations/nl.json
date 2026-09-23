@@ -199,9 +199,6 @@
       "diagnostics": {
         "name": "Diagnostiek"
       },
-      "current_electricity_price": {
-        "name": "Huidige elektriciteitsprijs"
-      },
       "heat_pump_thermal_power": {
         "name": "Thermisch vermogen warmtepomp"
       },
@@ -219,6 +216,9 @@
       },
       "gas_boiler_cost_savings": {
         "name": "Besparing gas-cv"
+      },
+      "current_consumption_price": {
+        "name": "Huidige verbruiksprijs"
       }
     },
     "select": {
