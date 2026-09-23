@@ -15,13 +15,28 @@ from custom_components.heating_curve_optimizer import (
     async_unload_entry,
     _update_listener,
 )
-from custom_components.heating_curve_optimizer.const import DOMAIN, PLATFORMS
+from custom_components.heating_curve_optimizer.const import (
+    DOMAIN,
+    PLATFORMS,
+    ZONE_SUBENTRY_TYPE,
+)
 
 
 def _mock_coordinator() -> MagicMock:
     coordinator = MagicMock()
     coordinator.async_shutdown = AsyncMock()
     return coordinator
+
+
+def _zone_subentry(title: str = "Living room", **data: object) -> MagicMock:
+    """A mock ZONE_SUBENTRY_TYPE subentry - the primary-zone-selection
+    logic (_find_primary_zone_subentry) only reads `.subentry_type`,
+    `.title` and `.data`, the same shape every real HA subentry has."""
+    subentry = MagicMock()
+    subentry.subentry_type = ZONE_SUBENTRY_TYPE
+    subentry.title = title
+    subentry.data = {"area_m2": 20.0, "energy_label": "C", **data}
+    return subentry
 
 
 def _make_runtime_data(**overrides) -> HeatingCurveOptimizerData:
@@ -53,14 +68,13 @@ async def test_async_setup_entry(hass: HomeAssistant):
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
-            "area_m2": 150,
-            "energy_label": "C",
             "latitude": 52.0,
             "longitude": 5.0,
         },
         options={},
     )
     entry.add_to_hass(hass)
+    entry.subentries = {"zone1": _zone_subentry()}
 
     # Mock coordinators
     with patch(
@@ -296,6 +310,140 @@ async def test_async_setup_entry_merges_options_and_data(hass: HomeAssistant):
 
 
 @pytest.mark.asyncio
+async def test_async_setup_entry_zero_zones_leaves_coordinators_none(
+    hass: HomeAssistant,
+):
+    """No heating-zone subentry configured yet is a valid, if useless,
+    state (matches battery_controller's own "zero batteries" precedent) -
+    setup must not raise, `device` must still exist so the user has
+    somewhere to add their first zone from, but heat_coordinator/
+    optimization_coordinator stay None since there is no zone to build
+    them from."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"latitude": 52.0, "longitude": 5.0},
+        options={},
+    )
+    entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.heating_curve_optimizer.WeatherDataCoordinator"
+    ) as mock_weather, patch.object(
+        hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
+    ):
+        weather_instance = MagicMock()
+        weather_instance.async_config_entry_first_refresh = AsyncMock()
+        mock_weather.return_value = weather_instance
+
+        result = await async_setup_entry(hass, entry)
+
+        assert result is True
+        assert entry.runtime_data.heat_coordinator is None
+        assert entry.runtime_data.optimization_coordinator is None
+        assert entry.runtime_data.device is not None
+        assert entry.runtime_data.zones == {}
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_one_zone_becomes_primary_with_entry_identity(
+    hass: HomeAssistant,
+):
+    """A single zone subentry becomes the primary zone and keeps the
+    entry's own (non-zone-suffixed) identity - unique_ids/calibration
+    storage keys stay exactly as they were before this zone lived in a
+    subentry."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"latitude": 52.0, "longitude": 5.0},
+        options={},
+    )
+    entry.add_to_hass(hass)
+    entry.subentries = {"zone1": _zone_subentry(area_m2=42.0)}
+
+    with patch(
+        "custom_components.heating_curve_optimizer.WeatherDataCoordinator"
+    ) as mock_weather, patch(
+        "custom_components.heating_curve_optimizer.HeatCalculationCoordinator"
+    ) as mock_heat, patch(
+        "custom_components.heating_curve_optimizer.OptimizationCoordinator"
+    ) as mock_opt, patch.object(
+        hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
+    ):
+        weather_instance = MagicMock()
+        weather_instance.async_config_entry_first_refresh = AsyncMock()
+        mock_weather.return_value = weather_instance
+
+        heat_instance = MagicMock()
+        heat_instance.async_setup = AsyncMock()
+        heat_instance.async_config_entry_first_refresh = AsyncMock()
+        mock_heat.return_value = heat_instance
+
+        opt_instance = MagicMock()
+        opt_instance.async_setup = AsyncMock()
+        mock_opt.return_value = opt_instance
+
+        await async_setup_entry(hass, entry)
+
+        assert entry.runtime_data.heat_coordinator is heat_instance
+        assert entry.runtime_data.optimization_coordinator is opt_instance
+        # entry.entry_id, not a zone-suffixed one:
+        call_args = mock_heat.call_args
+        assert call_args.args[0] is hass
+        assert call_args.args[1] is weather_instance
+        assert call_args.args[2]["area_m2"] == 42.0
+        assert call_args.args[3] == entry.entry_id
+        # The primary zone must not also appear in the "extra zones" loop.
+        assert entry.runtime_data.zones == {}
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_second_zone_goes_through_extra_zone_loop(
+    hass: HomeAssistant,
+):
+    """The first zone subentry becomes primary; a second one goes through
+    the ordinary "extra zone" loop, unchanged - its own suffixed identity,
+    its own device, its own coordinator pair."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"latitude": 52.0, "longitude": 5.0},
+        options={},
+    )
+    entry.add_to_hass(hass)
+    entry.subentries = {
+        "zone1": _zone_subentry(title="Living room"),
+        "zone2": _zone_subentry(title="Bedroom"),
+    }
+
+    with patch(
+        "custom_components.heating_curve_optimizer.WeatherDataCoordinator"
+    ) as mock_weather, patch(
+        "custom_components.heating_curve_optimizer.HeatCalculationCoordinator"
+    ) as mock_heat, patch(
+        "custom_components.heating_curve_optimizer.OptimizationCoordinator"
+    ) as mock_opt, patch.object(
+        hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
+    ):
+        weather_instance = MagicMock()
+        weather_instance.async_config_entry_first_refresh = AsyncMock()
+        mock_weather.return_value = weather_instance
+
+        for mock_cls in (mock_heat, mock_opt):
+            instance = MagicMock()
+            instance.async_setup = AsyncMock()
+            instance.async_config_entry_first_refresh = AsyncMock()
+            mock_cls.return_value = instance
+
+        await async_setup_entry(hass, entry)
+
+        # Primary zone ("zone1") is excluded from the extra-zone loop -
+        # only "zone2" ends up there.
+        assert list(entry.runtime_data.zones.keys()) == ["zone2"]
+        zone2 = entry.runtime_data.zones["zone2"]
+        assert zone2["name"] == "Bedroom"
+        assert zone2["device"]["via_device"] == (DOMAIN, entry.entry_id)
+
+
+@pytest.mark.asyncio
 async def test_async_unload_entry_clears_runtime_override(hass: HomeAssistant):
     """Test unload removes this entry's manual-override runtime dict."""
     entry = MockConfigEntry(
@@ -379,7 +527,7 @@ async def test_async_setup_entry_creates_gas_boiler_coordinator_when_subentry_pr
         "gas_boiler_efficiency": 0.9,
         "gas_calorific_value_kwh_per_m3": 9.77,
     }
-    entry.subentries = {"gas_sub_1": mock_subentry}
+    entry.subentries = {"gas_sub_1": mock_subentry, "zone1": _zone_subentry()}
 
     with patch(
         "custom_components.heating_curve_optimizer.WeatherDataCoordinator"

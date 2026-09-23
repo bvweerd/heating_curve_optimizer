@@ -245,17 +245,34 @@ dp = {}  # (step, offset, cumulative_offset_sum) → (cost, parent_state, buffer
 
 ### `config_flow.py` - UI Configuration
 
-**Multi-Step Flow**:
-1. **Basic Settings**: area, energy label, glass properties, COP parameters
+**Multi-Step Flow** (main entry - shared/infra config only):
+1. **Basic Settings**: power/grid sensors (dynamic discovery)
 2. **Source Selection**: consumption/production sensors (dynamic discovery)
 3. **Price Settings**: consumption/production price sensors
-4. **Finish**: Validation and entry creation
+4. **Heating Curve Settings**: heat pump COP parameters, heating curve limits
+5. **Finish**: Validation and entry creation
 
 **Features**:
 - Dynamic sensor discovery by device class
 - Validation at each step
 - Options flow for updating configuration
 - Defaults from `const.py`
+
+**Heating zones are subentries, not part of the main flow.** Every zone -
+including the first - is added via **Add heating zone** on the
+integration's device page after setup (`HeatingZoneSubentryFlow`), not
+through the wizard above. Zone-specific settings (area, energy label,
+glass/window properties, ventilation type, ceiling height, thermal mass
+class, emitter type, target indoor temperature, hysteresis, indoor
+temperature sensor) live on the zone subentry, so every zone is configured
+identically. The first (oldest) zone subentry is the **primary zone**: it
+drives the main device's existing rich sensor set (COP, calibration,
+diagnostics, cost savings, heat buffer, ...) using the main entry's
+`entry_id` identity; any additional zone subentries get their own
+lightweight device with a smaller sensor set (offset, supply temperature,
+net heat loss). With zero zone subentries configured, the integration
+still loads, but `heat_coordinator`/`optimization_coordinator` are `None`
+and every dependent entity is skipped until a zone is added.
 
 ### `number.py` - Manual Control Entities
 

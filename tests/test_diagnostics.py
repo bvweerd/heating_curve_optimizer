@@ -209,12 +209,40 @@ async def test_diagnostics_calibration_section_reflects_state(hass: HomeAssistan
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
 
-    main_calibration = diagnostics["calibration"]["main"]
-    assert main_calibration["last_result"] == RESULT_FITTED
-    assert main_calibration["learned_ua_w_per_k"] == 410.0
-    assert main_calibration["learned_thermal_mass_kwh_per_k"] == 11.5
-    assert main_calibration["sample_count"] == 0
-    assert main_calibration["applied"] is False
+    primary_calibration = diagnostics["calibration"]["primary_zone"]
+    assert primary_calibration["last_result"] == RESULT_FITTED
+    assert primary_calibration["learned_ua_w_per_k"] == 410.0
+    assert primary_calibration["learned_thermal_mass_kwh_per_k"] == 11.5
+    assert primary_calibration["sample_count"] == 0
+    assert primary_calibration["applied"] is False
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_no_crash_without_primary_zone(hass: HomeAssistant):
+    """No heating-zone subentry configured yet (see __init__.py's
+    _find_primary_zone_subentry) - heat_coordinator/optimization_coordinator
+    are None, a valid, if useless, state - diagnostics must not raise
+    AttributeError on `.data`/`._calibration` and must report empty
+    heat/optimization/calibration sections rather than crashing."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        options={},
+    )
+    entry.add_to_hass(hass)
+    entry.runtime_data = HeatingCurveOptimizerData(
+        weather_coordinator=_default_coordinator(),
+        heat_coordinator=None,
+        optimization_coordinator=None,
+        config={},
+        device=MagicMock(),
+    )
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)
+
+    assert diagnostics["stored_data"]["heat"] == {}
+    assert diagnostics["stored_data"]["optimization"] == {}
+    assert diagnostics["calibration"] == {}
 
 
 @pytest.mark.asyncio

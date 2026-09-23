@@ -116,6 +116,27 @@ class CalibrationSensor(BaseUtilitySensor):
         self._calculation_interval = timedelta(hours=1)
         self._first_run = True  # Flag to force first run
 
+    def _get_zone_value(self, key: str, default: Any = None) -> Any:
+        """Read a zone-specific value (area_m2, energy_label, ...) from the
+        primary heating zone's own merged config.
+
+        Every zone, including the first, is a subentry now (see
+        __init__.py's _find_primary_zone_subentry) - these fields no
+        longer live on `self._entry.data`/`.options` at all. This sensor
+        is only ever instantiated once a primary zone exists (see
+        sensor/__init__.py's `_build_primary_zone_entities`, gated on
+        `heat_coordinator is not None`), so `runtime_data.heat_coordinator`
+        - whose own `.config` is already merged with that subentry's data
+        - is expected to be available; the defensive None-checks here
+        guard only against this sensor somehow outliving that guarantee
+        (e.g. during a reload race), not the common case.
+        """
+        runtime_data = getattr(self._entry, "runtime_data", None)
+        heat_coordinator = getattr(runtime_data, "heat_coordinator", None)
+        if heat_coordinator is None:
+            return default
+        return heat_coordinator.config.get(key, default)
+
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra attributes."""
@@ -197,9 +218,7 @@ class CalibrationSensor(BaseUtilitySensor):
                 calibration_quality = heat_loss_accuracy
             elif measured_u_value is not None and self._entry:
                 # Use graaddagen analysis if available
-                configured_label = self._entry.options.get(
-                    CONF_ENERGY_LABEL, self._entry.data.get(CONF_ENERGY_LABEL, "C")
-                )
+                configured_label = self._get_zone_value(CONF_ENERGY_LABEL, "C")
                 configured_u = U_VALUE_MAP.get(configured_label, 0.80)
                 if configured_u > 0:
                     ratio = min(measured_u_value, configured_u) / max(
@@ -235,11 +254,7 @@ class CalibrationSensor(BaseUtilitySensor):
                 ),
                 "recommended_energy_label": energy_label_recommendation,
                 "current_energy_label": (
-                    self._entry.options.get(
-                        CONF_ENERGY_LABEL, self._entry.data.get(CONF_ENERGY_LABEL)
-                    )
-                    if self._entry
-                    else None
+                    self._get_zone_value(CONF_ENERGY_LABEL) if self._entry else None
                 ),
                 "graaddagen_samples": (
                     graaddagen_analysis.get("sample_count")
@@ -355,9 +370,7 @@ class CalibrationSensor(BaseUtilitySensor):
 
         try:
             # Get area from config
-            area_m2 = self._entry.options.get(
-                CONF_AREA_M2, self._entry.data.get(CONF_AREA_M2, 150)
-            )
+            area_m2 = self._get_zone_value(CONF_AREA_M2, 150)
 
             # Estimate storage efficiency based on building characteristics
             # Heavier buildings (concrete, brick) have higher thermal mass
@@ -365,9 +378,7 @@ class CalibrationSensor(BaseUtilitySensor):
             # Default 0.15 is for average construction
 
             # Use energy label as proxy for building quality/mass
-            energy_label = self._entry.options.get(
-                CONF_ENERGY_LABEL, self._entry.data.get(CONF_ENERGY_LABEL, "C")
-            )
+            energy_label = self._get_zone_value(CONF_ENERGY_LABEL, "C")
 
             # Better insulated buildings tend to have more thermal mass
             # because they're often newer with concrete construction
@@ -593,9 +604,7 @@ class CalibrationSensor(BaseUtilitySensor):
             # Calculate U-value from regression
             # Q = U × A × ΔT × 24h
             # U × A = Q / (ΔT × 24)
-            area_m2 = self._entry.options.get(
-                CONF_AREA_M2, self._entry.data.get(CONF_AREA_M2, 150)
-            )
+            area_m2 = self._get_zone_value(CONF_AREA_M2, 150)
 
             u_times_a_values = []
             for day in valid_days:
@@ -734,9 +743,7 @@ class CalibrationSensor(BaseUtilitySensor):
         # NEW: Energy label recommendation
         if energy_label_recommendation is not None:
             if self._entry:
-                current_label = self._entry.options.get(
-                    CONF_ENERGY_LABEL, self._entry.data.get(CONF_ENERGY_LABEL, "C")
-                )
+                current_label = self._get_zone_value(CONF_ENERGY_LABEL, "C")
                 if energy_label_recommendation != current_label:
                     messages.append(
                         f"Energielabel: Aanbevolen {energy_label_recommendation} "

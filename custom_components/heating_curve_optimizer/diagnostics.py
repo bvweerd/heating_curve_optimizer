@@ -109,20 +109,24 @@ async def async_get_config_entry_diagnostics(
             ),
             "heat": (
                 _serialize_mapping(runtime_data.heat_coordinator.data)
-                if runtime_data.heat_coordinator.data
+                if runtime_data.heat_coordinator is not None
+                and runtime_data.heat_coordinator.data
                 else {}
             ),
             "optimization": (
                 _serialize_mapping(runtime_data.optimization_coordinator.data)
-                if runtime_data.optimization_coordinator.data
+                if runtime_data.optimization_coordinator is not None
+                and runtime_data.optimization_coordinator.data
                 else {}
             ),
             "zones": sorted(runtime_data.zones.keys()),
         }
 
-        main_calibration = _serialize_calibration(runtime_data.optimization_coordinator)
-        if main_calibration is not None:
-            calibration_data["main"] = main_calibration
+        primary_calibration = _serialize_calibration(
+            runtime_data.optimization_coordinator
+        )
+        if primary_calibration is not None:
+            calibration_data["primary_zone"] = primary_calibration
         for zone_id, zone_data in runtime_data.zones.items():
             zone_optimization_coordinator = zone_data.get("optimization_coordinator")
             zone_calibration = _serialize_calibration(zone_optimization_coordinator)
