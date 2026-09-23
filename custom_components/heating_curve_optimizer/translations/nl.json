@@ -427,6 +427,13 @@
       "step": {
         "user": {
           "title": "PV-array toevoegen",
+          "description": "Battery Controller heeft al een of meer PV-arrays geconfigureerd. Importeer er een om piekvermogen, oriëntatie en hellingshoek over te nemen, of voer een nieuwe array handmatig in.",
+          "data": {
+            "import_choice": "Te importeren array"
+          }
+        },
+        "configure": {
+          "title": "PV-array toevoegen",
           "description": "Voeg één zonnepaneel-array toe. Panelen die een andere kant op wijzen of een andere hellingshoek hebben, voeg je toe als aparte array; hun verwachte opbrengst wordt bij elkaar opgeteld.",
           "data": {
             "name": "Naam array (optioneel)",
