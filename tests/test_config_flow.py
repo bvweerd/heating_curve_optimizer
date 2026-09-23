@@ -8,14 +8,18 @@ from custom_components.heating_curve_optimizer.const import (
     DOMAIN,
     CONF_AREA_M2,
     CONF_SOURCE_TYPE,
+    CONF_SOURCES,
     CONF_ENERGY_LABEL,
     CONF_CONSUMPTION_PRICE_SENSOR,
     CONF_PRODUCTION_PRICE_SENSOR,
     CONF_THERMAL_MASS_CLASS,
     CONF_EMITTER_TYPE,
+    SOURCE_TYPE_CONSUMPTION,
 )
 from custom_components.heating_curve_optimizer.companion_integrations import (
     BATTERY_CONTROLLER_DOMAIN,
+    FIELD_SOURCES_CONSUMPTION,
+    DetectedSensorList,
 )
 from custom_components.heating_curve_optimizer.config_flow import (
     STEP_BASIC,
@@ -129,6 +133,61 @@ async def test_detected_integrations_step_prefills_selected_field(
         key.default for key in price_schema if key == CONF_CONSUMPTION_PRICE_SENSOR
     )
     assert default_fn() == "sensor.raw_price"
+
+
+@pytest.mark.asyncio
+async def test_detected_integrations_step_accepts_source_list_field(
+    hass: HomeAssistant,
+):
+    """Accepting a detected `sources_consumption` list (Part A of the
+    config-flow modernization: companion_integrations.detect_source_sensors)
+    must populate self.configs directly, the same shape
+    _update_source_config's step-based flow produces - not just the
+    single-entity_id fields detect_main_flow_sensors already covered."""
+    flow = HeatingCurveOptimizerConfigFlow()
+    flow.hass = hass
+    flow._detected_sensor_lists = {
+        FIELD_SOURCES_CONSUMPTION: DetectedSensorList(
+            ["sensor.elec_consumption"], "Battery Controller"
+        )
+    }
+
+    result = await flow.async_step_detected_integrations(
+        {FIELD_SOURCES_CONSUMPTION: True}
+    )
+
+    assert result["step_id"] == "user"
+    assert flow.configs == [
+        {
+            CONF_SOURCE_TYPE: SOURCE_TYPE_CONSUMPTION,
+            CONF_SOURCES: ["sensor.elec_consumption"],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_detected_integrations_step_replaces_existing_block_for_same_source_type(
+    hass: HomeAssistant,
+):
+    """Accepting a detected source list must replace any existing block for
+    that source_type (matching _update_source_config's own
+    replace-not-duplicate behaviour), not append a second one."""
+    flow = HeatingCurveOptimizerConfigFlow()
+    flow.hass = hass
+    flow.configs = [
+        {CONF_SOURCE_TYPE: SOURCE_TYPE_CONSUMPTION, CONF_SOURCES: ["sensor.old"]}
+    ]
+    flow._detected_sensor_lists = {
+        FIELD_SOURCES_CONSUMPTION: DetectedSensorList(
+            ["sensor.new"], "Battery Controller"
+        )
+    }
+
+    await flow.async_step_detected_integrations({FIELD_SOURCES_CONSUMPTION: True})
+
+    assert flow.configs == [
+        {CONF_SOURCE_TYPE: SOURCE_TYPE_CONSUMPTION, CONF_SOURCES: ["sensor.new"]}
+    ]
 
 
 @pytest.mark.asyncio

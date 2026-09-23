@@ -12,7 +12,12 @@ code. What *is* tested here are the pure data-flattening functions, which
 have no dependency on `section`/HA version at all.
 """
 
+from custom_components.heating_curve_optimizer.companion_integrations import (
+    FIELD_SOURCES_CONSUMPTION,
+    FIELD_SOURCES_PRODUCTION,
+)
 from custom_components.heating_curve_optimizer.config_flow import (
+    HeatingCurveOptimizerConfigFlow,
     _build_configs_from_sources,
     _extract_sectioned_data,
 )
@@ -232,3 +237,36 @@ def test_build_configs_from_sources_one_empty_omits_its_block():
 
 def test_build_configs_from_sources_both_empty_returns_empty_list():
     assert _build_configs_from_sources([], []) == []
+
+
+def test_sectioned_defaults_includes_source_lists_from_configs():
+    """`_sectioned_defaults` (fed into `_build_sectioned_schema`) reuses
+    `_build_entry_data`'s own dict, plus derives the two flattened source
+    fields from `self.configs` - this is pure attribute-reading logic with
+    no `section` dependency, unlike `_build_sectioned_schema` itself."""
+    flow = HeatingCurveOptimizerConfigFlow()
+    flow.area_m2 = 120.0
+    flow.energy_label = "B"
+    flow.consumption_price_sensor = "sensor.cp"
+    flow.production_price_sensor = "sensor.pp"
+    flow.configs = [
+        {CONF_SOURCE_TYPE: SOURCE_TYPE_CONSUMPTION, CONF_SOURCES: ["sensor.c1"]},
+        {CONF_SOURCE_TYPE: SOURCE_TYPE_PRODUCTION, CONF_SOURCES: ["sensor.p1"]},
+    ]
+
+    defaults = flow._sectioned_defaults()
+
+    assert defaults[CONF_AREA_M2] == 120.0
+    assert defaults[CONF_ENERGY_LABEL] == "B"
+    assert defaults[CONF_CONSUMPTION_PRICE_SENSOR] == "sensor.cp"
+    assert defaults[FIELD_SOURCES_CONSUMPTION] == ["sensor.c1"]
+    assert defaults[FIELD_SOURCES_PRODUCTION] == ["sensor.p1"]
+
+
+def test_sectioned_defaults_empty_configs_gives_empty_source_lists():
+    flow = HeatingCurveOptimizerConfigFlow()
+
+    defaults = flow._sectioned_defaults()
+
+    assert defaults[FIELD_SOURCES_CONSUMPTION] == []
+    assert defaults[FIELD_SOURCES_PRODUCTION] == []

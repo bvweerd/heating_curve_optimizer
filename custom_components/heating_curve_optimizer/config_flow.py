@@ -39,8 +39,12 @@ except ImportError:
 
 from .companion_integrations import (
     DetectedSensor,
+    DetectedSensorList,
+    FIELD_SOURCES_CONSUMPTION,
+    FIELD_SOURCES_PRODUCTION,
     detect_gas_price_sensor,
     detect_main_flow_sensors,
+    detect_source_sensors,
 )
 from .const import (
     CONF_AREA_M2,
@@ -543,6 +547,308 @@ def _build_configs_from_sources(
     return configs
 
 
+def _build_sectioned_schema(
+    defaults: dict[str, Any],
+    power_sensors: list[str],
+    temp_sensors: list[str],
+    price_sensors: list[str],
+    energy_sensors: list[str],
+) -> vol.Schema:
+    """Build the single-page sectioned form (only called when `_section is
+    not None`). Mirrors battery_controller's own `_build_main_schema`: one
+    `vol.Schema` of `section(...)` groups, each built from a small per-group
+    schema. Every field uses `description={"suggested_value": ...}` for
+    prefill rather than `default=` - a pure UI hint that never silently
+    substitutes a value into validation, unlike `default=` (which the
+    legacy multi-step schemas below still use).
+    """
+
+    def sv(key: str, fallback: Any = None) -> dict[str, Any]:
+        return {"suggested_value": defaults.get(key, fallback)}
+
+    building_schema = vol.Schema(
+        {
+            vol.Required(CONF_AREA_M2, description=sv(CONF_AREA_M2)): vol.Coerce(float),
+            vol.Required(
+                CONF_ENERGY_LABEL, description=sv(CONF_ENERGY_LABEL)
+            ): selector(
+                {
+                    "select": {
+                        "options": ENERGY_LABELS,
+                        "mode": "dropdown",
+                        "custom_value": False,
+                    }
+                }
+            ),
+            vol.Required(
+                CONF_CONSUMPTION_PRICE_SENSOR,
+                description=sv(CONF_CONSUMPTION_PRICE_SENSOR),
+            ): selector(
+                {
+                    "select": {
+                        "options": price_sensors,
+                        "multiple": False,
+                        "mode": "dropdown",
+                    }
+                }
+            ),
+            vol.Required(
+                CONF_PRODUCTION_PRICE_SENSOR,
+                description=sv(CONF_PRODUCTION_PRICE_SENSOR),
+            ): selector(
+                {
+                    "select": {
+                        "options": price_sensors,
+                        "multiple": False,
+                        "mode": "dropdown",
+                    }
+                }
+            ),
+        }
+    )
+
+    envelope_schema = vol.Schema(
+        {
+            vol.Optional(
+                CONF_GLASS_EAST_M2, description=sv(CONF_GLASS_EAST_M2, 0.0)
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_GLASS_WEST_M2, description=sv(CONF_GLASS_WEST_M2, 0.0)
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_GLASS_SOUTH_M2, description=sv(CONF_GLASS_SOUTH_M2, 0.0)
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_GLASS_U_VALUE, description=sv(CONF_GLASS_U_VALUE, 1.2)
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_VENTILATION_TYPE,
+                description=sv(CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE),
+            ): selector(
+                {
+                    "select": {
+                        "options": list(VENTILATION_TYPES.keys()),
+                        "mode": "dropdown",
+                        "translation_key": "ventilation_type",
+                    }
+                }
+            ),
+            vol.Optional(
+                CONF_CEILING_HEIGHT,
+                description=sv(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_THERMAL_MASS_CLASS,
+                description=sv(CONF_THERMAL_MASS_CLASS, DEFAULT_THERMAL_MASS_CLASS),
+            ): selector(
+                {
+                    "select": {
+                        "options": list(THERMAL_MASS_WH_PER_M2_K.keys()),
+                        "mode": "dropdown",
+                        "translation_key": "thermal_mass_class",
+                    }
+                }
+            ),
+            vol.Optional(
+                CONF_EMITTER_TYPE,
+                description=sv(CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE),
+            ): selector(
+                {
+                    "select": {
+                        "options": list(EMITTER_EXPONENT_MAP.keys()),
+                        "mode": "dropdown",
+                        "translation_key": "emitter_type",
+                    }
+                }
+            ),
+            vol.Optional(
+                CONF_PV_EAST_WP, description=sv(CONF_PV_EAST_WP, 0.0)
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_PV_SOUTH_WP, description=sv(CONF_PV_SOUTH_WP, 0.0)
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_PV_WEST_WP, description=sv(CONF_PV_WEST_WP, 0.0)
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_PV_TILT, description=sv(CONF_PV_TILT, DEFAULT_PV_TILT)
+            ): vol.Coerce(float),
+        }
+    )
+
+    sensors_schema = vol.Schema(
+        {
+            vol.Optional(
+                FIELD_SOURCES_CONSUMPTION,
+                description=sv(FIELD_SOURCES_CONSUMPTION, []),
+            ): selector(
+                {
+                    "select": {
+                        "options": energy_sensors,
+                        "multiple": True,
+                        "mode": "dropdown",
+                    }
+                }
+            ),
+            vol.Optional(
+                FIELD_SOURCES_PRODUCTION,
+                description=sv(FIELD_SOURCES_PRODUCTION, []),
+            ): selector(
+                {
+                    "select": {
+                        "options": energy_sensors,
+                        "multiple": True,
+                        "mode": "dropdown",
+                    }
+                }
+            ),
+            vol.Optional(
+                CONF_INDOOR_TEMPERATURE_SENSOR,
+                description=sv(CONF_INDOOR_TEMPERATURE_SENSOR),
+            ): selector(
+                {
+                    "select": {
+                        "options": temp_sensors,
+                        "multiple": False,
+                        "mode": "dropdown",
+                    }
+                }
+            ),
+            vol.Optional(
+                CONF_POWER_CONSUMPTION, description=sv(CONF_POWER_CONSUMPTION)
+            ): selector(
+                {
+                    "select": {
+                        "options": power_sensors,
+                        "multiple": False,
+                        "mode": "dropdown",
+                    }
+                }
+            ),
+            vol.Optional(
+                CONF_SUPPLY_TEMPERATURE_SENSOR,
+                description=sv(CONF_SUPPLY_TEMPERATURE_SENSOR),
+            ): selector(
+                {
+                    "select": {
+                        "options": temp_sensors,
+                        "multiple": False,
+                        "mode": "dropdown",
+                    }
+                }
+            ),
+            vol.Optional(
+                CONF_GRID_IMPORT_SENSOR, description=sv(CONF_GRID_IMPORT_SENSOR)
+            ): selector(
+                {
+                    "select": {
+                        "options": power_sensors,
+                        "multiple": False,
+                        "mode": "dropdown",
+                    }
+                }
+            ),
+            vol.Optional(
+                CONF_GRID_EXPORT_SENSOR, description=sv(CONF_GRID_EXPORT_SENSOR)
+            ): selector(
+                {
+                    "select": {
+                        "options": power_sensors,
+                        "multiple": False,
+                        "mode": "dropdown",
+                    }
+                }
+            ),
+        }
+    )
+
+    curve_schema = vol.Schema(
+        {
+            vol.Optional(
+                CONF_K_FACTOR, description=sv(CONF_K_FACTOR, DEFAULT_K_FACTOR)
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_BASE_COP, description=sv(CONF_BASE_COP, DEFAULT_COP_AT_35)
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_OUTDOOR_TEMP_COEFFICIENT,
+                description=sv(
+                    CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
+                ),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_COP_COMPENSATION_FACTOR,
+                description=sv(
+                    CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR
+                ),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_HEAT_CURVE_MIN_OUTDOOR,
+                description=sv(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_HEAT_CURVE_MAX_OUTDOOR,
+                description=sv(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_HEATING_CURVE_OFFSET,
+                description=sv(CONF_HEATING_CURVE_OFFSET, DEFAULT_HEATING_CURVE_OFFSET),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_HEAT_CURVE_MIN,
+                description=sv(CONF_HEAT_CURVE_MIN, DEFAULT_HEAT_CURVE_MIN),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_HEAT_CURVE_MAX,
+                description=sv(CONF_HEAT_CURVE_MAX, DEFAULT_HEAT_CURVE_MAX),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_OFFSET_DELTA_T,
+                description=sv(CONF_OFFSET_DELTA_T, DEFAULT_OFFSET_DELTA_T),
+            ): vol.Coerce(int),
+        }
+    )
+
+    advanced_schema = vol.Schema(
+        {
+            vol.Optional(
+                CONF_PLANNING_WINDOW,
+                description=sv(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW),
+            ): vol.Coerce(int),
+            vol.Optional(
+                CONF_TIME_BASE, description=sv(CONF_TIME_BASE, DEFAULT_TIME_BASE)
+            ): vol.Coerce(int),
+            vol.Optional(
+                CONF_MAX_BUFFER_DEBT,
+                description=sv(CONF_MAX_BUFFER_DEBT, DEFAULT_MAX_BUFFER_DEBT),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_TARGET_INDOOR_TEMP,
+                description=sv(CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP),
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_INDOOR_TEMP_HYSTERESIS,
+                description=sv(
+                    CONF_INDOOR_TEMP_HYSTERESIS, DEFAULT_INDOOR_TEMP_HYSTERESIS
+                ),
+            ): vol.Coerce(float),
+        }
+    )
+
+    assert _section is not None  # only ever called behind that guard
+    return vol.Schema(
+        {
+            vol.Required("building"): _section(building_schema, {"collapsed": False}),
+            vol.Optional("envelope"): _section(envelope_schema, {"collapsed": True}),
+            vol.Optional("sensors"): _section(sensors_schema, {"collapsed": True}),
+            vol.Optional("heat_pump_and_curve"): _section(
+                curve_schema, {"collapsed": True}
+            ),
+            vol.Optional("advanced"): _section(advanced_schema, {"collapsed": True}),
+        }
+    )
+
+
 class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg, misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     """Handle a config flow for Heating Curve Optimizer."""
 
@@ -615,6 +921,7 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.heat_curve_max: float = DEFAULT_HEAT_CURVE_MAX
         self._detection_offered: bool = False
         self._detected_sensors: dict[str, DetectedSensor] = {}
+        self._detected_sensor_lists: dict[str, DetectedSensorList] = {}
 
     async def async_step_user(
         self, user_input: dict[str, str] | None = None
@@ -623,10 +930,12 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._abort_if_unique_id_configured()
         if user_input is None and not self._detection_offered:
             self._detection_offered = True
-            detected = detect_main_flow_sensors(self.hass)
-            if detected:
-                self._detected_sensors = detected
+            self._detected_sensors = detect_main_flow_sensors(self.hass)
+            self._detected_sensor_lists = detect_source_sensors(self.hass)
+            if self._detected_sensors or self._detected_sensor_lists:
                 return await self.async_step_detected_integrations()
+        if _section is not None:
+            return await self._async_step_sectioned(user_input)
         if user_input is not None:
             choice = user_input[CONF_SOURCE_TYPE]
             if choice == STEP_BASIC:
@@ -686,19 +995,40 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         setup menu either way."""
         if user_input is not None:
             for field, use_detected in user_input.items():
-                if use_detected and field in self._detected_sensors:
+                if not use_detected:
+                    continue
+                if field in self._detected_sensors:
                     setattr(self, field, self._detected_sensors[field].entity_id)
+                elif field in self._detected_sensor_lists:
+                    entity_ids = self._detected_sensor_lists[field].entity_ids
+                    source_type = (
+                        SOURCE_TYPE_CONSUMPTION
+                        if field == FIELD_SOURCES_CONSUMPTION
+                        else SOURCE_TYPE_PRODUCTION
+                    )
+                    self.configs = [
+                        cfg
+                        for cfg in self.configs
+                        if cfg.get(CONF_SOURCE_TYPE) != source_type
+                    ]
+                    self.configs.append(
+                        {CONF_SOURCE_TYPE: source_type, CONF_SOURCES: entity_ids}
+                    )
             return await self.async_step_user()
 
         schema = vol.Schema(
             {
                 vol.Optional(field, default=True): bool
-                for field in self._detected_sensors
+                for field in (*self._detected_sensors, *self._detected_sensor_lists)
             }
         )
         detected_list = "\n".join(
             f"- {field}: `{detected.entity_id}` ({detected.source})"
             for field, detected in self._detected_sensors.items()
+        )
+        detected_list += "".join(
+            f"\n- {field}: `{', '.join(detected.entity_ids)}` ({detected.source})"
+            for field, detected in self._detected_sensor_lists.items()
         )
         return self.async_show_form(
             step_id="detected_integrations",
@@ -773,6 +1103,79 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             }
         )
+
+    def _sectioned_defaults(self) -> dict[str, Any]:
+        """Prefill values for `_build_sectioned_schema` - reuses
+        `_build_entry_data`'s own dict (keyed by the same CONF_ constants
+        the sectioned schema's fields use) rather than re-listing every
+        field a second time, plus the two flattened source-list fields
+        `_build_entry_data` doesn't know about."""
+        defaults = self._build_entry_data(
+            self.consumption_price_sensor, self.production_price_sensor
+        )
+        defaults[FIELD_SOURCES_CONSUMPTION] = next(
+            (
+                cfg[CONF_SOURCES]
+                for cfg in self.configs
+                if cfg.get(CONF_SOURCE_TYPE) == SOURCE_TYPE_CONSUMPTION
+            ),
+            [],
+        )
+        defaults[FIELD_SOURCES_PRODUCTION] = next(
+            (
+                cfg[CONF_SOURCES]
+                for cfg in self.configs
+                if cfg.get(CONF_SOURCE_TYPE) == SOURCE_TYPE_PRODUCTION
+            ),
+            [],
+        )
+        return defaults
+
+    async def _async_step_sectioned(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Single-page sectioned form - the modern replacement for the
+        legacy multi-step wizard below, used whenever `_section is not
+        None`. Always shown/resubmitted as step_id="user", so this is
+        reached both for the form's first display and every resubmission.
+        """
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            flat = _extract_sectioned_data(user_input)
+            sensors_section = user_input.get("sensors", {})
+            configs = _build_configs_from_sources(
+                sensors_section.get(FIELD_SOURCES_CONSUMPTION, []),
+                sensors_section.get(FIELD_SOURCES_PRODUCTION, []),
+            )
+
+            if not configs:
+                errors["base"] = "no_blocks"
+            else:
+                connection_error = await _test_api_connection(self.hass)
+                if connection_error:
+                    errors["base"] = connection_error
+
+            for key, value in flat.items():
+                setattr(self, key, value)
+            self.configs = configs
+
+            if not errors:
+                return self.async_create_entry(
+                    title="Heating Curve Optimizer",
+                    data=self._build_entry_data(
+                        flat[CONF_CONSUMPTION_PRICE_SENSOR],
+                        flat[CONF_PRODUCTION_PRICE_SENSOR],
+                    ),
+                )
+
+        schema = _build_sectioned_schema(
+            self._sectioned_defaults(),
+            self._get_power_sensors(),
+            self._get_temperature_sensors(),
+            self._get_price_sensors(),
+            self._get_energy_sensors(),
+        )
+        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
     def _get_energy_sensors(self) -> list[str]:
         """Get sorted list of energy sensors."""
@@ -1397,15 +1800,59 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):  # ty
     _update_source_config = HeatingCurveOptimizerConfigFlow._update_source_config
     _get_default_sources = HeatingCurveOptimizerConfigFlow._get_default_sources
     _build_entry_data = HeatingCurveOptimizerConfigFlow._build_entry_data
+    _sectioned_defaults = HeatingCurveOptimizerConfigFlow._sectioned_defaults
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         return await self.async_step_user()
 
+    async def _async_step_sectioned(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Single-page sectioned form for the options flow - same shape as
+        the initial ConfigFlow's own `_async_step_sectioned`, but without
+        the API-connection check and with `title=""`, matching the legacy
+        options flow's own "finish" branch below exactly."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            flat = _extract_sectioned_data(user_input)
+            sensors_section = user_input.get("sensors", {})
+            configs = _build_configs_from_sources(
+                sensors_section.get(FIELD_SOURCES_CONSUMPTION, []),
+                sensors_section.get(FIELD_SOURCES_PRODUCTION, []),
+            )
+
+            if not configs:
+                errors["base"] = "no_blocks"
+
+            for key, value in flat.items():
+                setattr(self, key, value)
+            self.configs = configs
+
+            if not errors:
+                return self.async_create_entry(
+                    title="",
+                    data=self._build_entry_data(
+                        flat[CONF_CONSUMPTION_PRICE_SENSOR],
+                        flat[CONF_PRODUCTION_PRICE_SENSOR],
+                    ),
+                )
+
+        schema = _build_sectioned_schema(
+            self._sectioned_defaults(),
+            self._get_power_sensors(),
+            self._get_temperature_sensors(),
+            self._get_price_sensors(),
+            self._get_energy_sensors(),
+        )
+        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        if _section is not None:
+            return await self._async_step_sectioned(user_input)
         if user_input and CONF_SOURCE_TYPE in user_input:
             choice = user_input[CONF_SOURCE_TYPE]
             if choice == STEP_BASIC:
