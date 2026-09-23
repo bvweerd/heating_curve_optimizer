@@ -20,12 +20,27 @@ from homeassistant.core import HomeAssistant
 from custom_components.heating_curve_optimizer.config_flow import (
     HeatingCurveOptimizerConfigFlow,
     HeatingGasBoilerSubentryFlow,
+    _build_gas_boiler_subentry_schema,
     _validate_gas_boiler_subentry,
 )
 from custom_components.heating_curve_optimizer.const import (
+    CONF_GAS_PRICE_SENSOR,
     GAS_SUBENTRY_TYPE,
     ZONE_SUBENTRY_TYPE,
 )
+
+
+def test_build_gas_boiler_subentry_schema_honors_detected_default():
+    """`async_step_user` passes `defaults={CONF_GAS_PRICE_SENSOR: ...}`
+    when companion_integrations.detect_gas_price_sensor finds DECC's gas
+    price sensor - this is the schema-building half of that wiring
+    (verifiable independent of the HA-version gate above); the detector
+    itself is covered by test_companion_integrations.py."""
+    schema = _build_gas_boiler_subentry_schema(
+        {CONF_GAS_PRICE_SENSOR: "sensor.current_gas_consumption_price"}
+    )
+    field = next(key for key in schema.schema if key == CONF_GAS_PRICE_SENSOR)
+    assert field.default() == "sensor.current_gas_consumption_price"
 
 
 def test_heating_gas_boiler_subentry_flow_is_none_on_this_ha_release():

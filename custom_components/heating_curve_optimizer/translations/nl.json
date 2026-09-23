@@ -84,6 +84,17 @@
           "pv_west_wp": "Totaal piekvermogen van op het westen gerichte PV-panelen in Wp",
           "pv_tilt": "Hellingshoek van PV-panelen (0=horizontaal, 90=verticaal, typisch: 35°)"
         }
+      },
+      "detected_integrations": {
+        "title": "Gedetecteerde gekoppelde integraties",
+        "description": "Sensorinstellingen gevonden die al zijn geconfigureerd in een andere integratie op dit Home Assistant-systeem:\n\n{detected_list}\n\nDeze waarden gebruiken in plaats van ze in de volgende stappen opnieuw te selecteren?",
+        "data": {
+          "power_consumption": "Gedetecteerde vermogenssensor gebruiken",
+          "grid_import_sensor": "Gedetecteerde netafname-sensor gebruiken",
+          "grid_export_sensor": "Gedetecteerde netteruglevering-sensor gebruiken",
+          "consumption_price_sensor": "Gedetecteerde verbruiksprijssensor gebruiken",
+          "production_price_sensor": "Gedetecteerde productieprijssensor gebruiken"
+        }
       }
     },
     "abort": {
@@ -324,7 +335,8 @@
           },
           "data_description": {
             "gas_boiler_efficiency": "Gangbare Nederlandse HR-combiketel: 0.90 bij normale retourtemperaturen, tot ~1.07 voor een goed afgestelde condenserende ketel bij lage retourtemperatuur.",
-            "gas_calorific_value_kwh_per_m3": "De Nederlandse G-gas bovenwaarde (bovenste verbrandingswaarde) is doorgaans 9.77 kWh/m³ - niet de onderwaarde (~8.8 kWh/m³) die sommige productbladen van cv-ketels gebruiken."
+            "gas_calorific_value_kwh_per_m3": "De Nederlandse G-gas bovenwaarde (bovenste verbrandingswaarde) is doorgaans 9.77 kWh/m³ - niet de onderwaarde (~8.8 kWh/m³) die sommige productbladen van cv-ketels gebruiken.",
+            "gas_price_sensor": "Als Dynamic Energy Contract Calculator is geconfigureerd met een gasbron, wordt de current_gas_consumption_price sensor hiervan hier automatisch voorgesteld."
           }
         },
         "reconfigure": {

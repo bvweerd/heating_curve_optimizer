@@ -23,6 +23,11 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import selector
 import voluptuous as vol
 
+from .companion_integrations import (
+    DetectedSensor,
+    detect_gas_price_sensor,
+    detect_main_flow_sensors,
+)
 from .const import (
     CONF_AREA_M2,
     CONF_CONFIGS,
@@ -355,9 +360,14 @@ if _ConfigSubentryFlow is not None:
                     )
                 else:
                     return self.async_create_entry(title="Gas Boiler", data=data)
+
+            defaults: dict[str, Any] = {}
+            detected_gas_price = detect_gas_price_sensor(self.hass)
+            if detected_gas_price is not None:
+                defaults[CONF_GAS_PRICE_SENSOR] = detected_gas_price.entity_id
             return self.async_show_form(
                 step_id="user",
-                data_schema=_build_gas_boiler_subentry_schema(),
+                data_schema=_build_gas_boiler_subentry_schema(defaults),
                 errors=errors,
             )
 
@@ -461,12 +471,20 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.heating_curve_offset: float = DEFAULT_HEATING_CURVE_OFFSET
         self.heat_curve_min: float = DEFAULT_HEAT_CURVE_MIN
         self.heat_curve_max: float = DEFAULT_HEAT_CURVE_MAX
+        self._detection_offered: bool = False
+        self._detected_sensors: dict[str, DetectedSensor] = {}
 
     async def async_step_user(
         self, user_input: dict[str, str] | None = None
     ) -> ConfigFlowResult:
         await self.async_set_unique_id(DOMAIN)
         self._abort_if_unique_id_configured()
+        if user_input is None and not self._detection_offered:
+            self._detection_offered = True
+            detected = detect_main_flow_sensors(self.hass)
+            if detected:
+                self._detected_sensors = detected
+                return await self.async_step_detected_integrations()
         if user_input is not None:
             choice = user_input[CONF_SOURCE_TYPE]
             if choice == STEP_BASIC:
@@ -515,6 +533,36 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self.async_step_select_sources()
 
         return self.async_show_form(step_id="user", data_schema=self._schema_user())
+
+    async def async_step_detected_integrations(
+        self, user_input: dict[str, bool] | None = None
+    ) -> ConfigFlowResult:
+        """Offer to prefill sensors already configured in Battery Controller
+        and/or Dynamic Energy Contract Calculator (see
+        companion_integrations.py). Only reached when at least one
+        candidate was found - shown once, then falls through to the normal
+        setup menu either way."""
+        if user_input is not None:
+            for field, use_detected in user_input.items():
+                if use_detected and field in self._detected_sensors:
+                    setattr(self, field, self._detected_sensors[field].entity_id)
+            return await self.async_step_user()
+
+        schema = vol.Schema(
+            {
+                vol.Optional(field, default=True): bool
+                for field in self._detected_sensors
+            }
+        )
+        detected_list = "\n".join(
+            f"- {field}: `{detected.entity_id}` ({detected.source})"
+            for field, detected in self._detected_sensors.items()
+        )
+        return self.async_show_form(
+            step_id="detected_integrations",
+            data_schema=schema,
+            description_placeholders={"detected_list": detected_list},
+        )
 
     def _build_entry_data(
         self, consumption_price_sensor: str | None, production_price_sensor: str | None
@@ -593,12 +641,27 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     def _get_power_sensors(self) -> list[str]:
-        """Get sorted list of power sensors."""
-        return sorted(
+        """Get sorted list of power sensors.
+
+        Also unions in whatever power_consumption/grid_import_sensor/
+        grid_export_sensor is currently selected, even if it doesn't carry
+        a matching device_class - otherwise a sensor prefilled from a
+        companion integration (companion_integrations.py) could silently
+        vanish from its own dropdown instead of showing as selected.
+        """
+        discovered = {
             state.entity_id
             for state in self.hass.states.async_all("sensor")
             if state.attributes.get("device_class") in ("power", "energy")
-        )
+        }
+        for current in (
+            self.power_consumption,
+            self.grid_import_sensor,
+            self.grid_export_sensor,
+        ):
+            if current:
+                discovered.add(current)
+        return sorted(discovered)
 
     def _get_temperature_sensors(self) -> list[str]:
         """Get sorted list of temperature sensors."""
@@ -610,13 +673,23 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     def _get_price_sensors(self) -> list[str]:
-        """Get list of price sensors."""
-        return [
+        """Get list of price sensors.
+
+        Also unions in whatever consumption_price_sensor/
+        production_price_sensor is currently selected, for the same reason
+        _get_power_sensors does - a companion-integration-detected sensor
+        must never vanish from its own dropdown.
+        """
+        discovered = {
             state.entity_id
             for state in self.hass.states.async_all("sensor")
             if state.attributes.get("device_class") == "monetary"
             or state.attributes.get("unit_of_measurement") == "€/kWh"
-        ]
+        }
+        for current in (self.consumption_price_sensor, self.production_price_sensor):
+            if current:
+                discovered.add(current)
+        return sorted(discovered)
 
     async def async_step_basic_options(
         self, user_input: dict[str, Any] | None = None

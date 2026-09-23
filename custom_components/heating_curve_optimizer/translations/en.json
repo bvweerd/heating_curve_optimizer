@@ -84,6 +84,17 @@
           "pv_west_wp": "Total peak power of west-facing PV panels in Wp",
           "pv_tilt": "Tilt angle of PV panels (0=horizontal, 90=vertical, typical: 35°)"
         }
+      },
+      "detected_integrations": {
+        "title": "Detected companion integrations",
+        "description": "Found sensor settings already configured in another integration on this Home Assistant instance:\n\n{detected_list}\n\nUse these values instead of selecting them again in the next steps?",
+        "data": {
+          "power_consumption": "Use detected power consumption sensor",
+          "grid_import_sensor": "Use detected grid import sensor",
+          "grid_export_sensor": "Use detected grid export sensor",
+          "consumption_price_sensor": "Use detected consumption price sensor",
+          "production_price_sensor": "Use detected production price sensor"
+        }
       }
     },
     "abort": {
@@ -324,7 +335,8 @@
           },
           "data_description": {
             "gas_boiler_efficiency": "Typical Dutch HR-combi boiler: 0.90 at normal return temperatures, up to ~1.07 for a well-tuned condensing unit at low return temperature.",
-            "gas_calorific_value_kwh_per_m3": "Dutch G-gas bovenwaarde (HHV) is typically 9.77 kWh/m³ - not the lower heating value (~8.8 kWh/m³) some appliance datasheets quote instead."
+            "gas_calorific_value_kwh_per_m3": "Dutch G-gas bovenwaarde (HHV) is typically 9.77 kWh/m³ - not the lower heating value (~8.8 kWh/m³) some appliance datasheets quote instead.",
+            "gas_price_sensor": "If Dynamic Energy Contract Calculator is configured with a gas source, its current_gas_consumption_price sensor is offered here automatically."
           }
         },
         "reconfigure": {
