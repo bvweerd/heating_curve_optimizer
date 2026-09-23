@@ -24,6 +24,13 @@ from dataclasses import dataclass
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
+from .const import (
+    CONF_SOURCE_TYPE,
+    CONF_SOURCES,
+    SOURCE_TYPE_CONSUMPTION,
+    SOURCE_TYPE_PRODUCTION,
+)
+
 BATTERY_CONTROLLER_DOMAIN = "battery_controller"
 DECC_DOMAIN = "dynamic_energy_contract_calculator"
 
@@ -33,6 +40,7 @@ DECC_DOMAIN = "dynamic_energy_contract_calculator"
 # used as the single-sensor candidate this integration's own fields expect.
 _BC_CONF_POWER_CONSUMPTION_SENSORS = "power_consumption_sensors"
 _BC_CONF_ELECTRICITY_CONSUMPTION_SENSORS = "electricity_consumption_sensors"
+_BC_CONF_ELECTRICITY_PRODUCTION_SENSORS = "electricity_production_sensors"
 _BC_CONF_GRID_IMPORT_SENSORS = "grid_import_sensors"
 _BC_CONF_GRID_EXPORT_SENSORS = "grid_export_sensors"
 _BC_CONF_PRICE_SENSOR = "price_sensor"
@@ -47,6 +55,8 @@ FIELD_GRID_IMPORT_SENSOR = "grid_import_sensor"
 FIELD_GRID_EXPORT_SENSOR = "grid_export_sensor"
 FIELD_CONSUMPTION_PRICE_SENSOR = "consumption_price_sensor"
 FIELD_PRODUCTION_PRICE_SENSOR = "production_price_sensor"
+FIELD_SOURCES_CONSUMPTION = "sources_consumption"
+FIELD_SOURCES_PRODUCTION = "sources_production"
 
 
 @dataclass
@@ -54,6 +64,17 @@ class DetectedSensor:
     """A sensor entity_id found in a companion integration's own config."""
 
     entity_id: str
+    source: str
+
+
+@dataclass
+class DetectedSensorList:
+    """A list of sensor entity_ids found in a companion integration's own
+    config - for the multi-select consumption/production energy-sensor
+    fields (CONF_SOURCES), as opposed to DetectedSensor's single entity_id
+    for the power/price fields."""
+
+    entity_ids: list[str]
     source: str
 
 
@@ -165,3 +186,77 @@ def detect_gas_price_sensor(hass: HomeAssistant) -> DetectedSensor | None:
     """DECC's `current_gas_consumption_price` summary sensor, for the
     hybrid gas-boiler subentry's `gas_price_sensor` field."""
     return _decc_price_sensor(hass, "current_gas_consumption_price")
+
+
+def _decc_source_entities(hass: HomeAssistant, source_type: str) -> list[str] | None:
+    """Entity_ids for a given source_type from DECC's own source
+    subentries - each stores `{CONF_SOURCE_TYPE: ..., CONF_SOURCES:
+    [entity_ids]}`, the identical key/value shape this integration's own
+    `self.configs` list already uses (confirmed against
+    dynamic_energy_contract_calculator's const.py: same key strings
+    ("source_type"/"sources") and the same
+    "Electricity consumption"/"Electricity production" values).
+
+    Matched by the presence of both keys in a subentry's data, not a
+    hardcoded subentry_type string - a rename on DECC's side can't
+    silently break this. Returns None (not an empty list) when DECC isn't
+    configured or has no matching, non-empty source - distinguishes "not
+    configured" from a hypothetical "configured with zero sensors".
+    """
+    entries = hass.config_entries.async_entries(DECC_DOMAIN)
+    if not entries:
+        return None
+    for subentry in getattr(entries[0], "subentries", {}).values():
+        data = subentry.data
+        if data.get(CONF_SOURCE_TYPE) != source_type:
+            continue
+        sources = data.get(CONF_SOURCES)
+        if isinstance(sources, list) and sources:
+            return [str(s) for s in sources]
+    return None
+
+
+def detect_source_sensors(hass: HomeAssistant) -> dict[str, DetectedSensorList]:
+    """Candidate consumption/production energy-sensor lists for the main
+    setup wizard's CONF_SOURCES fields.
+
+    DECC's own source subentries are preferred when present: they're
+    curated for the exact same "track consumption/production for cost"
+    purpose this integration's own sources are for. battery_controller's
+    flat `electricity_consumption_sensors`/`electricity_production_sensors`
+    lists are the fallback, checked independently per field - DECC might
+    only have one of the two source types configured.
+    """
+    detected: dict[str, DetectedSensorList] = {}
+
+    decc_consumption = _decc_source_entities(hass, SOURCE_TYPE_CONSUMPTION)
+    if decc_consumption:
+        detected[FIELD_SOURCES_CONSUMPTION] = DetectedSensorList(
+            decc_consumption, _DECC_SOURCE
+        )
+
+    decc_production = _decc_source_entities(hass, SOURCE_TYPE_PRODUCTION)
+    if decc_production:
+        detected[FIELD_SOURCES_PRODUCTION] = DetectedSensorList(
+            decc_production, _DECC_SOURCE
+        )
+
+    if FIELD_SOURCES_CONSUMPTION in detected and FIELD_SOURCES_PRODUCTION in detected:
+        return detected
+
+    bc_config = _first_configured_entry(hass, BATTERY_CONTROLLER_DOMAIN)
+    if bc_config is not None:
+        if FIELD_SOURCES_CONSUMPTION not in detected:
+            consumption = bc_config.get(_BC_CONF_ELECTRICITY_CONSUMPTION_SENSORS)
+            if isinstance(consumption, list) and consumption:
+                detected[FIELD_SOURCES_CONSUMPTION] = DetectedSensorList(
+                    [str(s) for s in consumption], _BATTERY_CONTROLLER_SOURCE
+                )
+        if FIELD_SOURCES_PRODUCTION not in detected:
+            production = bc_config.get(_BC_CONF_ELECTRICITY_PRODUCTION_SENSORS)
+            if isinstance(production, list) and production:
+                detected[FIELD_SOURCES_PRODUCTION] = DetectedSensorList(
+                    [str(s) for s in production], _BATTERY_CONTROLLER_SOURCE
+                )
+
+    return detected
