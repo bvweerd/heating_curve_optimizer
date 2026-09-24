@@ -12,5 +12,5 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/bvweerd/heating_curve_optimizer/issues",
   "requirements": [],
-  "version": "2.0.0"
+  "version": "1.0.0b4"
 }
