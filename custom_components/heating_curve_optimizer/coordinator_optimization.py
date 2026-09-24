@@ -266,15 +266,17 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await super().async_shutdown()
 
     async def _handle_price_change(self, event: Event[EventStateChangedData]) -> None:
-        """Re-optimize on a significant price change."""
+        """Re-optimize on a significant price change or when the sensor recovers."""
         new_state = event.data.get("new_state")
+        old_state = event.data.get("old_state")
         if not new_state:
             return
         try:
             new_price = float(new_state.state)
         except (ValueError, TypeError):
             return
-        if price_change_is_significant(self._last_price, new_price):
+        recovered = old_state is None or old_state.state in ("unknown", "unavailable")
+        if recovered or price_change_is_significant(self._last_price, new_price):
             await self.async_request_refresh()
         self._last_price = new_price
 

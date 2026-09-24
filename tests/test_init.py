@@ -240,3 +240,55 @@ async def test_repair_flow_switches_zone_to_apply(
     result = await flow.async_step_confirm({})
     assert result["type"] == "create_entry"
     assert entry.subentries[subentry_id].data["calibration_mode"] == "apply"
+
+
+async def _past_debounce(hass: HomeAssistant) -> None:
+    """Let the coordinators' refresh debouncer (10 s cooldown) run."""
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    await hass.async_block_till_done()
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=11))
+    await hass.async_block_till_done()
+
+
+def _issue(hass: HomeAssistant, issue_id: str):
+    return ir.async_get(hass).async_get_issue(DOMAIN, issue_id)
+
+
+async def test_issues_clear_by_themselves_when_sensors_recover(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    entry = make_entry()
+    await setup_entry(hass, entry)
+    indoor_issue = f"indoor_sensor_unavailable_{entry.entry_id}"
+    price_issue = f"price_sensor_unavailable_{entry.entry_id}"
+
+    hass.states.async_set(INDOOR_SENSOR, "unavailable")
+    await hass.async_block_till_done()
+    assert _issue(hass, indoor_issue) is not None
+    hass.states.async_set(INDOOR_SENSOR, "20.3")
+    await _past_debounce(hass)
+    assert _issue(hass, indoor_issue) is None
+
+    attributes = dict(hass.states.get("sensor.electricity_price").attributes)
+    hass.states.async_set("sensor.electricity_price", "unavailable")
+    await entry.runtime_data.optimization_coordinator.async_refresh()
+    assert _issue(hass, price_issue) is not None
+    hass.states.async_set("sensor.electricity_price", "0.10", attributes)
+    await _past_debounce(hass)
+    assert _issue(hass, price_issue) is None
+
+
+async def test_unload_removes_the_entry_issues(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    hass.states.async_set(INDOOR_SENSOR, "unavailable")
+    entry = make_entry()
+    await setup_entry(hass, entry)
+    assert _issue(hass, f"indoor_sensor_unavailable_{entry.entry_id}") is not None
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert _issue(hass, f"indoor_sensor_unavailable_{entry.entry_id}") is None

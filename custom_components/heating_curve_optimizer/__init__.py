@@ -15,6 +15,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import (
@@ -375,9 +376,31 @@ async def async_remove_config_entry_device(
     )
 
 
+def _async_delete_issues(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove this entry's repair issues.
+
+    They are raised again on the next setup if the cause persists; without
+    this, issues of a removed zone or gas boiler, or of an unloaded entry,
+    would stay behind forever.
+    """
+    registry = ir.async_get(hass)
+    others = [
+        other
+        for other in hass.config_entries.async_loaded_entries(DOMAIN)
+        if other.entry_id != entry.entry_id
+    ]
+    for domain, issue_id in list(registry.issues):
+        if domain != DOMAIN:
+            continue
+        if entry.entry_id in issue_id or not others:
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry (coordinators shut down with the entry)."""
     unload_ok = bool(await hass.config_entries.async_unload_platforms(entry, PLATFORMS))
+    if unload_ok:
+        _async_delete_issues(hass, entry)
     if unload_ok and not [
         other
         for other in hass.config_entries.async_loaded_entries(DOMAIN)
