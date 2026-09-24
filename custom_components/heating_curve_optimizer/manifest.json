@@ -8,11 +8,8 @@
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://www.github.com/bvweerd/heating_curve_optimizer",
-  "homekit": {},
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/bvweerd/heating_curve_optimizer/issues",
   "requirements": [],
-  "ssdp": [],
-  "version": "2.0.0",
-  "zeroconf": []
+  "version": "2.0.0"
 }

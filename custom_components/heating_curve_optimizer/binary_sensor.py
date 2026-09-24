@@ -11,7 +11,7 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -28,6 +28,8 @@ class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity): 
     """Binary sensor that indicates heat demand using coordinator."""
 
     _attr_device_class = BinarySensorDeviceClass.HEAT
+    _attr_has_entity_name = True
+    _attr_translation_key = "heat_pump_demand"
     _attr_should_poll = False
 
     def __init__(self, coordinator: Any, entry_id: str, device: DeviceInfo) -> None:
@@ -35,8 +37,6 @@ class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity): 
         super().__init__(coordinator)
         self._entry_id = entry_id
         self._attr_unique_id = f"{entry_id}_heat_pump_demand"
-        self._attr_translation_key = "heat_pump_demand"
-        self._attr_has_entity_name = True
         self._attr_device_info = device
         self._attr_icon = "mdi:radiator"
 
@@ -91,6 +91,8 @@ class GasBoilerPreferredBinarySensor(CoordinatorEntity, BinarySensorEntity):  # 
     integration - a user's own automation decides whether/how to act on it.
     """
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "gas_boiler_preferred"
     _attr_icon = "mdi:gas-burner"
     _attr_should_poll = False
 
@@ -99,8 +101,6 @@ class GasBoilerPreferredBinarySensor(CoordinatorEntity, BinarySensorEntity):  # 
         super().__init__(coordinator)
         self._entry_id = entry_id
         self._attr_unique_id = f"{entry_id}_gas_boiler_preferred"
-        self._attr_translation_key = "gas_boiler_preferred"
-        self._attr_has_entity_name = True
         self._attr_device_info = device
 
     @property
@@ -140,14 +140,14 @@ class HeatDemandBinarySensor(BinarySensorEntity):  # type: ignore[misc]  # HA ba
     """Binary sensor that indicates whether the heat pump has demand."""
 
     _attr_device_class = BinarySensorDeviceClass.HEAT
+    _attr_has_entity_name = True
+    _attr_translation_key = "heat_pump_demand"
     _attr_should_poll = True
 
     def __init__(self, hass: HomeAssistant, entry_id: str, device: DeviceInfo) -> None:
         self.hass = hass
         self._entry_id = entry_id
         self._attr_unique_id = f"{entry_id}_heat_pump_demand"
-        self._attr_translation_key = "heat_pump_demand"
-        self._attr_has_entity_name = True
         self._attr_device_info = device
         self._attr_icon = "mdi:radiator"
         self._attr_available = False

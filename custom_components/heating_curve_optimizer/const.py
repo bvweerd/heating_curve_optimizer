@@ -1,11 +1,17 @@
 """Constants for the Heating Curve Optimizer integration."""
 
+from homeassistant.const import Platform
+
 # Domain of the integration
 DOMAIN = "heating_curve_optimizer"
-DOMAIN_ABBREVIATION = "HCO"
 
 # Supported platforms for this integration
-PLATFORMS = ["sensor", "binary_sensor", "number", "climate"]
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.NUMBER,
+    Platform.CLIMATE,
+]
 
 # Configuration keys
 CONF_SOURCE_TYPE = "source_type"
@@ -86,6 +92,17 @@ CONF_INDOOR_TEMP_HYSTERESIS = "indoor_temp_hysteresis"  # Legacy, kept for compa
 CONF_INDOOR_TEMP_HYSTERESIS_LOWER = "indoor_temp_hysteresis_lower"  # Below target
 CONF_INDOOR_TEMP_HYSTERESIS_UPPER = "indoor_temp_hysteresis_upper"  # Above target
 CONF_OFFSET_DELTA_T = "offset_delta_t"  # Minutes per 1°C offset change
+
+# Keys that live in entry.options and are written live by number entities
+# (target temperature, hysteresis). Changes to these keys do NOT trigger a
+# full coordinator reload - see _NO_RELOAD_KEYS in __init__.py.
+ENTITY_MANAGED_OPTIONS = frozenset(
+    {
+        CONF_TARGET_INDOOR_TEMP,
+        CONF_INDOOR_TEMP_HYSTERESIS_LOWER,
+        CONF_INDOOR_TEMP_HYSTERESIS_UPPER,
+    }
+)
 
 # Default values for heating curve settings
 DEFAULT_HEATING_CURVE_OFFSET = 0.0

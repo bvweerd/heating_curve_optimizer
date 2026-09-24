@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -13,9 +14,12 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import config_validation as cv, device_registry as dr
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import (
+    CONF_INDOOR_TEMP_HYSTERESIS_LOWER,
+    CONF_INDOOR_TEMP_HYSTERESIS_UPPER,
+    CONF_TARGET_INDOOR_TEMP,
     DOMAIN,
     GAS_SUBENTRY_TYPE,
     PLATFORMS,
@@ -45,6 +49,18 @@ _MANIFEST: dict[str, Any] = json.loads(
 SERVICE_RESET_THERMAL_CALIBRATION = "reset_thermal_calibration"
 SERVICE_ENTRY_ID = "entry_id"
 _SERVICE_RESET_SCHEMA = vol.Schema({vol.Optional(SERVICE_ENTRY_ID): cv.string})
+
+# Keys stored in entry.options by number entities that do NOT require a full
+# reload of the integration when they change.  Everything else (sensor IDs,
+# building parameters, timing parameters) triggers a reload so the
+# coordinators are re-initialised with the new structural configuration.
+_NO_RELOAD_KEYS = frozenset(
+    {
+        CONF_TARGET_INDOOR_TEMP,
+        CONF_INDOOR_TEMP_HYSTERESIS_LOWER,
+        CONF_INDOOR_TEMP_HYSTERESIS_UPPER,
+    }
+)
 
 
 @dataclass
@@ -86,13 +102,6 @@ class HeatingCurveOptimizerData:
     # from scratch with a fresh snapshot, so there is nothing to keep in
     # sync in between.
     options: dict[str, Any] = field(default_factory=dict)
-
-
-async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
-    """Set up the base integration (no YAML)."""
-    hass.data.setdefault(DOMAIN, {})
-    _LOGGER.info("Initialized Heating Curve Optimizer")
-    return True
 
 
 async def _async_handle_reset_thermal_calibration(
@@ -144,13 +153,10 @@ def _async_register_services(hass: HomeAssistant) -> None:
     if hass.services.has_service(DOMAIN, SERVICE_RESET_THERMAL_CALIBRATION):
         return
 
-    async def _handle(call: ServiceCall) -> None:
-        await _async_handle_reset_thermal_calibration(hass, call)
-
     hass.services.async_register(
         DOMAIN,
         SERVICE_RESET_THERMAL_CALIBRATION,
-        _handle,
+        partial(_async_handle_reset_thermal_calibration, hass),
         schema=_SERVICE_RESET_SCHEMA,
     )
 
@@ -179,6 +185,10 @@ def _find_primary_zone_subentry(entry: ConfigEntry) -> tuple[str, Any] | None:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up a config entry by forwarding to sensor & number platforms."""
     _LOGGER.info("Setting up entry %s", entry.entry_id)
+
+    # Register services early, before any coordinator setup, so they are
+    # available even if setup subsequently fails.
+    _async_register_services(hass)
 
     # Ensure DOMAIN exists in hass.data
     hass.data.setdefault(DOMAIN, {})
@@ -433,8 +443,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     _LOGGER.debug("Coordinators initialized successfully")
 
-    _async_register_services(hass)
-
     entry.async_on_unload(entry.add_update_listener(_update_listener))
 
     # Forward entry to ALL our platforms in one call:
@@ -445,7 +453,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle an options update by reloading the config entry.
+    """Handle an options update, reloading only when structural keys change.
 
     `entry.runtime_data.options` is the snapshot taken at setup, never
     mutated afterwards: a reload always rebuilds it fresh, so there is
@@ -453,6 +461,9 @@ async def _update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     unset for an entry whose setup never finished (e.g. it errored before
     reaching the end of `async_setup_entry`) - nothing to reload-guard for
     in that case either.
+
+    Keys in ``_NO_RELOAD_KEYS`` (target temperature, hysteresis) are
+    written live by number entities and don't need a coordinator restart.
     """
     runtime_data: HeatingCurveOptimizerData | None = getattr(
         entry, "runtime_data", None
@@ -460,12 +471,58 @@ async def _update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     if runtime_data is None:
         return
 
-    if runtime_data.options == dict(entry.options):
+    old_options = runtime_data.options
+    new_options = dict(entry.options)
+
+    if old_options == new_options:
         _LOGGER.debug("Entry %s options unchanged - no reload needed", entry.entry_id)
+        return
+
+    changed_keys = {
+        k
+        for k in set(old_options) | set(new_options)
+        if old_options.get(k) != new_options.get(k)
+    }
+    if changed_keys and changed_keys.issubset(_NO_RELOAD_KEYS):
+        _LOGGER.debug(
+            "Entry %s: only no-reload keys changed (%s) - skipping reload",
+            entry.entry_id,
+            changed_keys,
+        )
         return
 
     _LOGGER.debug("Reloading config entry %s", entry.entry_id)
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, config_entry: ConfigEntry, device_entry: dr.DeviceEntry
+) -> bool:
+    """Allow removing stale subentry devices from the device registry.
+
+    Mirrors battery_controller's implementation: returns False for the main
+    device and for devices whose subentry is still active, True for stale
+    devices left behind by deleted subentries.
+    """
+    for identifier in device_entry.identifiers:
+        if identifier[0] != DOMAIN:
+            continue
+        device_id = identifier[1]
+        if device_id == config_entry.entry_id:
+            return False  # Main device — cannot remove while integration is active
+        # Strip zone-entry-id suffix (f"{entry_id}_{subentry_id}") back to
+        # subentry_id by checking all active subentries.
+        for subentry_id in getattr(config_entry, "subentries", {}):
+            if device_id == f"{config_entry.entry_id}_{subentry_id}":
+                return False  # Subentry device still active
+            if device_id == subentry_id:
+                return False
+        # Gas boiler device uses f"{entry_id}_gas_boiler" as identifier.
+        if device_id == f"{config_entry.entry_id}_gas_boiler":
+            for subentry in getattr(config_entry, "subentries", {}).values():
+                if getattr(subentry, "subentry_type", None) == GAS_SUBENTRY_TYPE:
+                    return False
+    return True  # Stale device, allow removal
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -478,20 +535,49 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     if runtime_data is not None:
         if runtime_data.heat_coordinator is not None:
-            await runtime_data.heat_coordinator.async_shutdown()
+            try:
+                await runtime_data.heat_coordinator.async_shutdown()
+            except Exception:
+                _LOGGER.exception(
+                    "Error shutting down heat coordinator for %s", entry.entry_id
+                )
         if runtime_data.optimization_coordinator is not None:
-            await runtime_data.optimization_coordinator.async_shutdown()
+            try:
+                await runtime_data.optimization_coordinator.async_shutdown()
+            except Exception:
+                _LOGGER.exception(
+                    "Error shutting down optimization coordinator for %s",
+                    entry.entry_id,
+                )
 
         for zone_data in runtime_data.zones.values():
             zone_heat_coordinator = zone_data.get("heat_coordinator")
             if zone_heat_coordinator:
-                await zone_heat_coordinator.async_shutdown()
+                try:
+                    await zone_heat_coordinator.async_shutdown()
+                except Exception:
+                    _LOGGER.exception(
+                        "Error shutting down zone heat coordinator for %s",
+                        entry.entry_id,
+                    )
             zone_optimization_coordinator = zone_data.get("optimization_coordinator")
             if zone_optimization_coordinator:
-                await zone_optimization_coordinator.async_shutdown()
+                try:
+                    await zone_optimization_coordinator.async_shutdown()
+                except Exception:
+                    _LOGGER.exception(
+                        "Error shutting down zone optimization coordinator for %s",
+                        entry.entry_id,
+                    )
 
         if runtime_data.gas_boiler_coordinator is not None:
-            await runtime_data.gas_boiler_coordinator.async_shutdown()
+            try:
+                await runtime_data.gas_boiler_coordinator.async_shutdown()
+            except Exception:
+                _LOGGER.exception(
+                    "Error shutting down gas boiler coordinator for %s",
+                    entry.entry_id,
+                )
 
     unload_ok = bool(await hass.config_entries.async_unload_platforms(entry, PLATFORMS))
     if unload_ok:
@@ -503,6 +589,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.debug("Successfully unloaded entry %s", entry.entry_id)
         if DOMAIN in hass.data and not hass.data[DOMAIN]:
             hass.data.pop(DOMAIN)
+
+        # Remove services when the last entry for this domain is unloaded.
+        remaining = hass.config_entries.async_entries(DOMAIN)
+        if not remaining:
+            if hass.services.has_service(DOMAIN, SERVICE_RESET_THERMAL_CALIBRATION):
+                hass.services.async_remove(DOMAIN, SERVICE_RESET_THERMAL_CALIBRATION)
     else:
         _LOGGER.warning("Failed to unload entry %s", entry.entry_id)
     return unload_ok

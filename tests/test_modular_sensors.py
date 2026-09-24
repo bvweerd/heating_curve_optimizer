@@ -5,49 +5,18 @@ from unittest.mock import MagicMock
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.components.sensor import SensorStateClass
 
-# Weather sensors
-from custom_components.heating_curve_optimizer.sensor.weather.outdoor_temperature import (
+from custom_components.heating_curve_optimizer.sensor import (
     CoordinatorOutdoorTemperatureSensor,
-)
-
-# Heat sensors
-from custom_components.heating_curve_optimizer.sensor.heat.heat_loss import (
     CoordinatorHeatLossSensor,
-)
-from custom_components.heating_curve_optimizer.sensor.heat.solar_gain import (
     CoordinatorWindowSolarGainSensor,
-)
-from custom_components.heating_curve_optimizer.sensor.heat.pv_production import (
     CoordinatorPVProductionForecastSensor,
-)
-from custom_components.heating_curve_optimizer.sensor.heat.net_heat_loss import (
     CoordinatorNetHeatLossSensor,
-)
-
-# Optimization sensors
-from custom_components.heating_curve_optimizer.sensor.optimization.heating_curve_offset import (
     CoordinatorHeatingCurveOffsetSensor,
-)
-from custom_components.heating_curve_optimizer.sensor.optimization.optimized_supply_temperature import (
     CoordinatorOptimizedSupplyTemperatureSensor,
-)
-from custom_components.heating_curve_optimizer.sensor.optimization.heat_buffer import (
     CoordinatorHeatBufferSensor,
-)
-from custom_components.heating_curve_optimizer.sensor.optimization.cost_savings import (
     CoordinatorCostSavingsSensor,
-)
-
-# COP sensors
-from custom_components.heating_curve_optimizer.sensor.cop.quadratic_cop import (
     CoordinatorQuadraticCopSensor,
-)
-from custom_components.heating_curve_optimizer.sensor.cop.calculated_supply_temperature import (
     CoordinatorCalculatedSupplyTemperatureSensor,
-)
-
-# Diagnostics sensor
-from custom_components.heating_curve_optimizer.sensor.diagnostics_sensor import (
     CoordinatorDiagnosticsSensor,
 )
 

@@ -7,7 +7,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
     SensorDeviceClass,
 )
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 
 
 import logging
@@ -16,6 +16,8 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class BaseUtilitySensor(SensorEntity, RestoreEntity):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         name: str | None,
@@ -29,8 +31,8 @@ class BaseUtilitySensor(SensorEntity, RestoreEntity):  # type: ignore[misc]  # H
     ):
         if name is not None:
             self._attr_name = name
-        self._attr_translation_key = translation_key
-        self._attr_has_entity_name = translation_key is not None
+        if translation_key is not None:
+            self._attr_translation_key = translation_key
         self._attr_unique_id = unique_id
         self._attr_native_unit_of_measurement = unit
         if device_class is not None and not isinstance(device_class, SensorDeviceClass):
