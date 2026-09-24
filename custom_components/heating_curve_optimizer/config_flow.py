@@ -37,6 +37,7 @@ from homeassistant.helpers.selector import (
     SelectSelectorMode,
     TextSelector,
 )
+from homeassistant.helpers.translation import async_get_translations
 
 from .companion_integrations import (
     DetectedPvArray,
@@ -180,6 +181,8 @@ async def _test_api_connection(hass: HomeAssistant) -> str | None:
 
 
 # --- main entry ---------------------------------------------------------------
+
+FIELD_USE_DETECTED = "use_detected"
 
 SECTION_PRICES = "prices"
 SECTION_SENSORS = "sensors"
@@ -374,27 +377,44 @@ class HeatingCurveOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_detected_integrations(
-        self, user_input: dict[str, bool] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Offer to prefill sensors found in Battery Controller / DECC."""
+        """Offer to prefill sensors found in Battery Controller / DECC.
+
+        One multi-select list (all selected by default) instead of a
+        checkbox per sensor: each line names the setting, the entity and
+        the integration it was found in.
+        """
         if user_input is not None:
-            for field, use_detected in user_input.items():
-                if use_detected and field in self._detected:
+            for field in user_input.get(FIELD_USE_DETECTED, []):
+                if field in self._detected:
                     self._defaults[field] = self._detected[field].entity_id
             return await self.async_step_user()
 
-        schema = vol.Schema(
-            {vol.Optional(field, default=True): bool for field in self._detected}
+        translations = await async_get_translations(
+            self.hass, self.hass.config.language, "selector", {DOMAIN}
         )
-        detected_list = "\n".join(
-            f"- {field}: `{detected.entity_id}` ({detected.source})"
+        prefix = f"component.{DOMAIN}.selector.{FIELD_USE_DETECTED}.options."
+        options = [
+            SelectOptionDict(
+                value=field,
+                label=f"{translations.get(prefix + field, field)}: "
+                f"{detected.entity_id} ({detected.source})",
+            )
             for field, detected in self._detected.items()
+        ]
+        schema = vol.Schema(
+            {
+                vol.Optional(
+                    FIELD_USE_DETECTED, default=list(self._detected)
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=options, multiple=True, mode=SelectSelectorMode.LIST
+                    )
+                )
+            }
         )
-        return self.async_show_form(
-            step_id="detected_integrations",
-            data_schema=schema,
-            description_placeholders={"detected_list": detected_list},
-        )
+        return self.async_show_form(step_id="detected_integrations", data_schema=schema)
 
 
 class HeatingCurveOptimizerOptionsFlow(OptionsFlow):
@@ -661,7 +681,9 @@ def pv_array_title(data: dict[str, Any]) -> str:
 
 
 def _detected_pv_defaults(array: DetectedPvArray) -> dict[str, Any]:
-    return {
+    """Prefill the PV form from a Battery Controller array, name included."""
+    defaults: dict[str, Any] = {"name": array.name} if array.name else {}
+    return defaults | {
         CONF_PV_PEAK_POWER_KWP: array.peak_power_kwp,
         CONF_PV_ORIENTATION: array.orientation,
         CONF_PV_TILT: array.tilt,
