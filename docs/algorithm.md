@@ -89,20 +89,9 @@ runs, the baseline cost minus the optimized cost of the step being executed
 
 ## Calibration
 
-With a measured indoor temperature and a heat pump power sensor, the
-integration collects samples:
-
-- a window starts at one optimization run and integrates delivered heat
-  (power × COP, independent of the `UA`/`C` being estimated), solar and
-  internal gains and the indoor–outdoor temperature difference;
-- it closes once the indoor temperature has moved at least 0.3 °C (after at
-  least 15 minutes, at most 6 hours);
-- `C · rate + UA · ΔT = gains` is solved by least squares over the last 200
-  samples.
-
-After 30 samples, and when the fit is within 0.3–3× the label estimate, the
-learned values replace the estimate. Reset with the service
-`heating_curve_optimizer.reset_thermal_calibration`.
+Heat loss, thermal mass, solar and internal gains, the COP curve and the
+emitter curve can be learned from measurements. See
+[Calibration](calibration.md).
 
 ## Real-time PV-surplus layer
 

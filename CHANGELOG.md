@@ -45,6 +45,18 @@ deployments to migrate from.
   unused settings (energy source sensors, curve offset, time base) removed.
 - Diagnostics redact sensor IDs in the runtime config as well.
 
+### Calibration
+- Learns heat loss, thermal mass, solar factor and internal gains; the COP
+  curve (heat meter) or COP level (gas meter windows); and the emitter
+  curve. Ridge-regularised towards the label estimates, with quality gates.
+- Optional thermal power, tap-water and window/door sensors; excluded
+  windows are counted and shown.
+- Modes off / observe / apply per zone; a repair notification asks before
+  a ready fit is used.
+- Calibration sensor with readable results (effective energy label, time
+  constant, cooling rate) and a model-accuracy sensor comparing the learned
+  and label models, including a two-mass diagnosis.
+
 ### Removed
 - The legacy optimizer, buffer model, history-based calibration sensor and
   related settings, sensors and documentation.

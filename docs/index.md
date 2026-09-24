@@ -38,7 +38,8 @@ whenever the thermal mass allows it.
   a Carnot limit.
 - Solar gain through windows and PV production forecast using solar
   geometry (plane-of-array irradiance).
-- Automatic calibration of heat loss and thermal mass from measured data.
+- Calibration of the building, COP curve and emitters from your own
+  measurements, with a status and accuracy sensor to follow the results.
 - Optional real-time PV-surplus layer and hybrid gas-boiler advice
   (heat pump first).
 - Multiple heating zones (heating circuits).

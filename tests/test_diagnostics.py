@@ -9,6 +9,8 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.heating_curve_optimizer import HeatingCurveOptimizerData
 from custom_components.heating_curve_optimizer.calibration import (
     RESULT_FITTED,
+    Prior,
+    Sample,
     ThermalCalibrationState,
 )
 from custom_components.heating_curve_optimizer.const import DOMAIN
@@ -197,9 +199,9 @@ async def test_diagnostics_calibration_section_reflects_state(hass: HomeAssistan
 
     store = MagicMock()
     calibration = ThermalCalibrationState(store=store)
-    calibration.last_result = RESULT_FITTED
-    calibration.learned_ua_w_per_k = 410.0
-    calibration.learned_thermal_mass_kwh_per_k = 11.5
+    prior = Prior(410.0, 11.5, 0.4, 150)
+    for rate in (0.2, -0.1, 0.3, -0.2):
+        calibration.record_sample(Sample(15.0, 6.0 + 10 * rate, 0.2, rate), prior)
 
     mock_opt = MagicMock()
     mock_opt.data = {"optimal_offset": 1.0}
@@ -212,10 +214,10 @@ async def test_diagnostics_calibration_section_reflects_state(hass: HomeAssistan
 
     primary_calibration = diagnostics["calibration"]["primary_zone"]
     assert primary_calibration["last_result"] == RESULT_FITTED
-    assert primary_calibration["learned_ua_w_per_k"] == 410.0
-    assert primary_calibration["learned_thermal_mass_kwh_per_k"] == 11.5
-    assert primary_calibration["sample_count"] == 0
-    assert primary_calibration["applied"] is False
+    assert primary_calibration["fit"]["ua_w_per_k"] > 0
+    assert primary_calibration["sample_count"] == 4
+    assert primary_calibration["ready"] is False
+    assert len(primary_calibration["samples"]) == 4
 
 
 @pytest.mark.asyncio

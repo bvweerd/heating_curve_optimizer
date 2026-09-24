@@ -55,6 +55,9 @@ GAS_SUBENTRY_TYPE = "gas_boiler"
 CONF_GAS_PRICE_SENSOR = "gas_price_sensor"
 CONF_GAS_BOILER_EFFICIENCY = "gas_boiler_efficiency"
 CONF_GAS_CALORIFIC_VALUE = "gas_calorific_value_kwh_per_m3"
+# Optional cumulative gas meter (m³ or kWh) of the boiler: gives absolute
+# heat for calibrating the heat pump's COP level.
+CONF_GAS_METER_SENSOR = "gas_meter_sensor"
 # Use the gas boiler as comfort backup when the heat pump cannot restore the
 # comfort band, regardless of price. Off: gas only when it is also cheaper.
 CONF_GAS_COMFORT_BACKUP = "gas_comfort_backup"
@@ -73,6 +76,12 @@ DEFAULT_GAS_CALORIFIC_VALUE_KWH_PER_M3 = 9.77
 
 # Real-time grid power (optional): enables the PV-surplus controller.
 CONF_GRID_IMPORT_SENSOR = "grid_import_sensor"
+# Optional calibration inputs.
+CONF_HEAT_PUMP_THERMAL_POWER_SENSOR = "heat_pump_thermal_power_sensor"
+CONF_DHW_ACTIVE_SENSOR = "dhw_active_sensor"
+CONF_WINDOW_SENSORS = "window_sensors"  # zone
+CONF_CALIBRATION_MODE = "calibration_mode"  # zone
+DEFAULT_CALIBRATION_MODE = "observe"
 CONF_GRID_EXPORT_SENSOR = "grid_export_sensor"
 CONF_HEAT_PUMP_MAX_THERMAL_POWER = "heat_pump_max_thermal_power_kw"
 CONF_K_FACTOR = "k_factor"
