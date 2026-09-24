@@ -179,3 +179,38 @@ async def test_gas_subentry_is_single_instance(hass: HomeAssistant) -> None:
     result = await _start_subentry_flow(hass, entry, GAS_SUBENTRY_TYPE)
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "single_instance_allowed"
+
+
+async def test_detected_integrations_prefill_selected_only(hass: HomeAssistant) -> None:
+    from custom_components.heating_curve_optimizer.companion_integrations import (
+        DetectedSensor,
+    )
+
+    detected = {
+        "consumption_price_sensor": DetectedSensor("sensor.decc_price", "DECC"),
+        "grid_import_sensor": DetectedSensor(
+            "sensor.grid_import", "Battery Controller"
+        ),
+    }
+    with patch(
+        "custom_components.heating_curve_optimizer.config_flow.detect_main_flow_sensors",
+        return_value=detected,
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+    assert result["step_id"] == "detected_integrations"
+    options = result["data_schema"].schema["use_detected"].config["options"]
+    assert options[0]["label"] == "Consumption price: sensor.decc_price (DECC)"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"use_detected": ["consumption_price_sensor"]}
+    )
+    assert result["step_id"] == "user"
+    prices = result["data_schema"].schema["prices"].schema.schema
+    suggested = {
+        str(key): key.description.get("suggested_value")
+        for key in prices
+        if key.description
+    }
+    assert suggested["consumption_price_sensor"] == "sensor.decc_price"

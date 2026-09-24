@@ -82,14 +82,10 @@
         }
       },
       "detected_integrations": {
-        "title": "Gevonden bijbehorende integraties",
-        "description": "Deze sensoren zijn al ingesteld in een andere integratie:\n\n{detected_list}\n\nVooraf invullen in het instelformulier?",
+        "title": "Gevonden in andere integraties",
+        "description": "Deze sensoren zijn al ingesteld in een andere integratie. De aangevinkte worden in het volgende formulier ingevuld.",
         "data": {
-          "power_consumption": "Vermogenssensor warmtepomp",
-          "grid_import_sensor": "Netafname-sensor",
-          "grid_export_sensor": "Netteruglevering-sensor",
-          "consumption_price_sensor": "Sensor afnameprijs",
-          "production_price_sensor": "Sensor terugleverprijs"
+          "use_detected": "Vooraf invullen"
         }
       }
     },
@@ -359,6 +355,15 @@
     }
   },
   "selector": {
+    "use_detected": {
+      "options": {
+        "consumption_price_sensor": "Afnameprijs",
+        "production_price_sensor": "Terugleverprijs",
+        "power_consumption": "Vermogen warmtepomp",
+        "grid_import_sensor": "Netafname",
+        "grid_export_sensor": "Netteruglevering"
+      }
+    },
     "ventilation_type": {
       "options": {
         "none": "Geen/minimaal",

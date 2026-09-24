@@ -82,14 +82,10 @@
         }
       },
       "detected_integrations": {
-        "title": "Detected companion integrations",
-        "description": "These sensors are already configured in another integration:\n\n{detected_list}\n\nPrefill them in the setup form?",
+        "title": "Found in other integrations",
+        "description": "These sensors are already configured in another integration. The selected ones are prefilled in the next form.",
         "data": {
-          "power_consumption": "Heat pump power sensor",
-          "grid_import_sensor": "Grid import sensor",
-          "grid_export_sensor": "Grid export sensor",
-          "consumption_price_sensor": "Consumption price sensor",
-          "production_price_sensor": "Feed-in price sensor"
+          "use_detected": "Prefill"
         }
       }
     },
@@ -359,6 +355,15 @@
     }
   },
   "selector": {
+    "use_detected": {
+      "options": {
+        "consumption_price_sensor": "Consumption price",
+        "production_price_sensor": "Feed-in price",
+        "power_consumption": "Heat pump power",
+        "grid_import_sensor": "Grid import",
+        "grid_export_sensor": "Grid export"
+      }
+    },
     "ventilation_type": {
       "options": {
         "none": "None/minimal",
