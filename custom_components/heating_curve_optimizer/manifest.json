@@ -5,7 +5,9 @@
     "@bvweerd"
   ],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": [
+    "repairs"
+  ],
   "documentation": "https://bvweerd.github.io/heating_curve_optimizer/",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/bvweerd/heating_curve_optimizer/issues",

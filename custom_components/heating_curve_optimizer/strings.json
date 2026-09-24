@@ -22,12 +22,16 @@
             "description": "Improve accuracy and enable thermal calibration and real-time PV-surplus control.",
             "data": {
               "power_consumption": "Heat pump electrical power",
+              "heat_pump_thermal_power_sensor": "Heat pump thermal power",
               "supply_temperature_sensor": "Measured supply temperature",
+              "dhw_active_sensor": "Tap water heating active",
               "grid_import_sensor": "Grid import power",
               "grid_export_sensor": "Grid export power"
             },
             "data_description": {
               "power_consumption": "Power sensor (W or kW) of the heat pump. Enables thermal power/energy sensors and thermal calibration.",
+              "heat_pump_thermal_power_sensor": "Optional heat meter or heat output reported by the heat pump (W or kW). Makes calibration independent of the COP model and enables learning the COP curve.",
+              "dhw_active_sensor": "Binary sensor that is on while the heat pump heats tap water. Those periods are left out of the calibration. Leave empty if there is no tap water operation.",
               "supply_temperature_sensor": "Used for the COP of the measured operating point; otherwise the planned supply temperature is used.",
               "grid_import_sensor": "Live power (W or kW). With import and/or export configured, the real-time offset sensor raises the offset while PV surplus is exported.",
               "grid_export_sensor": "Live power (W or kW), positive while exporting."
@@ -121,12 +125,16 @@
             "description": "Improve accuracy and enable thermal calibration and real-time PV-surplus control.",
             "data": {
               "power_consumption": "Heat pump electrical power",
+              "heat_pump_thermal_power_sensor": "Heat pump thermal power",
               "supply_temperature_sensor": "Measured supply temperature",
+              "dhw_active_sensor": "Tap water heating active",
               "grid_import_sensor": "Grid import power",
               "grid_export_sensor": "Grid export power"
             },
             "data_description": {
               "power_consumption": "Power sensor (W or kW) of the heat pump. Enables thermal power/energy sensors and thermal calibration.",
+              "heat_pump_thermal_power_sensor": "Optional heat meter or heat output reported by the heat pump (W or kW). Makes calibration independent of the COP model and enables learning the COP curve.",
+              "dhw_active_sensor": "Binary sensor that is on while the heat pump heats tap water. Those periods are left out of the calibration. Leave empty if there is no tap water operation.",
               "supply_temperature_sensor": "Used for the COP of the measured operating point; otherwise the planned supply temperature is used.",
               "grid_import_sensor": "Live power (W or kW). With import and/or export configured, the real-time offset sensor raises the offset while PV surplus is exported.",
               "grid_export_sensor": "Live power (W or kW), positive while exporting."
@@ -214,6 +222,8 @@
             "indoor_temp_hysteresis_lower": "Comfort band below target",
             "indoor_temp_hysteresis_upper": "Comfort band above target",
             "indoor_temperature_sensor": "Indoor temperature sensor",
+            "window_sensors": "Window and door contacts",
+            "calibration_mode": "Calibration",
             "heat_curve_min": "Own curve: supply temperature at the warm end",
             "heat_curve_max": "Own curve: supply temperature at the cold end"
           },
@@ -223,6 +233,8 @@
             "glass_u_value": "Double glazing ~2.8, HR++ ~1.2, triple ~0.8.",
             "indoor_temp_hysteresis_lower": "The optimizer keeps the indoor temperature between target - lower and target + upper.",
             "indoor_temperature_sensor": "Strongly recommended. Without it the optimizer assumes the room is at the target temperature and calibration is not possible.",
+            "window_sensors": "Optional. Periods with an open window or door are left out of the calibration.",
+            "calibration_mode": "Learn the building from measurements. Observe: learn and show results, ask before using them. Apply: use the learned model as soon as it passes the quality checks.",
             "heat_curve_min": "Only for a separate heating circuit with its own curve; leave both empty to use the main curve.",
             "heat_curve_max": "Fill both or neither."
           }
@@ -247,6 +259,8 @@
             "indoor_temp_hysteresis_lower": "Comfort band below target",
             "indoor_temp_hysteresis_upper": "Comfort band above target",
             "indoor_temperature_sensor": "Indoor temperature sensor",
+            "window_sensors": "Window and door contacts",
+            "calibration_mode": "Calibration",
             "heat_curve_min": "Own curve: supply temperature at the warm end",
             "heat_curve_max": "Own curve: supply temperature at the cold end"
           },
@@ -256,6 +270,8 @@
             "glass_u_value": "Double glazing ~2.8, HR++ ~1.2, triple ~0.8.",
             "indoor_temp_hysteresis_lower": "The optimizer keeps the indoor temperature between target - lower and target + upper.",
             "indoor_temperature_sensor": "Strongly recommended. Without it the optimizer assumes the room is at the target temperature and calibration is not possible.",
+            "window_sensors": "Optional. Periods with an open window or door are left out of the calibration.",
+            "calibration_mode": "Learn the building from measurements. Observe: learn and show results, ask before using them. Apply: use the learned model as soon as it passes the quality checks.",
             "heat_curve_min": "Only for a separate heating circuit with its own curve; leave both empty to use the main curve.",
             "heat_curve_max": "Fill both or neither."
           }
@@ -323,12 +339,14 @@
             "gas_price_sensor": "Gas price sensor",
             "gas_boiler_efficiency": "Boiler efficiency",
             "gas_calorific_value_kwh_per_m3": "Calorific value",
-            "gas_comfort_backup": "Gas as comfort backup"
+            "gas_comfort_backup": "Gas as comfort backup",
+            "gas_meter_sensor": "Gas meter"
           },
           "data_description": {
             "gas_price_sensor": "Current gas price in EUR/m³.",
             "gas_boiler_efficiency": "0.90 for a typical HR boiler; up to ~1.07 on upper heating value at low return temperatures.",
             "gas_calorific_value_kwh_per_m3": "Dutch G-gas upper heating value: 9.77 kWh/m³.",
+            "gas_meter_sensor": "Optional cumulative gas meter (m³ or kWh). Periods on gas give an absolute heat measurement that calibrates the heat pump's COP level. Coarse (e.g. hourly) updates are fine. Only reliable if the boiler does not also heat tap water.",
             "gas_comfort_backup": "On: recommend the gas boiler whenever the heat pump cannot restore the comfort band within 3 hours, even if gas is more expensive. Off: only when gas is also cheaper."
           }
         },
@@ -338,12 +356,14 @@
             "gas_price_sensor": "Gas price sensor",
             "gas_boiler_efficiency": "Boiler efficiency",
             "gas_calorific_value_kwh_per_m3": "Calorific value",
-            "gas_comfort_backup": "Gas as comfort backup"
+            "gas_comfort_backup": "Gas as comfort backup",
+            "gas_meter_sensor": "Gas meter"
           },
           "data_description": {
             "gas_price_sensor": "Current gas price in EUR/m³.",
             "gas_boiler_efficiency": "0.90 for a typical HR boiler; up to ~1.07 on upper heating value at low return temperatures.",
             "gas_calorific_value_kwh_per_m3": "Dutch G-gas upper heating value: 9.77 kWh/m³.",
+            "gas_meter_sensor": "Optional cumulative gas meter (m³ or kWh). Periods on gas give an absolute heat measurement that calibrates the heat pump's COP level. Coarse (e.g. hourly) updates are fine. Only reliable if the boiler does not also heat tap water.",
             "gas_comfort_backup": "On: recommend the gas boiler whenever the heat pump cannot restore the comfort band within 3 hours, even if gas is more expensive. Off: only when gas is also cheaper."
           }
         }
@@ -362,6 +382,13 @@
         "power_consumption": "Heat pump power",
         "grid_import_sensor": "Grid import",
         "grid_export_sensor": "Grid export"
+      }
+    },
+    "calibration_mode": {
+      "options": {
+        "off": "Off",
+        "observe": "Observe (ask before applying)",
+        "apply": "Apply automatically"
       }
     },
     "ventilation_type": {
@@ -436,8 +463,19 @@
       "shadow_price": {
         "name": "Value of stored heat"
       },
-      "thermal_calibration": {
-        "name": "Thermal calibration samples"
+      "calibration": {
+        "name": "Calibration",
+        "state": {
+          "off": "Off",
+          "unavailable": "Not possible",
+          "collecting": "Collecting measurements",
+          "provisional": "Provisional",
+          "ready": "Ready, waiting for confirmation",
+          "applied": "Applied"
+        }
+      },
+      "model_accuracy": {
+        "name": "Model accuracy"
       },
       "realtime_offset": {
         "name": "Real-time heating curve offset"
@@ -548,6 +586,17 @@
     "indoor_sensor_unavailable": {
       "title": "Indoor temperature sensor unavailable",
       "description": "The indoor temperature sensor **{sensor}** is unavailable. Until it reports again, the optimizer assumes the room is at its target temperature and calibration is paused."
+    },
+    "calibration_ready": {
+      "title": "Calibration of {zone} is ready",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Use the learned building model?",
+            "description": "After {samples} measurements the calibration passes all quality checks: heat loss {ua} W/K, time constant {tau} h. The details are on the Calibration sensor. Submit to let the optimizer use the learned model (calibration mode becomes Apply). You can switch back in the zone settings."
+          }
+        }
+      }
     },
     "gas_price_sensor_unavailable": {
       "title": "Gas price sensor unavailable",

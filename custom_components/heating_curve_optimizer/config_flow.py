@@ -39,6 +39,7 @@ from homeassistant.helpers.selector import (
 )
 from homeassistant.helpers.translation import async_get_translations
 
+from .calibration import CALIBRATION_MODES
 from .companion_integrations import (
     DetectedPvArray,
     DetectedSensor,
@@ -49,14 +50,17 @@ from .companion_integrations import (
 from .const import (
     CONF_AREA_M2,
     CONF_BASE_COP,
+    CONF_CALIBRATION_MODE,
     CONF_CEILING_HEIGHT,
     CONF_CONSUMPTION_PRICE_SENSOR,
     CONF_COP_COMPENSATION_FACTOR,
+    CONF_DHW_ACTIVE_SENSOR,
     CONF_EMITTER_TYPE,
     CONF_ENERGY_LABEL,
     CONF_GAS_BOILER_EFFICIENCY,
     CONF_GAS_CALORIFIC_VALUE,
     CONF_GAS_COMFORT_BACKUP,
+    CONF_GAS_METER_SENSOR,
     CONF_GAS_PRICE_SENSOR,
     CONF_GLASS_EAST_M2,
     CONF_GLASS_SOUTH_M2,
@@ -69,6 +73,7 @@ from .const import (
     CONF_HEAT_CURVE_MIN,
     CONF_HEAT_CURVE_MIN_OUTDOOR,
     CONF_HEAT_PUMP_MAX_THERMAL_POWER,
+    CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
     CONF_INDOOR_TEMP_HYSTERESIS_LOWER,
     CONF_INDOOR_TEMP_HYSTERESIS_UPPER,
     CONF_INDOOR_TEMPERATURE_SENSOR,
@@ -88,6 +93,8 @@ from .const import (
     CONF_TARGET_INDOOR_TEMP,
     CONF_THERMAL_MASS_CLASS,
     CONF_VENTILATION_TYPE,
+    CONF_WINDOW_SENSORS,
+    DEFAULT_CALIBRATION_MODE,
     DEFAULT_CEILING_HEIGHT,
     DEFAULT_COP_AT_35,
     DEFAULT_COP_COMPENSATION_FACTOR,
@@ -194,7 +201,9 @@ _MAIN_SECTIONS: dict[str, tuple[str, ...]] = {
     SECTION_PRICES: (CONF_CONSUMPTION_PRICE_SENSOR, CONF_PRODUCTION_PRICE_SENSOR),
     SECTION_SENSORS: (
         CONF_POWER_CONSUMPTION,
+        CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
         CONF_SUPPLY_TEMPERATURE_SENSOR,
+        CONF_DHW_ACTIVE_SENSOR,
         CONF_GRID_IMPORT_SENSOR,
         CONF_GRID_EXPORT_SENSOR,
     ),
@@ -247,7 +256,11 @@ def build_main_schema(defaults: dict[str, Any]) -> vol.Schema:
     sensors = vol.Schema(
         {
             opt(CONF_POWER_CONSUMPTION): _sensor("power"),
+            opt(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR): _sensor("power"),
             opt(CONF_SUPPLY_TEMPERATURE_SENSOR): _sensor("temperature"),
+            opt(CONF_DHW_ACTIVE_SENSOR): EntitySelector(
+                EntitySelectorConfig(domain="binary_sensor")
+            ),
             opt(CONF_GRID_IMPORT_SENSOR): _sensor("power"),
             opt(CONF_GRID_EXPORT_SENSOR): _sensor("power"),
         }
@@ -522,6 +535,15 @@ def build_zone_schema(defaults: dict[str, Any]) -> vol.Schema:
                 description=d(CONF_INDOOR_TEMPERATURE_SENSOR),
             ): _sensor("temperature"),
             vol.Optional(
+                CONF_WINDOW_SENSORS, description=d(CONF_WINDOW_SENSORS)
+            ): EntitySelector(
+                EntitySelectorConfig(domain="binary_sensor", multiple=True)
+            ),
+            vol.Required(
+                CONF_CALIBRATION_MODE,
+                description=d(CONF_CALIBRATION_MODE, DEFAULT_CALIBRATION_MODE),
+            ): _select(CALIBRATION_MODES, "calibration_mode"),
+            vol.Optional(
                 CONF_HEAT_CURVE_MIN, description=d(CONF_HEAT_CURVE_MIN)
             ): _number(15.0, 50.0, 0.5, "°C"),
             vol.Optional(
@@ -568,6 +590,11 @@ def validate_zone_input(
         data[key] = user_input[key]
     if sensor := user_input.get(CONF_INDOOR_TEMPERATURE_SENSOR):
         data[CONF_INDOOR_TEMPERATURE_SENSOR] = sensor
+    if windows := user_input.get(CONF_WINDOW_SENSORS):
+        data[CONF_WINDOW_SENSORS] = list(windows)
+    data[CONF_CALIBRATION_MODE] = user_input.get(
+        CONF_CALIBRATION_MODE, DEFAULT_CALIBRATION_MODE
+    )
     curve_min = user_input.get(CONF_HEAT_CURVE_MIN)
     curve_max = user_input.get(CONF_HEAT_CURVE_MAX)
     if (curve_min is None) != (curve_max is None):
@@ -789,6 +816,10 @@ def build_gas_boiler_schema(defaults: dict[str, Any]) -> vol.Schema:
                     DEFAULT_GAS_CALORIFIC_VALUE_KWH_PER_M3,
                 ),
             ): _number(5.0, 15.0, 0.01, "kWh/m³"),
+            vol.Optional(
+                CONF_GAS_METER_SENSOR,
+                description=_suggested(defaults, CONF_GAS_METER_SENSOR),
+            ): _sensor(["gas", "energy"]),
             vol.Required(
                 CONF_GAS_COMFORT_BACKUP,
                 description=_suggested(
@@ -808,6 +839,7 @@ def normalize_gas_boiler_input(user_input: dict[str, Any]) -> dict[str, Any]:
         CONF_GAS_COMFORT_BACKUP: bool(
             user_input.get(CONF_GAS_COMFORT_BACKUP, DEFAULT_GAS_COMFORT_BACKUP)
         ),
+        CONF_GAS_METER_SENSOR: user_input.get(CONF_GAS_METER_SENSOR),
     }
 
 

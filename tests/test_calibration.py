@@ -1,229 +1,173 @@
-"""Tests for calibration.py (phase 4, docs/redesign/REDESIGN.md)."""
+"""Tests for calibration.py: building, COP and emitter fits."""
 
 from __future__ import annotations
 
+import math
 import random
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from custom_components.heating_curve_optimizer.calibration import (
-    MIN_INDOOR_TEMP_DELTA_C,
     MIN_SAMPLES_TO_APPLY,
-    RESULT_ELAPSED_GAP,
-    RESULT_IMPLAUSIBLE,
-    RESULT_MISSING_BUILDING_CONFIG,
-    RESULT_NO_INDOOR_SENSOR,
-    RESULT_NO_POWER_READING,
-    RESULT_NO_RESULT,
-    RESULT_STEP_TOO_SMALL,
+    RESULT_EXCLUDED_DHW,
+    CopSample,
+    EmitterSample,
+    Prior,
+    Sample,
     ThermalCalibrationState,
-    fit_ua_and_thermal_mass,
+    effective_energy_label,
+    fit_building,
+    fit_cop,
+    fit_emitter,
+    fit_passes_quality_gates,
+    residual_diagnosis,
+)
+
+PRIOR = Prior(
+    ua_w_per_k=400.0, thermal_mass_kwh_per_k=12.0, internal_gain_kw=0.45, area_m2=150
 )
 
 
-def _synthetic_samples(
-    true_thermal_mass: float,
-    true_ua: float,
+def _samples(
     *,
-    n: int = 50,
-    step_hours: float = 0.25,
+    ua: float,
+    mass: float,
+    solar_factor: float = 1.0,
+    internal_kw: float = 0.45,
+    cop_scale: float = 1.0,
+    gas_share: float = 0.0,
+    n: int = 60,
     noise: float = 0.0,
     seed: int = 1,
-) -> list[tuple[float, float, float]]:
-    """Generate samples that exactly satisfy the 1R1C model for known
-    (true_thermal_mass, true_ua), optionally with Gaussian-ish noise added
-    to the observed rate - the fit should recover the true values."""
+) -> list[Sample]:
+    """Windows that satisfy the 1R1C balance for known parameters.
+
+    ``heat_kw`` is what the integration believes the heat pump delivered;
+    the true heat pump heat is ``cop_scale`` times that.
+    """
     rng = random.Random(seed)
     samples = []
-    for _ in range(n):
-        delta_t = rng.uniform(2.0, 20.0)
-        heat_and_solar_kw = rng.uniform(0.0, 6.0)
-        true_rate = (heat_and_solar_kw - (true_ua / 1000.0) * delta_t) / (
-            true_thermal_mass
-        )
-        observed_rate = true_rate + rng.uniform(-noise, noise)
-        samples.append((delta_t, heat_and_solar_kw, observed_rate))
+    for i in range(n):
+        delta_t = rng.uniform(5.0, 22.0)
+        solar = rng.uniform(0.0, 1.5)
+        on_gas = i < n * gas_share
+        believed_hp = 0.0 if on_gas else rng.uniform(0.0, 8.0)
+        gas = rng.uniform(2.0, 8.0) if on_gas else 0.0
+        true_heat = believed_hp * cop_scale + gas
+        rate = (
+            true_heat + solar_factor * solar + internal_kw - ua / 1000.0 * delta_t
+        ) / mass + rng.uniform(-noise, noise)
+        samples.append(Sample(delta_t, believed_hp, solar, rate, gas))
     return samples
 
 
-def test_fit_recovers_exact_parameters_without_noise():
-    samples = _synthetic_samples(true_thermal_mass=12.0, true_ua=400.0, noise=0.0)
-    result = fit_ua_and_thermal_mass(samples)
-    assert result is not None
-    thermal_mass, ua = result
-    assert thermal_mass == pytest.approx(12.0, rel=1e-6)
-    assert ua == pytest.approx(400.0, rel=1e-6)
-
-
-def test_fit_recovers_approximate_parameters_with_noise():
-    samples = _synthetic_samples(
-        true_thermal_mass=12.0, true_ua=400.0, n=200, noise=0.05
+def test_fit_recovers_building_parameters() -> None:
+    fit = fit_building(
+        _samples(ua=320.0, mass=15.0, solar_factor=0.7, internal_kw=0.3, n=200), PRIOR
     )
-    result = fit_ua_and_thermal_mass(samples)
-    assert result is not None
-    thermal_mass, ua = result
-    assert thermal_mass == pytest.approx(12.0, rel=0.15)
-    assert ua == pytest.approx(400.0, rel=0.15)
+    assert fit is not None
+    assert fit.ua_w_per_k == pytest.approx(320.0, rel=0.05)
+    assert fit.thermal_mass_kwh_per_k == pytest.approx(15.0, rel=0.05)
+    assert fit.solar_factor == pytest.approx(0.7, abs=0.1)
+    assert fit.r_squared > 0.99
+    assert fit.cop_scale == 1.0
 
 
-def test_fit_returns_none_for_fewer_than_two_samples():
-    assert fit_ua_and_thermal_mass([]) is None
-    assert fit_ua_and_thermal_mass([(5.0, 1.0, 0.1)]) is None
+def test_few_samples_stay_close_to_prior() -> None:
+    fit = fit_building(_samples(ua=800.0, mass=30.0, n=3), PRIOR)
+    assert fit is not None
+    assert 400.0 <= fit.ua_w_per_k < 800.0
 
 
-def test_fit_returns_none_for_collinear_samples():
-    """Samples where delta_t and rate never vary independently can't
-    separate the two unknowns - must fail closed (None), not silently
-    return a wrong fit."""
-    samples = [(5.0, 1.0, 0.1), (5.0, 1.0, 0.1), (5.0, 1.0, 0.1)]
-    assert fit_ua_and_thermal_mass(samples) is None
+def test_gas_windows_calibrate_the_cop_scale() -> None:
+    """Heat pump heat modelled 20 % too high; gas-meter windows reveal it."""
+    samples = _samples(ua=400.0, mass=12.0, cop_scale=0.8, gas_share=0.3, n=200)
+    fit = fit_building(samples, PRIOR)
+    assert fit is not None
+    assert fit.cop_scale == pytest.approx(0.8, abs=0.05)
+    assert fit.ua_w_per_k == pytest.approx(400.0, rel=0.08)
 
 
-def test_fit_rejects_unphysical_negative_result():
-    # Construct samples implying a negative thermal mass (rate and heat
-    # move in a way no positive-capacity building could produce).
-    samples = [(5.0, 0.0, 1.0), (10.0, 0.0, 2.0), (2.0, 0.0, 0.4)]
-    result = fit_ua_and_thermal_mass(samples)
-    assert result is None or (result[0] > 0 and result[1] > 0)
+def test_without_gas_the_scale_is_absorbed_but_time_constant_holds() -> None:
+    samples = _samples(ua=400.0, mass=12.0, internal_kw=0.0, cop_scale=0.8, n=200)
+    fit = fit_building(samples, PRIOR)
+    assert fit is not None
+    assert fit.cop_scale == 1.0
+    assert fit.time_constant_hours == pytest.approx(12.0 / 0.4, rel=0.1)
 
 
-def test_min_indoor_temp_delta_is_a_few_sensor_quanta():
-    """0.3°C is a few multiples of the typical 0.1°C HA temperature-sensor
-    resolution - loose enough to allow real signal through, tight enough to
-    reject single-quantum noise."""
-    assert 0.2 <= MIN_INDOOR_TEMP_DELTA_C <= 0.5
+def test_quality_gates() -> None:
+    good = fit_building(_samples(ua=400.0, mass=12.0, n=MIN_SAMPLES_TO_APPLY), PRIOR)
+    assert fit_passes_quality_gates(good)
+    too_few = fit_building(_samples(ua=400.0, mass=12.0, n=10), PRIOR)
+    assert not fit_passes_quality_gates(too_few)
+    implausible = fit_building(_samples(ua=4000.0, mass=12.0, n=200), PRIOR)
+    assert not fit_passes_quality_gates(implausible)
 
 
-def test_pre_sample_skip_reasons_are_distinct_from_each_other_and_no_result():
-    """The 5 new skip-reason constants set by coordinator.py before a
-    sample ever reaches record_sample must each be distinguishable from one
-    another and from the "nothing happened yet" default."""
-    reasons = {
-        RESULT_NO_INDOOR_SENSOR,
-        RESULT_NO_POWER_READING,
-        RESULT_ELAPSED_GAP,
-        RESULT_MISSING_BUILDING_CONFIG,
-        RESULT_STEP_TOO_SMALL,
-        RESULT_NO_RESULT,
-    }
-    assert len(reasons) == 6
+def test_cop_fit_recovers_curve() -> None:
+    rng = random.Random(3)
+    samples = []
+    for _ in range(80):
+        outdoor = rng.uniform(-8, 12)
+        supply = rng.uniform(28, 48)
+        cop = 3.8 + 0.07 * outdoor - 0.09 * (supply - 35)
+        samples.append(CopSample(outdoor, supply, 1.0, cop))
+    fit = fit_cop(samples, (4.2, 0.08, 0.11))
+    assert fit is not None and fit.usable
+    assert fit.base_cop == pytest.approx(3.8, abs=0.05)
+    assert fit.k_factor == pytest.approx(0.09, abs=0.01)
 
 
-def test_last_result_defaults_to_no_result_and_is_directly_assignable():
-    """last_result is a plain mutable field - coordinator.py sets it
-    directly (`state.last_result = RESULT_XXX`) for skips that happen
-    before record_sample, without a dedicated setter method."""
-    state = _make_state()
-    assert state.last_result == RESULT_NO_RESULT
-    state.last_result = RESULT_NO_INDOOR_SENSOR
-    assert state.last_result == RESULT_NO_INDOOR_SENSOR
+def test_emitter_fit_recovers_curve() -> None:
+    samples = [
+        EmitterSample(dt, 9.0 * (dt / 25.0) ** 1.25)
+        for dt in [6, 8, 10, 12, 15, 18, 20, 24] * 12
+    ]
+    fit = fit_emitter(
+        samples, prior_nominal_kw=12.0, prior_exponent=1.3, nominal_delta_t=25.0
+    )
+    assert fit is not None and fit.usable
+    assert fit.nominal_power_kw == pytest.approx(9.0, rel=0.05)
+    assert fit.exponent == pytest.approx(1.25, abs=0.05)
 
 
-def _make_state() -> ThermalCalibrationState:
+def test_residual_diagnosis_flags_correlated_errors() -> None:
+    wave = [math.sin(i / 8) for i in range(96)]
+    noise = [random.Random(i).uniform(-1, 1) for i in range(96)]
+    assert residual_diagnosis(wave)["two_mass_suspected"] is True
+    assert residual_diagnosis(noise)["two_mass_suspected"] is False
+    assert residual_diagnosis(wave[:10])["two_mass_suspected"] is None
+
+
+def test_effective_energy_label_matches_label_estimate() -> None:
+    from custom_components.heating_curve_optimizer.const import (
+        calculate_htc_from_energy_label,
+    )
+
+    ua = calculate_htc_from_energy_label("B", 150, ventilation_type="natural_standard")
+    assert effective_energy_label(ua, 150, "natural_standard", 2.5) == "B"
+
+
+async def test_state_persists_and_resets() -> None:
     store = MagicMock()
-    store.async_load = AsyncMock(return_value=None)
     store.async_save = AsyncMock()
-    return ThermalCalibrationState(store=store)
-
-
-def test_not_applied_below_minimum_sample_count():
-    state = _make_state()
-    samples = _synthetic_samples(12.0, 400.0, n=MIN_SAMPLES_TO_APPLY - 5, noise=0.0)
-    for delta_t, heat_and_solar_kw, rate in samples:
-        state.record_sample(
-            delta_t=delta_t,
-            heat_and_solar_kw=heat_and_solar_kw,
-            rate_c_per_h=rate,
-            prior_ua_w_per_k=400.0,
-            prior_thermal_mass_kwh_per_k=12.0,
-        )
-    assert state.applied is False
-
-
-def test_applied_once_enough_plausible_samples_recorded():
-    state = _make_state()
-    samples = _synthetic_samples(12.0, 400.0, n=MIN_SAMPLES_TO_APPLY + 10, noise=0.0)
-    for delta_t, heat_and_solar_kw, rate in samples:
-        state.record_sample(
-            delta_t=delta_t,
-            heat_and_solar_kw=heat_and_solar_kw,
-            rate_c_per_h=rate,
-            prior_ua_w_per_k=400.0,
-            prior_thermal_mass_kwh_per_k=12.0,
-        )
-    assert state.applied is True
-    assert state.learned_ua_w_per_k == pytest.approx(400.0, rel=1e-3)
-    assert state.learned_thermal_mass_kwh_per_k == pytest.approx(12.0, rel=1e-3)
-
-
-def test_implausible_fit_relative_to_prior_is_not_applied():
-    """A fit wildly different from the label-based prior (e.g. from a burst
-    of bad samples) must be rejected rather than silently adopted."""
-    state = _make_state()
-    # True values imply UA ~40 W/K, but prior says 400 W/K (10x off) -
-    # outside PLAUSIBLE_RATIO_BOUNDS, so this must be rejected.
-    samples = _synthetic_samples(12.0, 40.0, n=MIN_SAMPLES_TO_APPLY + 10, noise=0.0)
-    moved_flags = []
-    for delta_t, heat_and_solar_kw, rate in samples:
-        moved = state.record_sample(
-            delta_t=delta_t,
-            heat_and_solar_kw=heat_and_solar_kw,
-            rate_c_per_h=rate,
-            prior_ua_w_per_k=400.0,
-            prior_thermal_mass_kwh_per_k=12.0,
-        )
-        moved_flags.append(moved)
-    assert state.applied is False
-    assert state.last_result == RESULT_IMPLAUSIBLE
-    assert not any(moved_flags)
-
-
-@pytest.mark.asyncio
-async def test_async_reset_clears_state_and_persists():
-    state = _make_state()
-    samples = _synthetic_samples(12.0, 400.0, n=MIN_SAMPLES_TO_APPLY + 5, noise=0.0)
-    for delta_t, heat_and_solar_kw, rate in samples:
-        state.record_sample(
-            delta_t=delta_t,
-            heat_and_solar_kw=heat_and_solar_kw,
-            rate_c_per_h=rate,
-            prior_ua_w_per_k=400.0,
-            prior_thermal_mass_kwh_per_k=12.0,
-        )
-    assert state.applied is True
-
-    await state.async_reset()
-
-    assert state.sample_count == 0
-    assert state.learned_ua_w_per_k is None
-    assert state.applied is False
-    state.store.async_save.assert_awaited()
-
-
-@pytest.mark.asyncio
-async def test_async_load_restores_persisted_fit():
-    store = MagicMock()
-    store.async_load = AsyncMock(
-        return_value={
-            "samples": [[5.0, 1.0, 0.1]] * (MIN_SAMPLES_TO_APPLY + 1),
-            "learned_ua_w_per_k": 410.0,
-            "learned_thermal_mass_kwh_per_k": 11.5,
-        }
-    )
     state = ThermalCalibrationState(store=store)
+    for sample in _samples(ua=400.0, mass=12.0, n=5):
+        state.record_sample(sample, PRIOR)
+    state.record_exclusion(RESULT_EXCLUDED_DHW)
+    await state.async_save()
+    saved = store.async_save.call_args[0][0]
+    assert len(saved["samples"]) == 5
+    assert saved["exclusions"][RESULT_EXCLUDED_DHW] == 1
 
-    await state.async_load()
+    store.async_load = AsyncMock(return_value=saved)
+    restored = ThermalCalibrationState(store=store)
+    await restored.async_load()
+    restored.refit(PRIOR)
+    assert restored.sample_count == 5
+    assert restored.fit is not None
 
-    assert state.sample_count == MIN_SAMPLES_TO_APPLY + 1
-    assert state.learned_ua_w_per_k == 410.0
-    assert state.learned_thermal_mass_kwh_per_k == 11.5
-    assert state.applied is True
-
-
-@pytest.mark.asyncio
-async def test_async_load_with_no_stored_data_leaves_defaults():
-    state = _make_state()
-    await state.async_load()
-    assert state.sample_count == 0
-    assert state.applied is False
+    await restored.async_reset()
+    assert restored.sample_count == 0 and restored.fit is None

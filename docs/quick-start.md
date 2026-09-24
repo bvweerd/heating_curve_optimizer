@@ -74,7 +74,7 @@ instead: it equals the plan, raised while PV surplus is being exported.
 ## 5. Let it learn
 
 With an indoor temperature sensor and a heat pump power sensor, the
-integration learns the real heat loss coefficient and thermal mass of your
-house. After 30 good samples (typically one to two weeks of heating) the
-learned values replace the energy-label estimate. Progress is shown by the
-**Thermal calibration samples** diagnostic sensor.
+integration learns how your house really behaves. Follow it on the
+**Calibration** sensor; after about 30 good measurements (typically one to
+two weeks of heating) a repair notification asks whether to use the learned
+model. See [Calibration](calibration.md).

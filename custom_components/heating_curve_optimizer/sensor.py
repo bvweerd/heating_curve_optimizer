@@ -40,7 +40,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 from homeassistant.util import dt as dt_util
 
-from .calibration import MIN_SAMPLES_TO_APPLY
+from .calibration import CALIBRATION_STATUSES
 from .const import (
     CONF_GRID_EXPORT_SENSOR,
     CONF_GRID_IMPORT_SENSOR,
@@ -81,6 +81,7 @@ _FORECAST_ATTRIBUTES = frozenset(
         "cost_eur",
         "baseline_cost_eur",
         "humidity_forecast",
+        "errors_k",
     }
 )
 
@@ -270,24 +271,31 @@ SHADOW_PRICE = HcoSensorEntityDescription(
     suggested_display_precision=3,
     value_fn=lambda d: d.get("shadow_price_eur_per_kwh"),
 )
-THERMAL_CALIBRATION = HcoSensorEntityDescription(
-    key="thermal_calibration",
-    translation_key="thermal_calibration",
+CALIBRATION = HcoSensorEntityDescription(
+    key="calibration",
+    translation_key="calibration",
+    device_class=SensorDeviceClass.ENUM,
+    options=CALIBRATION_STATUSES,
+    value_fn=lambda d: (d.get("calibration") or {}).get("status"),
+    attrs_fn=lambda d: (
+        {k: v for k, v in (d.get("calibration") or {}).items() if k != "status"}
+        | {
+            "ua_w_per_k_in_use": d.get("building_ua_w_per_k"),
+            "thermal_mass_kwh_per_k_in_use": d.get("building_thermal_mass_kwh_per_k"),
+            "internal_gain_kw_in_use": d.get("internal_gain_kw"),
+            "solar_factor_in_use": d.get("solar_factor"),
+        }
+    ),
+)
+MODEL_ACCURACY = HcoSensorEntityDescription(
+    key="model_accuracy",
+    translation_key="model_accuracy",
+    native_unit_of_measurement=UnitOfTemperature.KELVIN,
     state_class=SensorStateClass.MEASUREMENT,
-    entity_category=EntityCategory.DIAGNOSTIC,
-    value_fn=lambda d: d.get("calibration_sample_count", 0),
+    suggested_display_precision=2,
+    value_fn=lambda d: (d.get("model_accuracy") or {}).get("mae_k"),
     attrs_fn=lambda d: {
-        "applied": d.get("calibration_applied", False),
-        "min_samples_to_apply": MIN_SAMPLES_TO_APPLY,
-        "last_result": d.get("calibration_last_result"),
-        "learned_ua_w_per_k": d.get("learned_ua_w_per_k"),
-        "learned_thermal_mass_kwh_per_k": d.get("learned_thermal_mass_kwh_per_k"),
-        "ua_w_per_k_in_use": d.get("building_ua_w_per_k"),
-        "thermal_mass_kwh_per_k_in_use": d.get("building_thermal_mass_kwh_per_k"),
-        "time_constant_hours": d.get("building_time_constant_hours"),
-        "internal_gain_kw": d.get("internal_gain_kw"),
-        "emitter_nominal_power_kw": d.get("emitter_nominal_power_kw"),
-        "heatpump_max_thermal_power_kw": d.get("heatpump_max_thermal_power_kw"),
+        k: v for k, v in (d.get("model_accuracy") or {}).items() if k != "mae_k"
     },
 )
 REALTIME_OFFSET = HcoSensorEntityDescription(
@@ -798,7 +806,8 @@ async def async_setup_entry(
             PLANNED_COP,
             COST_SAVINGS_FORECAST,
             SHADOW_PRICE,
-            THERMAL_CALIBRATION,
+            CALIBRATION,
+            MODEL_ACCURACY,
         ]
         if config.get(CONF_GRID_IMPORT_SENSOR) or config.get(CONF_GRID_EXPORT_SENSOR):
             optimization_descriptions.append(REALTIME_OFFSET)

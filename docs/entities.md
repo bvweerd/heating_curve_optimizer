@@ -28,8 +28,10 @@ and English entity names.
 | `number.…_comfort_band_below_target` / `…_above_target` | °C | Comfort band (0.1–2). | |
 | `climate.…_heating` | | Disabled by default; the same setpoint as a thermostat card. | |
 
-Diagnostic entities: *Value of stored heat* (shadow price, EUR/kWh),
-*Thermal calibration samples* (with learned and in-use `UA`/`C`) and
+| `sensor.…_calibration` | | Calibration status and results, see [Calibration](calibration.md). | `progress_pct`, `effective_energy_label`, `time_constant_hours`, … |
+| `sensor.…_model_accuracy` | K | Mean absolute error of 1-hour-ahead indoor predictions (24 h). | `mae_label_model_k`, `errors_k`, `two_mass_suspected` |
+
+Diagnostic entities: *Value of stored heat* (shadow price, EUR/kWh) and
 *Status* (`ok`/`partial`/`initializing`/`error`, per coordinator).
 
 ## Additional zones

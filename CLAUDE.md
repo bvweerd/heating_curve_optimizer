@@ -17,7 +17,9 @@ custom_components/heating_curve_optimizer/
   building_model.py           BuildingConfig (1R1C, internal gains), EmitterConfig   [pure]
   heatpump_model.py           HeatPumpConfig.cop_at: the ONLY COP implementation    [pure]
   thermal_optimizer.py        optimize_thermal_schedule: DP + baseline + shadow price [pure]
-  calibration.py              least-squares UA / thermal mass, persisted in Store
+  calibration.py              ridge fits: building (C, UA, solar factor, internal gains, COP scale
+                              from gas windows), COP curve, emitter curve; quality gates; Store
+  repairs.py                  fix flow: calibration "observe" -> "apply"
   coordinator_weather.py      open-meteo (30 min); radiation shifted one slot (preceding-hour mean)
   coordinator_heat.py         per zone (5 min): heat loss, window solar gain, PV, indoor temp
   coordinator_optimization.py per zone (15 min): step grid, alignment, DP, calibration, realtime
@@ -61,7 +63,12 @@ docs/                         index, installation, quick-start, configuration, a
   `offset, offsets, supply_temps, indoor_temps, cop, cost_eur,
   baseline_*, cost_savings_eur, shadow_price_eur_per_kwh,
   step_durations_hours, step_start_times, step_minutes, comfort_min/max,
-  buffer_kwh, calibration_*, realtime`.
+  buffer_kwh, calibration (summary dict), model_accuracy, realtime`.
+- **Calibration**: per zone mode off/observe/apply (`calibration_mode`); only
+  with one zone. Windows close after 0.3 K movement; excluded on DHW, open
+  window, 1 K jump, gaps. Applied fits replace UA/C/internal gains/solar
+  factor (building), COP curve (heat meter) or COP scale (gas windows), and
+  the emitter curve.
 
 ## Conventions
 

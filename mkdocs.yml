@@ -78,6 +78,7 @@ nav:
   - Quick start: quick-start.md
   - Configuration: configuration.md
   - How it works: algorithm.md
+  - Calibration: calibration.md
   - Entities: entities.md
   - Troubleshooting: troubleshooting.md
   - Development: development.md

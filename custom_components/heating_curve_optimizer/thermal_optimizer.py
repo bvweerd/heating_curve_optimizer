@@ -186,7 +186,7 @@ def optimize_thermal_schedule(
 
     outdoor = _pad(outdoor_temps, horizon, outdoor_temps[-1])
     price = _pad(prices, horizon, prices[-1])
-    solar = _pad(solar_gain_kw, horizon, 0.0)
+    solar = [v * building.solar_factor for v in _pad(solar_gain_kw, horizon, 0.0)]
     pv = [max(0.0, v) for v in _pad(pv_surplus_kw, horizon, 0.0)]
     feed_in = _pad(feed_in_prices, horizon, feed_in_price_fallback)
     humidity = _pad(humidity_forecast, horizon, 80.0)

@@ -200,3 +200,43 @@ async def test_unload(hass: HomeAssistant, mock_open_meteo, price_state) -> None
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.NOT_LOADED
     assert not hass.services.has_service(DOMAIN, "reset_thermal_calibration")
+
+
+async def test_calibration_and_accuracy_sensors(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    entry = make_entry(power_consumption=POWER_SENSOR)
+    hass.states.async_set(POWER_SENSOR, "1200", {"unit_of_measurement": "W"})
+    await setup_entry(hass, entry)
+    calibration = _state(hass, "sensor", f"{entry.entry_id}_calibration")
+    assert calibration.state == "collecting"
+    assert calibration.attributes["samples_needed"] == 30
+    assert calibration.attributes["heat_source"] == "cop_model"
+    accuracy = _state(hass, "sensor", f"{entry.entry_id}_model_accuracy")
+    assert accuracy is not None
+
+
+async def test_repair_flow_switches_zone_to_apply(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    from homeassistant.setup import async_setup_component
+
+    from custom_components.heating_curve_optimizer.repairs import (
+        async_create_fix_flow,
+    )
+
+    assert await async_setup_component(hass, "repairs", {})
+    entry = make_entry()
+    await setup_entry(hass, entry)
+    subentry_id = next(iter(entry.subentries))
+    flow = await async_create_fix_flow(
+        hass,
+        f"calibration_ready_{entry.entry_id}",
+        {"entry_id": entry.entry_id, "subentry_id": subentry_id},
+    )
+    flow.hass = hass
+    result = await flow.async_step_init()
+    assert result["step_id"] == "confirm"
+    result = await flow.async_step_confirm({})
+    assert result["type"] == "create_entry"
+    assert entry.subentries[subentry_id].data["calibration_mode"] == "apply"

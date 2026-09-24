@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import asdict
 from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
@@ -10,6 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
 
+from .calibration import ThermalCalibrationState
 from .const import (
     CONF_CONSUMPTION_PRICE_SENSOR,
     CONF_GAS_PRICE_SENSOR,
@@ -71,14 +73,21 @@ def _serialize_calibration(optimization_coordinator: Any) -> dict[str, Any] | No
     """A coordinator's thermal-calibration state, or None if not set up."""
 
     calibration = getattr(optimization_coordinator, "thermal_calibration", None)
-    if calibration is None:
+    if not isinstance(calibration, ThermalCalibrationState):
         return None
     return {
         "sample_count": calibration.sample_count,
-        "applied": calibration.applied,
+        "ready": calibration.ready,
         "last_result": calibration.last_result,
-        "learned_ua_w_per_k": calibration.learned_ua_w_per_k,
-        "learned_thermal_mass_kwh_per_k": calibration.learned_thermal_mass_kwh_per_k,
+        "exclusions": dict(calibration.exclusions),
+        "fit": asdict(calibration.fit) if calibration.fit else None,
+        "cop_fit": asdict(calibration.cop_fit) if calibration.cop_fit else None,
+        "emitter_fit": (
+            asdict(calibration.emitter_fit) if calibration.emitter_fit else None
+        ),
+        "samples": [s.as_list() for s in calibration.samples],
+        "cop_samples": [s.as_list() for s in calibration.cop_samples],
+        "emitter_samples": [s.as_list() for s in calibration.emitter_samples],
     }
 
 

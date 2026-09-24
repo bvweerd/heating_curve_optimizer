@@ -62,6 +62,8 @@ class BuildingConfig:
     comfort_max: float = 20.5
     # Continuous internal heat gains (people, appliances, lighting), in kW.
     internal_gain_kw: float = 0.0
+    # Correction on the modelled window solar gain (learned by calibration).
+    solar_factor: float = 1.0
 
     # Derived values (calculated in __post_init__)
     ua_w_per_k: float = field(init=False)

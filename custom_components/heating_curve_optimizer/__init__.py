@@ -18,6 +18,9 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import (
+    CONF_GAS_BOILER_EFFICIENCY,
+    CONF_GAS_CALORIFIC_VALUE,
+    CONF_GAS_METER_SENSOR,
     DOMAIN,
     ENTITY_MANAGED_OPTIONS,
     GAS_SUBENTRY_TYPE,
@@ -158,6 +161,8 @@ async def _async_setup_zone(
     zone_id: str,
     *,
     primary: bool,
+    subentry_id: str,
+    calibration_allowed: bool,
 ) -> tuple[HeatCalculationCoordinator, OptimizationCoordinator]:
     """Create and start the coordinator pair of one heating zone."""
     heat_coordinator = HeatCalculationCoordinator(
@@ -172,7 +177,13 @@ async def _async_setup_zone(
     await heat_coordinator.async_refresh()
 
     optimization_coordinator = OptimizationCoordinator(
-        hass, entry, heat_coordinator, zone_config, zone_id
+        hass,
+        entry,
+        heat_coordinator,
+        zone_config,
+        zone_id,
+        subentry_id=subentry_id,
+        calibration_allowed=calibration_allowed,
     )
     await optimization_coordinator.async_setup()
     _schedule_first_refresh(hass, entry, optimization_coordinator)
@@ -189,6 +200,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for subentry in entry.subentries.values()
         if subentry.subentry_type == PV_SUBENTRY_TYPE
     ]
+    # The gas boiler's meter is a calibration input for every zone.
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type == GAS_SUBENTRY_TYPE:
+            config |= {
+                key: subentry.data[key]
+                for key in (
+                    CONF_GAS_METER_SENSOR,
+                    CONF_GAS_BOILER_EFFICIENCY,
+                    CONF_GAS_CALORIFIC_VALUE,
+                )
+                if subentry.data.get(key) is not None
+            }
 
     # A temporary open-meteo outage must not block setup: entities show
     # unavailable until the next poll succeeds.
@@ -223,11 +246,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 zone_config,
                 entry.entry_id,
                 primary=True,
+                subentry_id=subentry_id,
+                calibration_allowed=len(zone_subentries) == 1,
             )
             continue
         zone_id = f"{entry.entry_id}_{subentry_id}"
+        # With several zones the heat pump's power cannot be attributed to
+        # one of them, so calibration is disabled.
         zone_heat, zone_optimization = await _async_setup_zone(
-            hass, entry, weather_coordinator, zone_config, zone_id, primary=False
+            hass,
+            entry,
+            weather_coordinator,
+            zone_config,
+            zone_id,
+            primary=False,
+            subentry_id=subentry_id,
+            calibration_allowed=False,
         )
         zones[subentry_id] = {
             "heat_coordinator": zone_heat,
