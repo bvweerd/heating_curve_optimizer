@@ -90,7 +90,7 @@ jobs:
       - name: Run pytest
         run: pytest --cov=custom_components --cov-report=xml -q
 
-      # setup.cfg gates the build at 45%, but the number itself appeared
+      # setup.cfg gates the build at 85%, but the number itself appeared
       # nowhere on the pull request — so a run could sit just above the floor,
       # or drift down towards it, with nothing to notice. always() matters
       # here: the figure is most interesting on the run that just failed the
@@ -112,7 +112,7 @@ jobs:
           root = ET.parse(report).getroot()
           total = float(root.get("line-rate", 0)) * 100
           # Keep in sync with setup.cfg's [coverage:report] fail_under.
-          floor = 45.0
+          floor = 85.0
           mark = "✅" if total >= floor else "❌"
           print(f"{mark} **{total:.1f}%** overall (floor {floor:.0f}%)\n")
 

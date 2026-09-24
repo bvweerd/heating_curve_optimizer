@@ -1,7 +1,7 @@
 """Test the helpers module."""
 
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
-from datetime import datetime, timezone
 
 import pytest
 from homeassistant.core import State
@@ -9,20 +9,27 @@ from homeassistant.core import State
 from custom_components.heating_curve_optimizer.helpers import (
     UNAVAILABLE_STATES,
     _coerce_time_base,
+    _detect_interval_from_entries,
     _drop_elapsed_periods,
     _normalize_price_value,
-    _detect_interval_from_entries,
     _skip_index_since_local_midnight,
     calculate_defrost_factor,
     calculate_pv_forecast,
     calculate_supply_temperature,
-    extract_price_forecast,
-    extract_price_forecast_with_interval,
+    calculate_window_solar_gain,
+    extract_price_forecast_with_timestamps,
+    get_sensor_value,
     price_unit_scale,
-    resample_forecast,
-    safe_float,
+    read_power_kw,
+    resample_to_steps,
     state_has_value,
 )
+
+
+def extract_price_forecast_with_interval(state):
+    prices, _starts, interval = extract_price_forecast_with_timestamps(state)
+    return prices, interval
+
 
 # === Time Base Tests ===
 
@@ -154,7 +161,7 @@ def test_extract_price_forecast_from_net_prices():
     state.state = "0.25"
 
     with patch("homeassistant.util.dt.utcnow") as mock_now:
-        mock_now.return_value = datetime(2024, 1, 1, 11, 0, 0, tzinfo=timezone.utc)
+        mock_now.return_value = datetime(2024, 1, 1, 11, 0, 0, tzinfo=UTC)
         prices, interval = extract_price_forecast_with_interval(state)
         assert len(prices) > 0
         assert interval == 60
@@ -206,7 +213,7 @@ def test_extract_price_forecast_wrapper():
     state.attributes = {"forecast_prices": [0.20, 0.25, 0.30]}
     state.state = "0.25"
 
-    prices = extract_price_forecast(state)
+    prices, _ = extract_price_forecast_with_interval(state)
     assert prices == [0.20, 0.25, 0.30]
 
 
@@ -224,12 +231,12 @@ def test_extract_price_forecast_from_today_tomorrow():
     }
     state.state = "0.25"
 
-    midnight = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    midnight = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
     with (
         patch("homeassistant.util.dt.now", return_value=midnight),
         patch("homeassistant.util.dt.utcnow", return_value=midnight),
     ):
-        prices, interval = extract_price_forecast_with_interval(state)
+        prices, _interval = extract_price_forecast_with_interval(state)
     assert len(prices) == 5
     assert prices == [0.20, 0.21, 0.22, 0.23, 0.24]
 
@@ -376,7 +383,7 @@ def test_extract_price_forecast_with_dict_values():
     }
     state.state = "0.25"
 
-    prices, interval = extract_price_forecast_with_interval(state)
+    prices, _interval = extract_price_forecast_with_interval(state)
     assert prices == [0.20, 0.25, 0.30]
 
 
@@ -386,7 +393,7 @@ def test_extract_price_forecast_mixed_types():
     state.attributes = {"forecast_prices": [0.20, "0.25", {"value": 0.30}]}
     state.state = "0.25"
 
-    prices, interval = extract_price_forecast_with_interval(state)
+    prices, _interval = extract_price_forecast_with_interval(state)
     assert prices == [0.20, 0.25, 0.30]
 
 
@@ -396,7 +403,7 @@ def test_extract_price_forecast_skips_invalid_values():
     state.attributes = {"forecast_prices": [0.20, "invalid", 0.30, None, 0.35]}
     state.state = "0.25"
 
-    prices, interval = extract_price_forecast_with_interval(state)
+    prices, _interval = extract_price_forecast_with_interval(state)
     assert prices == [0.20, 0.30, 0.35]
 
 
@@ -461,25 +468,6 @@ def test_state_has_value_none():
     assert state_has_value(None) is False
 
 
-# === safe_float Tests ===
-
-
-def test_safe_float_normal():
-    assert safe_float("3.14") == pytest.approx(3.14)
-    assert safe_float(42) == pytest.approx(42.0)
-
-
-def test_safe_float_nan_inf():
-    assert safe_float(float("nan")) == 0.0
-    assert safe_float(float("inf")) == 0.0
-    assert safe_float(float("-inf"), default=-1.0) == -1.0
-
-
-def test_safe_float_none_invalid():
-    assert safe_float(None) == 0.0
-    assert safe_float("bad", default=5.0) == 5.0
-
-
 # === price_unit_scale Tests ===
 
 
@@ -531,19 +519,19 @@ def test_normalize_price_value_nan_inf():
 
 def test_skip_index_since_local_midnight_basic():
     """At 14:00 with 60-min interval, skip index should be 14."""
-    now_local = datetime(2024, 6, 15, 14, 0, 0, tzinfo=timezone.utc)
+    now_local = datetime(2024, 6, 15, 14, 0, 0, tzinfo=UTC)
     assert _skip_index_since_local_midnight(now_local, 60) == 14
 
 
 def test_skip_index_since_local_midnight_partial():
     """At 14:45 with 60-min interval, only 14 complete periods have elapsed."""
-    now_local = datetime(2024, 6, 15, 14, 45, 0, tzinfo=timezone.utc)
+    now_local = datetime(2024, 6, 15, 14, 45, 0, tzinfo=UTC)
     assert _skip_index_since_local_midnight(now_local, 60) == 14
 
 
 def test_skip_index_since_local_midnight_30min():
     """At 14:30 with 30-min interval, 29 complete 30-min periods have elapsed."""
-    now_local = datetime(2024, 6, 15, 14, 30, 0, tzinfo=timezone.utc)
+    now_local = datetime(2024, 6, 15, 14, 30, 0, tzinfo=UTC)
     assert _skip_index_since_local_midnight(now_local, 30) == 29
 
 
@@ -552,15 +540,15 @@ def test_skip_index_since_local_midnight_30min():
 
 def test_drop_elapsed_periods_all_future():
     """No periods should be dropped when all are in the future."""
-    now = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
     prices = [0.20, 0.25, 0.30]
     start_times = [
-        datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc),
-        datetime(2024, 6, 15, 13, 0, 0, tzinfo=timezone.utc),
-        datetime(2024, 6, 15, 14, 0, 0, tzinfo=timezone.utc),
+        datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC),
+        datetime(2024, 6, 15, 13, 0, 0, tzinfo=UTC),
+        datetime(2024, 6, 15, 14, 0, 0, tzinfo=UTC),
     ]
     with patch("homeassistant.util.dt.utcnow", return_value=now):
-        kept_prices, kept_times, interval = _drop_elapsed_periods(
+        kept_prices, kept_times, _interval = _drop_elapsed_periods(
             prices, start_times, 60
         )
     assert kept_prices == [0.20, 0.25, 0.30]
@@ -569,57 +557,19 @@ def test_drop_elapsed_periods_all_future():
 
 def test_drop_elapsed_periods_past_entries_dropped():
     """Periods that ended before now should be dropped."""
-    now = datetime(2024, 6, 15, 14, 30, 0, tzinfo=timezone.utc)
+    now = datetime(2024, 6, 15, 14, 30, 0, tzinfo=UTC)
     prices = [0.20, 0.25, 0.30]
     start_times = [
-        datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc),  # ended 13:00 → past
-        datetime(2024, 6, 15, 13, 0, 0, tzinfo=timezone.utc),  # ended 14:00 → past
-        datetime(2024, 6, 15, 14, 0, 0, tzinfo=timezone.utc),  # ends 15:00 → future
+        datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC),  # ended 13:00 → past
+        datetime(2024, 6, 15, 13, 0, 0, tzinfo=UTC),  # ended 14:00 → past
+        datetime(2024, 6, 15, 14, 0, 0, tzinfo=UTC),  # ends 15:00 → future
     ]
     with patch("homeassistant.util.dt.utcnow", return_value=now):
-        kept_prices, kept_times, interval = _drop_elapsed_periods(
+        kept_prices, kept_times, _interval = _drop_elapsed_periods(
             prices, start_times, 60
         )
     assert kept_prices == [0.30]
     assert len(kept_times) == 1
-
-
-# === resample_forecast Tests ===
-
-
-def test_resample_forecast_same_interval():
-    """Same source and target interval should return the same forecast."""
-    forecast = [0.20, 0.25, 0.30]
-    result = resample_forecast(forecast, 60, 60)
-    assert result == forecast
-
-
-def test_resample_forecast_60_to_30():
-    """60-minute values resampled to 30 minutes should repeat each value twice."""
-    forecast = [1.0, 2.0, 3.0]
-    result = resample_forecast(forecast, 60, 30)
-    assert result == [1.0, 1.0, 2.0, 2.0, 3.0, 3.0]
-
-
-def test_resample_forecast_15_to_60():
-    """Four 15-minute values averaged should give one 60-minute value."""
-    forecast = [1.0, 2.0, 3.0, 4.0]
-    result = resample_forecast(forecast, 15, 60)
-    assert len(result) == 1
-    assert result[0] == pytest.approx(2.5)  # average of 1,2,3,4
-
-
-def test_resample_forecast_30_to_60():
-    """Two 30-minute values averaged should give one 60-minute value."""
-    forecast = [1.0, 3.0]
-    result = resample_forecast(forecast, 30, 60)
-    assert len(result) == 1
-    assert result[0] == pytest.approx(2.0)  # average of 1 and 3
-
-
-def test_resample_forecast_empty():
-    """Empty input should return empty output."""
-    assert resample_forecast([], 60, 30) == []
 
 
 # === calculate_pv_forecast Tests ===
@@ -646,9 +596,7 @@ def test_calculate_pv_forecast_poa_mode():
     radiation = [500.0] * 4
     dni = [400.0] * 4
     diffuse = [100.0] * 4
-    timestamps = [
-        datetime(2024, 6, 21, 10 + i, 0, 0, tzinfo=timezone.utc) for i in range(4)
-    ]
+    timestamps = [datetime(2024, 6, 21, 10 + i, 0, 0, tzinfo=UTC) for i in range(4)]
     result_poa = calculate_pv_forecast(
         radiation,
         peak_power_kwp=4.0,
@@ -678,9 +626,7 @@ def test_calculate_pv_forecast_no_production_at_night():
     radiation = [0.0] * 4
     dni = [0.0] * 4
     diffuse = [0.0] * 4
-    timestamps = [
-        datetime(2024, 1, 15, 0 + i, 0, 0, tzinfo=timezone.utc) for i in range(4)
-    ]
+    timestamps = [datetime(2024, 1, 15, 0 + i, 0, 0, tzinfo=UTC) for i in range(4)]
     result = calculate_pv_forecast(
         radiation,
         peak_power_kwp=4.0,
@@ -699,8 +645,8 @@ def test_calculate_pv_forecast_no_production_at_night():
 def test_detect_interval_with_datetime_objects():
     """BC version accepts datetime objects, not just strings."""
     entries = [
-        {"start": datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc), "value": 0.25},
-        {"start": datetime(2024, 1, 1, 0, 30, 0, tzinfo=timezone.utc), "value": 0.26},
+        {"start": datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC), "value": 0.25},
+        {"start": datetime(2024, 1, 1, 0, 30, 0, tzinfo=UTC), "value": 0.26},
     ]
     assert _detect_interval_from_entries(entries) == 30
 
@@ -712,3 +658,60 @@ def test_detect_interval_with_time_key():
         {"time": "2024-01-01T00:15:00+00:00", "value": 0.26},
     ]
     assert _detect_interval_from_entries(entries) == 15
+
+
+# === resample_to_steps / power / window gain ===
+
+
+def test_resample_to_steps_aligns_shortened_first_step():
+    start = datetime(2026, 1, 1, 10, 0, tzinfo=UTC)
+    steps = [
+        datetime(2026, 1, 1, 10, 30, tzinfo=UTC),
+        datetime(2026, 1, 1, 11, 0, tzinfo=UTC),
+    ]
+    result = resample_to_steps([1.0, 3.0], start, 60, steps, [0.5, 1.0])
+    assert result == pytest.approx([1.0, 3.0])
+
+
+def test_read_power_kw_units():
+    hass = MagicMock()
+    hass.states.get.return_value = State(
+        "sensor.p", "1500", {"unit_of_measurement": "W"}
+    )
+    assert read_power_kw(hass, "sensor.p") == pytest.approx(1.5)
+    hass.states.get.return_value = State(
+        "sensor.p", "1.5", {"unit_of_measurement": "kW"}
+    )
+    assert read_power_kw(hass, "sensor.p") == pytest.approx(1.5)
+    hass.states.get.return_value = State("sensor.p", "1500", {})
+    assert read_power_kw(hass, "sensor.p") is None
+    assert read_power_kw(hass, "sensor.p", default_unit="W") == pytest.approx(1.5)
+
+
+def test_get_sensor_value_default_for_invalid():
+    hass = MagicMock()
+    hass.states.get.return_value = State("sensor.t", "nan", {})
+    assert get_sensor_value(hass, "sensor.t", None) is None
+    hass.states.get.return_value = State("sensor.t", "21.5", {})
+    assert get_sensor_value(hass, "sensor.t", None) == pytest.approx(21.5)
+
+
+def test_window_solar_gain_south_beats_north_facing_side_in_winter_noon():
+    """Low winter sun: a vertical south window receives more than a
+    horizontal-irradiance estimate would suggest."""
+    noon = [datetime(2026, 1, 15, 11, 0, tzinfo=UTC)]
+    kwargs = {
+        "dni_forecast": [600.0],
+        "diffuse_forecast": [80.0],
+        "timestamps_utc": noon,
+        "latitude": 52.0,
+        "longitude": 5.0,
+    }
+    south = calculate_window_solar_gain([250.0], {"south": 10.0}, 1.2, **kwargs)
+    east = calculate_window_solar_gain([250.0], {"east": 10.0}, 1.2, **kwargs)
+    assert south[0] > east[0] > 0
+    assert south[0] > 10.0 * 250.0 * 0.62 / 1000.0
+
+
+def test_window_solar_gain_zero_without_glass():
+    assert calculate_window_solar_gain([500.0, 0.0], {}, 1.2) == [0.0, 0.0]

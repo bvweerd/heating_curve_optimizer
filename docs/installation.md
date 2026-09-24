@@ -1,138 +1,40 @@
 # Installation
 
-This guide will help you install the Heating Curve Optimizer integration in Home Assistant.
+## Requirements
 
-## Prerequisites
+- Home Assistant **2025.4** or newer.
+- An electricity price sensor with a **forecast** attribute. Supported
+  formats, in order of preference:
+    1. `net_prices_today` / `net_prices_tomorrow`
+    2. `raw_today` / `raw_tomorrow` with `start`/`value` entries (Nord Pool,
+       [Dynamic Energy Contract Calculator](https://github.com/bvweerd/dynamic_energy_contract_calculator))
+    3. `today_hours` / `tomorrow_hours` (OMIE)
+    4. `forecast_prices` or `forecast`
+    5. `raw_today` / `today` lists without timestamps
 
-Before installing, ensure you have:
+    Prices in EUR/MWh are converted automatically.
+- Internet access to `api.open-meteo.com` (no account needed).
+- Strongly recommended: an indoor temperature sensor per heating zone.
 
-- :white_check_mark: Home Assistant 2023.1 or newer
-- :white_check_mark: HACS (Home Assistant Community Store) installed
-- :white_check_mark: Internet connectivity (for weather forecasts from open-meteo.com)
-- :white_check_mark: Electricity price sensor (or fixed price configuration)
+## HACS
 
-## Installation Methods
+1. HACS → Integrations → ⋮ → *Custom repositories* → add
+   `https://github.com/bvweerd/heating_curve_optimizer` as *Integration*.
+2. Install **Heating Curve Optimizer** and restart Home Assistant.
 
-### Method 1: HACS (Recommended)
+## Manual
 
-1. **Open HACS** in your Home Assistant instance
-2. **Click** on "Integrations"
-3. **Click** the three dots in the top right corner
-4. **Select** "Custom repositories"
-5. **Add** this repository:
-   ```
-   https://github.com/bvweerd/heating_curve_optimizer
-   ```
-6. **Select** "Integration" as the category
-7. **Click** "Add"
-8. **Search** for "Heating Curve Optimizer"
-9. **Click** "Download"
-10. **Restart** Home Assistant
+Copy `custom_components/heating_curve_optimizer` into your
+`config/custom_components` directory and restart Home Assistant.
 
-### Method 2: Manual Installation
+## Add the integration
 
-1. **Download** the latest release from [GitHub Releases](https://github.com/bvweerd/heating_curve_optimizer/releases)
-2. **Extract** the zip file
-3. **Copy** the `custom_components/heating_curve_optimizer` directory to your Home Assistant `custom_components` directory
-4. **Restart** Home Assistant
+*Settings → Devices & services → Add integration → Heating Curve Optimizer.*
+Continue with the [quick start](quick-start.md).
 
-Your directory structure should look like:
-```
-config/
-├── custom_components/
-│   └── heating_curve_optimizer/
-│       ├── __init__.py
-│       ├── sensor.py
-│       ├── config_flow.py
-│       └── ...
-```
+## Removal
 
-## Initial Configuration
-
-After installation and restart:
-
-1. **Navigate** to Settings → Devices & Services
-2. **Click** "+ Add Integration"
-3. **Search** for "Heating Curve Optimizer"
-4. **Follow** the configuration wizard (see [Configuration Guide](configuration.md))
-
-## Verifying Installation
-
-After configuration, you should see a device with several sensors, a
-binary sensor, number entities, a select entity, and a disabled-by-default
-climate entity. The exact sensor count depends on your configuration -
-some sensors (COP, calibration, event-driven price/COP-delta sensors)
-only appear once a supply temperature sensor and/or a power sensor are
-configured.
-
-### Core Sensors (always present)
-
-- `sensor.heating_curve_optimizer_outdoor_temperature`
-- `sensor.heating_curve_optimizer_heat_loss`
-- `sensor.heating_curve_optimizer_window_solar_gain`
-- `sensor.heating_curve_optimizer_net_heat_loss`
-- `sensor.heating_curve_optimizer_heating_curve_offset` (main optimization output)
-- `sensor.heating_curve_optimizer_optimized_supply_temperature`
-- `sensor.heating_curve_optimizer_heat_buffer`
-- `sensor.heating_curve_optimizer_cost_savings_forecast`
-- `sensor.heating_curve_optimizer_diagnostics`
-- Several more diagnostic/redesign sensors (thermal v2, calibration) - most
-  disabled by default; see [Sensor Reference](reference/sensors.md) for
-  the complete, current list.
-
-### Other Entities (always present)
-
-- `binary_sensor.heating_curve_optimizer_heat_pump_demand`
-- `number.heating_curve_optimizer_target_indoor_temperature` - target setpoint
-- `number.heating_curve_optimizer_indoor_temp_hysteresis_lower` / `_upper` - hysteresis band
-- `climate.heating_curve_optimizer_heating` - disabled by default, same setpoint as the number entity above
-
-!!! tip "Check Sensor States"
-    After a few minutes, check that the sensors show actual values (not "unavailable"). If sensors are unavailable, check the [Troubleshooting Guide](reference/troubleshooting.md).
-
-## Next Steps
-
-- :material-cog: [Configure your integration](configuration.md) with accurate building parameters
-- :material-play: [Quick Start Guide](quick-start.md) to begin optimization
-- :material-chart-line: [View Examples](examples/price-optimization.md) to understand expected behavior
-
-## Updating
-
-### Via HACS
-
-1. **Open** HACS
-2. **Navigate** to Integrations
-3. **Find** "Heating Curve Optimizer"
-4. **Click** "Update" if available
-5. **Restart** Home Assistant
-
-### Manual Update
-
-Follow the same steps as manual installation, replacing existing files.
-
-!!! warning "Breaking Changes"
-    Check the [Release Notes](https://github.com/bvweerd/heating_curve_optimizer/releases) for any breaking changes before updating.
-
-## Uninstallation
-
-To remove the integration:
-
-1. **Navigate** to Settings → Devices & Services
-2. **Find** "Heating Curve Optimizer"
-3. **Click** the three dots
-4. **Select** "Delete"
-5. **Optionally** remove the integration files from `custom_components/`
-6. **Restart** Home Assistant
-
-!!! note "Learned calibration data is not deleted automatically"
-    If thermal calibration (learned UA/thermal mass) was active, its data
-    lives in a separate file under `.storage/` named
-    `heating_curve_optimizer_<entry_id>_thermal_calibration` and is not
-    removed when you delete the integration through the UI. This is
-    harmless to leave behind - a fresh install starts uncalibrated
-    regardless - but if you want a completely clean HA installation,
-    delete that file from `.storage/` by hand after uninstalling.
-
----
-
-**Next**: [Configuration Guide](configuration.md) - Learn how to configure your building parameters
+*Settings → Devices & services → Heating Curve Optimizer → ⋮ → Delete*,
+then remove the files (or uninstall through HACS). Learned calibration data
+is stored in `.storage/heating_curve_optimizer_<entry_id>_thermal_calibration`
+and is deleted with the entry's storage cleanup; remove it by hand if needed.

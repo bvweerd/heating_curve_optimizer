@@ -3,24 +3,22 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
-from homeassistant.core import HomeAssistant, Event
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import Event, EventStateChangedData, HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
+from .building_model import BuildingConfig
 from .const import (
-    CONF_AREA_M2,
-    CONF_CEILING_HEIGHT,
-    CONF_ENERGY_LABEL,
     CONF_GLASS_EAST_M2,
     CONF_GLASS_SOUTH_M2,
     CONF_GLASS_U_VALUE,
     CONF_GLASS_WEST_M2,
-    CONF_INDOOR_TEMP_HYSTERESIS,
     CONF_INDOOR_TEMP_HYSTERESIS_LOWER,
     CONF_INDOOR_TEMP_HYSTERESIS_UPPER,
     CONF_INDOOR_TEMPERATURE_SENSOR,
@@ -29,386 +27,279 @@ from .const import (
     CONF_PV_PEAK_POWER_KWP,
     CONF_PV_TILT,
     CONF_TARGET_INDOOR_TEMP,
-    CONF_VENTILATION_TYPE,
-    DEFAULT_CEILING_HEIGHT,
+    DEFAULT_GLASS_U_VALUE,
     DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER,
+    DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER,
     DEFAULT_PV_EFFICIENCY_FACTOR,
     DEFAULT_PV_ORIENTATION_DEG,
     DEFAULT_PV_TILT,
     DEFAULT_TARGET_INDOOR_TEMP,
-    DEFAULT_VENTILATION_TYPE,
     DOMAIN,
-    INDOOR_TEMPERATURE,
-    calculate_htc_from_energy_label,
+    ENTITY_MANAGED_OPTIONS,
 )
 from .coordinator_weather import WeatherDataCoordinator, _update_failed
-from .helpers import calculate_pv_forecast
+from .helpers import calculate_pv_forecast, calculate_window_solar_gain
 
 _LOGGER = logging.getLogger(__name__)
 
+INDOOR_SOURCE_SENSOR = "sensor"
+INDOOR_SOURCE_TARGET = "target_fallback"
 
-class HeatCalculationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
-    """Coordinator for heat loss, solar gain, and PV production calculations."""
+
+class HeatCalculationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Heat loss, solar gain, internal gains and PV production for one zone.
+
+    ``live_options`` is True for the primary zone only: its target
+    temperature and hysteresis are adjusted at runtime through the number/
+    climate entities, which persist them in ``entry.options``. Additional
+    zones take those values from their own subentry data.
+    """
 
     def __init__(
         self,
         hass: HomeAssistant,
+        config_entry: ConfigEntry,
         weather_coordinator: WeatherDataCoordinator,
         config: dict[str, Any],
-        entry_id: str,
-        main_entry_id: str = "",
-    ):
-        """Initialize the heat calculation coordinator.
-
-        ``main_entry_id`` is the base config entry ID (not zone-suffixed) used
-        to read live entry.options for target temperature and hysteresis
-        between reloads.  For the primary zone it equals ``entry_id``; for
-        additional zone subentries pass ``entry.entry_id`` explicitly so the
-        coordinator can look up the live options even though its own
-        ``entry_id`` carries a ``_{subentry_id}`` suffix.
-        """
+        zone_id: str,
+        *,
+        live_options: bool = False,
+    ) -> None:
+        """Initialize the heat calculation coordinator."""
         super().__init__(
             hass,
             _LOGGER,
-            name="Heat Calculations",
+            config_entry=config_entry,
+            name=f"Heat Calculations ({zone_id})",
             update_interval=timedelta(minutes=5),
         )
         self.weather_coordinator = weather_coordinator
         self.config = config
-        self._entry_id = entry_id
-        self._main_entry_id = main_entry_id or entry_id
-        self._indoor_temp_sensor = config.get(CONF_INDOOR_TEMPERATURE_SENSOR)
-        self._unsub = None
+        self.zone_id = zone_id
+        self._live_options = live_options
+        self._indoor_temp_sensor: str | None = config.get(
+            CONF_INDOOR_TEMPERATURE_SENSOR
+        )
+        self._unsub: Any = None
 
     @property
     def has_real_indoor_sensor(self) -> bool:
-        """Whether a real indoor-temperature sensor is configured.
-
-        Without one, `data["indoor_temperature"]` is the fixed
-        `INDOOR_TEMPERATURE` fallback, not a real measurement - calibration
-        (calibration.py) must never treat that fallback as ground truth.
-        """
+        """Whether a real indoor-temperature sensor is configured."""
         return bool(self._indoor_temp_sensor)
 
+    def effective_config(self) -> dict[str, Any]:
+        """Zone config with the live comfort settings merged in."""
+        config = dict(self.config)
+        if self._live_options and self.config_entry is not None:
+            for key in ENTITY_MANAGED_OPTIONS:
+                value = self.config_entry.options.get(key)
+                if value is not None:
+                    config[key] = value
+        return config
+
     async def async_setup(self) -> None:
-        """Set up event tracking for indoor temperature changes."""
+        """Track the indoor temperature sensor."""
         if self._indoor_temp_sensor:
             self._unsub = async_track_state_change_event(
                 self.hass,
                 [self._indoor_temp_sensor],
                 self._handle_indoor_temp_change,
             )
-            _LOGGER.debug(
-                "Tracking indoor temperature sensor: %s", self._indoor_temp_sensor
-            )
 
-    async def _handle_indoor_temp_change(self, event: Event) -> None:
-        """Handle indoor temperature changes with debouncing."""
+    async def _handle_indoor_temp_change(
+        self, event: Event[EventStateChangedData]
+    ) -> None:
+        """Refresh on a significant indoor temperature change."""
         old_state = event.data.get("old_state")
         new_state = event.data.get("new_state")
-
         if not old_state or not new_state:
             return
-
         try:
-            old_temp = float(old_state.state)
-            new_temp = float(new_state.state)
-            # Only update if temperature changed by more than 0.5°C
-            if abs(new_temp - old_temp) >= 0.5:
-                _LOGGER.debug(
-                    "Indoor temperature changed significantly: %.1f -> %.1f",
-                    old_temp,
-                    new_temp,
-                )
+            if abs(float(new_state.state) - float(old_state.state)) >= 0.5:
                 await self.async_request_refresh()
         except (ValueError, TypeError):
-            pass
+            return
 
     async def async_shutdown(self) -> None:
         """Clean up event tracking."""
         if self._unsub:
             self._unsub()
             self._unsub = None
+        await super().async_shutdown()
+
+    def _read_indoor_temperature(self, target_temp: float) -> tuple[float, str]:
+        """Measured indoor temperature, or the target temperature as fallback.
+
+        The fallback is the target rather than a fixed constant: assuming
+        the house sits exactly at its setpoint keeps the optimizer neutral,
+        where a fixed value above the comfort band would make it believe
+        the house is permanently too warm.
+        """
+        issue_id = f"indoor_sensor_unavailable_{self.zone_id}"
+        if not self._indoor_temp_sensor:
+            return target_temp, INDOOR_SOURCE_TARGET
+        state = self.hass.states.get(self._indoor_temp_sensor)
+        if state is not None and state.state not in ("unknown", "unavailable"):
+            try:
+                value = float(state.state)
+            except (ValueError, TypeError):
+                pass
+            else:
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+                return value, INDOOR_SOURCE_SENSOR
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="indoor_sensor_unavailable",
+            translation_placeholders={"sensor": self._indoor_temp_sensor},
+        )
+        return target_temp, INDOOR_SOURCE_TARGET
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Calculate heat loss, solar gain, and PV production."""
-        # Get weather data from coordinator
+        """Calculate heat loss, gains and PV production."""
         weather_data = self.weather_coordinator.data
         if not weather_data:
-            # A persistent, user-actionable problem (unlike a single failed
-            # refresh, which DataUpdateCoordinator already surfaces via
-            # entity unavailability) - surface it in Settings > Repairs too,
-            # mirroring battery_controller's ForecastCoordinator.
             ir.async_create_issue(
                 self.hass,
                 DOMAIN,
-                f"weather_data_unavailable_{self._entry_id}",
+                "weather_data_unavailable",
                 is_fixable=False,
                 severity=ir.IssueSeverity.WARNING,
                 translation_key="weather_data_unavailable",
             )
             raise _update_failed("no_weather_data")
-        ir.async_delete_issue(
-            self.hass, DOMAIN, f"weather_data_unavailable_{self._entry_id}"
-        )
+        ir.async_delete_issue(self.hass, DOMAIN, "weather_data_unavailable")
 
-        # Get configuration
-        area_m2 = self.config.get(CONF_AREA_M2)
-        energy_label = self.config.get(CONF_ENERGY_LABEL)
-
-        if not area_m2 or not energy_label:
+        config = self.effective_config()
+        building = BuildingConfig.from_config(config)
+        if building.area_m2 <= 0:
             raise _update_failed("missing_building_config")
 
-        # Get indoor temperature
-        indoor_temp = INDOOR_TEMPERATURE
-        if self._indoor_temp_sensor:
-            indoor_state = self.hass.states.get(self._indoor_temp_sensor)
-            if indoor_state and indoor_state.state not in ("unknown", "unavailable"):
-                try:
-                    indoor_temp = float(indoor_state.state)
-                except (ValueError, TypeError):
-                    pass
-
-        # Get target temperature and hysteresis from entry.options (written live by
-        # the number entities in number.py), falling back to zone config then defaults.
-        # entry.options is the authoritative store - no more hass.data["runtime"] reads.
-        # _main_entry_id is the base config entry ID (not zone-suffixed) — the one
-        # whose options number.py writes to.
-        _cfg_entry = self.hass.config_entries.async_get_entry(self._main_entry_id)
-        entry_options: dict[str, Any] = (
-            _cfg_entry.options if _cfg_entry is not None else {}
+        target_temp = float(
+            config.get(CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP)
         )
-
-        def _live(key: str, config_default: float) -> float:
-            val = entry_options.get(key)
-            if val is not None:
-                return float(val)
-            return float(self.config.get(key, config_default))
-
-        target_temp = _live(CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP)
-
-        # Get separate lower and upper hysteresis values
-        # Lower hysteresis: how far below target before heat pump turns ON
-        # Upper hysteresis: how far above target before heat pump turns OFF
-        legacy_hysteresis = self.config.get(
-            CONF_INDOOR_TEMP_HYSTERESIS, DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER
+        hysteresis_lower = float(
+            config.get(
+                CONF_INDOOR_TEMP_HYSTERESIS_LOWER, DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER
+            )
         )
-        hysteresis_lower = _live(
-            CONF_INDOOR_TEMP_HYSTERESIS_LOWER,
-            self.config.get(CONF_INDOOR_TEMP_HYSTERESIS_LOWER, legacy_hysteresis),
+        hysteresis_upper = float(
+            config.get(
+                CONF_INDOOR_TEMP_HYSTERESIS_UPPER, DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER
+            )
         )
-        hysteresis_upper = _live(
-            CONF_INDOOR_TEMP_HYSTERESIS_UPPER,
-            self.config.get(CONF_INDOOR_TEMP_HYSTERESIS_UPPER, legacy_hysteresis),
-        )
+        indoor_temp, indoor_source = self._read_indoor_temperature(target_temp)
 
-        # Calculate heat demand factor based on indoor temp vs target
-        # Lower bound: target - lower_hysteresis (heat pump turns ON below this)
-        # Upper bound: target + upper_hysteresis (heat pump turns OFF above this)
         lower_bound = target_temp - hysteresis_lower
         upper_bound = target_temp + hysteresis_upper
-        total_band = hysteresis_lower + hysteresis_upper
-
         if indoor_temp <= lower_bound:
-            # Room is cold, need full heating + extra to catch up
-            temp_deficit = lower_bound - indoor_temp
-            heat_demand_factor = 1.0 + (temp_deficit * 0.5)  # 50% extra per °C below
+            heat_demand_factor = 1.0 + (lower_bound - indoor_temp) * 0.5
         elif indoor_temp >= upper_bound:
-            # Room is warm enough, no heating needed (heat pump OFF)
             heat_demand_factor = 0.0
         else:
-            # In the hysteresis band, linear reduction from 1.0 to 0.0
-            heat_demand_factor = (upper_bound - indoor_temp) / total_band
+            heat_demand_factor = (upper_bound - indoor_temp) / (
+                hysteresis_lower + hysteresis_upper
+            )
 
-        # Calculate HTC (Heat Transfer Coefficient)
-        ventilation_type = self.config.get(
-            CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE
-        )
-        ceiling_height = float(
-            self.config.get(CONF_CEILING_HEIGHT, DEFAULT_CEILING_HEIGHT)
-        )
-
-        htc = calculate_htc_from_energy_label(
-            energy_label,
-            area_m2,
-            ventilation_type=ventilation_type,
-            ceiling_height=ceiling_height,
-        )
-
-        # Calculate current heat loss (base calculation)
-        outdoor_temp = weather_data["current_temperature"]
-        base_heat_loss = htc * (indoor_temp - outdoor_temp) / 1000  # Convert to kW
-
-        # Apply heat demand factor based on target temperature
-        heat_loss = base_heat_loss * heat_demand_factor
-
-        # Calculate heat loss forecast (use target_temp for forecast, not current indoor_temp)
-        # This assumes the room will reach target temperature
+        outdoor_temp = float(weather_data["current_temperature"])
+        temp_forecast: list[float] = weather_data["temperature_forecast"]
+        heat_loss = building.heat_loss_kw(indoor_temp, outdoor_temp)
         heat_loss_forecast = [
-            htc * (target_temp - t) / 1000 for t in weather_data["temperature_forecast"]
+            building.heat_loss_kw(target_temp, t) for t in temp_forecast
         ]
 
-        # Calculate solar gain
-        solar_gain, solar_forecast = await self.hass.async_add_executor_job(
-            self._calculate_solar_gain,
-            weather_data["radiation_forecast"],
+        timestamps = [
+            weather_data["forecast_start_utc"] + timedelta(hours=i)
+            for i in range(len(weather_data["radiation_forecast"]))
+        ]
+        solar_forecast = await self.hass.async_add_executor_job(
+            self._calculate_solar_gain, weather_data, timestamps
         )
-
-        # Calculate PV production (POA model when DNI/diffuse available)
         pv_forecast = await self.hass.async_add_executor_job(
-            self._calculate_pv_production,
-            weather_data["radiation_forecast"],
-            weather_data.get("dni_forecast"),
-            weather_data.get("diffuse_forecast"),
-            weather_data.get("forecast_start_utc"),
+            self._calculate_pv_production, weather_data, timestamps
         )
+        solar_gain = solar_forecast[0] if solar_forecast else 0.0
+        internal_gain = building.internal_gain_kw
 
-        # Calculate net heat loss (heat loss - solar gain)
-        net_heat_loss = heat_loss - solar_gain
-        net_forecast = [h - s for h, s in zip(heat_loss_forecast, solar_forecast)]
+        net_heat_loss = heat_loss - solar_gain - internal_gain
+        net_forecast = [
+            loss
+            - (solar_forecast[i] if i < len(solar_forecast) else 0.0)
+            - internal_gain
+            for i, loss in enumerate(heat_loss_forecast)
+        ]
 
-        # Determine if heat pump should be ON based on heat demand factor
-        # Heat pump is ON when there's any positive demand
-        heat_pump_on = heat_demand_factor > 0.0
-
-        result = {
+        return {
             "heat_loss": round(heat_loss, 3),
-            "heat_loss_base": round(base_heat_loss, 3),
             "heat_loss_forecast": [round(v, 3) for v in heat_loss_forecast],
             "solar_gain": round(solar_gain, 3),
             "solar_gain_forecast": [round(v, 3) for v in solar_forecast],
+            "internal_gain": round(internal_gain, 3),
             "pv_production_forecast": [round(v, 3) for v in pv_forecast],
             "net_heat_loss": round(net_heat_loss, 3),
             "net_heat_loss_forecast": [round(v, 3) for v in net_forecast],
             "outdoor_temperature": outdoor_temp,
             "indoor_temperature": indoor_temp,
+            "indoor_temperature_source": indoor_source,
             "target_temperature": target_temp,
-            "heat_demand_factor": round(heat_demand_factor, 3),
-            "heat_pump_on": heat_pump_on,
             "hysteresis_lower": hysteresis_lower,
             "hysteresis_upper": hysteresis_upper,
             "lower_bound": round(lower_bound, 2),
             "upper_bound": round(upper_bound, 2),
+            "heat_demand_factor": round(heat_demand_factor, 3),
+            "heat_pump_on": heat_demand_factor > 0.0,
+            "htc_w_per_k": round(building.ua_w_per_k, 1),
             "timestamp": dt_util.utcnow(),
         }
 
-        _LOGGER.debug(
-            "Heat calculations: loss=%.2f kW (base=%.2f, factor=%.2f), "
-            "solar=%.2f kW, net=%.2f kW, indoor=%.1f°C, target=%.1f°C",
-            heat_loss,
-            base_heat_loss,
-            heat_demand_factor,
-            solar_gain,
-            net_heat_loss,
-            indoor_temp,
-            target_temp,
+    def _calculate_solar_gain(
+        self, weather_data: dict[str, Any], timestamps: list[Any]
+    ) -> list[float]:
+        """Solar gain through the zone's windows (blocking call)."""
+        return calculate_window_solar_gain(
+            weather_data["radiation_forecast"],
+            {
+                "east": float(self.config.get(CONF_GLASS_EAST_M2, 0.0)),
+                "south": float(self.config.get(CONF_GLASS_SOUTH_M2, 0.0)),
+                "west": float(self.config.get(CONF_GLASS_WEST_M2, 0.0)),
+            },
+            float(self.config.get(CONF_GLASS_U_VALUE, DEFAULT_GLASS_U_VALUE)),
+            dni_forecast=weather_data.get("dni_forecast") or None,
+            diffuse_forecast=weather_data.get("diffuse_forecast") or None,
+            timestamps_utc=timestamps,
+            latitude=self.weather_coordinator.latitude,
+            longitude=self.weather_coordinator.longitude,
         )
 
-        return result
-
-    def _calculate_solar_gain(
-        self, radiation_forecast: list[float]
-    ) -> tuple[float, list[float]]:
-        """Calculate solar gain through windows (blocking call)."""
-        glass_east = float(self.config.get(CONF_GLASS_EAST_M2, 0))
-        glass_south = float(self.config.get(CONF_GLASS_SOUTH_M2, 0))
-        glass_west = float(self.config.get(CONF_GLASS_WEST_M2, 0))
-        glass_u = float(self.config.get(CONF_GLASS_U_VALUE, 1.2))
-
-        total_glass = glass_east + glass_south + glass_west
-
-        if total_glass == 0 or not radiation_forecast:
-            return 0.0, [0.0] * len(radiation_forecast)
-
-        # SHGC (Solar Heat Gain Coefficient) approximation
-        # Lower U-value glass typically has lower SHGC
-        shgc = max(0.3, 0.7 - (glass_u - 0.8) * 0.2)
-
-        # Orientation factors (how much radiation reaches each direction)
-        # These are rough approximations for Netherlands latitude
-        orientation_factors = {
-            "east": 0.6,  # Morning sun
-            "south": 1.0,  # Maximum sun exposure
-            "west": 0.6,  # Afternoon sun
-        }
-
-        solar_forecast = []
-        for radiation in radiation_forecast:
-            # Calculate solar gain for each orientation
-            gain = (
-                glass_east * radiation * orientation_factors["east"] * shgc
-                + glass_south * radiation * orientation_factors["south"] * shgc
-                + glass_west * radiation * orientation_factors["west"] * shgc
-            ) / 1000  # Convert W to kW
-
-            solar_forecast.append(max(0.0, gain))
-
-        current_solar = solar_forecast[0] if solar_forecast else 0.0
-
-        return current_solar, solar_forecast
-
     def _calculate_pv_production(
-        self,
-        radiation_forecast: list[float],
-        dni_forecast: list[float] | None = None,
-        diffuse_forecast: list[float] | None = None,
-        forecast_start_utc: datetime | None = None,
+        self, weather_data: dict[str, Any], timestamps: list[Any]
     ) -> list[float]:
-        """Calculate PV production forecast using POA model when DNI/diffuse available.
-
-        Uses battery_controller's Plane-of-Array transposition model when
-        direct_normal_irradiance and diffuse_radiation are available from
-        open-meteo, which increases accuracy by 30–50% in winter/spring compared
-        to the simplified GHI-based fallback.
-        """
-        pv_arrays = self.config.get("pv_arrays") or []
-        if not pv_arrays or not radiation_forecast:
-            return [0.0] * len(radiation_forecast)
-
-        # Build UTC timestamp list for POA solar position calculation
-        timestamps_utc: list[datetime] | None = None
-        if forecast_start_utc is not None:
-            timestamps_utc = [
-                forecast_start_utc + timedelta(hours=i)
-                for i in range(len(radiation_forecast))
-            ]
-
-        # Sum contribution from each configured PV array
-        combined_forecast = [0.0] * len(radiation_forecast)
-        for array in pv_arrays:
+        """Combined PV production forecast of all configured arrays (blocking)."""
+        radiation: list[float] = weather_data["radiation_forecast"]
+        combined = [0.0] * len(radiation)
+        for array in self.config.get("pv_arrays") or []:
             peak_power_kwp = float(array.get(CONF_PV_PEAK_POWER_KWP, 0))
             if peak_power_kwp <= 0:
                 continue
-            orientation = float(
-                array.get(CONF_PV_ORIENTATION, DEFAULT_PV_ORIENTATION_DEG)
-            )
-            tilt = float(array.get(CONF_PV_TILT, DEFAULT_PV_TILT))
-            efficiency_factor = float(
-                array.get(CONF_PV_EFFICIENCY_FACTOR, DEFAULT_PV_EFFICIENCY_FACTOR)
-            )
-
-            # Only pass lat/lon (needed for solar position) when timestamps
-            # are available — otherwise calculate_pv_forecast falls back to
-            # the simplified GHI model and lat/lon are unused.
-            poa_latitude: float | None = None
-            poa_longitude: float | None = None
-            if timestamps_utc is not None:
-                poa_latitude = self.weather_coordinator.latitude
-                poa_longitude = self.weather_coordinator.longitude
-
             array_forecast = calculate_pv_forecast(
-                radiation_forecast,
+                radiation,
                 peak_power_kwp=peak_power_kwp,
-                orientation_deg=orientation,
-                tilt_deg=tilt,
-                efficiency_factor=efficiency_factor,
-                dni_forecast=dni_forecast,
-                diffuse_forecast=diffuse_forecast,
-                timestamps_utc=timestamps_utc,
-                latitude=poa_latitude,
-                longitude=poa_longitude,
+                orientation_deg=float(
+                    array.get(CONF_PV_ORIENTATION, DEFAULT_PV_ORIENTATION_DEG)
+                ),
+                tilt_deg=float(array.get(CONF_PV_TILT, DEFAULT_PV_TILT)),
+                efficiency_factor=float(
+                    array.get(CONF_PV_EFFICIENCY_FACTOR, DEFAULT_PV_EFFICIENCY_FACTOR)
+                ),
+                dni_forecast=weather_data.get("dni_forecast") or None,
+                diffuse_forecast=weather_data.get("diffuse_forecast") or None,
+                timestamps_utc=timestamps,
+                latitude=self.weather_coordinator.latitude,
+                longitude=self.weather_coordinator.longitude,
             )
-            for i, val in enumerate(array_forecast):
-                combined_forecast[i] += val
-
-        return combined_forecast
+            for i, value in enumerate(array_forecast):
+                combined[i] += value
+        return combined

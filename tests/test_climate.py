@@ -1,4 +1,4 @@
-"""Tests for climate.py (phase 5, docs/redesign/REDESIGN.md)."""
+"""Tests for climate.py."""
 
 from __future__ import annotations
 

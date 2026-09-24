@@ -39,7 +39,7 @@ def _coerce_time_base(value: Any) -> int | None:
         return None
     if math.isnan(base) or base <= 0:
         return None
-    return int(round(base))
+    return round(base)
 
 
 def _normalize_price_value(value: Any) -> float | None:
@@ -492,113 +492,6 @@ def extract_price_forecast_with_timestamps(
     return _drop_elapsed_periods(prices, start_times, interval)
 
 
-def extract_price_forecast_with_interval(state: State) -> tuple[list[float], int]:
-    """Extract price forecast and detected interval from a Home Assistant price state.
-
-    Convenience wrapper around :func:`extract_price_forecast_with_timestamps`
-    for callers that do not need the per-period start times; see that function
-    for the supported sensor formats and their priority order.
-
-    Returns:
-        Tuple of (prices list, interval in minutes)
-    """
-    prices, _start_times, interval = extract_price_forecast_with_timestamps(state)
-    return prices, interval
-
-
-def extract_price_forecast(state: State) -> list[float]:
-    """Extract an hourly price forecast from a Home Assistant price state."""
-    prices, _ = extract_price_forecast_with_interval(state)
-    return prices
-
-
-def compute_step_durations_hours(
-    start_times: list[datetime],
-    interval_minutes: int,
-    now: datetime,
-) -> list[float]:
-    """Compute per-step durations aligned to price interval boundaries.
-
-    The first step covers the remaining time until the next price boundary.
-    All subsequent steps are full intervals. This synchronizes the DP time
-    steps with the actual price periods so no resampling artefacts occur.
-
-    Args:
-        start_times: UTC start time for each price period (len >= 1)
-        interval_minutes: Native interval of the price sensor in minutes
-        now: Current UTC time
-
-    Returns:
-        List of step durations in hours, same length as start_times
-    """
-    full_h = interval_minutes / 60.0
-    min_h = 1.0 / 60.0  # Minimum 1-minute step
-
-    if len(start_times) <= 1:
-        return [full_h] * len(start_times)
-
-    first_h = (start_times[1] - now).total_seconds() / 3600.0
-    first_h = max(min_h, min(first_h, full_h))
-
-    return [first_h] + [full_h] * (len(start_times) - 1)
-
-
-def resample_forecast(
-    forecast: list[float],
-    source_interval_minutes: int,
-    target_interval_minutes: int,
-) -> list[float]:
-    """Resample a forecast to a different time interval using duration-weighted averaging.
-
-    Args:
-        forecast: Source forecast values
-        source_interval_minutes: Source interval in minutes
-        target_interval_minutes: Target interval in minutes
-
-    Returns:
-        Resampled forecast
-    """
-    if source_interval_minutes == target_interval_minutes:
-        return forecast
-
-    if not forecast:
-        return []
-
-    # Calculate total duration in minutes
-    total_duration = len(forecast) * source_interval_minutes
-    target_steps = total_duration // target_interval_minutes
-
-    resampled = []
-    for i in range(target_steps):
-        target_start = i * target_interval_minutes
-        target_end = (i + 1) * target_interval_minutes
-
-        # Find overlapping source intervals
-        values = []
-        weights = []
-
-        for j, value in enumerate(forecast):
-            source_start = j * source_interval_minutes
-            source_end = (j + 1) * source_interval_minutes
-
-            # Calculate overlap
-            overlap_start = max(target_start, source_start)
-            overlap_end = min(target_end, source_end)
-            overlap = max(0, overlap_end - overlap_start)
-
-            if overlap > 0:
-                values.append(value)
-                weights.append(overlap)
-
-        if values:
-            # Weighted average
-            total_weight = sum(weights)
-            weighted_sum = sum(v * w for v, w in zip(values, weights))
-            resampled.append(weighted_sum / total_weight)
-
-    return resampled
-
-
 def resample_to_steps(
     values: list[float],
     source_start: datetime,
@@ -677,34 +570,46 @@ def resample_to_steps(
     return result
 
 
-def clamp(value: float, min_value: float, max_value: float) -> float:
-    """Clamp a value between min and max."""
-    return max(min_value, min(max_value, value))
-
-
-def safe_float(value: Any, default: float = 0.0) -> float:
-    """Safely convert a value to float, returning default for None/NaN/inf."""
-    if value is None:
-        return default
-    try:
-        result = float(value)
-        if math.isnan(result) or math.isinf(result):
-            return default
-        return result
-    except (TypeError, ValueError):
-        return default
-
-
 def get_sensor_value(
     hass: Any,
     entity_id: str | None,
-    default: float = 0.0,
-) -> float:
-    """Get a numeric sensor value from Home Assistant, returning default if unavailable."""
+    default: float | None = 0.0,
+) -> float | None:
+    """Numeric state of an entity, or ``default`` when missing/invalid."""
     state = usable_state(hass, entity_id)
     if state is None:
         return default
-    return safe_float(state.state, default)
+    try:
+        value = float(state.state)
+    except (TypeError, ValueError):
+        return default
+    if math.isnan(value) or math.isinf(value):
+        return default
+    return value
+
+
+def read_power_kw(
+    hass: Any, entity_id: str | None, *, default_unit: str | None = None
+) -> float | None:
+    """Read a power sensor in kW, honouring its W/kW unit.
+
+    A sensor without a unit is interpreted as ``default_unit``; with neither
+    a recognised unit nor a default the reading is rejected rather than
+    guessed, since a factor-1000 error is worse than no reading.
+    """
+    state = usable_state(hass, entity_id)
+    if state is None:
+        return None
+    try:
+        value = float(state.state)
+    except (TypeError, ValueError):
+        return None
+    unit = state.attributes.get("unit_of_measurement") or default_unit
+    if unit == "kW":
+        return value
+    if unit == "W":
+        return value / 1000.0
+    return None
 
 
 def calculate_supply_temperature(
@@ -722,19 +627,6 @@ def calculate_supply_temperature(
         return water_min
     ratio = (outdoor_temp - outdoor_min) / (outdoor_max - outdoor_min)
     return water_max + (water_min - water_max) * ratio
-
-
-def coordinator_data_section(coordinator: Any, key: str) -> dict[str, Any]:
-    """Return `coordinator.data[key]`, or `{}` if the coordinator has no data yet.
-
-    Shared by the phase-2/5b diagnostic sensors (thermal shadow, thermal
-    calibration, real-time offset) that each read one named section of
-    OptimizationCoordinator.data.
-    """
-    if not coordinator.data:
-        return {}
-    result: dict[str, Any] = coordinator.data.get(key, {})
-    return result
 
 
 def max_offset_change(time_base: int, offset_delta_t: int) -> int:
@@ -1023,12 +915,83 @@ def calculate_defrost_factor(outdoor_temp: float, humidity: float = 80.0) -> flo
     # Return COP multiplier (1.0 = no loss, 0.6 = 40% loss in worst case)
     cop_multiplier = 1.0 - defrost_penalty
 
-    _LOGGER.debug(
-        "Defrost factor: T=%.1f°C, RH=%.0f%% -> multiplier=%.3f (%.0f%% COP loss)",
-        outdoor_temp,
-        humidity,
-        cop_multiplier,
-        defrost_penalty * 100,
-    )
-
     return max(0.60, cop_multiplier)  # Minimum 60% efficiency (40% max loss)
+
+
+# Window orientations as azimuth from North, clockwise.
+WINDOW_AZIMUTH_DEG = {"east": 90.0, "south": 180.0, "west": 270.0}
+
+
+def window_shgc(glass_u_value: float) -> float:
+    """Solar heat gain coefficient estimated from the glazing U-value.
+
+    Better-insulating glazing (more panes, coatings) lets through less
+    solar heat: ~0.7 for double glazing down to ~0.5 for triple glazing.
+    """
+    return max(0.3, min(0.8, 0.7 - (glass_u_value - 0.8) * 0.2))
+
+
+def calculate_window_solar_gain(
+    ghi_forecast: list[float],
+    glass_m2: dict[str, float],
+    glass_u_value: float,
+    *,
+    dni_forecast: list[float] | None = None,
+    diffuse_forecast: list[float] | None = None,
+    timestamps_utc: list[datetime] | None = None,
+    latitude: float | None = None,
+    longitude: float | None = None,
+) -> list[float]:
+    """Solar heat gain through vertical windows, in kW per forecast hour.
+
+    Uses the same plane-of-array transposition as the PV forecast (windows
+    are 90° tilted surfaces) when DNI/diffuse and solar geometry are
+    available, so low winter sun on a south façade is not underestimated.
+    Falls back to fixed orientation factors on the horizontal irradiance.
+    """
+    shgc = window_shgc(glass_u_value)
+    areas = {k: max(0.0, float(v)) for k, v in glass_m2.items()}
+    if not ghi_forecast or sum(areas.values()) <= 0:
+        return [0.0] * len(ghi_forecast)
+
+    use_poa = (
+        dni_forecast is not None
+        and diffuse_forecast is not None
+        and timestamps_utc is not None
+        and latitude is not None
+        and longitude is not None
+    )
+    fallback_factor = {"east": 0.6, "south": 1.0, "west": 0.6}
+
+    result: list[float] = []
+    for i, ghi in enumerate(ghi_forecast):
+        gain_w = 0.0
+        if (
+            use_poa
+            and dni_forecast is not None
+            and diffuse_forecast is not None
+            and timestamps_utc is not None
+            and latitude is not None
+            and longitude is not None
+            and i < len(dni_forecast)
+            and i < len(diffuse_forecast)
+            and i < len(timestamps_utc)
+        ):
+            dt_mid = timestamps_utc[i].replace(minute=30, second=0, microsecond=0)
+            elevation, azimuth = _solar_position(dt_mid, latitude, longitude)
+            for side, area in areas.items():
+                poa = _poa_irradiance(
+                    ghi,
+                    dni_forecast[i],
+                    diffuse_forecast[i],
+                    elevation,
+                    azimuth,
+                    90.0,
+                    WINDOW_AZIMUTH_DEG.get(side, 180.0),
+                )
+                gain_w += area * poa * shgc
+        else:
+            for side, area in areas.items():
+                gain_w += area * ghi * fallback_factor.get(side, 0.6) * shgc
+        result.append(max(0.0, gain_w / 1000.0))
+    return result

@@ -1,29 +1,30 @@
 """Test the diagnostics module."""
 
-import pytest
 from unittest.mock import MagicMock
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+import pytest
 from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.heating_curve_optimizer import HeatingCurveOptimizerData
 from custom_components.heating_curve_optimizer.calibration import (
     RESULT_FITTED,
     ThermalCalibrationState,
 )
+from custom_components.heating_curve_optimizer.const import DOMAIN
 from custom_components.heating_curve_optimizer.diagnostics import (
     async_get_config_entry_diagnostics,
 )
-from custom_components.heating_curve_optimizer.const import DOMAIN
 
 
 def _default_coordinator():
-    """A coordinator mock with no calibration set up - `_calibration` must
+    """A coordinator mock with no calibration set up - `thermal_calibration` must
     be explicitly None rather than a MagicMock auto-attribute, so
     diagnostics' "never set up" branch is exercised, not a stub object."""
     coordinator = MagicMock()
     coordinator.data = None
     coordinator.last_update_success = False
-    coordinator._calibration = None
+    coordinator.thermal_calibration = None
     return coordinator
 
 
@@ -203,7 +204,7 @@ async def test_diagnostics_calibration_section_reflects_state(hass: HomeAssistan
     mock_opt = MagicMock()
     mock_opt.data = {"optimal_offset": 1.0}
     mock_opt.last_update_success = True
-    mock_opt._calibration = calibration
+    mock_opt.thermal_calibration = calibration
 
     entry.runtime_data = _make_runtime_data(optimization=mock_opt, config=entry.data)
 

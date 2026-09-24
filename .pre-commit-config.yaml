@@ -1,25 +1,22 @@
 repos:
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.15.2
+    rev: v3.21.2
     hooks:
       - id: pyupgrade
-        args: [--py37-plus]
+        args: [--py313-plus]
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.6
+    rev: v2.4.3
     hooks:
       - id: codespell
         args:
           - --ignore-words-list=hass,alot,datas,dof,dur,farenheit,hist,iff,ines,ist,lightsensor,mut,nd,pres,referer,ser,serie,te,technik,thirdparty,ue,uint,visability,wan,wanna,withing
-          # docs/redesign and docs/algorithm are Dutch-language design docs
-          # (docs/redesign/REDESIGN.md and its implementation notes) -
-          # English spell-checking them is the wrong tool and would be an
-          # unbounded false-positive source (fase, stap, wel, mis, ...).
-          - --skip=./.*,*.csv,*.json,docs/redesign/*,docs/algorithm/*
+          # translations/nl.json and the Dutch README section are not English.
+          - --skip=./.*,*.csv,*.json,*.nl.md
           - --quiet-level=2
         exclude_types: [csv, json]
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.4.8
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.8
     hooks:
-      - id: ruff
+      - id: ruff-check
         args: [--fix, --exit-non-zero-on-fix]
       - id: ruff-format

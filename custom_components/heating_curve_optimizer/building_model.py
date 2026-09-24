@@ -3,8 +3,7 @@
 The building is modelled the same way `battery_controller` models a battery:
 one state variable (indoor temperature instead of state of charge), one
 capacity (thermal mass instead of kWh), one loss term (UA instead of
-round-trip inefficiency). See docs/redesign/REDESIGN.md sections 3.1-3.2 for
-the full mapping and the reasoning behind it.
+round-trip inefficiency).
 
 This module is deliberately independent of Home Assistant: no `hass`, no
 config entries, no coordinators. It is pure physics, constructed from plain
@@ -24,6 +23,7 @@ from .const import (
     CONF_ENERGY_LABEL,
     CONF_INDOOR_TEMP_HYSTERESIS_LOWER,
     CONF_INDOOR_TEMP_HYSTERESIS_UPPER,
+    CONF_INTERNAL_GAINS_W_PER_M2,
     CONF_TARGET_INDOOR_TEMP,
     CONF_THERMAL_MASS_CLASS,
     CONF_VENTILATION_TYPE,
@@ -31,6 +31,7 @@ from .const import (
     DEFAULT_EMITTER_TYPE,
     DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER,
     DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER,
+    DEFAULT_INTERNAL_GAINS_W_PER_M2,
     DEFAULT_TARGET_INDOOR_TEMP,
     DEFAULT_THERMAL_MASS_CLASS,
     DEFAULT_VENTILATION_TYPE,
@@ -59,6 +60,8 @@ class BuildingConfig:
 
     comfort_min: float = 19.0
     comfort_max: float = 20.5
+    # Continuous internal heat gains (people, appliances, lighting), in kW.
+    internal_gain_kw: float = 0.0
 
     # Derived values (calculated in __post_init__)
     ua_w_per_k: float = field(init=False)
@@ -92,11 +95,9 @@ class BuildingConfig:
     def from_config(cls, config: dict[str, Any]) -> BuildingConfig:
         """Build a `BuildingConfig` from a merged config-entry dict.
 
-        Comfort band is derived from the existing target-temperature and
-        hysteresis number entities (`CONF_TARGET_INDOOR_TEMP`,
-        `CONF_INDOOR_TEMP_HYSTERESIS_LOWER/UPPER`) so no new config keys are
-        required for the redesigned optimizer to run against a home that was
-        set up before this redesign.
+        The comfort band is `target - hysteresis_lower` .. `target +
+        hysteresis_upper`; pass a config dict that already has the live
+        values from the number entities merged in.
         """
         target = float(config.get(CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP))
         hysteresis_lower = float(
@@ -111,8 +112,12 @@ class BuildingConfig:
                 DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER,
             )
         )
+        area_m2 = float(config.get(CONF_AREA_M2, 0.0))
+        internal_w_per_m2 = float(
+            config.get(CONF_INTERNAL_GAINS_W_PER_M2, DEFAULT_INTERNAL_GAINS_W_PER_M2)
+        )
         return cls(
-            area_m2=float(config.get(CONF_AREA_M2, 0.0)),
+            area_m2=area_m2,
             energy_label=str(config.get(CONF_ENERGY_LABEL, "C")),
             ventilation_type=str(
                 config.get(CONF_VENTILATION_TYPE, DEFAULT_VENTILATION_TYPE)
@@ -125,6 +130,7 @@ class BuildingConfig:
             ),
             comfort_min=target - hysteresis_lower,
             comfort_max=target + hysteresis_upper,
+            internal_gain_kw=area_m2 * internal_w_per_m2 / 1000.0,
         )
 
     def heat_loss_kw(self, indoor_temp: float, outdoor_temp: float) -> float:
@@ -144,21 +150,20 @@ class BuildingConfig:
         outdoor_temp: float,
         heat_input_kw: float,
         solar_gain_kw: float = 0.0,
-        internal_gain_kw: float = 0.0,
+        internal_gain_kw: float | None = None,
         step_hours: float,
     ) -> float:
         """Advance the 1R1C state by one time step.
 
-        This is the SoC transition function of `battery_model`, in degrees
-        instead of Wh: energy in minus energy out, divided by capacity. It
-        is a real energy balance - unlike the offset that used to be applied
-        directly to the buffer regardless of what was actually delivered
-        (docs/redesign/REDESIGN.md §2.1.A), `heat_input_kw` here is the
-        actual thermal power delivered by the heat pump this step, so energy
-        is conserved by construction.
+        Explicit Euler step of the energy balance: heat in (heat pump,
+        solar, internal gains) minus transmission/ventilation loss, divided
+        by thermal mass. `internal_gain_kw=None` uses the building's own
+        configured internal gains.
         """
         if self.thermal_mass_kwh_per_k <= 0:
             return indoor_temp
+        if internal_gain_kw is None:
+            internal_gain_kw = self.internal_gain_kw
         loss_kw = self.heat_loss_kw(indoor_temp, outdoor_temp)
         net_kw = heat_input_kw + solar_gain_kw + internal_gain_kw - loss_kw
         delta_t = net_kw * step_hours / self.thermal_mass_kwh_per_k
@@ -188,10 +193,9 @@ class EmitterConfig:
 
     Physical role: how much thermal power can actually be pushed into the
     room at a given supply temperature. This is what makes the heating-curve
-    offset a real decision instead of a free parameter (docs/redesign/
-    REDESIGN.md §2.1.A / §3.2): raising the offset raises the deliverable
-    power (at a worse COP, see heatpump_model.py); lowering it does the
-    opposite. Follows the standard emitter power law
+    offset a real decision instead of a free parameter: raising the offset
+    raises the deliverable power (at a worse COP, see heatpump_model.py);
+    lowering it does the opposite. Follows the standard emitter power law
         Q(T_sup) = Q_nominal * ((T_sup - T_in) / dT_nominal) ** exponent
     (EN 442 for radiators, exponent ≈ 1.3; underfloor/fan-coil are flatter).
     """

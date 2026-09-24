@@ -1,51 +1,35 @@
 """Backward-induction DP optimizer over indoor temperature.
 
-Replaces the original `optimize_offsets()` DP (removed) with one where the
-state is the actual physical quantity being managed (indoor temperature,
-via `building_model.BuildingConfig`) instead of a `buffer` value carried
-as DP payload. See docs/redesign/REDESIGN.md §2.1 for the bugs this fixes
-and §3.2 for the model this implements:
+The state is the physical quantity being managed - indoor temperature, via
+`building_model.BuildingConfig` - plus the previously applied offset (needed
+for the ramp-rate limit):
 
-- energy is conserved by construction: the heat delivered each step is
-  what `EmitterConfig.available_power_kw` says the chosen supply
-  temperature can actually push into the room (fixes §2.1.A);
-- the buffer is gone - indoor temperature IS the DP state dimension, so a
-  cheaper-but-infeasible path can never silently win over a dearer-but-
-  feasible one (fixes §2.1.B);
-- there is no unused `cumulative_offset_sum` dimension (fixes §2.1.C);
-- curve limits are enforced per time step, never globally across the whole
-  horizon (fixes §2.1.D);
-- the terminal condition is a real value function - heat left in the
-  building above the comfort floor is worth something, valued at the
-  price/COP prevailing at the end of the horizon, the same idea as
-  battery_controller's `V[T][s] = -(soc_kwh * feed_in_price_T)` (fixes
-  §2.1.E);
-- PV surplus can be priced separately from grid import (fixes §2.1.G),
-  falling back to a fixed feed-in price rather than `None` if no forecast
-  is given - the same rule battery_controller's CLAUDE.md states for its
-  optimizer, for the same reason: `None` silently makes PV arbitrage
-  unprofitable instead of failing loudly.
+- energy is conserved by construction: the heat delivered each step is what
+  `EmitterConfig.available_power_kw` says the chosen supply temperature can
+  push into the room, capped by the heat pump's thermal capacity;
+- curve limits are a per-step physical clamp on the supply temperature;
+- the terminal value prices heat left in the building above the comfort
+  floor at the end-of-horizon price/COP, so the plan does not drain the
+  building just because the horizon ends;
+- PV-covered electricity is priced at the feed-in rate, never as free.
 
 ## DP formulation
 
-State at the start of step t: `(T_in[t], offset[t-1])`. The previous
-offset is carried because the ramp-rate limit (`offset_delta_t`) bounds how
-far `offset[t]` may be from `offset[t-1]`.
+State at the start of step t: `(T_in[t], offset[t-1])`.
 
-    V[t](T_in, prev_offset) = min over offset[t] of
-        step_cost(T_in, prev_offset, offset[t]) + V[t+1](T_in', offset[t])
+    V[t](T_in, prev) = min over offset of
+        stage_cost(T_in, prev, offset) + V[t+1](T_in', offset)
 
-where `T_in'` is the indoor temperature after applying `offset[t]` for one
-step. Note `offset[t]` becomes the *prev_offset* context for `V[t+1]` - the
-value function at every step (including the terminal one) is therefore
-always indexed by `(state, prev_offset)`, so the terminal value is simply
-duplicated across every `prev_offset` row (it does not actually depend on
-one, since there is no ramp constraint left to enforce after the horizon
-ends).
+`V[t]` is stored on a regular temperature grid and **linearly interpolated**
+between grid points. The transition `T_in -> T_in'` itself is never snapped
+to the grid: with building time constants of tens of hours, the per-step
+drift is often smaller than half a grid cell, and rounding it away would
+make a slowly cooling house look perfectly stable to the optimizer. The
+forward pass likewise simulates the continuous temperature and re-evaluates
+the optimal action at the actual (off-grid) state each step.
 
-This module is pure Python (no Home Assistant dependency) so the DP core
-can be unit tested directly, including against a brute-force reference on
-a short horizon (tests/test_thermal_optimizer.py).
+Pure Python (no Home Assistant dependency) so it can be unit tested
+directly, including against a brute-force reference on a short horizon.
 """
 
 from __future__ import annotations
@@ -58,32 +42,23 @@ from .building_model import BuildingConfig, EmitterConfig
 from .heatpump_model import HeatPumpConfig
 from .helpers import (
     calculate_supply_temperature,
+)
+from .helpers import (
     max_offset_change as _max_offset_change,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-# A state landing below the discretized ladder's bottom edge is, under the
-# configured comfort band and margin, meant to be unreachable in practice.
-# If it is reached anyway (an undersized heat pump on an extreme cold snap),
-# the DP must still be able to assign a finite cost to every state so the
-# backward pass has no holes - so this is a very large but finite penalty,
-# not a hard exclusion. No realistic alternative ever outweighs it; the
-# optimizer no longer silently falls back to "do nothing" when some path
-# turns out to be infeasible (see REDESIGN.md §2.1.D).
+# Added once per step whenever indoor temperature falls below
+# `comfort_min - state_margin`. Large enough that no realistic energy saving
+# outweighs it, finite so an undersized system still gets a best-effort plan.
 HARD_FLOOR_PENALTY_EUR = 1000.0
 
-# When no feed_in_prices forecast is supplied but PV surplus is, this is the
-# price used for self-consumed PV. Mirrors battery_controller's rule
-# (CLAUDE.md "Critical Implementation Notes"): never let a missing feed-in
-# price silently make solar-covered heating look free.
+# Price used for self-consumed PV when no feed-in forecast is given - a
+# missing feed-in price must never make PV-covered heating look free.
 DEFAULT_FEED_IN_PRICE = 0.07
 
-# The DP's absolute curve-offset bound (not the ramp-rate limit). Exposed as
-# module constants, rather than only as this function's default arguments,
-# so other callers that need to respect the same bound - the real-time
-# PV-surplus controller's `effective_offset` clamp in coordinator.py, in
-# particular - stay in sync with it instead of hardcoding their own copy.
+# Absolute heating-curve offset bounds, shared with the real-time controller.
 DEFAULT_OFFSET_MIN = -4
 DEFAULT_OFFSET_MAX = 4
 
@@ -94,11 +69,10 @@ def _pad(data: list[float] | None, length: int, default: float) -> list[float]:
         return [default] * length
     if len(data) >= length:
         return list(data[:length])
-    last = data[-1]
-    return list(data) + [last] * (length - len(data))
+    return list(data) + [data[-1]] * (length - len(data))
 
 
-def _comfort_penalty(
+def comfort_penalty(
     t_in: float,
     *,
     comfort_min: float,
@@ -107,38 +81,58 @@ def _comfort_penalty(
     hard_floor: float,
     step_hours: float = 1.0,
 ) -> float:
-    """Quadratic comfort penalty, with a large added penalty below the floor.
+    """Quadratic comfort penalty outside the band, plus a hard-floor penalty.
 
-    The quadratic part scales with ``step_hours`` so that
-    ``comfort_penalty_weight`` has the same meaning regardless of
-    ``time_base`` — halving the step duration halves the penalty for the
-    same temperature deviation, just as energy cost does.
-    ``HARD_FLOOR_PENALTY_EUR`` is a fixed deterrent in € and is *not* scaled.
+    The quadratic part scales with ``step_hours`` so ``weight`` means the
+    same thing (€ per K² per hour) regardless of the step length.
     """
-    if t_in < hard_floor:
-        return weight * (comfort_min - t_in) ** 2 * step_hours + HARD_FLOOR_PENALTY_EUR
+    penalty = 0.0
     if t_in < comfort_min:
-        return weight * (comfort_min - t_in) ** 2 * step_hours
-    if t_in > comfort_max:
-        return weight * (t_in - comfort_max) ** 2 * step_hours
-    return 0.0
+        penalty = weight * (comfort_min - t_in) ** 2 * step_hours
+    elif t_in > comfort_max:
+        penalty = weight * (t_in - comfort_max) ** 2 * step_hours
+    if t_in < hard_floor:
+        penalty += HARD_FLOOR_PENALTY_EUR
+    return penalty
 
 
 @dataclass
 class ThermalOptimizationResult:
-    """Result of `optimize_thermal_schedule`."""
+    """Result of `optimize_thermal_schedule`.
+
+    Per-step lists all have `horizon` entries; `indoor_temps[t]` is the
+    indoor temperature at the *end* of step t.
+    """
 
     offsets: list[int] = field(default_factory=list)
     supply_temps: list[float] = field(default_factory=list)
     indoor_temps: list[float] = field(default_factory=list)
     thermal_power_kw: list[float] = field(default_factory=list)
     electrical_power_kw: list[float] = field(default_factory=list)
+    cop: list[float] = field(default_factory=list)
     cost_eur: list[float] = field(default_factory=list)
     total_cost_eur: float = 0.0
-    # Marginal value of one more kWh of stored heat at t=0, in €/kWh -
-    # positive means storing heat now is worth something (analogous to
-    # battery_controller's shadow price lambda = -dV[0]/dSoC).
+    # Plain heating curve (offset 0 every step), same physics and prices.
+    baseline_supply_temps: list[float] = field(default_factory=list)
+    baseline_indoor_temps: list[float] = field(default_factory=list)
+    baseline_cop: list[float] = field(default_factory=list)
+    baseline_cost_eur: list[float] = field(default_factory=list)
+    baseline_total_cost_eur: float = 0.0
+    # Energy cost difference corrected for the value of heat left in the
+    # building at the end of the horizon (pre-heating is not a loss).
+    cost_savings_eur: float = 0.0
+    # Marginal value of one more kWh of stored heat at t=0, in €/kWh.
     shadow_price_eur_per_kwh: float = 0.0
+
+
+@dataclass
+class _StepOutcome:
+    supply_temp: float
+    q_hp: float
+    p_elec: float
+    cop: float
+    energy_cost: float
+    next_t_in: float
 
 
 def optimize_thermal_schedule(
@@ -171,35 +165,32 @@ def optimize_thermal_schedule(
 ) -> ThermalOptimizationResult:
     """Return a cost-optimal offset schedule over indoor temperature.
 
-    Units: power in kW, `prices`/`feed_in_prices` in currency per kWh,
-    `time_base` in minutes per step, temperatures in °C. See the module
-    docstring for the DP formulation.
+    Units: power in kW, prices in currency per kWh, `time_base` in minutes
+    per step, temperatures in °C.
     """
     horizon = min(len(outdoor_temps), len(prices))
     if horizon == 0:
         return ThermalOptimizationResult()
-
     if offset_min > offset_max:
         raise ValueError(
             f"offset_min ({offset_min}) must be <= offset_max ({offset_max})"
         )
 
     step_hours = time_base / 60.0 if time_base > 0 else 1.0
-    # Per-step durations: the first step may be shorter when current time
-    # falls mid-period. Falls back to uniform step_hours when not supplied.
     step_durations: list[float] = (
         list(step_durations_hours[:horizon])
         if step_durations_hours and len(step_durations_hours) >= horizon
         else [step_hours] * horizon
     )
-    max_offset_change = _max_offset_change(time_base, offset_delta_t)
+    max_change = _max_offset_change(time_base, offset_delta_t)
 
-    outdoor = _pad(outdoor_temps, horizon, outdoor_temps[-1] if outdoor_temps else 5.0)
-    price = _pad(prices, horizon, prices[-1] if prices else 0.0)
+    outdoor = _pad(outdoor_temps, horizon, outdoor_temps[-1])
+    price = _pad(prices, horizon, prices[-1])
     solar = _pad(solar_gain_kw, horizon, 0.0)
-    pv = _pad(pv_surplus_kw, horizon, 0.0)
+    pv = [max(0.0, v) for v in _pad(pv_surplus_kw, horizon, 0.0)]
     feed_in = _pad(feed_in_prices, horizon, feed_in_price_fallback)
     humidity = _pad(humidity_forecast, horizon, 80.0)
+    internal_gain = building.internal_gain_kw
 
     base_supply = [
         calculate_supply_temperature(
@@ -217,194 +208,174 @@ def optimize_thermal_schedule(
     )
     n_states = len(states)
     state_lo, state_hi = states[0], states[-1]
-    state_span = state_hi - state_lo if n_states > 1 else 1.0
-
-    def snap_state(t_in: float) -> int:
-        clamped = min(max(t_in, state_lo), state_hi)
-        if n_states <= 1:
-            return 0
-        return round((clamped - state_lo) / state_span * (n_states - 1))
+    cell = (state_hi - state_lo) / (n_states - 1) if n_states > 1 else 1.0
+    hard_floor = building.comfort_min - state_margin
 
     offsets_range = list(range(offset_min, offset_max + 1))
+    n_offsets = len(offsets_range)
 
-    # --- terminal value function ------------------------------------
-    # V[horizon](state, prev_offset). Duplicated across every prev_offset
-    # row: after the horizon ends there is no more ramp constraint to make
-    # the value depend on how we got here, only on where we ended up.
-    last_t = horizon - 1
-    terminal_cop = heatpump.cop_at(
-        supply_temp=base_supply[last_t],
-        outdoor_temp=outdoor[last_t],
-        humidity=humidity[last_t],
-    )
-    terminal_price = price[last_t]
+    def interp(row: list[float], t_in: float) -> float:
+        """Linear interpolation of a value row on the state grid (clamped)."""
+        if n_states == 1:
+            return row[0]
+        x = (min(max(t_in, state_lo), state_hi) - state_lo) / cell
+        i = min(int(x), n_states - 2)
+        frac = x - i
+        return row[i] + (row[i + 1] - row[i]) * frac
 
-    def terminal_value(state_idx: int) -> float:
-        stored_above_min = max(0.0, states[state_idx] - building.comfort_min)
-        return (
-            -stored_above_min
-            * building.thermal_mass_kwh_per_k
-            * terminal_price
-            / terminal_cop
+    def simulate_step(t: int, t_in: float, offset: int) -> _StepOutcome:
+        supply_temp = min(water_max, max(water_min, base_supply[t] + offset))
+        q_available = emitter.available_power_kw(
+            supply_temp=supply_temp, indoor_temp=t_in
+        )
+        q_hp = max(0.0, min(q_available, heatpump.max_thermal_power_kw))
+        cop = heatpump.cop_at(
+            supply_temp=supply_temp, outdoor_temp=outdoor[t], humidity=humidity[t]
+        )
+        p_elec = q_hp / cop if q_hp > 0 else 0.0
+        pv_covered = min(p_elec, pv[t])
+        energy_cost = (
+            (p_elec - pv_covered) * price[t] + pv_covered * feed_in[t]
+        ) * step_durations[t]
+        next_t_in = building.next_indoor_temp(
+            t_in,
+            outdoor_temp=outdoor[t],
+            heat_input_kw=q_hp,
+            solar_gain_kw=solar[t],
+            internal_gain_kw=internal_gain,
+            step_hours=step_durations[t],
+        )
+        return _StepOutcome(supply_temp, q_hp, p_elec, cop, energy_cost, next_t_in)
+
+    def stage_cost(t: int, outcome: _StepOutcome) -> float:
+        return outcome.energy_cost + comfort_penalty(
+            outcome.next_t_in,
+            comfort_min=building.comfort_min,
+            comfort_max=building.comfort_max,
+            weight=comfort_penalty_weight,
+            hard_floor=hard_floor,
+            step_hours=step_durations[t],
         )
 
-    v_next: list[dict[int, float]] = [
-        dict.fromkeys(offsets_range, terminal_value(s)) for s in range(n_states)
-    ]
+    # --- terminal value ------------------------------------------------
+    terminal_cop = heatpump.cop_at(
+        supply_temp=base_supply[-1],
+        outdoor_temp=outdoor[-1],
+        humidity=humidity[-1],
+    )
+    terminal_eur_per_k = building.thermal_mass_kwh_per_k * price[-1] / terminal_cop
 
-    # action_table[t][state_idx][prev_offset] = (offset, next_state_idx)
-    action_table: list[list[dict[int, tuple[int, int]]]] = [
-        [{} for _ in range(n_states)] for _ in range(horizon)
-    ]
+    def terminal_value(t_in: float) -> float:
+        return -max(0.0, t_in - building.comfort_min) * terminal_eur_per_k
+
+    # v_tables[t][offset_idx][state_idx] = V[t](state, prev_offset=offset).
+    terminal_row = [terminal_value(s) for s in states]
+    v_tables: list[list[list[float]]] = [[] for _ in range(horizon + 1)]
+    v_tables[horizon] = [terminal_row] * n_offsets
+
+    def allowed(prev_offset: int) -> range:
+        return range(
+            max(offset_min, prev_offset - max_change),
+            min(offset_max, prev_offset + max_change) + 1,
+        )
 
     for t in reversed(range(horizon)):
-        v_cur: list[dict[int, float]] = [{} for _ in range(n_states)]
-        step_h = step_durations[t]
-        supply_base = base_supply[t]
-        out_t = outdoor[t]
-        price_t = price[t]
-        feed_in_t = feed_in[t]
-        solar_t = solar[t]
-        pv_t = max(0.0, pv[t])
-        humidity_t = humidity[t]
+        v_next = v_tables[t + 1]
+        # Cost-to-go of choosing `offset` from each grid state; independent
+        # of prev_offset, so computed once and shared by every prev row.
+        q_values: list[list[float]] = []
+        for oi, offset in enumerate(offsets_range):
+            row = []
+            for t_in in states:
+                outcome = simulate_step(t, t_in, offset)
+                row.append(
+                    stage_cost(t, outcome) + interp(v_next[oi], outcome.next_t_in)
+                )
+            q_values.append(row)
 
-        for state_idx in range(n_states):
-            t_in = states[state_idx]
-
-            for prev_offset in offsets_range:
-                lo = max(offset_min, prev_offset - max_offset_change)
-                hi = min(offset_max, prev_offset + max_offset_change)
-                best_cost = math.inf
-                best_action: tuple[int, int] | None = None
-
-                for offset in range(lo, hi + 1):
-                    # Curve limits are a physical clamp on the water
-                    # temperature the installation can actually reach, not
-                    # a filter that removes the offset for the whole
-                    # horizon (REDESIGN.md §2.1.D) - a step that would ask
-                    # for more than the system supports just gets what the
-                    # system can give.
-                    supply_temp = min(water_max, max(water_min, supply_base + offset))
-                    q_available = emitter.available_power_kw(
-                        supply_temp=supply_temp, indoor_temp=t_in
+        v_cur: list[list[float]] = []
+        for prev_offset in offsets_range:
+            candidates = [offset - offset_min for offset in allowed(prev_offset)]
+            row = []
+            for s in range(n_states):
+                row.append(
+                    min(
+                        q_values[oi][s]
+                        + cycling_penalty_weight
+                        * (offsets_range[oi] - prev_offset) ** 2
+                        for oi in candidates
                     )
-                    q_hp = max(0.0, min(q_available, heatpump.max_thermal_power_kw))
-                    p_elec = heatpump.electrical_power_kw(
-                        thermal_power_kw=q_hp,
-                        supply_temp=supply_temp,
-                        outdoor_temp=out_t,
-                        humidity=humidity_t,
-                    )
-                    pv_covered = min(p_elec, pv_t)
-                    grid_covered = p_elec - pv_covered
-                    energy_cost = (
-                        grid_covered * price_t + pv_covered * feed_in_t
-                    ) * step_h
+                )
+            v_cur.append(row)
+        v_tables[t] = v_cur
 
-                    next_t_in = building.next_indoor_temp(
-                        t_in,
-                        outdoor_temp=out_t,
-                        heat_input_kw=q_hp,
-                        solar_gain_kw=solar_t,
-                        step_hours=step_h,
-                    )
-                    next_idx = snap_state(next_t_in)
-                    comfort_cost = _comfort_penalty(
-                        states[next_idx],
-                        comfort_min=building.comfort_min,
-                        comfort_max=building.comfort_max,
-                        weight=comfort_penalty_weight,
-                        hard_floor=state_lo,
-                        step_hours=step_h,
-                    )
-                    cycling_cost = cycling_penalty_weight * (offset - prev_offset) ** 2
-
-                    step_cost = energy_cost + comfort_cost + cycling_cost
-                    # offset chosen here becomes the *prev_offset* context
-                    # for V[t+1] at next_idx - see module docstring.
-                    total = step_cost + v_next[next_idx][offset]
-
-                    if total < best_cost:
-                        best_cost = total
-                        best_action = (offset, next_idx)
-
-                v_cur[state_idx][prev_offset] = best_cost
-                assert best_action is not None
-                action_table[t][state_idx][prev_offset] = best_action
-
-        v_next = v_cur
-
-    # v_next now holds V[0](state, prev_offset).
-    v_zero = v_next
-
-    # --- forward pass ------------------------------------------------
-    # `current_offset` (the coordinator's persisted last offset) is only
-    # ever written back from this function's own `offsets[0]`, so it stays
-    # within `offsets_range` in practice - but action_table is keyed only
-    # on that range, so an out-of-range value here would KeyError instead
-    # of degrading gracefully. Guarded the same way the shadow-price `row`
-    # lookup below already is, rather than trusting the caller.
-    safe_current_offset = (
-        current_offset if current_offset in offsets_range else offsets_range[0]
-    )
-    start_idx = snap_state(initial_indoor_temp)
+    # --- forward pass on the continuous state --------------------------
+    safe_current_offset = min(offset_max, max(offset_min, current_offset))
     result = ThermalOptimizationResult()
-    state_idx = start_idx
+    t_in = initial_indoor_temp
     prev_offset = safe_current_offset
 
     for t in range(horizon):
-        step_h = step_durations[t]
-        offset, next_idx = action_table[t][state_idx][prev_offset]
-        supply_temp = min(water_max, max(water_min, base_supply[t] + offset))
-        q_available = emitter.available_power_kw(
-            supply_temp=supply_temp, indoor_temp=states[state_idx]
-        )
-        q_hp = max(0.0, min(q_available, heatpump.max_thermal_power_kw))
-        p_elec = heatpump.electrical_power_kw(
-            thermal_power_kw=q_hp,
-            supply_temp=supply_temp,
-            outdoor_temp=outdoor[t],
-            humidity=humidity[t],
-        )
-        pv_covered = min(p_elec, max(0.0, pv[t]))
-        grid_covered = p_elec - pv_covered
-        step_cost = (grid_covered * price[t] + pv_covered * feed_in[t]) * step_h
-
+        best_total = math.inf
+        best: tuple[int, _StepOutcome] | None = None
+        for offset in allowed(prev_offset):
+            outcome = simulate_step(t, t_in, offset)
+            total = (
+                stage_cost(t, outcome)
+                + cycling_penalty_weight * (offset - prev_offset) ** 2
+                + interp(v_tables[t + 1][offset - offset_min], outcome.next_t_in)
+            )
+            if total < best_total:
+                best_total = total
+                best = (offset, outcome)
+        assert best is not None
+        offset, outcome = best
         result.offsets.append(offset)
-        result.supply_temps.append(round(supply_temp, 2))
-        result.indoor_temps.append(round(states[next_idx], 3))
-        result.thermal_power_kw.append(round(q_hp, 4))
-        result.electrical_power_kw.append(round(p_elec, 4))
-        result.cost_eur.append(round(step_cost, 5))
-
-        state_idx = next_idx
+        result.supply_temps.append(round(outcome.supply_temp, 2))
+        result.indoor_temps.append(round(outcome.next_t_in, 3))
+        result.thermal_power_kw.append(round(outcome.q_hp, 4))
+        result.electrical_power_kw.append(round(outcome.p_elec, 4))
+        result.cop.append(round(outcome.cop, 3))
+        result.cost_eur.append(round(outcome.energy_cost, 5))
+        t_in = outcome.next_t_in
         prev_offset = offset
-
+    optimized_end_temp = t_in
     result.total_cost_eur = round(sum(result.cost_eur), 5)
 
-    # --- shadow price at t=0 (central difference on V[0]) ----------------
-    # lambda = -(dV[0]/dT_in) / thermal_mass, at the actual start state and
-    # current_offset. More stored heat lowers future cost, so dV/dT_in <= 0
-    # and lambda >= 0 - a positive price for the marginal kWh stored now.
-    row = safe_current_offset
+    # --- baseline: plain heating curve, same physics -------------------
+    t_in = initial_indoor_temp
+    baseline_energy = 0.0
+    for t in range(horizon):
+        outcome = simulate_step(t, t_in, 0)
+        result.baseline_supply_temps.append(round(outcome.supply_temp, 2))
+        result.baseline_indoor_temps.append(round(outcome.next_t_in, 3))
+        result.baseline_cop.append(round(outcome.cop, 3))
+        result.baseline_cost_eur.append(round(outcome.energy_cost, 5))
+        baseline_energy += outcome.energy_cost
+        t_in = outcome.next_t_in
+    result.baseline_total_cost_eur = round(baseline_energy, 5)
+    result.cost_savings_eur = round(
+        (baseline_energy + terminal_value(t_in))
+        - (sum(result.cost_eur) + terminal_value(optimized_end_temp)),
+        5,
+    )
+
+    # --- shadow price at t=0 -------------------------------------------
     if n_states > 1 and building.thermal_mass_kwh_per_k > 0:
-        lo_idx = max(0, start_idx - 1)
-        hi_idx = min(n_states - 1, start_idx + 1)
-        if hi_idx > lo_idx:
-            d_v = v_zero[hi_idx][row] - v_zero[lo_idx][row]
-            d_t = states[hi_idx] - states[lo_idx]
-            slope = d_v / d_t if d_t else 0.0
-        else:
-            slope = 0.0
+        row = v_tables[0][safe_current_offset - offset_min]
+        t0 = min(max(initial_indoor_temp, state_lo + cell), state_hi - cell)
+        slope = (interp(row, t0 + cell) - interp(row, t0 - cell)) / (2 * cell)
         result.shadow_price_eur_per_kwh = round(
             -slope / building.thermal_mass_kwh_per_k, 5
         )
 
     _LOGGER.debug(
-        "Thermal optimization: horizon=%d states=%d total_cost=%.4f shadow_price=%.4f",
+        "Thermal optimization: horizon=%d states=%d cost=%.4f baseline=%.4f "
+        "shadow_price=%.4f",
         horizon,
         n_states,
         result.total_cost_eur,
+        result.baseline_total_cost_eur,
         result.shadow_price_eur_per_kwh,
     )
     return result

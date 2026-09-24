@@ -17,9 +17,7 @@ from .const import (
     CONF_GRID_IMPORT_SENSOR,
     CONF_INDOOR_TEMPERATURE_SENSOR,
     CONF_POWER_CONSUMPTION,
-    CONF_PRICE_SENSOR,
     CONF_PRODUCTION_PRICE_SENSOR,
-    CONF_SOURCES,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
 )
 
@@ -36,9 +34,7 @@ TO_REDACT: set[str] = {
     CONF_GRID_IMPORT_SENSOR,
     CONF_INDOOR_TEMPERATURE_SENSOR,
     CONF_POWER_CONSUMPTION,
-    CONF_PRICE_SENSOR,
     CONF_PRODUCTION_PRICE_SENSOR,
-    CONF_SOURCES,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
 }
 
@@ -72,14 +68,9 @@ def _serialize_mapping(data: Mapping[str, Any] | None) -> dict[str, Any]:
 
 
 def _serialize_calibration(optimization_coordinator: Any) -> dict[str, Any] | None:
-    """Return a coordinator's thermal-calibration state directly, without
-    requiring a diagnostics reader to cross-reference the `stored_data`
-    payload by hand. `None` when calibration was never set up (no real
-    indoor temperature sensor configured - see coordinator.py's
-    `async_setup`), not an empty dict, so it is distinguishable from "set
-    up but never sampled yet"."""
+    """A coordinator's thermal-calibration state, or None if not set up."""
 
-    calibration = getattr(optimization_coordinator, "_calibration", None)
+    calibration = getattr(optimization_coordinator, "thermal_calibration", None)
     if calibration is None:
         return None
     return {
@@ -101,7 +92,7 @@ async def async_get_config_entry_diagnostics(
     calibration_data: dict[str, Any] = {}
     if runtime_data is not None:
         stored_data = {
-            "config": _serialize_mapping(runtime_data.config),
+            "config": async_redact_data(dict(runtime_data.config), TO_REDACT),
             "weather": (
                 _serialize_mapping(runtime_data.weather_coordinator.data)
                 if runtime_data.weather_coordinator.data

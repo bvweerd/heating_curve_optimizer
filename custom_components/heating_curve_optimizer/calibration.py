@@ -1,6 +1,6 @@
 """Thermal calibration: learn UA and thermal mass from real operation.
 
-Phase 4 of docs/redesign/REDESIGN.md. `building_model.BuildingConfig`'s
+`building_model.BuildingConfig`'s
 `ua_w_per_k` and `thermal_mass_kwh_per_k` start as rule-of-thumb estimates
 (energy label, construction weight class). This module learns the real
 values for a specific home from how its actual indoor temperature responds
@@ -42,7 +42,8 @@ integration, that is the real electricity meter
 (`CONF_POWER_CONSUMPTION`) converted to thermal power via the heat pump's
 COP curve (`heatpump_model.HeatPumpConfig.cop_at`), which depends on
 `k_factor`/`base_cop`/outdoor and supply temperature, never on UA or
-thermal mass. See coordinator.py's `_maybe_record_calibration_sample` for
+thermal mass. See coordinator_optimization.py's
+`_maybe_record_calibration_sample` for
 where that independence is enforced.
 """
 
@@ -89,7 +90,7 @@ RESULT_NO_RESULT = "no_result"
 RESULT_FITTED = "fitted"
 RESULT_IMPLAUSIBLE = "implausible"
 RESULT_SINGULAR = "singular"
-# Set directly by coordinator.py's _maybe_record_calibration_sample for a
+# Set directly by coordinator_optimization.py for a
 # skip that happens before a sample ever reaches record_sample - mirrors
 # battery_controller's richer last_result vocabulary
 # (CALIBRATION_NO_SOC_SOURCE/..._STEP_INCOMPLETE/etc. in

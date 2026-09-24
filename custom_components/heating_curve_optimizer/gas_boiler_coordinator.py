@@ -1,22 +1,20 @@
-"""Coordinator for the optional hybrid gas-boiler cost comparison.
+"""Coordinator for the optional hybrid gas boiler.
 
-Compares the heat pump's cost per kWh thermal (electricity price / COP,
-reusing `heatpump_model.HeatPumpConfig.cop_at`) against a configured gas
-boiler's cost per kWh thermal (`gas_boiler_model.GasBoilerConfig`), and
-publishes a `prefer_gas_boiler` recommendation the user's own automation can
-act on - this integration never actuates real hardware directly (see
-`climate.py`).
+Policy: **heat pump first**. The gas boiler is only recommended when
+both hold:
 
-Only instantiated when a `GAS_SUBENTRY_TYPE` subentry is configured (see
-`__init__.py`) - fully additive, reads `HeatCalculationCoordinator.data` and
-`OptimizationCoordinator.data` but never writes back into them, so an
-installation without the subentry is entirely unaffected.
+1. comfort is at risk - the measured indoor temperature is already below
+   the comfort band, or the optimizer's own heat-pump-only plan predicts it
+   will drop below the band within ``COMFORT_LOOKAHEAD_HOURS`` (the plan
+   already uses the heat pump as hard as it usefully can, so a predicted
+   drop means the heat pump cannot keep up); and
+2. gas is cheaper per kWh of heat than the heat pump at its current
+   operating point (electricity price / COP).
 
-The recommendation is gated on whether heat is actually needed right now:
-comparing gas cost against heat-pump cost in isolation would be wrong,
-because coasting on the building's thermal buffer costs nothing and always
-beats both paid sources. See `_async_update_data`'s `heat_currently_needed`
-computation.
+Cheaper gas alone never switches to the boiler: while the heat pump keeps
+the house comfortable it stays the heat source. The result is published as
+``prefer_gas_boiler`` for the user's own automation; this integration
+never actuates hardware.
 """
 
 from __future__ import annotations
@@ -25,7 +23,8 @@ import logging
 from datetime import timedelta
 from typing import Any
 
-from homeassistant.core import Event, HomeAssistant
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -35,27 +34,63 @@ from .const import (
     CONF_GAS_PRICE_SENSOR,
     DOMAIN,
 )
-from .coordinator import (
-    HeatCalculationCoordinator,
-    OptimizationCoordinator,
-    _update_failed,
-)
+from .coordinator_heat import HeatCalculationCoordinator
+from .coordinator_optimization import OptimizationCoordinator
+from .coordinator_weather import _update_failed
 from .gas_boiler_model import GasBoilerConfig, compare_heat_pump_and_gas
 from .heatpump_model import HeatPumpConfig
 
 _LOGGER = logging.getLogger(__name__)
+
+# How far ahead the heat-pump-only plan is checked for a comfort breach.
+COMFORT_LOOKAHEAD_HOURS = 3.0
+# Tolerance below the comfort floor before the plan counts as a breach.
+COMFORT_TOLERANCE_C = 0.1
+
+
+def _comfort_at_risk(
+    heat_data: dict[str, Any], optimization_data: dict[str, Any]
+) -> tuple[bool, str | None, float | None]:
+    """(at risk, reason, lowest planned indoor temperature in the lookahead)."""
+    comfort_min = optimization_data.get("comfort_min", heat_data.get("lower_bound"))
+    planned: list[float] = []
+    elapsed = 0.0
+    for temp, hours in zip(
+        optimization_data.get("indoor_temps") or [],
+        optimization_data.get("step_durations_hours") or [],
+        strict=False,
+    ):
+        if elapsed >= COMFORT_LOOKAHEAD_HOURS:
+            break
+        planned.append(temp)
+        elapsed += hours
+    lowest = min(planned) if planned else None
+    if comfort_min is None:
+        return False, None, lowest
+    indoor = heat_data.get("indoor_temperature")
+    if (
+        heat_data.get("indoor_temperature_source") == "sensor"
+        and indoor is not None
+        and indoor < comfort_min - COMFORT_TOLERANCE_C
+    ):
+        return True, "below_comfort_band", lowest
+    if lowest is not None and lowest < comfort_min - COMFORT_TOLERANCE_C:
+        return True, "heat_pump_cannot_keep_up", lowest
+    return False, None, lowest
+
 
 # Safety-net poll; real-world responsiveness comes from the state-change
 # listeners on both price sensors (see async_setup).
 DEFAULT_UPDATE_INTERVAL = timedelta(minutes=15)
 
 
-class GasBoilerCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
+class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator comparing heat-pump vs. gas-boiler cost per kWh thermal."""
 
     def __init__(
         self,
         hass: HomeAssistant,
+        config_entry: ConfigEntry,
         heat_coordinator: HeatCalculationCoordinator,
         optimization_coordinator: OptimizationCoordinator,
         config: dict[str, Any],
@@ -65,6 +100,7 @@ class GasBoilerCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA b
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=config_entry,
             name="Gas Boiler Comparison",
             update_interval=DEFAULT_UPDATE_INTERVAL,
         )
@@ -74,7 +110,8 @@ class GasBoilerCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA b
         self._entry_id = entry_id
         self._gas_price_sensor = config.get(CONF_GAS_PRICE_SENSOR)
         self._electricity_price_sensor = config.get(CONF_CONSUMPTION_PRICE_SENSOR)
-        self._unsub = None
+        self._unsub: Any = None
+        self._unsub_plan: Any = None
 
     async def async_setup(self) -> None:
         """Track both price sensors - either changing makes the comparison stale."""
@@ -86,17 +123,28 @@ class GasBoilerCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA b
                 self.hass, sensors, self._handle_price_change
             )
             _LOGGER.debug("Gas boiler comparison tracking price sensors: %s", sensors)
+        # A new heat-pump plan can change whether comfort is at risk.
+        self._unsub_plan = self.optimization_coordinator.async_add_listener(
+            self._handle_plan_update
+        )
 
-    async def _handle_price_change(self, event: Event) -> None:
+    @callback
+    def _handle_plan_update(self) -> None:
+        self.hass.async_create_task(self.async_request_refresh())
+
+    async def _handle_price_change(self, event: Event[EventStateChangedData]) -> None:
         """Refresh unconditionally - this computation is O(1), unlike the
         DP re-run the main optimizer's 10%-change gate exists to avoid."""
         await self.async_request_refresh()
 
     async def async_shutdown(self) -> None:
         """Clean up event tracking."""
-        if self._unsub:
-            self._unsub()
-            self._unsub = None
+        for unsub in (self._unsub, self._unsub_plan):
+            if unsub:
+                unsub()
+        self._unsub = None
+        self._unsub_plan = None
+        await super().async_shutdown()
 
     def _read_gas_price_eur_per_m3(self) -> float | None:
         """Read the current gas price. No forecast support (see module
@@ -105,9 +153,7 @@ class GasBoilerCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA b
         when the sensor happens to carry forecast attributes. Always reads
         `state.state` directly for that reason - a forecast array's [0] is
         the price at the start of the forecast window (e.g. midnight), not
-        "now", so it must never be used as a stand-in for the current price
-        (matches coordinator.py's own `current_price = float(price_state.state)`
-        convention for the same "current price" use case)."""
+        "now", so it must never be used as a stand-in for the current price."""
         if not self._gas_price_sensor:
             return None
         state = self.hass.states.get(self._gas_price_sensor)
@@ -172,7 +218,7 @@ class GasBoilerCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA b
             raise _update_failed("gas_boiler_operating_point_unavailable")
 
         outdoor_temp = heat_data.get("outdoor_temperature")
-        future_supply_temps = optimization_data.get("future_supply_temperatures")
+        future_supply_temps = optimization_data.get("supply_temps")
         supply_temp = future_supply_temps[0] if future_supply_temps else None
         if outdoor_temp is None or supply_temp is None:
             raise _update_failed("gas_boiler_operating_point_unavailable")
@@ -189,22 +235,10 @@ class GasBoilerCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA b
             gas_cost_eur_per_kwh=gas_cost_eur_per_kwh,
         )
 
-        # Real ("is the heat pump actually drawing power") signal preferred
-        # over the modeled demand-factor proxy - see coordinator.py's
-        # heat_pump_actively_running for the full rationale. Only fall back
-        # to the modeled signal when no power sensor is configured/available
-        # (None, not False).
-        actively_running = optimization_data.get("heat_pump_actively_running")
-        if actively_running is not None:
-            heat_currently_needed = actively_running
-            heat_currently_needed_source = "power_sensor"
-        else:
-            heat_currently_needed = heat_data.get(
-                "heat_pump_on", heat_data.get("net_heat_loss", 0.0) > 0.0
-            )
-            heat_currently_needed_source = "modeled_demand"
-
-        prefer_gas_boiler = bool(heat_currently_needed) and comparison.prefer_gas
+        comfort_at_risk, comfort_reason, lowest_planned = _comfort_at_risk(
+            heat_data, optimization_data
+        )
+        prefer_gas_boiler = comfort_at_risk and comparison.prefer_gas
 
         return {
             "available": True,
@@ -217,7 +251,9 @@ class GasBoilerCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA b
             "gas_cost_eur_per_kwh": comparison.gas_cost_eur_per_kwh,
             "savings_eur_per_kwh": comparison.savings_eur_per_kwh,
             "savings_pct": comparison.savings_pct,
-            "heat_currently_needed": bool(heat_currently_needed),
-            "heat_currently_needed_source": heat_currently_needed_source,
+            "gas_cheaper": comparison.prefer_gas,
+            "comfort_at_risk": comfort_at_risk,
+            "comfort_reason": comfort_reason,
+            "lowest_planned_indoor_temp": lowest_planned,
             "prefer_gas_boiler": prefer_gas_boiler,
         }

@@ -13,38 +13,36 @@ PLATFORMS: list[Platform] = [
     Platform.CLIMATE,
 ]
 
-# Configuration keys
-CONF_SOURCE_TYPE = "source_type"
-CONF_SOURCES = "sources"
-CONF_PRICE_SENSOR = "price_sensor"
+# Main entry: prices
 CONF_CONSUMPTION_PRICE_SENSOR = "consumption_price_sensor"
 CONF_PRODUCTION_PRICE_SENSOR = "production_price_sensor"
-CONF_PRICE_SETTINGS = "price_settings"
 
-# New configuration keys for the heating curve optimizer
+# Zone subentry: building
 CONF_AREA_M2 = "area_m2"
 CONF_ENERGY_LABEL = "energy_label"
-# Planning window and time base configuration
+CONF_INTERNAL_GAINS_W_PER_M2 = "internal_gains_w_per_m2"
+# Average internal heat gains of an occupied dwelling (people, appliances,
+# lighting), per m² floor area. NTA 8800 uses ~2-4 W/m² for residential use.
+DEFAULT_INTERNAL_GAINS_W_PER_M2 = 3.0
+
+# Main entry: optimizer horizon. The step length follows the price sensor's
+# own interval (15 or 60 min), so the DP steps coincide with price periods.
 CONF_PLANNING_WINDOW = "planning_window"
-CONF_TIME_BASE = "time_base"
-# Default values
-DEFAULT_PLANNING_WINDOW = 6  # hours
-DEFAULT_TIME_BASE = 60  # minutes per step
+DEFAULT_PLANNING_WINDOW = 24  # hours
+
 # Glass related configuration
 CONF_GLASS_EAST_M2 = "glass_east_m2"
 CONF_GLASS_WEST_M2 = "glass_west_m2"
 CONF_GLASS_SOUTH_M2 = "glass_south_m2"
 CONF_GLASS_U_VALUE = "glass_u_value"
+DEFAULT_GLASS_U_VALUE = 1.2
 CONF_POWER_CONSUMPTION = "power_consumption"
 CONF_INDOOR_TEMPERATURE_SENSOR = "indoor_temperature_sensor"
 CONF_SUPPLY_TEMPERATURE_SENSOR = "supply_temperature_sensor"
-# Additional heating zones, as config subentries (phase 5c,
-# docs/redesign/REDESIGN.md) - modelled directly on battery_controller's
-# BATTERY_SUBENTRY_TYPE/PV_SUBENTRY_TYPE pattern. A zone gets its own
-# device, its own HeatCalculationCoordinator/OptimizationCoordinator pair
-# (see __init__.py), and shares the main entry's price sensor, heating
-# curve limits and heat pump parameters - only what plausibly differs
-# between rooms (area, insulation, its own thermostat) is per-zone.
+# Heating zones (config subentries). Each zone is one heating circuit with
+# its own building envelope, emitters, thermostat and - optionally - its
+# own heating curve; price sensors and heat pump parameters are shared from
+# the main entry. The first zone is the primary one.
 ZONE_SUBENTRY_TYPE = "heating_zone"
 
 # Hybrid gas-boiler cost comparison, as a singleton config subentry (unlike
@@ -69,33 +67,27 @@ DEFAULT_GAS_BOILER_EFFICIENCY = 0.90
 # since it varies slightly by gas quality/grid.
 DEFAULT_GAS_CALORIFIC_VALUE_KWH_PER_M3 = 9.77
 
-# Real-time grid power (phase 5b, docs/redesign/REDESIGN.md): positive =
-# import, negative = export. Optional - the realtime_controller.py loop is
-# inactive unless at least one of these is configured, mirroring how
-# battery_controller's zero_grid_controller.py needs CONF_GRID_IMPORT_SENSORS/
-# CONF_GRID_EXPORT_SENSORS to run at all.
+# Real-time grid power (optional): enables the PV-surplus controller.
 CONF_GRID_IMPORT_SENSOR = "grid_import_sensor"
 CONF_GRID_EXPORT_SENSOR = "grid_export_sensor"
+CONF_HEAT_PUMP_MAX_THERMAL_POWER = "heat_pump_max_thermal_power_kw"
 CONF_K_FACTOR = "k_factor"
 CONF_BASE_COP = "base_cop"
 CONF_COP_COMPENSATION_FACTOR = "cop_compensation_factor"
 CONF_OUTDOOR_TEMP_COEFFICIENT = "outdoor_temp_coefficient"
 CONF_HEAT_CURVE_MIN_OUTDOOR = "heat_curve_min_outdoor"
 CONF_HEAT_CURVE_MAX_OUTDOOR = "heat_curve_max_outdoor"
-CONF_HEATING_CURVE_OFFSET = "heating_curve_offset"
 CONF_HEAT_CURVE_MIN = "heat_curve_min"
 CONF_HEAT_CURVE_MAX = "heat_curve_max"
 CONF_VENTILATION_TYPE = "ventilation_type"
 CONF_CEILING_HEIGHT = "ceiling_height"
 CONF_TARGET_INDOOR_TEMP = "target_indoor_temp"
-CONF_INDOOR_TEMP_HYSTERESIS = "indoor_temp_hysteresis"  # Legacy, kept for compatibility
 CONF_INDOOR_TEMP_HYSTERESIS_LOWER = "indoor_temp_hysteresis_lower"  # Below target
 CONF_INDOOR_TEMP_HYSTERESIS_UPPER = "indoor_temp_hysteresis_upper"  # Above target
 CONF_OFFSET_DELTA_T = "offset_delta_t"  # Minutes per 1°C offset change
 
-# Keys that live in entry.options and are written live by number entities
-# (target temperature, hysteresis). Changes to these keys do NOT trigger a
-# full coordinator reload - see _NO_RELOAD_KEYS in __init__.py.
+# Primary-zone setpoints written live to entry.options by the number and
+# climate entities. Changing them re-runs the optimizer instead of reloading.
 ENTITY_MANAGED_OPTIONS = frozenset(
     {
         CONF_TARGET_INDOOR_TEMP,
@@ -105,18 +97,20 @@ ENTITY_MANAGED_OPTIONS = frozenset(
 )
 
 # Default values for heating curve settings
-DEFAULT_HEATING_CURVE_OFFSET = 0.0
-DEFAULT_HEAT_CURVE_MIN = 20.0
-DEFAULT_HEAT_CURVE_MAX = 45.0
+DEFAULT_HEAT_CURVE_MIN = 25.0  # supply °C at the warm end of the curve
+DEFAULT_HEAT_CURVE_MAX = 45.0  # supply °C at the cold end of the curve
+DEFAULT_HEAT_CURVE_MIN_OUTDOOR = -10.0  # design (coldest) outdoor temperature
+DEFAULT_HEAT_CURVE_MAX_OUTDOOR = 15.0  # outdoor temperature where heating stops
 DEFAULT_TARGET_INDOOR_TEMP = 20.0  # °C - desired room temperature
-DEFAULT_INDOOR_TEMP_HYSTERESIS = 0.5  # °C - legacy hysteresis (symmetric)
 DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER = (
     0.3  # °C - hysteresis below target (heat pump ON)
 )
 DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER = (
     0.5  # °C - hysteresis above target (heat pump OFF)
 )
-DEFAULT_OFFSET_DELTA_T = 10  # Minutes per 1°C offset change (10 = fast, 60 = slow)
+# Minutes per 1°C offset change: 30 allows 2°C per hour, which most heat
+# pumps follow without overshoot. 10 is fast, 60 is slow.
+DEFAULT_OFFSET_DELTA_T = 30
 
 # Default ventilation and building settings
 DEFAULT_VENTILATION_TYPE = "natural_standard"
@@ -169,14 +163,7 @@ VENTILATION_TYPES: dict[str, dict[str, float | str]] = {
     },
 }
 
-# PV arrays, as config subentries - matches battery_controller's own
-# PV_SUBENTRY_TYPE/BatteryControllerPVSubentryFlow field-for-field
-# (peak_power_kwp/orientation/tilt/efficiency_factor/dc_coupled), so a
-# home with several arrays at different orientations is modelled as
-# several subentries instead of the old fixed east/south/west Wp numbers -
-# added via the integration page after setup, like this integration's own
-# zone/gas-boiler subentries. No migration from the old fixed fields: this
-# integration has no deployed installs yet to preserve behaviour for.
+# PV arrays (config subentries), one per orientation.
 PV_SUBENTRY_TYPE = "pv_array"
 CONF_PV_PEAK_POWER_KWP = "peak_power_kwp"
 CONF_PV_ORIENTATION = "orientation"  # degrees, 0-360, 180 = south
@@ -223,26 +210,7 @@ HEATING_FRACTION_MAP = {
 }
 
 # Heating degree-days for Netherlands (base 18°C)
-# Average value for Dutch climate
 HEATING_DEGREE_DAYS_NL = 2900
-
-# Indoor temperature in °C for heat loss calculation
-INDOOR_TEMPERATURE = 21.0
-
-# Legacy U-value map (deprecated, kept for backward compatibility)
-# DO NOT USE - these values incorrectly treat energy labels as U-values
-U_VALUE_MAP = {
-    "A+++": 0.2,
-    "A++": 0.3,
-    "A+": 0.4,
-    "A": 0.6,
-    "B": 0.8,
-    "C": 1.0,
-    "D": 1.2,
-    "E": 1.4,
-    "F": 1.6,
-    "G": 1.8,
-}
 
 
 def calculate_ventilation_htc(
@@ -360,23 +328,8 @@ DEFAULT_OUTDOOR_TEMP_COEFFICIENT = 0.08
 # Default COP compensation factor
 DEFAULT_COP_COMPENSATION_FACTOR = 1.0
 
-# Thermal storage efficiency: fraction of heat demand that goes to/from
-# thermal mass storage per degree of temperature offset
-# When offset is +1°C, building is overheated and stores thermal energy
-# When offset is -1°C, building uses stored thermal energy
-# Value of 0.15 means 15% of current heat demand is stored/released per °C offset
-# This represents the thermal inertia of building materials (concrete, brick, etc.)
-# Superseded by building_model.BuildingConfig's explicit thermal mass (kWh/K)
-# for the thermal optimizer; still used by calibration_sensor.py/
-# sensor/event_driven.py as a rule-of-thumb prior.
-DEFAULT_THERMAL_STORAGE_EFFICIENCY = 0.15
-
-# --- Redesigned thermal model (building_model.py / heatpump_model.py) ------
-#
 # Thermal mass per m² floor area, in Wh/(m2*K), by construction weight class.
-# Rule-of-thumb starting values (light timber-frame vs. heavy masonry/
-# concrete construction), used until calibration.py (phase 4) learns the real
-# value for a specific home from its measured heating/cool-down curves.
+# Starting values until calibration.py learns the real value for a home.
 CONF_THERMAL_MASS_CLASS = "thermal_mass_class"
 DEFAULT_THERMAL_MASS_CLASS = "medium"
 THERMAL_MASS_WH_PER_M2_K = {
@@ -397,12 +350,8 @@ EMITTER_EXPONENT_MAP = {
     "fan_coil": 1.0,
 }
 
-# Real-time PV-surplus controller (phase 5b, docs/redesign/REDESIGN.md),
-# modelled on battery_controller's zero_grid_controller.py but right-sized
-# for heating's whole-degree offset steps and slower thermal time constants:
-# a deadbanded step controller, not a continuous-power integrator. Only
-# runs when at least one grid sensor is set (it needs the shadow price,
-# which thermal_optimizer.py computes).
+# Real-time PV-surplus controller: a deadbanded step controller on live grid
+# power, layered on the DP plan (see realtime_controller.py).
 CONF_REALTIME_DEADBAND_W = "realtime_deadband_w"
 DEFAULT_REALTIME_DEADBAND_W = 300.0  # W - looser than a battery's ~50 W:
 # heating's actuator is a whole-degree curve offset, not a continuous power
@@ -410,15 +359,3 @@ DEFAULT_REALTIME_DEADBAND_W = 300.0  # W - looser than a battery's ~50 W:
 DEFAULT_REALTIME_INTERVAL_S = 60  # much slower than battery_controller's
 # ~10 s: a heat pump's weather-compensation curve has nothing to gain from
 # being re-commanded faster than its own control loop settles.
-
-# Possible source types
-SOURCE_TYPE_CONSUMPTION = "Electricity consumption"
-SOURCE_TYPE_PRODUCTION = "Electricity production"
-
-# allowed values for source_type
-SOURCE_TYPES = [
-    SOURCE_TYPE_CONSUMPTION,
-    SOURCE_TYPE_PRODUCTION,
-]
-
-CONF_CONFIGS = "configurations"

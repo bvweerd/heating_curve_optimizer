@@ -1,4 +1,4 @@
-"""Climate platform for Heating Curve Optimizer (phase 5, REDESIGN.md).
+"""Climate platform for Heating Curve Optimizer.
 
 A native HA climate entity for the same target-temperature control the
 `number.TargetIndoorTemperatureNumber` entity already exposes - not a
@@ -23,8 +23,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.climate import (
-    ClimateEntity,
+from homeassistant.components.climate import ClimateEntity
+from homeassistant.components.climate.const import (
     ClimateEntityFeature,
     HVACAction,
     HVACMode,
@@ -34,11 +34,11 @@ from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import HeatCalculationCoordinator
+from .coordinator_heat import HeatCalculationCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ TARGET_TEMP_STEP = 0.5
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the climate entity from a config entry.
 
@@ -77,15 +77,14 @@ async def async_setup_entry(
 
 class HeatingOptimizerClimate(
     CoordinatorEntity[HeatCalculationCoordinator],
-    ClimateEntity,  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
+    ClimateEntity,
 ):
     """Climate entity reflecting/adjusting the target indoor temperature."""
 
     _attr_has_entity_name = True
     _attr_translation_key = "heating"
-    _attr_name = "Heating"
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    _attr_hvac_modes = [HVACMode.HEAT]
+    _attr_hvac_modes = [HVACMode.HEAT]  # noqa: RUF012
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
     _attr_min_temp = TARGET_TEMP_MIN
     _attr_max_temp = TARGET_TEMP_MAX
