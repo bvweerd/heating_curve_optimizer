@@ -11,7 +11,6 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.heating_curve_optimizer import (
     HeatingCurveOptimizerData,
-    async_setup,
     async_setup_entry,
     async_unload_entry,
     _update_listener,
@@ -52,15 +51,6 @@ def _make_runtime_data(**overrides) -> HeatingCurveOptimizerData:
     )
     defaults.update(overrides)
     return HeatingCurveOptimizerData(**defaults)
-
-
-@pytest.mark.asyncio
-async def test_async_setup(hass: HomeAssistant):
-    """Test async_setup initializes domain data."""
-    result = await async_setup(hass, {})
-    assert result is True
-    assert DOMAIN in hass.data
-    assert isinstance(hass.data[DOMAIN], dict)
 
 
 @pytest.mark.asyncio

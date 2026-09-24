@@ -11,13 +11,9 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from custom_components.heating_curve_optimizer.binary_sensor import (
     GasBoilerPreferredBinarySensor,
 )
-from custom_components.heating_curve_optimizer.sensor.gas_boiler.cost_savings import (
+from custom_components.heating_curve_optimizer.sensor import (
     GasBoilerCostSavingsSensor,
-)
-from custom_components.heating_curve_optimizer.sensor.gas_boiler.gas_cost import (
     GasBoilerGasCostSensor,
-)
-from custom_components.heating_curve_optimizer.sensor.gas_boiler.heat_pump_cost import (
     GasBoilerHeatPumpCostSensor,
 )
 

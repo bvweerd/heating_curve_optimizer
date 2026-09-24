@@ -3,7 +3,7 @@
 import pytest
 from homeassistant.core import HomeAssistant
 
-from custom_components.heating_curve_optimizer.sensor.event_driven import (
+from custom_components.heating_curve_optimizer.sensor import (
     HeatPumpThermalPowerSensor,
 )
 

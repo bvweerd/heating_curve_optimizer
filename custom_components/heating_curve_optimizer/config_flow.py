@@ -127,6 +127,7 @@ from .const import (
     CONF_GAS_CALORIFIC_VALUE,
     DEFAULT_GAS_BOILER_EFFICIENCY,
     DEFAULT_GAS_CALORIFIC_VALUE_KWH_PER_M3,
+    ENTITY_MANAGED_OPTIONS,
 )
 
 STEP_SELECT_SOURCES = "select_sources"
@@ -1703,6 +1704,14 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):  # ty
     """Handle updates to a config entry (options)."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        # Preserve entity-managed options (target temp, hysteresis) so that
+        # saving the options flow does not silently wipe values written live
+        # by the number entities (number.py).  These keys are intentionally
+        # absent from _build_entry_data - the override below re-injects them.
+        self._entity_managed_options: dict[str, Any] = {
+            k: v for k, v in config_entry.options.items() if k in ENTITY_MANAGED_OPTIONS
+        }
+
         self.configs: list[dict[str, Any]] = list(
             config_entry.options.get(
                 CONF_CONFIGS, config_entry.data.get(CONF_CONFIGS, [])
@@ -1785,8 +1794,18 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):  # ty
     )
     _update_source_config = HeatingCurveOptimizerConfigFlow._update_source_config
     _get_default_sources = HeatingCurveOptimizerConfigFlow._get_default_sources
-    _build_entry_data = HeatingCurveOptimizerConfigFlow._build_entry_data
     _sectioned_defaults = HeatingCurveOptimizerConfigFlow._sectioned_defaults
+
+    def _build_entry_data(
+        self, consumption_price_sensor: str | None, production_price_sensor: str | None
+    ) -> dict[str, Any]:
+        """Build entry options, preserving entity-managed keys (target temp /
+        hysteresis) that the number entities write live and that the base
+        implementation intentionally omits."""
+        data = HeatingCurveOptimizerConfigFlow._build_entry_data(
+            self, consumption_price_sensor, production_price_sensor
+        )
+        return {**data, **self._entity_managed_options}
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None

@@ -10,14 +10,12 @@ from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
     CONF_INDOOR_TEMP_HYSTERESIS,
     CONF_INDOOR_TEMP_HYSTERESIS_LOWER,
     CONF_INDOOR_TEMP_HYSTERESIS_UPPER,
     CONF_TARGET_INDOOR_TEMP,
-    DEFAULT_INDOOR_TEMP_HYSTERESIS,
     DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER,
     DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER,
     DEFAULT_TARGET_INDOOR_TEMP,
@@ -64,18 +62,42 @@ async def async_setup_entry(
 
     config = heat_coordinator.config
 
-    # Get initial values with fallback to legacy symmetric hysteresis
-    legacy_hysteresis = config.get(
-        CONF_INDOOR_TEMP_HYSTERESIS, DEFAULT_INDOOR_TEMP_HYSTERESIS
-    )
-    initial_lower = config.get(CONF_INDOOR_TEMP_HYSTERESIS_LOWER, legacy_hysteresis)
-    initial_upper = config.get(CONF_INDOOR_TEMP_HYSTERESIS_UPPER, legacy_hysteresis)
+    # Get initial values with fallback to legacy symmetric hysteresis.
+    # Prefer entry.options (written live by the entities themselves on
+    # previous runs) over the subentry config, so user adjustments survive
+    # a reload without going through a full options flow.
+    def _get(key: str, default: float) -> float:
+        val = entry.options.get(key)
+        if val is not None:
+            return float(val)
+        return float(config.get(key, default))
 
-    # Use defaults if legacy was also not set
-    if initial_lower == DEFAULT_INDOOR_TEMP_HYSTERESIS:
-        initial_lower = DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER
-    if initial_upper == DEFAULT_INDOOR_TEMP_HYSTERESIS:
-        initial_upper = DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER
+    # Determine initial hysteresis values.  Priority order:
+    #   1. entry.options (persisted by the entity on a previous run)
+    #   2. explicit lower/upper keys in the zone config (subentry data)
+    #   3. legacy symmetric CONF_INDOOR_TEMP_HYSTERESIS value, if present
+    #   4. built-in asymmetric defaults (lower=0.3 °C, upper=0.5 °C)
+    _legacy_key_present = CONF_INDOOR_TEMP_HYSTERESIS in config
+    legacy_hysteresis = config.get(CONF_INDOOR_TEMP_HYSTERESIS)
+
+    def _hysteresis(key: str, asymmetric_default: float) -> float:
+        """Return the best value for a hysteresis key."""
+        val = entry.options.get(key)
+        if val is not None:
+            return float(val)
+        explicit = config.get(key)
+        if explicit is not None:
+            return float(explicit)
+        if _legacy_key_present and legacy_hysteresis is not None:
+            return float(legacy_hysteresis)
+        return asymmetric_default
+
+    initial_lower = _hysteresis(
+        CONF_INDOOR_TEMP_HYSTERESIS_LOWER, DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER
+    )
+    initial_upper = _hysteresis(
+        CONF_INDOOR_TEMP_HYSTERESIS_UPPER, DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER
+    )
 
     entities = [
         TargetIndoorTemperatureNumber(
@@ -83,9 +105,7 @@ async def async_setup_entry(
             entry=entry,
             unique_id=f"{entry.entry_id}_target_indoor_temp",
             device=device,
-            initial_value=config.get(
-                CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP
-            ),
+            initial_value=_get(CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP),
         ),
         IndoorTempHysteresisLowerNumber(
             hass=hass,
@@ -106,15 +126,21 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class BaseTemperatureNumber(NumberEntity, RestoreEntity):  # type: ignore[misc]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
-    """Base class for temperature-related number entities."""
+class BaseTemperatureNumber(NumberEntity):  # type: ignore[misc]  # HA base class untyped
+    """Base class for temperature-related number entities.
+
+    Persists its value to ``entry.options`` (keyed by ``_conf_key``) so
+    that it survives reloads without needing RestoreEntity / recorder.
+    The _update_listener in __init__.py skips a full reload for these keys
+    (see _NO_RELOAD_KEYS) so writing them doesn't cause a restart.
+    """
 
     _attr_has_entity_name = True
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_mode = NumberMode.SLIDER
 
     # Subclasses must define these
-    _runtime_key: str = ""
+    _conf_key: str = ""
     _log_name: str = ""
 
     def __init__(
@@ -132,41 +158,23 @@ class BaseTemperatureNumber(NumberEntity, RestoreEntity):  # type: ignore[misc] 
         self._attr_device_info = device
         self._attr_native_value = initial_value
 
-    async def async_added_to_hass(self) -> None:
-        """Restore previous state on startup."""
-        await super().async_added_to_hass()
-
-        last_state = await self.async_get_last_state()
-        if last_state is not None and last_state.state not in (
-            "unknown",
-            "unavailable",
-        ):
-            try:
-                self._attr_native_value = float(last_state.state)
-            except (ValueError, TypeError):
-                pass
-
-        self._update_runtime_data()
+    @property
+    def native_value(self) -> float:
+        """Return value from entry.options, falling back to the initial value."""
+        val = self._entry.options.get(self._conf_key)
+        if val is not None:
+            return float(val)
+        return float(self._attr_native_value)
 
     async def async_set_native_value(self, value: float) -> None:
-        """Update the current value."""
+        """Persist the new value to entry.options."""
         self._attr_native_value = value
-        self._update_runtime_data()
+        self.hass.config_entries.async_update_entry(
+            self._entry,
+            options={**self._entry.options, self._conf_key: value},
+        )
         self.async_write_ha_state()
         _LOGGER.debug("%s set to %.1f°C", self._log_name, value)
-
-    def _update_runtime_data(self) -> None:
-        """Update runtime data for use by other components.
-
-        Keyed by entry_id first, then by CONF_* key: two config entries (two
-        heating systems in the same HA instance) must not overwrite each
-        other's target temperature / hysteresis. `__init__.py`'s unload
-        handler already assumes this nesting (it pops `runtime[entry_id]`),
-        so writing flat here made that cleanup a silent no-op.
-        """
-        self.hass.data.setdefault(DOMAIN, {}).setdefault("runtime", {}).setdefault(
-            self._entry.entry_id, {}
-        )[self._runtime_key] = self._attr_native_value
 
 
 class TargetIndoorTemperatureNumber(BaseTemperatureNumber):
@@ -178,7 +186,7 @@ class TargetIndoorTemperatureNumber(BaseTemperatureNumber):
     _attr_icon = "mdi:home-thermometer"
     _attr_translation_key = "target_indoor_temperature"
 
-    _runtime_key = CONF_TARGET_INDOOR_TEMP
+    _conf_key = CONF_TARGET_INDOOR_TEMP
     _log_name = "Target indoor temperature"
 
 
@@ -191,7 +199,7 @@ class IndoorTempHysteresisLowerNumber(BaseTemperatureNumber):
     _attr_icon = "mdi:thermometer-chevron-down"
     _attr_translation_key = "indoor_temp_hysteresis_lower"
 
-    _runtime_key = CONF_INDOOR_TEMP_HYSTERESIS_LOWER
+    _conf_key = CONF_INDOOR_TEMP_HYSTERESIS_LOWER
     _log_name = "Lower hysteresis (heat pump ON)"
 
 
@@ -204,5 +212,5 @@ class IndoorTempHysteresisUpperNumber(BaseTemperatureNumber):
     _attr_icon = "mdi:thermometer-chevron-up"
     _attr_translation_key = "indoor_temp_hysteresis_upper"
 
-    _runtime_key = CONF_INDOOR_TEMP_HYSTERESIS_UPPER
+    _conf_key = CONF_INDOOR_TEMP_HYSTERESIS_UPPER
     _log_name = "Upper hysteresis (heat pump OFF)"

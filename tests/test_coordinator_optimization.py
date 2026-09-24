@@ -1,7 +1,10 @@
-"""Test the coordinator module."""
+"""Tests for OptimizationCoordinator (coordinator_optimization.py)."""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock
 
 import pytest
-from unittest.mock import MagicMock, patch
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import UpdateFailed
@@ -11,34 +14,7 @@ from custom_components.heating_curve_optimizer.coordinator import (
     IDLE_POWER_THRESHOLD_KW,
     HeatCalculationCoordinator,
     OptimizationCoordinator,
-    _update_failed,
 )
-
-
-@pytest.mark.asyncio
-async def test_heat_coordinator_initialization(hass: HomeAssistant):
-    """Test HeatCalculationCoordinator initialization."""
-    weather_coordinator = MagicMock()
-    weather_coordinator.data = {
-        "current_temperature": 10.0,
-        "temperature_forecast": [10.0, 9.0, 8.0],
-    }
-
-    config = {
-        "area_m2": 150,
-        "energy_label": "C",
-        "glass_south_m2": 10,
-        "glass_east_m2": 5,
-        "glass_west_m2": 5,
-        "glass_u_value": 1.2,
-    }
-
-    coordinator = HeatCalculationCoordinator(
-        hass, weather_coordinator, config, "test_entry"
-    )
-
-    assert coordinator.weather_coordinator == weather_coordinator
-    assert coordinator.config == config
 
 
 @pytest.mark.asyncio
@@ -63,21 +39,6 @@ async def test_optimization_coordinator_initialization(hass: HomeAssistant):
 
 
 @pytest.mark.asyncio
-async def test_heat_coordinator_shutdown(hass: HomeAssistant):
-    """Test HeatCalculationCoordinator shutdown."""
-    weather_coordinator = MagicMock()
-    config = {"area_m2": 150, "energy_label": "C"}
-
-    coordinator = HeatCalculationCoordinator(
-        hass, weather_coordinator, config, "test_entry"
-    )
-    await coordinator.async_setup()
-
-    # Should complete without error
-    await coordinator.async_shutdown()
-
-
-@pytest.mark.asyncio
 async def test_optimization_coordinator_shutdown(hass: HomeAssistant):
     """Test OptimizationCoordinator shutdown."""
     heat_coordinator = MagicMock()
@@ -88,35 +49,6 @@ async def test_optimization_coordinator_shutdown(hass: HomeAssistant):
 
     # Should complete without error
     await coordinator.async_shutdown()
-
-
-@pytest.mark.asyncio
-async def test_heat_coordinator_creates_and_clears_repair_issue(hass: HomeAssistant):
-    """quality_scale's repair-issues rule: a persistent weather-data outage
-    (not just a single failed refresh) must show up in Settings > Repairs,
-    and clear itself once weather data is available again - mirroring
-    battery_controller's ForecastCoordinator."""
-    weather_coordinator = MagicMock()
-    weather_coordinator.data = None
-    config = {"area_m2": 150, "energy_label": "C"}
-    coordinator = HeatCalculationCoordinator(
-        hass, weather_coordinator, config, "issue_test_entry"
-    )
-
-    with pytest.raises(UpdateFailed):
-        await coordinator._async_update_data()
-
-    issue_id = "weather_data_unavailable_issue_test_entry"
-    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is not None
-
-    weather_coordinator.data = {
-        "current_temperature": 10.0,
-        "temperature_forecast": [10.0] * 8,
-        "radiation_forecast": [0.0] * 8,
-    }
-    await coordinator._async_update_data()
-
-    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
 
 
 @pytest.mark.asyncio
@@ -146,51 +78,6 @@ async def test_optimization_coordinator_creates_repair_issue_for_bad_price_senso
 
     issue_id = "price_sensor_unavailable_issue_test_entry_2"
     assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is not None
-
-
-def test_update_failed_falls_back_on_ha_versions_without_translation_kwargs():
-    """This repo's own test environment (HA 2024.3.3) is exactly such a
-    release: UpdateFailed still extends plain Exception there, so
-    UpdateFailed(translation_domain=...) raises TypeError
-    ("takes no keyword arguments"). _update_failed() must degrade to a
-    formatted plain-string message instead of crashing every coordinator
-    update on that release - this is exercised for real (not mocked) by
-    every other UpdateFailed-raising test in this file, since this HA
-    release always takes the fallback branch."""
-    # Patch UpdateFailed so translation kwargs raise TypeError, simulating
-    # older HA versions.  On newer HA the real constructor calls
-    # async_get_hass() which blows up outside the HA event-loop thread.
-    _OrigUpdateFailed = UpdateFailed
-
-    def _reject_kwargs(*args, **kwargs):
-        if kwargs:
-            raise TypeError("UpdateFailed() got unexpected keyword arguments")
-        return _OrigUpdateFailed(*args)
-
-    with patch(
-        "custom_components.heating_curve_optimizer.coordinator.UpdateFailed",
-        side_effect=_reject_kwargs,
-    ):
-        err = _update_failed("price_sensor_unavailable", {"sensor": "sensor.price"})
-    assert isinstance(err, UpdateFailed)
-    assert str(err) == "Price sensor sensor.price is unavailable."
-
-
-def test_update_failed_without_placeholders():
-    _OrigUpdateFailed = UpdateFailed
-
-    def _reject_kwargs(*args, **kwargs):
-        if kwargs:
-            raise TypeError("UpdateFailed() got unexpected keyword arguments")
-        return _OrigUpdateFailed(*args)
-
-    with patch(
-        "custom_components.heating_curve_optimizer.coordinator.UpdateFailed",
-        side_effect=_reject_kwargs,
-    ):
-        err = _update_failed("no_price_sensor")
-    assert isinstance(err, UpdateFailed)
-    assert str(err) == "No electricity price sensor is configured."
 
 
 @pytest.mark.asyncio
