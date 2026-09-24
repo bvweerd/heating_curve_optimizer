@@ -8,7 +8,7 @@ import logging
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
@@ -110,6 +110,33 @@ def _zone_subentries(entry: ConfigEntry) -> list[tuple[str, Any]]:
         for subentry_id, subentry in entry.subentries.items()
         if subentry.subentry_type == ZONE_SUBENTRY_TYPE
     ]
+
+
+def _child_device(
+    identifier: str,
+    name: str,
+    model: str,
+    sw_version: str,
+    entry: ConfigEntry,
+    parent_device_id: str,
+) -> DeviceInfo:
+    """DeviceInfo for a subentry device, linked to the main device.
+
+    Newer Home Assistant releases link by registry id (``via_device_id``);
+    older ones only accept the parent's identifier tuple (``via_device``).
+    """
+    info: dict[str, Any] = {
+        "identifiers": {(DOMAIN, identifier)},
+        "name": name,
+        "manufacturer": "Heating Curve Optimizer",
+        "model": model,
+        "sw_version": sw_version,
+    }
+    if "via_device_id" in DeviceInfo.__annotations__:
+        info["via_device_id"] = parent_device_id
+    else:
+        info["via_device"] = (DOMAIN, entry.entry_id)
+    return cast(DeviceInfo, info)
 
 
 def _schedule_first_refresh(
@@ -240,13 +267,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "heat_coordinator": zone_heat,
             "optimization_coordinator": zone_optimization,
             "config": zone_config,
-            "device": DeviceInfo(
-                identifiers={(DOMAIN, zone_id)},
-                name=subentry.title,
-                manufacturer="Heating Curve Optimizer",
-                model="Heating zone",
-                sw_version=sw_version,
-                via_device=(DOMAIN, entry.entry_id),
+            "device": _child_device(
+                zone_id, subentry.title, "Heating zone", sw_version, entry, parent.id
             ),
             "name": subentry.title,
         }
@@ -271,13 +293,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         await gas_boiler_coordinator.async_setup()
         _schedule_first_refresh(hass, entry, gas_boiler_coordinator)
-        gas_boiler_device = DeviceInfo(
-            identifiers={(DOMAIN, f"{entry.entry_id}_gas_boiler")},
-            name=gas_subentry.title,
-            manufacturer="Heating Curve Optimizer",
-            model="Hybrid gas boiler",
-            sw_version=sw_version,
-            via_device=(DOMAIN, entry.entry_id),
+        gas_boiler_device = _child_device(
+            f"{entry.entry_id}_gas_boiler",
+            gas_subentry.title,
+            "Hybrid gas boiler",
+            sw_version,
+            entry,
+            parent.id,
         )
 
     entry.runtime_data = HeatingCurveOptimizerData(
