@@ -55,6 +55,10 @@ GAS_SUBENTRY_TYPE = "gas_boiler"
 CONF_GAS_PRICE_SENSOR = "gas_price_sensor"
 CONF_GAS_BOILER_EFFICIENCY = "gas_boiler_efficiency"
 CONF_GAS_CALORIFIC_VALUE = "gas_calorific_value_kwh_per_m3"
+# Use the gas boiler as comfort backup when the heat pump cannot restore the
+# comfort band, regardless of price. Off: gas only when it is also cheaper.
+CONF_GAS_COMFORT_BACKUP = "gas_comfort_backup"
+DEFAULT_GAS_COMFORT_BACKUP = True
 
 # 90%: typical Dutch HR-combi boiler at non-optimal (higher) return
 # temperatures. A well-tuned condensing unit at a low return temperature can

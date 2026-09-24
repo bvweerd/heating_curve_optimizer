@@ -33,8 +33,10 @@ deployments to migrate from.
   uses sun position and plane-of-array irradiance.
 - Thermal calibration integrates heat input over a whole observation window.
 - Real-time PV-surplus layer only raises the offset above the plan.
-- Hybrid gas boiler: heat pump first; the boiler is recommended only when
-  comfort is at risk and gas is cheaper per kWh of heat.
+- Hybrid gas boiler: heat pump first, gas as comfort backup. The boiler is
+  recommended when the heat pump cannot restore comfort within 3 hours
+  (regardless of price; setting "Gas as comfort backup", default on), or
+  when comfort is at risk and gas is cheaper.
 - One COP implementation everywhere; total savings also books losses.
 - New sensors: planned indoor temperature, planned COP, value of stored
   heat, real-time offset, heat pump thermal energy.

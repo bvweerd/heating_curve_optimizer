@@ -326,12 +326,14 @@
           "data": {
             "gas_price_sensor": "Gas price sensor",
             "gas_boiler_efficiency": "Boiler efficiency",
-            "gas_calorific_value_kwh_per_m3": "Calorific value"
+            "gas_calorific_value_kwh_per_m3": "Calorific value",
+            "gas_comfort_backup": "Gas as comfort backup"
           },
           "data_description": {
             "gas_price_sensor": "Current gas price in EUR/m³.",
             "gas_boiler_efficiency": "0.90 for a typical HR boiler; up to ~1.07 on upper heating value at low return temperatures.",
-            "gas_calorific_value_kwh_per_m3": "Dutch G-gas upper heating value: 9.77 kWh/m³."
+            "gas_calorific_value_kwh_per_m3": "Dutch G-gas upper heating value: 9.77 kWh/m³.",
+            "gas_comfort_backup": "On: recommend the gas boiler whenever the heat pump cannot restore the comfort band within 3 hours, even if gas is more expensive. Off: only when gas is also cheaper."
           }
         },
         "reconfigure": {
@@ -339,12 +341,14 @@
           "data": {
             "gas_price_sensor": "Gas price sensor",
             "gas_boiler_efficiency": "Boiler efficiency",
-            "gas_calorific_value_kwh_per_m3": "Calorific value"
+            "gas_calorific_value_kwh_per_m3": "Calorific value",
+            "gas_comfort_backup": "Gas as comfort backup"
           },
           "data_description": {
             "gas_price_sensor": "Current gas price in EUR/m³.",
             "gas_boiler_efficiency": "0.90 for a typical HR boiler; up to ~1.07 on upper heating value at low return temperatures.",
-            "gas_calorific_value_kwh_per_m3": "Dutch G-gas upper heating value: 9.77 kWh/m³."
+            "gas_calorific_value_kwh_per_m3": "Dutch G-gas upper heating value: 9.77 kWh/m³.",
+            "gas_comfort_backup": "On: recommend the gas boiler whenever the heat pump cannot restore the comfort band within 3 hours, even if gas is more expensive. Off: only when gas is also cheaper."
           }
         }
       },

@@ -1,20 +1,20 @@
 """Coordinator for the optional hybrid gas boiler.
 
-Policy: **heat pump first**. The gas boiler is only recommended when
-both hold:
+Policy: **heat pump first**, gas as comfort backup.
 
-1. comfort is at risk - the measured indoor temperature is already below
-   the comfort band, or the optimizer's own heat-pump-only plan predicts it
-   will drop below the band within ``COMFORT_LOOKAHEAD_HOURS`` (the plan
-   already uses the heat pump as hard as it usefully can, so a predicted
-   drop means the heat pump cannot keep up); and
-2. gas is cheaper per kWh of heat than the heat pump at its current
-   operating point (electricity price / COP).
+- While the heat pump keeps the house in its comfort band, it is the heat
+  source - even when gas is cheaper.
+- When the indoor temperature is (or is about to be) below the band but
+  the heat-pump-only plan recovers within ``COMFORT_LOOKAHEAD_HOURS``, gas
+  is only recommended if it is cheaper per kWh of heat.
+- When the plan shows the heat pump cannot bring the house back into the
+  band within the lookahead (the plan already uses the heat pump as hard
+  as it usefully can), gas is recommended regardless of price - unless
+  the user switched off ``CONF_GAS_COMFORT_BACKUP``, in which case gas
+  must also be cheaper.
 
-Cheaper gas alone never switches to the boiler: while the heat pump keeps
-the house comfortable it stays the heat source. The result is published as
-``prefer_gas_boiler`` for the user's own automation; this integration
-never actuates hardware.
+The result is published as ``prefer_gas_boiler`` for the user's own
+automation; this integration never actuates hardware.
 """
 
 from __future__ import annotations
@@ -31,7 +31,9 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
     CONF_CONSUMPTION_PRICE_SENSOR,
+    CONF_GAS_COMFORT_BACKUP,
     CONF_GAS_PRICE_SENSOR,
+    DEFAULT_GAS_COMFORT_BACKUP,
     DOMAIN,
 )
 from .coordinator_heat import HeatCalculationCoordinator
@@ -48,10 +50,19 @@ COMFORT_LOOKAHEAD_HOURS = 3.0
 COMFORT_TOLERANCE_C = 0.1
 
 
+REASON_BELOW_BAND = "below_comfort_band"
+REASON_CANNOT_KEEP_UP = "heat_pump_cannot_keep_up"
+
+
 def _comfort_at_risk(
     heat_data: dict[str, Any], optimization_data: dict[str, Any]
 ) -> tuple[bool, str | None, float | None]:
-    """(at risk, reason, lowest planned indoor temperature in the lookahead)."""
+    """(at risk, reason, lowest planned indoor temperature in the lookahead).
+
+    ``REASON_CANNOT_KEEP_UP``: the heat-pump-only plan is still below the
+    comfort band at the end of the lookahead. ``REASON_BELOW_BAND``: the
+    house is (or dips) below the band but the plan recovers in time.
+    """
     comfort_min = optimization_data.get("comfort_min", heat_data.get("lower_bound"))
     planned: list[float] = []
     elapsed = 0.0
@@ -67,15 +78,18 @@ def _comfort_at_risk(
     lowest = min(planned) if planned else None
     if comfort_min is None:
         return False, None, lowest
+    floor = comfort_min - COMFORT_TOLERANCE_C
     indoor = heat_data.get("indoor_temperature")
-    if (
+    below_now = (
         heat_data.get("indoor_temperature_source") == "sensor"
         and indoor is not None
-        and indoor < comfort_min - COMFORT_TOLERANCE_C
-    ):
-        return True, "below_comfort_band", lowest
-    if lowest is not None and lowest < comfort_min - COMFORT_TOLERANCE_C:
-        return True, "heat_pump_cannot_keep_up", lowest
+        and indoor < floor
+    )
+    dips = lowest is not None and lowest < floor
+    if planned and planned[-1] < floor and (below_now or dips):
+        return True, REASON_CANNOT_KEEP_UP, lowest
+    if below_now or dips:
+        return True, REASON_BELOW_BAND, lowest
     return False, None, lowest
 
 
@@ -238,7 +252,15 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         comfort_at_risk, comfort_reason, lowest_planned = _comfort_at_risk(
             heat_data, optimization_data
         )
-        prefer_gas_boiler = comfort_at_risk and comparison.prefer_gas
+        # Comfort backup: gas regardless of price when the heat pump cannot
+        # restore comfort; otherwise only when comfort is at risk and gas
+        # is the cheaper source.
+        comfort_backup = bool(
+            self.config.get(CONF_GAS_COMFORT_BACKUP, DEFAULT_GAS_COMFORT_BACKUP)
+        )
+        prefer_gas_boiler = (
+            comfort_backup and comfort_reason == REASON_CANNOT_KEEP_UP
+        ) or (comfort_at_risk and comparison.prefer_gas)
 
         return {
             "available": True,
@@ -252,6 +274,7 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "savings_eur_per_kwh": comparison.savings_eur_per_kwh,
             "savings_pct": comparison.savings_pct,
             "gas_cheaper": comparison.prefer_gas,
+            "comfort_backup": comfort_backup,
             "comfort_at_risk": comfort_at_risk,
             "comfort_reason": comfort_reason,
             "lowest_planned_indoor_temp": lowest_planned,

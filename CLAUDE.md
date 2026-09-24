@@ -53,9 +53,10 @@ docs/                         index, installation, quick-start, configuration, a
   `comfort_min`. Baseline = offset 0 through the same model.
 - **Indoor temperature fallback** is the target temperature; a configured
   but unavailable sensor raises repair issue `indoor_sensor_unavailable_*`.
-- **Hybrid**: `prefer_gas_boiler = comfort_at_risk and gas_cheaper`;
-  comfort at risk = measured temp below band, or the plan dips below the
-  band within 3 h.
+- **Hybrid** (heat pump first, gas as comfort backup): gas when the plan
+  is still below the band after 3 h (`heat_pump_cannot_keep_up`, any
+  price unless `gas_comfort_backup` is off), or when below/dipping below the band but recovering
+  (`below_comfort_band`) and gas is cheaper per kWh of heat.
 - **Optimization data keys** (consumed by sensors, gas boiler, diagnostics):
   `offset, offsets, supply_temps, indoor_temps, cop, cost_eur,
   baseline_*, cost_savings_eur, shadow_price_eur_per_kwh,

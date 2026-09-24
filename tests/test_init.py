@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er, issue_registry as ir
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 
 from custom_components.heating_curve_optimizer.const import DOMAIN
 
@@ -64,7 +65,10 @@ async def test_translated_entity_names(
     entry = make_entry()
     await setup_entry(hass, entry)
     state = _state(hass, "sensor", f"{entry.entry_id}_heating_curve_offset")
-    assert state.attributes["friendly_name"] == "Heating Curve Optimizer Heating curve offset"
+    assert (
+        state.attributes["friendly_name"]
+        == "Heating Curve Optimizer Heating curve offset"
+    )
 
 
 async def test_setup_without_zones_only_exposes_weather_sensors(

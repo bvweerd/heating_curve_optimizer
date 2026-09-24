@@ -94,7 +94,10 @@ Controller has PV arrays, you can import one.
 
 ## Gas boiler (hybrid)
 
-Gas price sensor (EUR/m³), boiler efficiency (default 0.90) and calorific
-value (default 9.77 kWh/m³, Dutch upper heating value). See
+Gas price sensor (EUR/m³), boiler efficiency (default 0.90), calorific
+value (default 9.77 kWh/m³, Dutch upper heating value) and **Gas as comfort
+backup** (default on): recommend the boiler whenever the heat pump cannot
+restore the comfort band within 3 hours, even if gas is more expensive.
+Switch it off to use gas only when it is also cheaper. See
 [How it works](algorithm.md#hybrid-gas-boiler) for when the boiler is
 recommended.

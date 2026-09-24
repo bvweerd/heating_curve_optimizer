@@ -72,9 +72,9 @@ class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity):
 class GasBoilerPreferredBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Recommendation to heat with the gas boiler instead of the heat pump.
 
-    On only when comfort is at risk (the heat pump cannot keep the house in
-    its comfort band) and gas is cheaper per kWh of heat - see
-    gas_boiler_coordinator.py. Advisory: an automation decides what to do.
+    Heat pump first, gas as comfort backup: on when the heat pump cannot
+    restore the comfort band, or when comfort is at risk and gas is cheaper
+    per kWh of heat - see gas_boiler_coordinator.py. Advisory only.
     """
 
     _attr_has_entity_name = True
@@ -115,6 +115,7 @@ class GasBoilerPreferredBinarySensor(CoordinatorEntity, BinarySensorEntity):
             "comfort_at_risk": data.get("comfort_at_risk"),
             "comfort_reason": data.get("comfort_reason"),
             "gas_cheaper": data.get("gas_cheaper"),
+            "comfort_backup": data.get("comfort_backup"),
             "lowest_planned_indoor_temp": data.get("lowest_planned_indoor_temp"),
             "heat_pump_cost_eur_per_kwh": data.get("heat_pump_cost_eur_per_kwh"),
             "gas_cost_eur_per_kwh": data.get("gas_cost_eur_per_kwh"),

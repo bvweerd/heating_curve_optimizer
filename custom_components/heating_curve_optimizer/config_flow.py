@@ -55,6 +55,7 @@ from .const import (
     CONF_ENERGY_LABEL,
     CONF_GAS_BOILER_EFFICIENCY,
     CONF_GAS_CALORIFIC_VALUE,
+    CONF_GAS_COMFORT_BACKUP,
     CONF_GAS_PRICE_SENSOR,
     CONF_GLASS_EAST_M2,
     CONF_GLASS_SOUTH_M2,
@@ -92,6 +93,7 @@ from .const import (
     DEFAULT_EMITTER_TYPE,
     DEFAULT_GAS_BOILER_EFFICIENCY,
     DEFAULT_GAS_CALORIFIC_VALUE_KWH_PER_M3,
+    DEFAULT_GAS_COMFORT_BACKUP,
     DEFAULT_GLASS_U_VALUE,
     DEFAULT_HEAT_CURVE_MAX,
     DEFAULT_HEAT_CURVE_MAX_OUTDOOR,
@@ -765,6 +767,12 @@ def build_gas_boiler_schema(defaults: dict[str, Any]) -> vol.Schema:
                     DEFAULT_GAS_CALORIFIC_VALUE_KWH_PER_M3,
                 ),
             ): _number(5.0, 15.0, 0.01, "kWh/m³"),
+            vol.Required(
+                CONF_GAS_COMFORT_BACKUP,
+                description=_suggested(
+                    defaults, CONF_GAS_COMFORT_BACKUP, DEFAULT_GAS_COMFORT_BACKUP
+                ),
+            ): BooleanSelector(),
         }
     )
 
@@ -775,6 +783,9 @@ def normalize_gas_boiler_input(user_input: dict[str, Any]) -> dict[str, Any]:
         CONF_GAS_PRICE_SENSOR: user_input[CONF_GAS_PRICE_SENSOR],
         CONF_GAS_BOILER_EFFICIENCY: float(user_input[CONF_GAS_BOILER_EFFICIENCY]),
         CONF_GAS_CALORIFIC_VALUE: float(user_input[CONF_GAS_CALORIFIC_VALUE]),
+        CONF_GAS_COMFORT_BACKUP: bool(
+            user_input.get(CONF_GAS_COMFORT_BACKUP, DEFAULT_GAS_COMFORT_BACKUP)
+        ),
     }
 
 

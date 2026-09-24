@@ -117,17 +117,19 @@ The layer never goes below the plan and never beyond the ramp limit or the
 
 ## Hybrid gas boiler
 
-Policy: **heat pump first**. The *Gas boiler preferred* binary sensor turns
-on only when both are true:
+Policy: **heat pump first, gas as comfort backup.** The *Gas boiler
+preferred* binary sensor is decided from the heat-pump-only plan over the
+next 3 hours:
 
-1. **comfort is at risk**: the measured indoor temperature is more than
-   0.1 °C below the comfort band, or the heat-pump-only plan predicts a
-   drop below the band within the next 3 hours (the plan already uses the
-   heat pump as hard as useful, so a predicted drop means it cannot keep
-   up);
-2. **gas is cheaper** per kWh of heat: `gas price / calorific value /
-   efficiency` < `electricity price / COP` at the planned operating point.
+| Situation | Gas boiler |
+|---|---|
+| Indoor temperature inside the comfort band and the plan stays there | Off, even when gas is cheaper. |
+| Below the band now (measured, > 0.1 °C) or a planned dip, but the plan is back in the band within 3 hours | On only if gas is cheaper per kWh of heat. |
+| The plan is still below the band after 3 hours: the heat pump cannot restore comfort | On, regardless of price (setting *Gas as comfort backup*, default on). With the setting off: only if gas is cheaper. |
 
-Cheaper gas alone does not switch to the boiler. The attributes
-`comfort_at_risk`, `comfort_reason`, `gas_cheaper` and
+Cost per kWh of heat: gas = `gas price / calorific value / efficiency`,
+heat pump = `electricity price / COP` at the planned operating point.
+
+The attributes `comfort_at_risk`, `comfort_reason`
+(`below_comfort_band` / `heat_pump_cannot_keep_up`), `gas_cheaper` and
 `lowest_planned_indoor_temp` show why the sensor is on or off.

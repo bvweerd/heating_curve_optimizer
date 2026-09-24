@@ -51,7 +51,9 @@ A wrong fit can be cleared with `heating_curve_optimizer.reset_thermal_calibrati
 ## Gas boiler preferred never turns on
 
 That is the intended heat-pump-first behaviour while the house stays
-comfortable. Check `comfort_at_risk` and `gas_cheaper` on the binary sensor.
+comfortable, or recovers within 3 hours while the heat pump is cheaper.
+Check `comfort_at_risk`, `comfort_reason` and `gas_cheaper` on the binary
+sensor.
 
 ## Total cost savings goes down
 

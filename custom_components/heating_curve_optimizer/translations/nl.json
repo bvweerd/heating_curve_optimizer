@@ -326,12 +326,14 @@
           "data": {
             "gas_price_sensor": "Sensor gasprijs",
             "gas_boiler_efficiency": "Ketelrendement",
-            "gas_calorific_value_kwh_per_m3": "Verbrandingswaarde"
+            "gas_calorific_value_kwh_per_m3": "Verbrandingswaarde",
+            "gas_comfort_backup": "Gas als comfort-backup"
           },
           "data_description": {
             "gas_price_sensor": "Actuele gasprijs in EUR/m³.",
             "gas_boiler_efficiency": "0,90 voor een gangbare HR-ketel; tot ~1,07 op bovenwaarde bij lage retourtemperaturen.",
-            "gas_calorific_value_kwh_per_m3": "Bovenwaarde Gronings aardgas: 9,77 kWh/m³."
+            "gas_calorific_value_kwh_per_m3": "Bovenwaarde Gronings aardgas: 9,77 kWh/m³.",
+            "gas_comfort_backup": "Aan: adviseer de gasketel zodra de warmtepomp de comfortband niet binnen 3 uur herstelt, ook als gas duurder is. Uit: alleen als gas ook goedkoper is."
           }
         },
         "reconfigure": {
@@ -339,12 +341,14 @@
           "data": {
             "gas_price_sensor": "Sensor gasprijs",
             "gas_boiler_efficiency": "Ketelrendement",
-            "gas_calorific_value_kwh_per_m3": "Verbrandingswaarde"
+            "gas_calorific_value_kwh_per_m3": "Verbrandingswaarde",
+            "gas_comfort_backup": "Gas als comfort-backup"
           },
           "data_description": {
             "gas_price_sensor": "Actuele gasprijs in EUR/m³.",
             "gas_boiler_efficiency": "0,90 voor een gangbare HR-ketel; tot ~1,07 op bovenwaarde bij lage retourtemperaturen.",
-            "gas_calorific_value_kwh_per_m3": "Bovenwaarde Gronings aardgas: 9,77 kWh/m³."
+            "gas_calorific_value_kwh_per_m3": "Bovenwaarde Gronings aardgas: 9,77 kWh/m³.",
+            "gas_comfort_backup": "Aan: adviseer de gasketel zodra de warmtepomp de comfortband niet binnen 3 uur herstelt, ook als gas duurder is. Uit: alleen als gas ook goedkoper is."
           }
         }
       },

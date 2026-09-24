@@ -30,8 +30,9 @@ keep the indoor temperature inside the comfort band you choose.
   indoor temperature and heat pump power.
 
 Optional: PV arrays (PV-covered electricity valued at the feed-in price),
-a real-time PV-surplus layer, a hybrid gas boiler (heat pump first, gas
-only when comfort is at risk and gas is cheaper), and several heating zones.
+a real-time PV-surplus layer, a hybrid gas boiler (heat pump first, gas as
+comfort backup or when comfort is at risk and gas is cheaper), and several
+heating zones.
 
 ## Installation
 

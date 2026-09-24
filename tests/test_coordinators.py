@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -20,7 +20,13 @@ from custom_components.heating_curve_optimizer.coordinator_optimization import (
 )
 from custom_components.heating_curve_optimizer.sensor import TotalCostSavingsSensor
 
-from .conftest import OPEN_METEO_URL, main_config, make_entry, open_meteo_payload, zone_data
+from .conftest import (
+    OPEN_METEO_URL,
+    main_config,
+    make_entry,
+    open_meteo_payload,
+    zone_data,
+)
 
 
 @pytest.mark.parametrize(
@@ -49,7 +55,7 @@ def _optimization_coordinator(hass: HomeAssistant, **config) -> OptimizationCoor
 
 def test_steps_follow_price_periods_and_planning_window(hass: HomeAssistant) -> None:
     coordinator = _optimization_coordinator(hass, planning_window=6)
-    base = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 1, 1, 10, 0, tzinfo=UTC)
     starts = [base + timedelta(minutes=15 * i) for i in range(96)]
     now = base + timedelta(minutes=5)
     step_starts, durations = coordinator._build_steps(starts, 15, now)
@@ -61,7 +67,7 @@ def test_steps_follow_price_periods_and_planning_window(hass: HomeAssistant) -> 
 
 def test_steps_extend_a_single_current_price(hass: HomeAssistant) -> None:
     coordinator = _optimization_coordinator(hass, planning_window=12)
-    base = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 1, 1, 10, 0, tzinfo=UTC)
     step_starts, durations = coordinator._build_steps([base], 60, base)
     assert len(step_starts) == 12
     assert sum(durations) == pytest.approx(12.0)
@@ -74,17 +80,19 @@ async def test_calibration_window_accumulates_until_temperature_moves(
     calibration = ThermalCalibrationState(store=MagicMock())
     calibration.async_save = MagicMock(side_effect=lambda: _noop())
     coordinator._calibration = calibration
-    building = BuildingConfig.from_config(coordinator.heat_coordinator.effective_config())
+    building = BuildingConfig.from_config(
+        coordinator.heat_coordinator.effective_config()
+    )
 
     start = dt_util.utcnow()
-    kwargs = dict(
-        building=building,
-        indoor_is_measured=True,
-        outdoor_temp=5.0,
-        solar_gain_kw=0.0,
-        supply_temp=35.0,
-        power_kw=1.5,
-    )
+    kwargs = {
+        "building": building,
+        "indoor_is_measured": True,
+        "outdoor_temp": 5.0,
+        "solar_gain_kw": 0.0,
+        "supply_temp": 35.0,
+        "power_kw": 1.5,
+    }
     temps = [20.0, 20.05, 20.1, 20.2, 20.35]
     for i, temp in enumerate(temps):
         await coordinator._maybe_record_calibration_sample(
@@ -134,7 +142,10 @@ async def test_weather_radiation_is_shifted_to_the_hour_it_describes(
     coordinator = WeatherDataCoordinator(hass, entry)
     data = await coordinator._async_update_data()
     hour = dt_util.utcnow().hour
-    assert data["radiation_forecast"][0] == payload["hourly"]["shortwave_radiation"][hour + 1]
+    assert (
+        data["radiation_forecast"][0]
+        == payload["hourly"]["shortwave_radiation"][hour + 1]
+    )
     assert data["temperature_forecast"][0] == payload["hourly"]["temperature_2m"][hour]
     assert len(data["temperature_forecast"]) == 48
 
@@ -145,7 +156,7 @@ def test_total_cost_savings_books_losses_too() -> None:
     coordinator = MagicMock()
     sensor = TotalCostSavingsSensor(coordinator, "entry", MagicMock())
     sensor.async_write_ha_state = MagicMock()
-    t0 = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)
+    t0 = datetime(2026, 1, 1, 10, 0, tzinfo=UTC)
 
     def update(ts: datetime, baseline: float, cost: float) -> None:
         coordinator.data = {

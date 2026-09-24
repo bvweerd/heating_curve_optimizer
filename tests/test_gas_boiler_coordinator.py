@@ -128,8 +128,24 @@ COMFORTABLE_PLAN = {
             True,
             "heat_pump_cannot_keep_up",
         ),
-        # Comfort at risk but the heat pump is cheaper: heat pump.
+        # Below the band, plan recovers, heat pump cheaper: heat pump.
         ({"indoor_temperature": 19.3}, {}, "3.00", False, "below_comfort_band"),
+        # Heat pump cannot restore comfort: gas as backup even when dearer.
+        (
+            {},
+            {"indoor_temps": [19.8, 19.6, 19.4, 19.2]},
+            "3.00",
+            True,
+            "heat_pump_cannot_keep_up",
+        ),
+        # Temporary dip the heat pump recovers from, gas dearer: heat pump.
+        (
+            {},
+            {"indoor_temps": [19.5, 19.8, 19.9, 20.0]},
+            "3.00",
+            False,
+            "below_comfort_band",
+        ),
         # A predicted dip beyond the lookahead does not count yet.
         (
             {},
@@ -251,3 +267,25 @@ async def test_async_shutdown_unsubscribes(hass: HomeAssistant):
     await coordinator.async_setup()
     await coordinator.async_shutdown()
     assert coordinator._unsub is None
+
+
+async def test_comfort_backup_can_be_switched_off(hass: HomeAssistant):
+    """With the comfort backup off, a heat pump that cannot keep up only
+    hands over to gas when gas is also cheaper."""
+    hass.states.async_set("sensor.gas_price", "3.00")
+    hass.states.async_set("sensor.elec_price", "0.40")
+    coordinator = _make_coordinator(
+        hass,
+        config={**BASE_CONFIG, "gas_comfort_backup": False},
+        heat_data=COMFORTABLE_HEAT,
+        optimization_data={
+            **COMFORTABLE_PLAN,
+            "indoor_temps": [19.8, 19.6, 19.4, 19.2],
+        },
+    )
+
+    data = await coordinator._async_update_data()
+
+    assert data["comfort_reason"] == "heat_pump_cannot_keep_up"
+    assert data["comfort_backup"] is False
+    assert data["prefer_gas_boiler"] is False

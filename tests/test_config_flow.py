@@ -107,7 +107,9 @@ async def test_options_flow_keeps_entity_managed_setpoints(hass: HomeAssistant) 
     entry.add_to_hass(hass)
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] is FlowResultType.FORM
-    with patch("custom_components.heating_curve_optimizer.async_setup_entry", return_value=True):
+    with patch(
+        "custom_components.heating_curve_optimizer.async_setup_entry", return_value=True
+    ):
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], _sectioned(advanced={"planning_window": 12})
         )
@@ -124,7 +126,9 @@ def test_zone_validation() -> None:
     _, error = validate_zone_input(zone_data(heat_curve_min=30.0))
     assert error == "zone_curve_incomplete"
 
-    data, error = validate_zone_input(zone_data(heat_curve_min=25.0, heat_curve_max=35.0))
+    data, error = validate_zone_input(
+        zone_data(heat_curve_min=25.0, heat_curve_max=35.0)
+    )
     assert error is None and data["heat_curve_max"] == 35.0
 
     _, error = validate_zone_input(zone_data(name="  "))
