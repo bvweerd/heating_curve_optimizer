@@ -105,14 +105,22 @@ def _comfort_penalty(
     comfort_max: float,
     weight: float,
     hard_floor: float,
+    step_hours: float = 1.0,
 ) -> float:
-    """Quadratic comfort penalty, with a large added penalty below the floor."""
+    """Quadratic comfort penalty, with a large added penalty below the floor.
+
+    The quadratic part scales with ``step_hours`` so that
+    ``comfort_penalty_weight`` has the same meaning regardless of
+    ``time_base`` — halving the step duration halves the penalty for the
+    same temperature deviation, just as energy cost does.
+    ``HARD_FLOOR_PENALTY_EUR`` is a fixed deterrent in € and is *not* scaled.
+    """
     if t_in < hard_floor:
-        return weight * (comfort_min - t_in) ** 2 + HARD_FLOOR_PENALTY_EUR
+        return weight * (comfort_min - t_in) ** 2 * step_hours + HARD_FLOOR_PENALTY_EUR
     if t_in < comfort_min:
-        return weight * (comfort_min - t_in) ** 2
+        return weight * (comfort_min - t_in) ** 2 * step_hours
     if t_in > comfort_max:
-        return weight * (t_in - comfort_max) ** 2
+        return weight * (t_in - comfort_max) ** 2 * step_hours
     return 0.0
 
 
@@ -146,6 +154,7 @@ def optimize_thermal_schedule(
     feed_in_prices: list[float] | None = None,
     feed_in_price_fallback: float = DEFAULT_FEED_IN_PRICE,
     humidity_forecast: list[float] | None = None,
+    step_durations_hours: list[float] | None = None,
     time_base: int = 60,
     offset_delta_t: int = 10,
     offset_min: int = DEFAULT_OFFSET_MIN,
@@ -170,7 +179,19 @@ def optimize_thermal_schedule(
     if horizon == 0:
         return ThermalOptimizationResult()
 
+    if offset_min > offset_max:
+        raise ValueError(
+            f"offset_min ({offset_min}) must be <= offset_max ({offset_max})"
+        )
+
     step_hours = time_base / 60.0 if time_base > 0 else 1.0
+    # Per-step durations: the first step may be shorter when current time
+    # falls mid-period. Falls back to uniform step_hours when not supplied.
+    step_durations: list[float] = (
+        list(step_durations_hours[:horizon])
+        if step_durations_hours and len(step_durations_hours) >= horizon
+        else [step_hours] * horizon
+    )
     max_offset_change = _max_offset_change(time_base, offset_delta_t)
 
     outdoor = _pad(outdoor_temps, horizon, outdoor_temps[-1] if outdoor_temps else 5.0)
@@ -224,7 +245,7 @@ def optimize_thermal_schedule(
             -stored_above_min
             * building.thermal_mass_kwh_per_k
             * terminal_price
-            / max(terminal_cop, heatpump.min_cop)
+            / terminal_cop
         )
 
     v_next: list[dict[int, float]] = [
@@ -238,6 +259,7 @@ def optimize_thermal_schedule(
 
     for t in reversed(range(horizon)):
         v_cur: list[dict[int, float]] = [{} for _ in range(n_states)]
+        step_h = step_durations[t]
         supply_base = base_supply[t]
         out_t = outdoor[t]
         price_t = price[t]
@@ -277,14 +299,14 @@ def optimize_thermal_schedule(
                     grid_covered = p_elec - pv_covered
                     energy_cost = (
                         grid_covered * price_t + pv_covered * feed_in_t
-                    ) * step_hours
+                    ) * step_h
 
                     next_t_in = building.next_indoor_temp(
                         t_in,
                         outdoor_temp=out_t,
                         heat_input_kw=q_hp,
                         solar_gain_kw=solar_t,
-                        step_hours=step_hours,
+                        step_hours=step_h,
                     )
                     next_idx = snap_state(next_t_in)
                     comfort_cost = _comfort_penalty(
@@ -293,6 +315,7 @@ def optimize_thermal_schedule(
                         comfort_max=building.comfort_max,
                         weight=comfort_penalty_weight,
                         hard_floor=state_lo,
+                        step_hours=step_h,
                     )
                     cycling_cost = cycling_penalty_weight * (offset - prev_offset) ** 2
 
@@ -330,6 +353,7 @@ def optimize_thermal_schedule(
     prev_offset = safe_current_offset
 
     for t in range(horizon):
+        step_h = step_durations[t]
         offset, next_idx = action_table[t][state_idx][prev_offset]
         supply_temp = min(water_max, max(water_min, base_supply[t] + offset))
         q_available = emitter.available_power_kw(
@@ -344,7 +368,7 @@ def optimize_thermal_schedule(
         )
         pv_covered = min(p_elec, max(0.0, pv[t]))
         grid_covered = p_elec - pv_covered
-        step_cost = (grid_covered * price[t] + pv_covered * feed_in[t]) * step_hours
+        step_cost = (grid_covered * price[t] + pv_covered * feed_in[t]) * step_h
 
         result.offsets.append(offset)
         result.supply_temps.append(round(supply_temp, 2))

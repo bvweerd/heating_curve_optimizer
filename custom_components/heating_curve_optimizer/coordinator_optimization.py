@@ -60,7 +60,9 @@ from .coordinator_weather import _update_failed
 from .coordinator_heat import HeatCalculationCoordinator
 from .heatpump_model import HeatPumpConfig
 from .helpers import (
+    compute_step_durations_hours,
     extract_price_forecast_with_interval,
+    extract_price_forecast_with_timestamps,
     max_offset_change,
     resample_forecast,
 )
@@ -415,8 +417,8 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
             self.hass, DOMAIN, f"price_sensor_unavailable_{self._entry_id}"
         )
 
-        price_forecast, price_interval = extract_price_forecast_with_interval(
-            price_state
+        price_forecast, price_start_times, price_interval = (
+            extract_price_forecast_with_timestamps(price_state)
         )
 
         if not price_forecast:
@@ -525,6 +527,23 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
                     pv_production_forecast, _WEATHER_INTERVAL_MINUTES, time_base
                 )
 
+        # Compute per-step durations for the DP (first step may be shorter
+        # when current time falls mid-price-period). Only available when the
+        # price interval matches time_base (no resampling was applied) and at
+        # least two timestamps are present — otherwise the optimizer falls
+        # back to uniform step_hours internally.
+        step_durations_hours: list[float] | None = None
+        if (
+            price_forecast
+            and price_interval == time_base
+            and len(price_start_times) >= 2
+        ):
+            step_durations_hours = compute_step_durations_hours(
+                start_times=price_start_times,
+                interval_minutes=time_base,
+                now=dt_util.now(),
+            )
+
         # "Do nothing" cost comparison (offset=0, plain heating curve) -
         # independent of which optimizer runs below, used as the
         # cost_savings baseline. Runs in executor since it loops the full
@@ -569,6 +588,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
             self._current_offset,
             pv_production_forecast,
             feed_in_price_forecast,
+            step_durations_hours,
         )
         if not thermal_v2_result.get("available"):
             raise _update_failed(
@@ -857,6 +877,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
         current_offset: int,
         pv_production_forecast: list[float] | None = None,
         feed_in_price_forecast: list[float] | None = None,
+        step_durations_hours: list[float] | None = None,
     ) -> dict[str, Any]:
         """Run the thermal DP optimizer (blocking call, executor).
 
@@ -935,6 +956,9 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
                 ),
                 feed_in_prices=(
                     feed_in_price_forecast[:horizon] if feed_in_price_forecast else None
+                ),
+                step_durations_hours=(
+                    step_durations_hours[:horizon] if step_durations_hours else None
                 ),
                 time_base=time_base,
                 offset_delta_t=offset_delta_t,
