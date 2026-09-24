@@ -214,3 +214,51 @@ async def test_detected_integrations_prefill_selected_only(hass: HomeAssistant) 
         if key.description
     }
     assert suggested["consumption_price_sensor"] == "sensor.decc_price"
+
+
+async def test_pv_import_takes_over_battery_controller_name(
+    hass: HomeAssistant,
+) -> None:
+    from custom_components.heating_curve_optimizer.companion_integrations import (
+        DetectedPvArray,
+    )
+
+    detected = [
+        DetectedPvArray(
+            name="Garage roof",
+            peak_power_kwp=3.6,
+            orientation=135.0,
+            tilt=20.0,
+            efficiency_factor=0.9,
+            dc_coupled=True,
+            source="Battery Controller",
+        )
+    ]
+    entry = make_entry(zones=0)
+    entry.add_to_hass(hass)
+    with patch(
+        "custom_components.heating_curve_optimizer.config_flow.detect_pv_arrays",
+        return_value=detected,
+    ):
+        result = await _start_subentry_flow(hass, entry, PV_SUBENTRY_TYPE)
+        assert result["step_id"] == "user"
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"import_choice": "0"}
+        )
+    assert result["step_id"] == "configure"
+    fields = {str(key): key for key in result["data_schema"].schema}
+    assert fields["name"].description["suggested_value"] == "Garage roof"
+    assert fields["peak_power_kwp"].description["suggested_value"] == 3.6
+
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {
+            "name": "Garage roof",
+            "peak_power_kwp": 3.6,
+            "orientation": 135,
+            "tilt": 20,
+            "efficiency_factor": 0.9,
+            "dc_coupled": True,
+        },
+    )
+    assert result["title"] == "Garage roof"

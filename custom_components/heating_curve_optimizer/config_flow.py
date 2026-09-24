@@ -681,7 +681,9 @@ def pv_array_title(data: dict[str, Any]) -> str:
 
 
 def _detected_pv_defaults(array: DetectedPvArray) -> dict[str, Any]:
-    return {
+    """Prefill the PV form from a Battery Controller array, name included."""
+    defaults: dict[str, Any] = {"name": array.name} if array.name else {}
+    return defaults | {
         CONF_PV_PEAK_POWER_KWP: array.peak_power_kwp,
         CONF_PV_ORIENTATION: array.orientation,
         CONF_PV_TILT: array.tilt,
