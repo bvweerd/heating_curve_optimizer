@@ -98,12 +98,13 @@ class WeatherDataCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA
             "Fetching weather data for %.4f, %.4f", self.latitude, self.longitude
         )
 
-        # Combine temperature, humidity, and radiation in one API call
+        # Combine temperature, humidity, radiation and irradiance components in one API call
         url = (
             "https://api.open-meteo.com/v1/forecast"
             f"?latitude={self.latitude}&longitude={self.longitude}"
             "&hourly=temperature_2m,relative_humidity_2m,shortwave_radiation"
-            "&current_weather=true&timezone=UTC&forecast_days=2"
+            ",direct_normal_irradiance,diffuse_radiation,wind_speed_10m"
+            "&wind_speed_unit=ms&current_weather=true&timezone=UTC&forecast_days=2"
         )
 
         try:
@@ -132,6 +133,9 @@ class WeatherDataCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA
         temps = hourly.get("temperature_2m", [])
         humidity = hourly.get("relative_humidity_2m", [])
         radiation = hourly.get("shortwave_radiation", [])
+        dni = hourly.get("direct_normal_irradiance", [])
+        diffuse = hourly.get("diffuse_radiation", [])
+        wind_speed = hourly.get("wind_speed_10m", [])
 
         if not times or not temps:
             raise _update_failed("no_forecast_data")
@@ -148,29 +152,42 @@ class WeatherDataCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA
                 start_idx = i
                 break
 
+        def _safe_float_list(raw: list, count: int) -> list[float]:
+            """Extract a slice, converting None to 0.0."""
+            return [
+                float(v) if v is not None else 0.0
+                for v in raw[start_idx : start_idx + count]
+            ]
+
         # Extract next 48 hours (2 days)
-        temp_forecast = [float(v) for v in temps[start_idx : start_idx + 48]]
-        humidity_forecast = (
-            [float(v) for v in humidity[start_idx : start_idx + 48]] if humidity else []
-        )
-        radiation_forecast = (
-            [float(v) for v in radiation[start_idx : start_idx + 48]]
-            if radiation
-            else []
-        )
+        temp_forecast = _safe_float_list(temps, 48)
+        humidity_forecast = _safe_float_list(humidity, 48) if humidity else []
+        radiation_forecast = _safe_float_list(radiation, 48) if radiation else []
+        dni_forecast = _safe_float_list(dni, 48) if dni else []
+        diffuse_forecast = _safe_float_list(diffuse, 48) if diffuse else []
+        wind_speed_forecast = _safe_float_list(wind_speed, 48) if wind_speed else []
+
+        # UTC datetime of the first forecast slot (used for PV timestamp generation)
+        forecast_start_utc = now.replace(tzinfo=dt_util.UTC)
 
         result = {
             "current_temperature": round(current_temp, 2),
             "temperature_forecast": [round(v, 2) for v in temp_forecast],
             "humidity_forecast": [round(v, 1) for v in humidity_forecast],
             "radiation_forecast": [round(v, 1) for v in radiation_forecast],
+            "dni_forecast": [round(v, 1) for v in dni_forecast],
+            "diffuse_forecast": [round(v, 1) for v in diffuse_forecast],
+            "wind_speed_forecast": [round(v, 2) for v in wind_speed_forecast],
+            "forecast_start_utc": forecast_start_utc,
             "timestamp": dt_util.utcnow(),
         }
 
         _LOGGER.debug(
-            "Weather data updated: current=%.1f°C, forecast=%d hours",
+            "Weather data updated: current=%.1f°C, forecast=%d hours, DNI=%s, diffuse=%s",
             current_temp,
             len(temp_forecast),
+            "yes" if dni_forecast else "no",
+            "yes" if diffuse_forecast else "no",
         )
 
         return result

@@ -50,11 +50,14 @@ def test_south_array_at_default_tilt_uses_full_orientation_factor():
 
 
 @pytest.mark.parametrize("orientation", [90.0, 270.0])
-def test_east_and_west_arrays_match_old_fixed_bucket_factor(orientation):
-    """orientation=90/270 (east/west) must reproduce the old fixed-bucket
-    model's own factor of 0.65 exactly - the whole point of the smooth
-    cosine formula replacing the 3-bucket lookup is that it agrees with
-    it at the three canonical angles."""
+def test_east_and_west_arrays_produce_less_than_south(orientation):
+    """orientation=90/270 (east/west) should produce less than south-facing panels.
+
+    The BC fallback formula uses max(0.5, 1 - deviation/180) which gives 0.5
+    for east/west, less than the old cosine formula's 0.65. Both are
+    approximations; the POA model (used when DNI/diffuse are available) is
+    the accurate path.
+    """
     coordinator = _coordinator(
         [
             {
@@ -66,8 +69,8 @@ def test_east_and_west_arrays_match_old_fixed_bucket_factor(orientation):
         ]
     )
     result = coordinator._calculate_pv_production([1000.0])
-    # 2.0 kWp * 1000 * 0.65 * 1.0 * 0.85 / 1000
-    assert result[0] == pytest.approx(1.105)
+    # 2.0 kWp * 1000 * 0.5 (BC fallback east/west) * 1.0 * 0.85 / 1000
+    assert result[0] == pytest.approx(0.85)
 
 
 def test_north_facing_array_still_produces_something():
@@ -100,7 +103,9 @@ def test_multiple_arrays_sum_production():
         ]
     )
     result = coordinator._calculate_pv_production([1000.0])
-    assert result[0] == pytest.approx(2.55 + 1.105)
+    # south: 3.0 * 1.0 * 1.0 * 0.85 = 2.55
+    # east (BC fallback): 2.0 * 0.5 * 1.0 * 0.85 = 0.85
+    assert result[0] == pytest.approx(2.55 + 0.85)
 
 
 def test_zero_peak_power_array_contributes_nothing():

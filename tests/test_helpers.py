@@ -7,13 +7,21 @@ import pytest
 from homeassistant.core import State
 
 from custom_components.heating_curve_optimizer.helpers import (
+    UNAVAILABLE_STATES,
     _coerce_time_base,
+    _drop_elapsed_periods,
     _normalize_price_value,
     _detect_interval_from_entries,
-    extract_price_forecast_with_interval,
-    extract_price_forecast,
-    calculate_supply_temperature,
+    _skip_index_since_local_midnight,
     calculate_defrost_factor,
+    calculate_pv_forecast,
+    calculate_supply_temperature,
+    extract_price_forecast,
+    extract_price_forecast_with_interval,
+    price_unit_scale,
+    resample_forecast,
+    safe_float,
+    state_has_value,
 )
 
 # === Time Base Tests ===
@@ -203,7 +211,12 @@ def test_extract_price_forecast_wrapper():
 
 
 def test_extract_price_forecast_from_today_tomorrow():
-    """Test extracting from today/tomorrow attributes."""
+    """Test extracting from today/tomorrow attributes.
+
+    The BC implementation correctly skips entries from 'today' that have
+    already elapsed, using DST-aware index arithmetic. We mock the local
+    clock to midnight so that all today entries are still in the future.
+    """
     state = MagicMock(spec=State)
     state.attributes = {
         "today": [0.20, 0.21, 0.22],
@@ -211,7 +224,12 @@ def test_extract_price_forecast_from_today_tomorrow():
     }
     state.state = "0.25"
 
-    prices, interval = extract_price_forecast_with_interval(state)
+    midnight = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    with (
+        patch("homeassistant.util.dt.now", return_value=midnight),
+        patch("homeassistant.util.dt.utcnow", return_value=midnight),
+    ):
+        prices, interval = extract_price_forecast_with_interval(state)
     assert len(prices) == 5
     assert prices == [0.20, 0.21, 0.22, 0.23, 0.24]
 
@@ -418,3 +436,279 @@ def test_defrost_factor_worst_near_zero():
 
     assert worst < mild_above
     assert worst < mild_below
+
+
+# === State Validators Tests ===
+
+
+def test_state_has_value_valid():
+    """Test state_has_value with a valid state."""
+    state = MagicMock(spec=State)
+    state.state = "21.5"
+    assert state_has_value(state) is True
+
+
+def test_state_has_value_unavailable():
+    """Test state_has_value with unavailable states."""
+    for bad_state in UNAVAILABLE_STATES:
+        state = MagicMock(spec=State)
+        state.state = bad_state
+        assert state_has_value(state) is False
+
+
+def test_state_has_value_none():
+    """Test state_has_value with None."""
+    assert state_has_value(None) is False
+
+
+# === safe_float Tests ===
+
+
+def test_safe_float_normal():
+    assert safe_float("3.14") == pytest.approx(3.14)
+    assert safe_float(42) == pytest.approx(42.0)
+
+
+def test_safe_float_nan_inf():
+    assert safe_float(float("nan")) == 0.0
+    assert safe_float(float("inf")) == 0.0
+    assert safe_float(float("-inf"), default=-1.0) == -1.0
+
+
+def test_safe_float_none_invalid():
+    assert safe_float(None) == 0.0
+    assert safe_float("bad", default=5.0) == 5.0
+
+
+# === price_unit_scale Tests ===
+
+
+def test_price_unit_scale_eur_kwh():
+    """Sensors with per-kWh unit should return scale 1.0."""
+    state = MagicMock(spec=State)
+    state.attributes = {"unit_of_measurement": "EUR/kWh"}
+    assert price_unit_scale(state) == 1.0
+
+
+def test_price_unit_scale_eur_mwh():
+    """Sensors with per-MWh unit should return scale 0.001."""
+    state = MagicMock(spec=State)
+    state.attributes = {"unit_of_measurement": "EUR/MWh"}
+    assert price_unit_scale(state) == 0.001
+
+
+def test_price_unit_scale_magnitude_heuristic():
+    """Without a unit, large magnitudes should indicate EUR/MWh."""
+    state = MagicMock(spec=State)
+    state.attributes = {}
+    # Typical EUR/kWh prices (< 1.0) → scale 1.0
+    assert price_unit_scale(state, samples=[0.20, 0.25, 0.30]) == 1.0
+    # Typical EUR/MWh prices (> 5.0) → scale 0.001
+    assert price_unit_scale(state, samples=[200.0, 250.0, 300.0]) == 0.001
+
+
+def test_price_unit_scale_no_state():
+    """None state without samples should default to 1.0."""
+    assert price_unit_scale(None) == 1.0
+
+
+# === _normalize_price_value Tests ===
+
+
+def test_normalize_price_value_price_key():
+    """BC version also checks 'price' key in dicts."""
+    assert _normalize_price_value({"price": 0.28}) == pytest.approx(0.28)
+
+
+def test_normalize_price_value_nan_inf():
+    """BC version rejects NaN and infinity."""
+    assert _normalize_price_value(float("nan")) is None
+    assert _normalize_price_value(float("inf")) is None
+
+
+# === _skip_index_since_local_midnight Tests ===
+
+
+def test_skip_index_since_local_midnight_basic():
+    """At 14:00 with 60-min interval, skip index should be 14."""
+    now_local = datetime(2024, 6, 15, 14, 0, 0, tzinfo=timezone.utc)
+    assert _skip_index_since_local_midnight(now_local, 60) == 14
+
+
+def test_skip_index_since_local_midnight_partial():
+    """At 14:45 with 60-min interval, only 14 complete periods have elapsed."""
+    now_local = datetime(2024, 6, 15, 14, 45, 0, tzinfo=timezone.utc)
+    assert _skip_index_since_local_midnight(now_local, 60) == 14
+
+
+def test_skip_index_since_local_midnight_30min():
+    """At 14:30 with 30-min interval, 29 complete 30-min periods have elapsed."""
+    now_local = datetime(2024, 6, 15, 14, 30, 0, tzinfo=timezone.utc)
+    assert _skip_index_since_local_midnight(now_local, 30) == 29
+
+
+# === _drop_elapsed_periods Tests ===
+
+
+def test_drop_elapsed_periods_all_future():
+    """No periods should be dropped when all are in the future."""
+    now = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+    prices = [0.20, 0.25, 0.30]
+    start_times = [
+        datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc),
+        datetime(2024, 6, 15, 13, 0, 0, tzinfo=timezone.utc),
+        datetime(2024, 6, 15, 14, 0, 0, tzinfo=timezone.utc),
+    ]
+    with patch("homeassistant.util.dt.utcnow", return_value=now):
+        kept_prices, kept_times, interval = _drop_elapsed_periods(
+            prices, start_times, 60
+        )
+    assert kept_prices == [0.20, 0.25, 0.30]
+    assert len(kept_times) == 3
+
+
+def test_drop_elapsed_periods_past_entries_dropped():
+    """Periods that ended before now should be dropped."""
+    now = datetime(2024, 6, 15, 14, 30, 0, tzinfo=timezone.utc)
+    prices = [0.20, 0.25, 0.30]
+    start_times = [
+        datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc),  # ended 13:00 → past
+        datetime(2024, 6, 15, 13, 0, 0, tzinfo=timezone.utc),  # ended 14:00 → past
+        datetime(2024, 6, 15, 14, 0, 0, tzinfo=timezone.utc),  # ends 15:00 → future
+    ]
+    with patch("homeassistant.util.dt.utcnow", return_value=now):
+        kept_prices, kept_times, interval = _drop_elapsed_periods(
+            prices, start_times, 60
+        )
+    assert kept_prices == [0.30]
+    assert len(kept_times) == 1
+
+
+# === resample_forecast Tests ===
+
+
+def test_resample_forecast_same_interval():
+    """Same source and target interval should return the same forecast."""
+    forecast = [0.20, 0.25, 0.30]
+    result = resample_forecast(forecast, 60, 60)
+    assert result == forecast
+
+
+def test_resample_forecast_60_to_30():
+    """60-minute values resampled to 30 minutes should repeat each value twice."""
+    forecast = [1.0, 2.0, 3.0]
+    result = resample_forecast(forecast, 60, 30)
+    assert result == [1.0, 1.0, 2.0, 2.0, 3.0, 3.0]
+
+
+def test_resample_forecast_15_to_60():
+    """Four 15-minute values averaged should give one 60-minute value."""
+    forecast = [1.0, 2.0, 3.0, 4.0]
+    result = resample_forecast(forecast, 15, 60)
+    assert len(result) == 1
+    assert result[0] == pytest.approx(2.5)  # average of 1,2,3,4
+
+
+def test_resample_forecast_30_to_60():
+    """Two 30-minute values averaged should give one 60-minute value."""
+    forecast = [1.0, 3.0]
+    result = resample_forecast(forecast, 30, 60)
+    assert len(result) == 1
+    assert result[0] == pytest.approx(2.0)  # average of 1 and 3
+
+
+def test_resample_forecast_empty():
+    """Empty input should return empty output."""
+    assert resample_forecast([], 60, 30) == []
+
+
+# === calculate_pv_forecast Tests ===
+
+
+def test_calculate_pv_forecast_fallback_south():
+    """South-facing panel at optimal tilt should give ~full production."""
+    radiation = [1000.0] * 4  # STC conditions
+    result = calculate_pv_forecast(
+        radiation, peak_power_kwp=4.0, orientation_deg=180, tilt_deg=35
+    )
+    # With 0.85 efficiency and south orientation: 4.0 * 1.0 * 1.0 * 0.85 = 3.4 kW
+    assert all(v == pytest.approx(3.4) for v in result)
+
+
+def test_calculate_pv_forecast_zero_kwp():
+    """Zero peak power should give zero output."""
+    result = calculate_pv_forecast([1000.0, 1000.0], peak_power_kwp=0.0)
+    assert result == [0.0, 0.0]
+
+
+def test_calculate_pv_forecast_poa_mode():
+    """POA mode should be used when all extra parameters are provided."""
+    radiation = [500.0] * 4
+    dni = [400.0] * 4
+    diffuse = [100.0] * 4
+    timestamps = [
+        datetime(2024, 6, 21, 10 + i, 0, 0, tzinfo=timezone.utc) for i in range(4)
+    ]
+    result_poa = calculate_pv_forecast(
+        radiation,
+        peak_power_kwp=4.0,
+        orientation_deg=180,
+        tilt_deg=35,
+        dni_forecast=dni,
+        diffuse_forecast=diffuse,
+        timestamps_utc=timestamps,
+        latitude=52.0,
+        longitude=5.0,
+    )
+    result_fallback = calculate_pv_forecast(
+        radiation,
+        peak_power_kwp=4.0,
+        orientation_deg=180,
+        tilt_deg=35,
+    )
+    # POA and fallback should differ (POA is more accurate)
+    assert len(result_poa) == len(result_fallback) == 4
+    # All values should be non-negative
+    assert all(v >= 0.0 for v in result_poa)
+
+
+def test_calculate_pv_forecast_no_production_at_night():
+    """At night (sun below horizon) POA mode should give zero production."""
+    # Midnight in winter
+    radiation = [0.0] * 4
+    dni = [0.0] * 4
+    diffuse = [0.0] * 4
+    timestamps = [
+        datetime(2024, 1, 15, 0 + i, 0, 0, tzinfo=timezone.utc) for i in range(4)
+    ]
+    result = calculate_pv_forecast(
+        radiation,
+        peak_power_kwp=4.0,
+        dni_forecast=dni,
+        diffuse_forecast=diffuse,
+        timestamps_utc=timestamps,
+        latitude=52.0,
+        longitude=5.0,
+    )
+    assert all(v == 0.0 for v in result)
+
+
+# === _detect_interval_from_entries with datetime objects ===
+
+
+def test_detect_interval_with_datetime_objects():
+    """BC version accepts datetime objects, not just strings."""
+    entries = [
+        {"start": datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc), "value": 0.25},
+        {"start": datetime(2024, 1, 1, 0, 30, 0, tzinfo=timezone.utc), "value": 0.26},
+    ]
+    assert _detect_interval_from_entries(entries) == 30
+
+
+def test_detect_interval_with_time_key():
+    """BC version also checks 'time' key for timestamps."""
+    entries = [
+        {"time": "2024-01-01T00:00:00+00:00", "value": 0.25},
+        {"time": "2024-01-01T00:15:00+00:00", "value": 0.26},
+    ]
+    assert _detect_interval_from_entries(entries) == 15

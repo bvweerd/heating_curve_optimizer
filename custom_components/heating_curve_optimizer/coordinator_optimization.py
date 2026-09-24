@@ -59,7 +59,11 @@ from .const import (
 from .coordinator_weather import _update_failed
 from .coordinator_heat import HeatCalculationCoordinator
 from .heatpump_model import HeatPumpConfig
-from .helpers import extract_price_forecast_with_interval, max_offset_change
+from .helpers import (
+    extract_price_forecast_with_interval,
+    max_offset_change,
+    resample_forecast,
+)
 from .realtime_controller import RealtimeController, create_realtime_controller
 from .thermal_optimizer import (
     DEFAULT_OFFSET_MAX,
@@ -478,6 +482,49 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
         min_outdoor = float(self.config.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0))
         max_outdoor = float(self.config.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 20.0))
 
+        # Extract heat forecasts to local variables for optional resampling
+        solar_gain_forecast: list[float] = list(
+            heat_data.get("solar_gain_forecast") or []
+        )
+        pv_production_forecast: list[float] = list(
+            heat_data.get("pv_production_forecast") or []
+        )
+
+        # Resample forecasts when the price interval or time_base differs from
+        # the native 60-minute intervals of the open-meteo weather data.
+        # Without this, a 15-min price sensor with time_base=60 would feed 4x
+        # too many price steps into the optimizer, and a time_base=30 config
+        # would silently treat every hourly weather step as two 30-min steps
+        # at the same value — both produce subtly wrong optimization results.
+        _WEATHER_INTERVAL_MINUTES = 60  # open-meteo always delivers hourly data
+
+        if price_forecast and price_interval != time_base:
+            price_forecast = resample_forecast(
+                price_forecast, price_interval, time_base
+            )
+        if feed_in_price_forecast and price_interval != time_base:
+            feed_in_price_forecast = resample_forecast(
+                feed_in_price_forecast, price_interval, time_base
+            )
+
+        if time_base != _WEATHER_INTERVAL_MINUTES:
+            if temp_forecast:
+                temp_forecast = resample_forecast(
+                    temp_forecast, _WEATHER_INTERVAL_MINUTES, time_base
+                )
+            if demand_forecast:
+                demand_forecast = resample_forecast(
+                    demand_forecast, _WEATHER_INTERVAL_MINUTES, time_base
+                )
+            if solar_gain_forecast:
+                solar_gain_forecast = resample_forecast(
+                    solar_gain_forecast, _WEATHER_INTERVAL_MINUTES, time_base
+                )
+            if pv_production_forecast:
+                pv_production_forecast = resample_forecast(
+                    pv_production_forecast, _WEATHER_INTERVAL_MINUTES, time_base
+                )
+
         # "Do nothing" cost comparison (offset=0, plain heating curve) -
         # independent of which optimizer runs below, used as the
         # cost_savings baseline. Runs in executor since it loops the full
@@ -511,7 +558,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
             demand_forecast,
             price_forecast,
             temp_forecast,
-            heat_data.get("solar_gain_forecast", []),
+            solar_gain_forecast,
             heat_data.get("indoor_temperature", 20.0),
             time_base,
             offset_delta_t,
@@ -520,7 +567,7 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
             min_outdoor,
             max_outdoor,
             self._current_offset,
-            heat_data.get("pv_production_forecast", []),
+            pv_production_forecast,
             feed_in_price_forecast,
         )
         if not thermal_v2_result.get("available"):
