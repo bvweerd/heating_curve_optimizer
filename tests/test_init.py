@@ -240,6 +240,11 @@ async def test_repair_flow_switches_zone_to_apply(
     result = await flow.async_step_confirm({})
     assert result["type"] == "create_entry"
     assert entry.subentries[subentry_id].data["calibration_mode"] == "apply"
+    # The fix flow schedules a reload; let it finish and unload, so no
+    # first-refresh task of the reloaded entry outlives the test.
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
 
 
 async def _past_debounce(hass: HomeAssistant) -> None:
