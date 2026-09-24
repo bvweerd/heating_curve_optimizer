@@ -16,6 +16,7 @@ from custom_components.heating_curve_optimizer.calibration import (
 )
 from custom_components.heating_curve_optimizer.coordinator_optimization import (
     OptimizationCoordinator,
+    _plan_run_advice,
     price_change_is_significant,
 )
 from custom_components.heating_curve_optimizer.sensor import TotalCostSavingsSensor
@@ -42,6 +43,38 @@ from .conftest import (
 )
 def test_price_change_is_significant(old, new, expected) -> None:
     assert price_change_is_significant(old, new) is expected
+
+
+def test_plan_run_advice_empty_plan_is_unavailable() -> None:
+    on, change_at = _plan_run_advice([], [])
+    assert on is None
+    assert change_at is None
+
+
+def test_plan_run_advice_stays_on_reports_no_change() -> None:
+    now = dt_util.utcnow()
+    starts = [now + timedelta(minutes=15 * i) for i in range(4)]
+    on, change_at = _plan_run_advice([0.5, 0.6, 0.4, 0.3], starts)
+    assert on is True
+    assert change_at is None
+
+
+def test_plan_run_advice_finds_the_next_transition() -> None:
+    """A sunny afternoon should show up as an ``off`` advice with a lead
+    time, well before the current step actually goes idle."""
+    now = dt_util.utcnow()
+    starts = [now + timedelta(minutes=15 * i) for i in range(4)]
+    on, change_at = _plan_run_advice([0.5, 0.5, 0.0, 0.0], starts)
+    assert on is True
+    assert change_at == starts[2]
+
+
+def test_plan_run_advice_currently_off_reports_when_heat_resumes() -> None:
+    now = dt_util.utcnow()
+    starts = [now + timedelta(minutes=15 * i) for i in range(4)]
+    on, change_at = _plan_run_advice([0.0, 0.0, 0.5, 0.5], starts)
+    assert on is False
+    assert change_at == starts[2]
 
 
 def _optimization_coordinator(hass: HomeAssistant, **config) -> OptimizationCoordinator:

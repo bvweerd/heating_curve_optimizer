@@ -509,6 +509,9 @@
       "heat_pump_demand": {
         "name": "Warmtevraag"
       },
+      "heat_pump_plan_active": {
+        "name": "Warmtepomp planning actief"
+      },
       "gas_boiler_preferred": {
         "name": "Gasketel voordeliger"
       }
