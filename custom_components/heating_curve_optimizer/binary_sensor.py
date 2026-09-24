@@ -69,6 +69,62 @@ class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity):
         return attrs
 
 
+class HeatPumpPlanActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Advisory: does the price-optimized plan call for heat right now.
+
+    Unlike heat_pump_demand (reactive hysteresis on the current indoor
+    temperature), this follows the DP plan: off while the building can
+    coast on its thermal buffer, solar and internal gains without leaving
+    the comfort band, on when the plan schedules heat output. Because the
+    plan is computed over the whole horizon, this switches well ahead of a
+    sunny spell or a cold snap, not only once it happens. Advisory only -
+    the integration never actuates hardware.
+    """
+
+    _attr_device_class = BinarySensorDeviceClass.HEAT
+    _attr_has_entity_name = True
+    _attr_translation_key = "heat_pump_plan_active"
+    _attr_should_poll = False
+
+    def __init__(self, coordinator: Any, entry_id: str, device: DeviceInfo) -> None:
+        """Initialize the binary sensor."""
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._attr_unique_id = f"{entry_id}_heat_pump_plan_active"
+        self._attr_device_info = device
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return whether the plan currently calls for heat."""
+        if not self.coordinator.data:
+            return None
+        return self.coordinator.data.get("heat_pump_plan_on")
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return (
+            self.coordinator.last_update_success
+            and self.coordinator.data is not None
+            and self.coordinator.data.get("heat_pump_plan_on") is not None
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the planned values behind the advice."""
+        if not self.coordinator.data:
+            return {}
+        data = self.coordinator.data
+        supply_temps = data.get("supply_temps")
+        return {
+            "offset": data.get("offset"),
+            "planned_supply_temperature": supply_temps[0] if supply_temps else None,
+            "buffer_kwh": data.get("buffer_kwh"),
+            "changes_at": data.get("heat_pump_plan_change_at"),
+            "changes_in_minutes": data.get("heat_pump_plan_change_minutes"),
+        }
+
+
 class GasBoilerPreferredBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Recommendation to heat with the gas boiler instead of the heat pump.
 
@@ -135,25 +191,32 @@ async def async_setup_entry(
     if runtime_data is None or runtime_data.heat_coordinator is None:
         return
 
-    async_add_entities(
-        [
-            CoordinatorHeatDemandBinarySensor(
-                runtime_data.heat_coordinator, entry.entry_id, runtime_data.device
+    primary_entities: list[Any] = [
+        CoordinatorHeatDemandBinarySensor(
+            runtime_data.heat_coordinator, entry.entry_id, runtime_data.device
+        )
+    ]
+    if runtime_data.optimization_coordinator is not None:
+        primary_entities.append(
+            HeatPumpPlanActiveBinarySensor(
+                runtime_data.optimization_coordinator,
+                entry.entry_id,
+                runtime_data.device,
             )
-        ]
-    )
+        )
+    async_add_entities(primary_entities)
 
     for subentry_id, zone_data in runtime_data.zones.items():
-        async_add_entities(
-            [
-                CoordinatorHeatDemandBinarySensor(
-                    zone_data["heat_coordinator"],
-                    f"{entry.entry_id}_{subentry_id}",
-                    zone_data["device"],
-                )
-            ],
-            config_subentry_id=subentry_id,
-        )
+        zone_id = f"{entry.entry_id}_{subentry_id}"
+        zone_entities: list[Any] = [
+            CoordinatorHeatDemandBinarySensor(
+                zone_data["heat_coordinator"], zone_id, zone_data["device"]
+            ),
+            HeatPumpPlanActiveBinarySensor(
+                zone_data["optimization_coordinator"], zone_id, zone_data["device"]
+            ),
+        ]
+        async_add_entities(zone_entities, config_subentry_id=subentry_id)
 
     if runtime_data.gas_boiler_coordinator is not None:
         async_add_entities(
