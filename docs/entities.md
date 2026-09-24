@@ -24,6 +24,7 @@ and English entity names.
 | `sensor.…_heat_pump_thermal_power` | kW | Only with a power sensor: electrical power × COP. | `cop`, `supply_temperature` |
 | `sensor.…_heat_pump_thermal_energy` | kWh | Only with a power sensor: cumulative heat delivered. | |
 | `binary_sensor.…_heat_demand` | | On while the indoor temperature is below the upper comfort bound. | `heat_demand_factor`, bounds |
+| `binary_sensor.…_heat_pump_plan_active` | | On while the optimized plan calls for heat now; off while it plans to coast on buffer, solar or internal gains. Switches ahead of the event, since the plan covers the whole horizon - see [Algorithm](algorithm.md#run-advice). | `changes_at`, `changes_in_minutes`, `planned_supply_temperature`, `buffer_kwh` |
 | `number.…_target_indoor_temperature` | °C | Primary zone setpoint (15–25). | |
 | `number.…_comfort_band_below_target` / `…_above_target` | °C | Comfort band (0.1–2). | |
 | `climate.…_heating` | | Disabled by default; the same setpoint as a thermostat card. | |
@@ -37,7 +38,8 @@ Diagnostic entities: *Value of stored heat* (shadow price, EUR/kWh) and
 ## Additional zones
 
 Heating curve offset, optimized supply temperature, planned indoor
-temperature, cost savings forecast, net heat demand and heat demand.
+temperature, cost savings forecast, net heat demand, heat demand and
+heat pump plan active.
 
 ## Gas boiler device
 

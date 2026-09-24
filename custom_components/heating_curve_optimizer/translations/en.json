@@ -509,6 +509,9 @@
       "heat_pump_demand": {
         "name": "Heat demand"
       },
+      "heat_pump_plan_active": {
+        "name": "Heat pump plan active"
+      },
       "gas_boiler_preferred": {
         "name": "Gas boiler preferred"
       }

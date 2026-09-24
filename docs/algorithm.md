@@ -87,6 +87,23 @@ as a loss. The **total savings** sensor books, between two optimization
 runs, the baseline cost minus the optimized cost of the step being executed
 - including negative amounts while pre-heating.
 
+## Run advice
+
+The integration never turns hardware on or off; the *Heat pump plan
+active* binary sensor is advisory only, for the user's own automation.
+
+`comfort_penalty` is symmetric around the comfort band, so overshooting
+`comfort_max` is priced too - the optimizer has no incentive to heat past
+what solar and internal gains already cover. Because the DP plan is solved
+over the whole horizon, that shows up in the current step's planned
+`thermal_power_kw` well before the sun (or the cold) arrives: the sensor
+follows that planned power (on above `IDLE_POWER_THRESHOLD_KW`, off below),
+not the current indoor temperature. Its `changes_in_minutes` attribute
+gives the lead time to the next planned transition.
+
+This differs from *Heat demand*, which is a reactive hysteresis on the
+current indoor temperature and target, independent of price or forecast.
+
 ## Calibration
 
 Heat loss, thermal mass, solar and internal gains, the COP curve and the

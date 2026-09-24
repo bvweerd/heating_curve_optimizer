@@ -112,8 +112,31 @@ from .thermal_optimizer import (
 _LOGGER = logging.getLogger(__name__)
 
 # Below this, the heat pump's electricity meter reading is treated as idle
-# (standby draw), not an active heating cycle.
+# (standby draw), not an active heating cycle. Also used for the planned
+# thermal_power_kw, to decide whether the optimized plan calls for heat.
 IDLE_POWER_THRESHOLD_KW = 0.1
+
+
+def _plan_run_advice(
+    thermal_power_kw: list[float],
+    step_starts: list[datetime],
+) -> tuple[bool | None, datetime | None]:
+    """Whether the optimized plan currently calls for heat, and when that
+    next changes.
+
+    Solar gain, internal gains and comfort margin are already priced into
+    the DP trajectory over the whole horizon (comfort_penalty is symmetric
+    around the band), so a sunny afternoon or a cold snap shows up here as
+    soon as the plan accounts for it - not only once it happens.
+    """
+    if not thermal_power_kw:
+        return None, None
+    current_on = thermal_power_kw[0] > IDLE_POWER_THRESHOLD_KW
+    for power, start in zip(thermal_power_kw[1:], step_starts[1:], strict=False):
+        if (power > IDLE_POWER_THRESHOLD_KW) != current_on:
+            return current_on, start
+    return current_on, None
+
 
 # A price move of at least this fraction of the previous price, or at least
 # PRICE_CHANGE_MIN_ABS €/kWh (whichever is larger in magnitude), triggers a
@@ -538,6 +561,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return round((temp - building.comfort_min) * mass, 3)
 
         self._update_calibration_issue()
+        plan_on, plan_change_at = _plan_run_advice(opt.thermal_power_kw, step_starts)
         return {
             "offset": self._current_offset,
             "offsets": opt.offsets,
@@ -577,6 +601,15 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "heat_pump_power_kw": power_kw,
             "heat_pump_actively_running": (
                 power_kw > IDLE_POWER_THRESHOLD_KW if power_kw is not None else None
+            ),
+            "heat_pump_plan_on": plan_on,
+            "heat_pump_plan_change_at": (
+                plan_change_at.isoformat() if plan_change_at else None
+            ),
+            "heat_pump_plan_change_minutes": (
+                round((plan_change_at - now).total_seconds() / 60)
+                if plan_change_at
+                else None
             ),
             "timestamp": now,
         }
