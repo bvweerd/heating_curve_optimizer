@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="curve" x1="52" y1="0" x2="204" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF5A36"/>
+      <stop offset="0.5" stop-color="#FFB23F"/>
+      <stop offset="1" stop-color="#6EC9FF"/>
+    </linearGradient>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1D4670"/>
+      <stop offset="1" stop-color="#132F4D"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="256" height="256" rx="60" fill="url(#tile)"/>
+  <!-- axes -->
+  <path d="M44 48 V208 H214" fill="none" stroke="#FFFFFF" stroke-opacity="0.28" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- old curve (dashed, higher) -->
+  <path d="M62 64 C 104 92, 150 124, 204 142" fill="none" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="7" stroke-linecap="round" stroke-dasharray="2 16"/>
+  <!-- optimized curve -->
+  <path d="M62 98 C 104 128, 150 160, 204 178" fill="none" stroke="url(#curve)" stroke-width="18" stroke-linecap="round"/>
+  <!-- operating point -->
+  <circle cx="131" cy="145" r="17" fill="#132F4D" stroke="#FFFFFF" stroke-width="7"/>
+  <circle cx="131" cy="145" r="6" fill="#FFFFFF"/>
+</svg>
