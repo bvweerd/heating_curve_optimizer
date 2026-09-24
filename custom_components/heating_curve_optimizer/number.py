@@ -94,7 +94,7 @@ class BaseTemperatureNumber(NumberEntity):
 
     _attr_has_entity_name = True
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-    _attr_mode = NumberMode.SLIDER
+    _attr_mode = NumberMode.BOX
 
     # Subclasses must define these
     _conf_key: str = ""

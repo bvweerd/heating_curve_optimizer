@@ -292,3 +292,19 @@ async def test_unload_removes_the_entry_issues(
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
     assert _issue(hass, f"indoor_sensor_unavailable_{entry.entry_id}") is None
+
+
+async def test_setpoints_are_text_boxes(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    entry = make_entry()
+    await setup_entry(hass, entry)
+    for key in (
+        "target_indoor_temp",
+        "indoor_temp_hysteresis_lower",
+        "indoor_temp_hysteresis_upper",
+    ):
+        assert (
+            _state(hass, "number", f"{entry.entry_id}_{key}").attributes["mode"]
+            == "box"
+        )
