@@ -7,7 +7,6 @@ import math
 from datetime import timedelta
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, Event
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_state_change_event
@@ -57,19 +56,27 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  
         weather_coordinator: WeatherDataCoordinator,
         config: dict[str, Any],
         entry_id: str,
-        config_entry: ConfigEntry | None = None,
+        main_entry_id: str = "",
     ):
-        """Initialize the heat calculation coordinator."""
+        """Initialize the heat calculation coordinator.
+
+        ``main_entry_id`` is the base config entry ID (not zone-suffixed) used
+        to read live entry.options for target temperature and hysteresis
+        between reloads.  For the primary zone it equals ``entry_id``; for
+        additional zone subentries pass ``entry.entry_id`` explicitly so the
+        coordinator can look up the live options even though its own
+        ``entry_id`` carries a ``_{subentry_id}`` suffix.
+        """
         super().__init__(
             hass,
             _LOGGER,
             name="Heat Calculations",
             update_interval=timedelta(minutes=5),
-            config_entry=config_entry,
         )
         self.weather_coordinator = weather_coordinator
         self.config = config
         self._entry_id = entry_id
+        self._main_entry_id = main_entry_id or entry_id
         self._indoor_temp_sensor = config.get(CONF_INDOOR_TEMPERATURE_SENSOR)
         self._unsub = None
 
@@ -165,8 +172,11 @@ class HeatCalculationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  
         # Get target temperature and hysteresis from entry.options (written live by
         # the number entities in number.py), falling back to zone config then defaults.
         # entry.options is the authoritative store - no more hass.data["runtime"] reads.
+        # _main_entry_id is the base config entry ID (not zone-suffixed) — the one
+        # whose options number.py writes to.
+        _cfg_entry = self.hass.config_entries.async_get_entry(self._main_entry_id)
         entry_options: dict[str, Any] = (
-            self.config_entry.options if self.config_entry is not None else {}
+            _cfg_entry.options if _cfg_entry is not None else {}
         )
 
         def _live(key: str, config_default: float) -> float:

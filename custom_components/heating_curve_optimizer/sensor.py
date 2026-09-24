@@ -62,7 +62,6 @@ from .const import (
     DEFAULT_CEILING_HEIGHT,
     DOMAIN,
     SOURCE_TYPE_CONSUMPTION,
-    U_VALUE_MAP,
     VENTILATION_TYPES,
     calculate_htc_from_energy_label,
     calculate_ventilation_htc,

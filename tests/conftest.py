@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.heating_curve_optimizer.const import DOMAIN

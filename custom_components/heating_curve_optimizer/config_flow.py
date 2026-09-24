@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 from typing import Any
 from urllib.parse import urlencode
 
@@ -23,15 +22,6 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import selector
 import voluptuous as vol
 
-# homeassistant.data_entry_flow.section() (single-screen collapsible field
-# groups, used by battery_controller's config_flow.py) landed in HA well
-# after this integration's floor version, and does not exist at all in the
-# HA release this repo's test environment can install (2024.3.x - a
-# package-index ceiling, not a real HA release date; confirmed by direct
-# import attempt). Same graceful-degradation policy as _ConfigSubentryFlow
-# below: the modern single-page sectioned form is only used when `section`
-# is importable, otherwise async_step_user falls through to today's
-# multi-step wizard, completely unchanged - see _build_sectioned_schema.
 try:
     from homeassistant.data_entry_flow import section as _section
 except ImportError:
@@ -79,7 +69,6 @@ from .const import (
     CONF_PRICE_SENSOR,
     CONF_CONSUMPTION_PRICE_SENSOR,
     CONF_PRODUCTION_PRICE_SENSOR,
-    CONF_PRICE_SETTINGS,
     CONF_PV_PEAK_POWER_KWP,
     CONF_PV_ORIENTATION,
     CONF_PV_TILT,
@@ -113,7 +102,6 @@ from .const import (
     CONF_SOURCES,
     DOMAIN,
     ENERGY_LABELS,
-    SOURCE_TYPES,
     SOURCE_TYPE_CONSUMPTION,
     SOURCE_TYPE_PRODUCTION,
     VENTILATION_TYPES,
@@ -129,11 +117,6 @@ from .const import (
     DEFAULT_GAS_CALORIFIC_VALUE_KWH_PER_M3,
     ENTITY_MANAGED_OPTIONS,
 )
-
-STEP_SELECT_SOURCES = "select_sources"
-STEP_PRICE_SETTINGS = "price_settings"
-STEP_BASIC = "basic"
-STEP_HEATING_CURVE_SETTINGS = "heating_curve_settings"
 
 
 async def _test_api_connection(hass: HomeAssistant) -> str | None:
@@ -743,26 +726,21 @@ else:
     HeatingPvArraySubentryFlow = None  # type: ignore[assignment,misc]
 
 
-def _extract_sectioned_data(user_input: dict[str, Any]) -> dict[str, Any]:
-    """Flatten a single-page sectioned form submission (see
-    `_build_sectioned_schema`) back into a flat dict keyed by the same
-    strings as both the CONF_* constants and this flow's own `self.*`
-    attribute names (a 1:1 naming convention already used throughout this
-    file, e.g. `CONF_K_FACTOR == "k_factor" == self.k_factor`) - the caller
-    applies it with `for key, value in flat.items(): setattr(self, key,
-    value)`. Only shared/infra fields - every zone's own settings (area,
-    envelope, ventilation, thermal mass, emitter type, target temperature,
-    hysteresis, indoor sensor) are collected via a zone subentry instead.
+def _extract_main_data(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Flatten a single-page sectioned form submission back into a flat dict.
 
-    Mirrors `_apply_basic_input`/`_apply_heating_curve_input`'s coercion
-    and defaulting exactly, just reading from nested per-section dicts
-    instead of one flat `user_input`. Pure function - no dependency on
-    `_section`/HA version, so it's fully unit-testable regardless of
-    whether `section` itself is importable on this environment's HA.
+    Mirrors battery_controller's ``_extract_main_data``.  Keyed by the same
+    CONF_* constants and this flow's own ``self.*`` attribute names
+    (a 1:1 naming convention: ``CONF_K_FACTOR == "k_factor" == self.k_factor``).
+    Only shared/infra fields — every zone's own settings (area, envelope,
+    ventilation, thermal mass, emitter type, target temperature, hysteresis,
+    indoor sensor) are collected via a zone subentry instead.
 
-    `CONF_SOURCES`/`self.configs` is deliberately not included here - see
-    `_build_configs_from_sources` - it needs both flattened source lists
-    at once and has no single corresponding `self` attribute.
+    Pure function — no dependency on ``section``/HA version, fully unit-testable.
+
+    ``CONF_SOURCES``/``self.configs`` is deliberately not included here — see
+    ``_build_configs_from_sources`` — it needs both flattened source lists at
+    once and has no single corresponding ``self`` attribute.
     """
     building = user_input.get("building", {})
     sensors = user_input.get("sensors", {})
@@ -809,18 +787,18 @@ def _extract_sectioned_data(user_input: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# Backward-compat alias so existing imports (tests) keep working.
+_extract_sectioned_data = _extract_main_data
+
+
 def _build_configs_from_sources(
     consumption_entities: list[str], production_entities: list[str]
 ) -> list[dict[str, Any]]:
-    """Build the `self.configs` list directly from the two flattened
-    consumption/production multi-select fields - the one-shot equivalent
-    of `_update_source_config`'s incremental, step-based building used by
-    the legacy multi-step wizard.
+    """Build the ``self.configs`` list from the two flattened
+    consumption/production multi-select fields.
 
-    Only includes a block for a source_type that actually has entities,
-    matching `_update_source_config`'s own behaviour of never storing an
-    empty block - the "at least one source configured" validation still
-    happens in the caller, same as the legacy flow's own "no_blocks" check.
+    Only includes a block for a source_type that actually has entities —
+    the ``no_blocks`` validation still happens in the caller.
     """
     configs: list[dict[str, Any]] = []
     if consumption_entities:
@@ -840,20 +818,19 @@ def _build_configs_from_sources(
     return configs
 
 
-def _build_sectioned_schema(
+def _build_main_schema(
     defaults: dict[str, Any],
     power_sensors: list[str],
     temp_sensors: list[str],
     price_sensors: list[str],
     energy_sensors: list[str],
 ) -> vol.Schema:
-    """Build the single-page sectioned form (only called when `_section is
-    not None`). Mirrors battery_controller's own `_build_main_schema`: one
-    `vol.Schema` of `section(...)` groups, each built from a small per-group
-    schema. Every field uses `description={"suggested_value": ...}` for
-    prefill rather than `default=` - a pure UI hint that never silently
-    substitutes a value into validation, unlike `default=` (which the
-    legacy multi-step schemas below still use).
+    """Build the single-page sectioned form.
+
+    Mirrors battery_controller's ``_build_main_schema``: one ``vol.Schema``
+    of ``section(...)`` groups.  Every field uses
+    ``description={"suggested_value": ...}`` for prefill — a pure UI hint
+    that never silently substitutes a value into validation.
     """
 
     def sv(key: str, fallback: Any = None) -> dict[str, Any]:
@@ -1021,7 +998,6 @@ def _build_sectioned_schema(
         }
     )
 
-    assert _section is not None  # only ever called behind that guard
     return vol.Schema(
         {
             vol.Required("building"): _section(building_schema, {"collapsed": False}),
@@ -1066,17 +1042,18 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         super().__init__()
 
         self.context: ConfigFlowContext = {}
+        # Shared config accumulated during the single-page form submission.
+        # `configs` holds the source blocks (consumption / production); all
+        # other fields are stored as individual attributes so `_build_entry_data`
+        # and `_sectioned_defaults` can read them by name.
         self.configs: list[dict[str, Any]] = []
-        self.source_type: str | None = None
-        self.sources: list[str] | None = None
-        self.price_settings: dict[str, Any] = {}
         self.consumption_price_sensor: str | None = None
         self.production_price_sensor: str | None = None
         self.power_consumption: str | None = None
         self.supply_temperature_sensor: str | None = None
         self.grid_import_sensor: str | None = None
         self.grid_export_sensor: str | None = None
-        self.k_factor: float | None = None
+        self.k_factor: float = DEFAULT_K_FACTOR
         self.base_cop: float = DEFAULT_COP_AT_35
         self.outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT
         self.cop_compensation_factor: float = DEFAULT_COP_COMPENSATION_FACTOR
@@ -1088,65 +1065,69 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.heating_curve_offset: float = DEFAULT_HEATING_CURVE_OFFSET
         self.heat_curve_min: float = DEFAULT_HEAT_CURVE_MIN
         self.heat_curve_max: float = DEFAULT_HEAT_CURVE_MAX
+        # Companion-integration pre-fill (offered once on first visit).
         self._detection_offered: bool = False
         self._detected_sensors: dict[str, DetectedSensor] = {}
         self._detected_sensor_lists: dict[str, DetectedSensorList] = {}
 
     async def async_step_user(
-        self, user_input: dict[str, str] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        """Handle initial setup — single-page sectioned form.
+
+        Mirrors battery_controller's ``async_step_user``: one call to
+        ``_build_main_schema`` / ``_extract_main_data``, no multi-step wizard.
+        """
         await self.async_set_unique_id(DOMAIN)
         self._abort_if_unique_id_configured()
+
+        # Companion-integration pre-fill: offer once on the very first visit
+        # (before any user_input) to import sensors Battery Controller or
+        # Dynamic Energy Contract Calculator already configured.
         if user_input is None and not self._detection_offered:
             self._detection_offered = True
             self._detected_sensors = detect_main_flow_sensors(self.hass)
             self._detected_sensor_lists = detect_source_sensors(self.hass)
             if self._detected_sensors or self._detected_sensor_lists:
                 return await self.async_step_detected_integrations()
-        if _section is not None:
-            return await self._async_step_sectioned(user_input)
+
+        errors: dict[str, str] = {}
         if user_input is not None:
-            choice = user_input[CONF_SOURCE_TYPE]
-            if choice == STEP_BASIC:
-                return await self.async_step_basic_options()
-            if choice == STEP_HEATING_CURVE_SETTINGS:
-                return await self.async_step_heating_curve_settings()
-            if choice == STEP_PRICE_SETTINGS:
-                return await self.async_step_price_settings()
-            if choice == "finish":
-                if not self.configs:
-                    return self.async_show_form(
-                        step_id="user",
-                        data_schema=self._schema_user(),
-                        errors={"base": "no_blocks"},
-                    )
+            flat = _extract_main_data(user_input)
+            sensors_section = user_input.get("sensors", {})
+            configs = _build_configs_from_sources(
+                sensors_section.get(FIELD_SOURCES_CONSUMPTION, []),
+                sensors_section.get(FIELD_SOURCES_PRODUCTION, []),
+            )
+
+            if not configs:
+                errors["base"] = "no_blocks"
+            else:
                 connection_error = await _test_api_connection(self.hass)
                 if connection_error:
-                    return self.async_show_form(
-                        step_id="user",
-                        data_schema=self._schema_user(),
-                        errors={"base": connection_error},
-                    )
-                consumption_price_sensor = (
-                    self.consumption_price_sensor
-                    or self.price_settings.get(CONF_CONSUMPTION_PRICE_SENSOR)
-                    or self.price_settings.get(CONF_PRICE_SENSOR)
-                )
-                production_price_sensor = (
-                    self.production_price_sensor
-                    or self.price_settings.get(CONF_PRODUCTION_PRICE_SENSOR)
-                    or consumption_price_sensor
-                )
+                    errors["base"] = connection_error
+
+            for key, value in flat.items():
+                setattr(self, key, value)
+            self.configs = configs
+
+            if not errors:
                 return self.async_create_entry(
                     title="Heating Curve Optimizer",
                     data=self._build_entry_data(
-                        consumption_price_sensor, production_price_sensor
+                        flat[CONF_CONSUMPTION_PRICE_SENSOR],
+                        flat[CONF_PRODUCTION_PRICE_SENSOR],
                     ),
                 )
-            self.source_type = choice
-            return await self.async_step_select_sources()
 
-        return self.async_show_form(step_id="user", data_schema=self._schema_user())
+        schema = _build_main_schema(
+            self._sectioned_defaults(),
+            self._get_power_sensors(),
+            self._get_temperature_sensors(),
+            self._get_price_sensors(),
+            self._get_energy_sensors(),
+        )
+        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
     async def async_step_detected_integrations(
         self, user_input: dict[str, bool] | None = None
@@ -1233,29 +1214,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_HEAT_CURVE_MAX: self.heat_curve_max,
         }
 
-    def _schema_user(self) -> vol.Schema:
-        options = [{"value": STEP_BASIC, "label": "Basic Settings"}]
-        options.extend({"value": t, "label": t.title()} for t in SOURCE_TYPES)
-        options.append(
-            {"value": STEP_HEATING_CURVE_SETTINGS, "label": "Heating Curve Settings"}
-        )
-        options.append({"value": STEP_PRICE_SETTINGS, "label": "Price Settings"})
-        options.append({"value": "finish", "label": "Finish"})
-
-        return vol.Schema(
-            {
-                vol.Required(CONF_SOURCE_TYPE): selector(
-                    {
-                        "select": {
-                            "options": options,
-                            "mode": "dropdown",
-                            "custom_value": False,
-                        }
-                    }
-                )
-            }
-        )
-
     def _sectioned_defaults(self) -> dict[str, Any]:
         """Prefill values for `_build_sectioned_schema` - reuses
         `_build_entry_data`'s own dict (keyed by the same CONF_ constants
@@ -1282,52 +1240,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             [],
         )
         return defaults
-
-    async def _async_step_sectioned(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Single-page sectioned form - the modern replacement for the
-        legacy multi-step wizard below, used whenever `_section is not
-        None`. Always shown/resubmitted as step_id="user", so this is
-        reached both for the form's first display and every resubmission.
-        """
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            flat = _extract_sectioned_data(user_input)
-            sensors_section = user_input.get("sensors", {})
-            configs = _build_configs_from_sources(
-                sensors_section.get(FIELD_SOURCES_CONSUMPTION, []),
-                sensors_section.get(FIELD_SOURCES_PRODUCTION, []),
-            )
-
-            if not configs:
-                errors["base"] = "no_blocks"
-            else:
-                connection_error = await _test_api_connection(self.hass)
-                if connection_error:
-                    errors["base"] = connection_error
-
-            for key, value in flat.items():
-                setattr(self, key, value)
-            self.configs = configs
-
-            if not errors:
-                return self.async_create_entry(
-                    title="Heating Curve Optimizer",
-                    data=self._build_entry_data(
-                        flat[CONF_CONSUMPTION_PRICE_SENSOR],
-                        flat[CONF_PRODUCTION_PRICE_SENSOR],
-                    ),
-                )
-
-        schema = _build_sectioned_schema(
-            self._sectioned_defaults(),
-            self._get_power_sensors(),
-            self._get_temperature_sensors(),
-            self._get_price_sensors(),
-            self._get_energy_sensors(),
-        )
-        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
     def _get_energy_sensors(self) -> list[str]:
         """Get sorted list of energy sensors."""
@@ -1388,310 +1300,6 @@ class HeatingCurveOptimizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 discovered.add(current)
         return sorted(discovered)
 
-    async def async_step_basic_options(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Redirect to async_step_basic for backward compatibility."""
-        return await self.async_step_basic(user_input)
-
-    def _apply_heating_curve_input(self, user_input: dict[str, Any]) -> None:
-        """Apply heating curve settings from user input."""
-        self.supply_temperature_sensor = user_input.get(CONF_SUPPLY_TEMPERATURE_SENSOR)
-        self.k_factor = float(user_input.get(CONF_K_FACTOR, DEFAULT_K_FACTOR))
-        self.base_cop = float(user_input.get(CONF_BASE_COP, DEFAULT_COP_AT_35))
-        self.outdoor_temp_coefficient = float(
-            user_input.get(
-                CONF_OUTDOOR_TEMP_COEFFICIENT, DEFAULT_OUTDOOR_TEMP_COEFFICIENT
-            )
-        )
-        self.cop_compensation_factor = float(
-            user_input.get(
-                CONF_COP_COMPENSATION_FACTOR, DEFAULT_COP_COMPENSATION_FACTOR
-            )
-        )
-        self.planning_window = int(
-            user_input.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW)
-        )
-        self.time_base = int(user_input.get(CONF_TIME_BASE, DEFAULT_TIME_BASE))
-        self.offset_delta_t = int(
-            user_input.get(CONF_OFFSET_DELTA_T, DEFAULT_OFFSET_DELTA_T)
-        )
-        self.heat_curve_min_outdoor = float(
-            user_input.get(CONF_HEAT_CURVE_MIN_OUTDOOR, -20.0)
-        )
-        self.heat_curve_max_outdoor = float(
-            user_input.get(CONF_HEAT_CURVE_MAX_OUTDOOR, 15.0)
-        )
-        self.heating_curve_offset = float(
-            user_input.get(CONF_HEATING_CURVE_OFFSET, DEFAULT_HEATING_CURVE_OFFSET)
-        )
-        self.heat_curve_min = float(
-            user_input.get(CONF_HEAT_CURVE_MIN, DEFAULT_HEAT_CURVE_MIN)
-        )
-        self.heat_curve_max = float(
-            user_input.get(CONF_HEAT_CURVE_MAX, DEFAULT_HEAT_CURVE_MAX)
-        )
-
-    def _build_heating_curve_schema(self, temp_sensors: list[str]) -> vol.Schema:
-        """Build schema for heating curve settings."""
-        return vol.Schema(
-            {
-                vol.Optional(
-                    CONF_SUPPLY_TEMPERATURE_SENSOR,
-                    default=self.supply_temperature_sensor,
-                ): selector(
-                    {
-                        "select": {
-                            "options": temp_sensors,
-                            "multiple": False,
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
-                vol.Optional(
-                    CONF_K_FACTOR, default=self.k_factor or DEFAULT_K_FACTOR
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_BASE_COP, default=self.base_cop or DEFAULT_COP_AT_35
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_OUTDOOR_TEMP_COEFFICIENT,
-                    default=self.outdoor_temp_coefficient
-                    or DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_COP_COMPENSATION_FACTOR,
-                    default=self.cop_compensation_factor
-                    or DEFAULT_COP_COMPENSATION_FACTOR,
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_PLANNING_WINDOW,
-                    default=self.planning_window or DEFAULT_PLANNING_WINDOW,
-                ): vol.Coerce(int),
-                vol.Optional(
-                    CONF_TIME_BASE,
-                    default=self.time_base or DEFAULT_TIME_BASE,
-                ): vol.Coerce(int),
-                vol.Optional(
-                    CONF_OFFSET_DELTA_T,
-                    default=self.offset_delta_t or DEFAULT_OFFSET_DELTA_T,
-                ): vol.Coerce(int),
-                vol.Optional(
-                    CONF_HEAT_CURVE_MIN_OUTDOOR,
-                    default=self.heat_curve_min_outdoor,
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_HEAT_CURVE_MAX_OUTDOOR,
-                    default=self.heat_curve_max_outdoor,
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_HEATING_CURVE_OFFSET,
-                    default=self.heating_curve_offset,
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_HEAT_CURVE_MIN,
-                    default=self.heat_curve_min,
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_HEAT_CURVE_MAX,
-                    default=self.heat_curve_max,
-                ): vol.Coerce(float),
-            }
-        )
-
-    async def async_step_heating_curve_settings(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        if user_input is not None:
-            self._apply_heating_curve_input(user_input)
-            return await self.async_step_user()
-
-        temp_sensors = self._get_temperature_sensors()
-        schema = self._build_heating_curve_schema(temp_sensors)
-
-        return self.async_show_form(
-            step_id=STEP_HEATING_CURVE_SETTINGS, data_schema=schema
-        )
-
-    def _apply_basic_input(self, user_input: dict[str, Any]) -> None:
-        """Apply basic settings from user input.
-
-        Zone-specific fields (area, envelope, ventilation, thermal mass,
-        emitter type, indoor sensor) are collected via a zone subentry
-        instead - see HeatingZoneSubentryFlow.
-        """
-        self.power_consumption = user_input.get(CONF_POWER_CONSUMPTION)
-        self.grid_import_sensor = user_input.get(CONF_GRID_IMPORT_SENSOR)
-        self.grid_export_sensor = user_input.get(CONF_GRID_EXPORT_SENSOR)
-
-    def _build_basic_schema(self, power_sensors: list[str]) -> vol.Schema:
-        """Build schema for basic settings (shared/infra sensors only -
-        zone-specific fields live in HeatingZoneSubentryFlow instead)."""
-        return vol.Schema(
-            {
-                vol.Optional(
-                    CONF_POWER_CONSUMPTION, default=self.power_consumption
-                ): selector(
-                    {
-                        "select": {
-                            "options": power_sensors,
-                            "multiple": False,
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
-                # Real-time PV-surplus controller (phase 5b, REDESIGN.md) -
-                # optional.
-                vol.Optional(
-                    CONF_GRID_IMPORT_SENSOR, default=self.grid_import_sensor
-                ): selector(
-                    {
-                        "select": {
-                            "options": power_sensors,
-                            "multiple": False,
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
-                vol.Optional(
-                    CONF_GRID_EXPORT_SENSOR, default=self.grid_export_sensor
-                ): selector(
-                    {
-                        "select": {
-                            "options": power_sensors,
-                            "multiple": False,
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
-            }
-        )
-
-    async def async_step_basic(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        if user_input is not None:
-            self._apply_basic_input(user_input)
-            return await self.async_step_user()
-
-        power_sensors = self._get_power_sensors()
-        schema = self._build_basic_schema(power_sensors)
-
-        return self.async_show_form(step_id=STEP_BASIC, data_schema=schema)
-
-    def _update_source_config(self, sources: list[str]) -> None:
-        """Update or add source configuration."""
-        self.sources = sources
-        new_config = {
-            CONF_SOURCE_TYPE: self.source_type,
-            CONF_SOURCES: self.sources,
-        }
-
-        # Find existing config with same source_type
-        for i, cfg in enumerate(self.configs):
-            if cfg.get(CONF_SOURCE_TYPE) == self.source_type:
-                self.configs[i] = new_config
-                return
-
-        # Add new config if not found
-        self.configs.append(new_config)
-
-    def _get_default_sources(self) -> list[str]:
-        """Get default sources for current source type."""
-        for block in reversed(self.configs):
-            if block[CONF_SOURCE_TYPE] == self.source_type:
-                return list(block[CONF_SOURCES])
-        return []
-
-    async def async_step_select_sources(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        if user_input is not None:
-            self._update_source_config(user_input[CONF_SOURCES])
-            return await self.async_step_user()
-
-        all_sensors = self._get_energy_sensors()
-        default_sources = self._get_default_sources()
-
-        return self.async_show_form(
-            step_id=STEP_SELECT_SOURCES,
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_SOURCES, default=default_sources): selector(
-                        {
-                            "select": {
-                                "options": all_sensors,
-                                "multiple": True,
-                                "mode": "dropdown",
-                            }
-                        }
-                    )
-                }
-            ),
-        )
-
-    def _get_current_price_sensors(self) -> tuple[str, str]:
-        """Get current consumption and production price sensors."""
-        consumption = (
-            self.consumption_price_sensor
-            or self.price_settings.get(CONF_CONSUMPTION_PRICE_SENSOR)
-            or self.price_settings.get(CONF_PRICE_SENSOR, "")
-        )
-        production = (
-            self.production_price_sensor
-            or self.price_settings.get(CONF_PRODUCTION_PRICE_SENSOR)
-            or consumption
-        )
-        return consumption, production
-
-    def _build_price_schema(self, price_sensors: list[str]) -> vol.Schema:
-        """Build schema for price settings."""
-        consumption, production = self._get_current_price_sensors()
-
-        return vol.Schema(
-            {
-                vol.Required(
-                    CONF_CONSUMPTION_PRICE_SENSOR, default=consumption
-                ): selector(
-                    {
-                        "select": {
-                            "options": price_sensors,
-                            "multiple": False,
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
-                vol.Required(
-                    CONF_PRODUCTION_PRICE_SENSOR, default=production
-                ): selector(
-                    {
-                        "select": {
-                            "options": price_sensors,
-                            "multiple": False,
-                            "mode": "dropdown",
-                        }
-                    }
-                ),
-            }
-        )
-
-    async def async_step_price_settings(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        if user_input is not None:
-            self.consumption_price_sensor = user_input[CONF_CONSUMPTION_PRICE_SENSOR]
-            self.production_price_sensor = user_input[CONF_PRODUCTION_PRICE_SENSOR]
-            self.price_settings = dict(user_input)
-            return await self.async_step_user()
-
-        all_prices = self._get_price_sensors()
-        schema = self._build_price_schema(all_prices)
-
-        return self.async_show_form(
-            step_id=STEP_PRICE_SETTINGS,
-            data_schema=schema,
-        )
-
     @staticmethod
     @callback  # type: ignore[untyped-decorator]  # HA base class untyped: no py.typed in this env's pinned HA 2024.3.3
     def async_get_options_flow(
@@ -1743,57 +1351,23 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):  # ty
         )
         self.heat_curve_min = _get(CONF_HEAT_CURVE_MIN, DEFAULT_HEAT_CURVE_MIN)
         self.heat_curve_max = _get(CONF_HEAT_CURVE_MAX, DEFAULT_HEAT_CURVE_MAX)
-        self.price_settings = copy.deepcopy(
-            config_entry.options.get(
-                CONF_PRICE_SETTINGS,
-                {},
-            )
-        )
-        self.consumption_price_sensor = _get(CONF_CONSUMPTION_PRICE_SENSOR)
-        self.production_price_sensor = _get(CONF_PRODUCTION_PRICE_SENSOR)
+        # Price sensors: prefer the explicit dedicated keys, fall back to the
+        # legacy CONF_PRICE_SENSOR that older entries stored before the
+        # consumption/production split was introduced.
         price_sensor = _get(CONF_PRICE_SENSOR)
-        if self.consumption_price_sensor is None:
-            self.consumption_price_sensor = price_sensor
-        if self.production_price_sensor is None:
-            self.production_price_sensor = price_sensor
-        if (
-            self.consumption_price_sensor
-            and CONF_CONSUMPTION_PRICE_SENSOR not in self.price_settings
-        ):
-            self.price_settings[CONF_CONSUMPTION_PRICE_SENSOR] = (
-                self.consumption_price_sensor
-            )
-        if (
-            self.production_price_sensor
-            and CONF_PRODUCTION_PRICE_SENSOR not in self.price_settings
-        ):
-            self.price_settings[CONF_PRODUCTION_PRICE_SENSOR] = (
-                self.production_price_sensor
-            )
-        if price_sensor and CONF_PRICE_SENSOR not in self.price_settings:
-            self.price_settings[CONF_PRICE_SENSOR] = price_sensor
-        self.source_type: str | None = None
-        self.sources: list[str] | None = None
+        self.consumption_price_sensor = (
+            _get(CONF_CONSUMPTION_PRICE_SENSOR) or price_sensor
+        )
+        self.production_price_sensor = (
+            _get(CONF_PRODUCTION_PRICE_SENSOR) or price_sensor
+        )
 
-    # Reuse helper methods from ConfigFlow
+    # Reuse sensor-list helpers from ConfigFlow — no behaviour change,
+    # just avoids duplicating the implementations.
     _get_energy_sensors = HeatingCurveOptimizerConfigFlow._get_energy_sensors
     _get_power_sensors = HeatingCurveOptimizerConfigFlow._get_power_sensors
     _get_temperature_sensors = HeatingCurveOptimizerConfigFlow._get_temperature_sensors
     _get_price_sensors = HeatingCurveOptimizerConfigFlow._get_price_sensors
-    _apply_basic_input = HeatingCurveOptimizerConfigFlow._apply_basic_input
-    _apply_heating_curve_input = (
-        HeatingCurveOptimizerConfigFlow._apply_heating_curve_input
-    )
-    _build_heating_curve_schema = (
-        HeatingCurveOptimizerConfigFlow._build_heating_curve_schema
-    )
-    _build_basic_schema = HeatingCurveOptimizerConfigFlow._build_basic_schema
-    _build_price_schema = HeatingCurveOptimizerConfigFlow._build_price_schema
-    _get_current_price_sensors = (
-        HeatingCurveOptimizerConfigFlow._get_current_price_sensors
-    )
-    _update_source_config = HeatingCurveOptimizerConfigFlow._update_source_config
-    _get_default_sources = HeatingCurveOptimizerConfigFlow._get_default_sources
     _sectioned_defaults = HeatingCurveOptimizerConfigFlow._sectioned_defaults
 
     def _build_entry_data(
@@ -1810,18 +1384,15 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):  # ty
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        return await self.async_step_user()
+        """Handle reconfiguration — single-page sectioned form.
 
-    async def _async_step_sectioned(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Single-page sectioned form for the options flow - same shape as
-        the initial ConfigFlow's own `_async_step_sectioned`, but without
-        the API-connection check and with `title=""`, matching the legacy
-        options flow's own "finish" branch below exactly."""
+        Mirrors battery_controller's ``async_step_init``: same shape as the
+        initial ``async_step_user``, but without the API-connection check and
+        with ``title=""``.
+        """
         errors: dict[str, str] = {}
         if user_input is not None:
-            flat = _extract_sectioned_data(user_input)
+            flat = _extract_main_data(user_input)
             sensors_section = user_input.get("sensors", {})
             configs = _build_configs_from_sources(
                 sensors_section.get(FIELD_SOURCES_CONSUMPTION, []),
@@ -1844,145 +1415,11 @@ class HeatingCurveOptimizerOptionsFlowHandler(config_entries.OptionsFlow):  # ty
                     ),
                 )
 
-        schema = _build_sectioned_schema(
+        schema = _build_main_schema(
             self._sectioned_defaults(),
             self._get_power_sensors(),
             self._get_temperature_sensors(),
             self._get_price_sensors(),
             self._get_energy_sensors(),
         )
-        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
-
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        if _section is not None:
-            return await self._async_step_sectioned(user_input)
-        if user_input and CONF_SOURCE_TYPE in user_input:
-            choice = user_input[CONF_SOURCE_TYPE]
-            if choice == STEP_BASIC:
-                return await self.async_step_basic()
-            if choice == STEP_HEATING_CURVE_SETTINGS:
-                return await self.async_step_heating_curve_settings()
-            if choice == STEP_PRICE_SETTINGS:
-                return await self.async_step_price_settings()
-            if choice == "finish":
-                if not self.configs:
-                    return self.async_show_form(
-                        step_id="user",
-                        data_schema=self._schema_user(),
-                        errors={"base": "no_blocks"},
-                    )
-                consumption_price_sensor = (
-                    self.consumption_price_sensor
-                    or self.price_settings.get(CONF_CONSUMPTION_PRICE_SENSOR)
-                    or self.price_settings.get(CONF_PRICE_SENSOR)
-                )
-                production_price_sensor = (
-                    self.production_price_sensor
-                    or self.price_settings.get(CONF_PRODUCTION_PRICE_SENSOR)
-                    or consumption_price_sensor
-                )
-                return self.async_create_entry(
-                    title="",
-                    data=self._build_entry_data(
-                        consumption_price_sensor, production_price_sensor
-                    ),
-                )
-            self.source_type = choice
-            return await self.async_step_select_sources()
-
-        return self.async_show_form(step_id="user", data_schema=self._schema_user())
-
-    def _schema_user(self) -> vol.Schema:
-        options = [{"value": STEP_BASIC, "label": "Basic Settings"}]
-        options.extend({"value": t, "label": t.title()} for t in SOURCE_TYPES)
-        options.append(
-            {"value": STEP_HEATING_CURVE_SETTINGS, "label": "Heating Curve Settings"}
-        )
-        options.append({"value": STEP_PRICE_SETTINGS, "label": "Price Settings"})
-        options.append({"value": "finish", "label": "Finish"})
-
-        return vol.Schema(
-            {
-                vol.Required(CONF_SOURCE_TYPE): selector(
-                    {
-                        "select": {
-                            "options": options,
-                            "mode": "dropdown",
-                            "custom_value": False,
-                        }
-                    }
-                )
-            }
-        )
-
-    async def async_step_basic(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        if user_input is not None:
-            self._apply_basic_input(user_input)
-            return await self.async_step_user()
-
-        power_sensors = self._get_power_sensors()
-        schema = self._build_basic_schema(power_sensors)
-
-        return self.async_show_form(step_id=STEP_BASIC, data_schema=schema)
-
-    async def async_step_heating_curve_settings(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        if user_input is not None:
-            self._apply_heating_curve_input(user_input)
-            return await self.async_step_user()
-
-        temp_sensors = self._get_temperature_sensors()
-        schema = self._build_heating_curve_schema(temp_sensors)
-
-        return self.async_show_form(
-            step_id=STEP_HEATING_CURVE_SETTINGS, data_schema=schema
-        )
-
-    async def async_step_select_sources(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        if user_input and CONF_SOURCES in user_input:
-            self._update_source_config(user_input[CONF_SOURCES])
-            return await self.async_step_user()
-
-        all_sensors = self._get_energy_sensors()
-        default_sources = self._get_default_sources()
-
-        return self.async_show_form(
-            step_id=STEP_SELECT_SOURCES,
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_SOURCES, default=default_sources): selector(
-                        {
-                            "select": {
-                                "options": all_sensors,
-                                "multiple": True,
-                                "mode": "dropdown",
-                            }
-                        }
-                    )
-                }
-            ),
-        )
-
-    async def async_step_price_settings(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        if user_input is not None:
-            self.consumption_price_sensor = user_input[CONF_CONSUMPTION_PRICE_SENSOR]
-            self.production_price_sensor = user_input[CONF_PRODUCTION_PRICE_SENSOR]
-            self.price_settings = dict(user_input)
-            return await self.async_step_user()
-
-        all_prices = self._get_price_sensors()
-        schema = self._build_price_schema(all_prices)
-
-        return self.async_show_form(
-            step_id=STEP_PRICE_SETTINGS,
-            data_schema=schema,
-        )
+        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

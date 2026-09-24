@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.heating_curve_optimizer.coordinator import _update_failed

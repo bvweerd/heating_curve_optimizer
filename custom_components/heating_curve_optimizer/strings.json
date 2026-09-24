@@ -1,45 +1,85 @@
 {
   "config": {
     "step": {
-      "basic": {
-        "data": {
-          "grid_import_sensor": "Grid import power sensor (W or kW, real-time PV-surplus control)",
-          "grid_export_sensor": "Grid export power sensor (W or kW, real-time PV-surplus control)"
+      "user": {
+        "title": "Set up Heating Curve Optimizer",
+        "sections": {
+          "building": {
+            "name": "Pricing",
+            "description": "Required to create the integration. Heating zones (area, energy label, envelope, target temperature) are added afterwards, from the integration page - see \"Add heating zone\".",
+            "data": {
+              "consumption_price_sensor": "Electricity consumption price sensor",
+              "production_price_sensor": "Electricity production price sensor"
+            },
+            "data_description": {
+              "consumption_price_sensor": "Sensor with electricity buy-price forecast attributes",
+              "production_price_sensor": "Sensor with electricity feed-in/sell-price forecast attributes"
+            }
+          },
+          "sensors": {
+            "name": "Energy sources & sensors",
+            "description": "Which sensors track your electricity consumption/production, and any optional real-time sensors.",
+            "data": {
+              "sources_consumption": "Electricity consumption sensors",
+              "sources_production": "Electricity production sensors",
+              "power_consumption": "Heat pump power consumption sensor",
+              "supply_temperature_sensor": "Supply temperature sensor",
+              "grid_import_sensor": "Grid import power sensor (W or kW, real-time PV-surplus control)",
+              "grid_export_sensor": "Grid export power sensor (W or kW, real-time PV-surplus control)"
+            },
+            "data_description": {
+              "sources_consumption": "Energy sensors (kWh) that track electricity consumption - at least one consumption or production source is required",
+              "sources_production": "Energy sensors (kWh) that track electricity production (e.g. solar)",
+              "power_consumption": "Sensor that measures the heat pump power consumption",
+              "supply_temperature_sensor": "Sensor that measures the heat pump supply temperature"
+            }
+          },
+          "heat_pump_and_curve": {
+            "name": "Heat pump & heating curve",
+            "description": "COP characteristics and the heating curve physical limits.",
+            "data": {
+              "k_factor": "K-factor (COP decline per °C supply temp increase)",
+              "base_cop": "Base COP at 35°C supply temperature",
+              "outdoor_temp_coefficient": "Outdoor temperature coefficient",
+              "cop_compensation_factor": "COP compensation factor",
+              "heat_curve_min_outdoor": "Minimum outdoor temperature (°C)",
+              "heat_curve_max_outdoor": "Maximum outdoor temperature (°C)",
+              "heating_curve_offset": "Manual heating curve offset (°C)",
+              "heat_curve_min": "Minimum supply temperature (°C)",
+              "heat_curve_max": "Maximum supply temperature (°C)",
+              "offset_delta_t": "Offset change speed (min/°C)"
+            },
+            "data_description": {
+              "k_factor": "How much COP decreases per °C increase in supply temperature (typical: 0.01-0.11)",
+              "base_cop": "Heat pump COP at 35°C supply temperature (typical: 3.5-5.0)",
+              "outdoor_temp_coefficient": "How much COP increases per °C outdoor temperature rise (typical: 0.025-0.08)",
+              "cop_compensation_factor": "Factor to adjust theoretical COP to actual system performance (typical: 0.8-1.2)",
+              "heat_curve_min_outdoor": "Minimum outdoor temperature for heating curve (default: -20°C)",
+              "heat_curve_max_outdoor": "Maximum outdoor temperature for heating curve (default: 15°C)",
+              "heating_curve_offset": "Manual offset to add to optimized heating curve (range: -4 to +4°C, default: 0)",
+              "heat_curve_min": "Minimum allowed supply temperature (default: 20°C)",
+              "heat_curve_max": "Maximum allowed supply temperature (default: 45°C)",
+              "offset_delta_t": "Minutes required per 1°C offset change. Lower = faster response (default: 10, range: 5-60)"
+            }
+          },
+          "advanced": {
+            "name": "Advanced",
+            "description": "Optimizer planning window - defaults work for most installs.",
+            "data": {
+              "planning_window": "Planning window (hours)",
+              "time_base": "Time base (minutes per step)"
+            },
+            "data_description": {
+              "planning_window": "Optimization planning horizon in hours (default: 6)",
+              "time_base": "Time interval for optimization in minutes (default: 60)"
+            }
+          }
         }
       },
-      "heating_curve_settings": {
-        "title": "Heating Curve Settings",
-        "description": "Configure heating curve and optimization parameters",
-        "data": {
-          "supply_temperature_sensor": "Supply temperature sensor",
-          "k_factor": "K-factor (COP decline per °C supply temp increase)",
-          "base_cop": "Base COP at 35°C supply temperature",
-          "outdoor_temp_coefficient": "Outdoor temperature coefficient",
-          "cop_compensation_factor": "COP compensation factor",
-          "planning_window": "Planning window (hours)",
-          "time_base": "Time base (minutes per step)",
-          "offset_delta_t": "Offset change speed (min/°C)",
-          "heat_curve_min_outdoor": "Minimum outdoor temperature (°C)",
-          "heat_curve_max_outdoor": "Maximum outdoor temperature (°C)",
-          "heating_curve_offset": "Manual heating curve offset (°C)",
-          "heat_curve_min": "Minimum supply temperature (°C)",
-          "heat_curve_max": "Maximum supply temperature (°C)"
-        },
-        "data_description": {
-          "supply_temperature_sensor": "Sensor that measures the heat pump supply temperature",
-          "k_factor": "How much COP decreases per °C increase in supply temperature (typical: 0.01-0.11)",
-          "base_cop": "Heat pump COP at 35°C supply temperature (typical: 3.5-5.0)",
-          "outdoor_temp_coefficient": "How much COP increases per °C outdoor temperature rise (typical: 0.025-0.08)",
-          "cop_compensation_factor": "Factor to adjust theoretical COP to actual system performance (typical: 0.8-1.2)",
-          "planning_window": "Optimization planning horizon in hours (default: 6)",
-          "time_base": "Time interval for optimization in minutes (default: 60)",
-          "offset_delta_t": "Minutes required per 1°C offset change. Lower = faster response (default: 10, range: 5-60)",
-          "heat_curve_min_outdoor": "Minimum outdoor temperature for heating curve (default: -20°C)",
-          "heat_curve_max_outdoor": "Maximum outdoor temperature for heating curve (default: 15°C)",
-          "heating_curve_offset": "Manual offset to add to optimized heating curve (range: -4 to +4°C, default: 0)",
-          "heat_curve_min": "Minimum allowed supply temperature (default: 20°C)",
-          "heat_curve_max": "Maximum allowed supply temperature (default: 45°C)"
-        }
+      "detected_integrations": {
+        "title": "Detected integrations",
+        "description": "The following sensors were found in companion integrations. Select which ones to import:\n\n{detected_list}",
+        "data": {}
       }
     },
     "abort": {
@@ -300,6 +340,88 @@
     "price_sensor_unavailable": {
       "title": "Electricity price sensor unavailable",
       "description": "The configured price sensor **{sensor}** is unavailable or unknown. The heating curve optimizer cannot run without price data. Check that the sensor exists and is working."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Reconfigure Heating Curve Optimizer",
+        "sections": {
+          "building": {
+            "name": "Pricing",
+            "description": "Update price sensors for electricity buy and sell.",
+            "data": {
+              "consumption_price_sensor": "Electricity consumption price sensor",
+              "production_price_sensor": "Electricity production price sensor"
+            },
+            "data_description": {
+              "consumption_price_sensor": "Sensor with electricity buy-price forecast attributes",
+              "production_price_sensor": "Sensor with electricity feed-in/sell-price forecast attributes"
+            }
+          },
+          "sensors": {
+            "name": "Energy sources & sensors",
+            "description": "Which sensors track your electricity consumption/production, and any optional real-time sensors.",
+            "data": {
+              "sources_consumption": "Electricity consumption sensors",
+              "sources_production": "Electricity production sensors",
+              "power_consumption": "Heat pump power consumption sensor",
+              "supply_temperature_sensor": "Supply temperature sensor",
+              "grid_import_sensor": "Grid import power sensor (W or kW, real-time PV-surplus control)",
+              "grid_export_sensor": "Grid export power sensor (W or kW, real-time PV-surplus control)"
+            },
+            "data_description": {
+              "sources_consumption": "Energy sensors (kWh) that track electricity consumption - at least one consumption or production source is required",
+              "sources_production": "Energy sensors (kWh) that track electricity production (e.g. solar)",
+              "power_consumption": "Sensor that measures the heat pump power consumption",
+              "supply_temperature_sensor": "Sensor that measures the heat pump supply temperature"
+            }
+          },
+          "heat_pump_and_curve": {
+            "name": "Heat pump & heating curve",
+            "description": "COP characteristics and the heating curve physical limits.",
+            "data": {
+              "k_factor": "K-factor (COP decline per °C supply temp increase)",
+              "base_cop": "Base COP at 35°C supply temperature",
+              "outdoor_temp_coefficient": "Outdoor temperature coefficient",
+              "cop_compensation_factor": "COP compensation factor",
+              "heat_curve_min_outdoor": "Minimum outdoor temperature (°C)",
+              "heat_curve_max_outdoor": "Maximum outdoor temperature (°C)",
+              "heating_curve_offset": "Manual heating curve offset (°C)",
+              "heat_curve_min": "Minimum supply temperature (°C)",
+              "heat_curve_max": "Maximum supply temperature (°C)",
+              "offset_delta_t": "Offset change speed (min/°C)"
+            },
+            "data_description": {
+              "k_factor": "How much COP decreases per °C increase in supply temperature (typical: 0.01-0.11)",
+              "base_cop": "Heat pump COP at 35°C supply temperature (typical: 3.5-5.0)",
+              "outdoor_temp_coefficient": "How much COP increases per °C outdoor temperature rise (typical: 0.025-0.08)",
+              "cop_compensation_factor": "Factor to adjust theoretical COP to actual system performance (typical: 0.8-1.2)",
+              "heat_curve_min_outdoor": "Minimum outdoor temperature for heating curve (default: -20°C)",
+              "heat_curve_max_outdoor": "Maximum outdoor temperature for heating curve (default: 15°C)",
+              "heating_curve_offset": "Manual offset to add to optimized heating curve (range: -4 to +4°C, default: 0)",
+              "heat_curve_min": "Minimum allowed supply temperature (default: 20°C)",
+              "heat_curve_max": "Maximum allowed supply temperature (default: 45°C)",
+              "offset_delta_t": "Minutes required per 1°C offset change. Lower = faster response (default: 10, range: 5-60)"
+            }
+          },
+          "advanced": {
+            "name": "Advanced",
+            "description": "Optimizer planning window - defaults work for most installs.",
+            "data": {
+              "planning_window": "Planning window (hours)",
+              "time_base": "Time base (minutes per step)"
+            },
+            "data_description": {
+              "planning_window": "Optimization planning horizon in hours (default: 6)",
+              "time_base": "Time interval for optimization in minutes (default: 60)"
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "no_blocks": "Add at least one consumption or production source before finishing."
     }
   }
 }

@@ -6,7 +6,6 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, cast
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import issue_registry as ir, storage
 from homeassistant.helpers.event import (
@@ -131,7 +130,6 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
         heat_coordinator: HeatCalculationCoordinator,
         config: dict[str, Any],
         entry_id: str = "",
-        config_entry: ConfigEntry | None = None,
     ):
         """Initialize the optimization coordinator."""
         super().__init__(
@@ -139,7 +137,6 @@ class OptimizationCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # H
             _LOGGER,
             name="Heating Optimization",
             update_interval=timedelta(minutes=15),
-            config_entry=config_entry,
         )
         self.heat_coordinator = heat_coordinator
         self.config = config

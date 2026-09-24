@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import aiohttp
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import (
@@ -81,7 +80,6 @@ class WeatherDataCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA
     def __init__(
         self,
         hass: HomeAssistant,
-        config_entry: ConfigEntry | None = None,
     ):
         """Initialize the weather data coordinator."""
         super().__init__(
@@ -89,7 +87,6 @@ class WeatherDataCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA
             _LOGGER,
             name="Weather Data",
             update_interval=timedelta(minutes=30),
-            config_entry=config_entry,
         )
         self.latitude = hass.config.latitude
         self.longitude = hass.config.longitude

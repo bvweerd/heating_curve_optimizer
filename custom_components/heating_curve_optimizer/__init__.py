@@ -215,8 +215,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 1. Weather data coordinator (API calls to open-meteo) - shared by
     # every zone, including the primary one, regardless of whether any
     # zone is configured yet.
-    weather_coordinator = WeatherDataCoordinator(hass, config_entry=entry)
-    await weather_coordinator.async_config_entry_first_refresh()
+    # async_refresh() (not async_config_entry_first_refresh()) is deliberate:
+    # mirrors battery_controller's pattern — a temporary open-meteo outage at
+    # startup must not block the whole integration with ConfigEntryNotReady.
+    # Sensors simply show unavailable until the next 30-min poll succeeds.
+    weather_coordinator = WeatherDataCoordinator(hass)
+    await weather_coordinator.async_refresh()
 
     # Create device info for all entities. Built unconditionally, even with
     # zero zones configured yet, so the integration has a device page the
@@ -251,17 +255,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             weather_coordinator,
             primary_config,
             entry.entry_id,
-            config_entry=entry,
         )
         await heat_coordinator.async_setup()
-        await heat_coordinator.async_config_entry_first_refresh()
+        # async_refresh(): tolerates a temporary API/sensor failure at startup
+        # — same startup-tolerance pattern as the weather coordinator above.
+        await heat_coordinator.async_refresh()
 
         optimization_coordinator = OptimizationCoordinator(
             hass,
             heat_coordinator,
             primary_config,
             entry.entry_id,
-            config_entry=entry,
         )
         await optimization_coordinator.async_setup()
         primary_optimization_coordinator: OptimizationCoordinator = (
@@ -316,17 +320,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             weather_coordinator,
             zone_config,
             zone_entry_id,
-            config_entry=entry,
+            main_entry_id=entry.entry_id,
         )
         await zone_heat_coordinator.async_setup()
-        await zone_heat_coordinator.async_config_entry_first_refresh()
+        # async_refresh(): same startup-tolerance pattern as primary zone.
+        await zone_heat_coordinator.async_refresh()
 
         zone_optimization_coordinator = OptimizationCoordinator(
             hass,
             zone_heat_coordinator,
             zone_config,
             zone_entry_id,
-            config_entry=entry,
         )
         await zone_optimization_coordinator.async_setup()
 
@@ -396,7 +400,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             optimization_coordinator,
             gas_boiler_config,
             entry.entry_id,
-            config_entry=entry,
         )
         await new_gas_boiler_coordinator.async_setup()
         gas_boiler_coordinator = new_gas_boiler_coordinator

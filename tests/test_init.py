@@ -6,7 +6,6 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.heating_curve_optimizer import (
@@ -77,12 +76,12 @@ async def test_async_setup_entry(hass: HomeAssistant):
     ) as mock_opt:
         # Setup mock coordinators
         weather_instance = MagicMock()
-        weather_instance.async_config_entry_first_refresh = AsyncMock()
+        weather_instance.async_refresh = AsyncMock()
         mock_weather.return_value = weather_instance
 
         heat_instance = MagicMock()
         heat_instance.async_setup = AsyncMock()
-        heat_instance.async_config_entry_first_refresh = AsyncMock()
+        heat_instance.async_refresh = AsyncMock()
         mock_heat.return_value = heat_instance
 
         opt_instance = MagicMock()
@@ -109,9 +108,9 @@ async def test_async_setup_entry(hass: HomeAssistant):
             assert runtime_data.device is not None
 
             # Verify coordinators were initialized
-            weather_instance.async_config_entry_first_refresh.assert_called_once()
+            weather_instance.async_refresh.assert_called_once()
             heat_instance.async_setup.assert_called_once()
-            heat_instance.async_config_entry_first_refresh.assert_called_once()
+            heat_instance.async_refresh.assert_called_once()
             opt_instance.async_setup.assert_called_once()
 
             # Verify platforms were forwarded
@@ -119,19 +118,15 @@ async def test_async_setup_entry(hass: HomeAssistant):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_raises_config_entry_not_ready_on_weather_failure(
+async def test_async_setup_entry_tolerates_weather_failure(
     hass: HomeAssistant,
 ):
-    """quality_scale's test-before-setup rule: a coordinator failure during
-    first refresh must surface as ConfigEntryNotReady (which HA retries
-    later), not a raw exception or a silently broken entry.
+    """async_refresh() (not async_refresh()) is used for
+    the weather coordinator — a transient open-meteo.com outage at startup
+    must NOT raise ConfigEntryNotReady and block setup.  The integration
+    loads successfully; sensors simply show unavailable until the next poll.
 
-    WeatherDataCoordinator/HeatCalculationCoordinator are both set up with
-    `async_config_entry_first_refresh()`, which already converts an
-    `UpdateFailed` from `_async_update_data` into `ConfigEntryNotReady`
-    (homeassistant.helpers.update_coordinator, verified against the
-    installed HA release) - this test proves __init__.py lets that
-    exception propagate out of async_setup_entry rather than swallowing it.
+    This mirrors battery_controller's startup-tolerance pattern.
     """
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -145,9 +140,14 @@ async def test_async_setup_entry_raises_config_entry_not_ready_on_weather_failur
         "custom_components.heating_curve_optimizer.coordinator."
         "WeatherDataCoordinator._async_update_data",
         new=AsyncMock(side_effect=UpdateFailed("simulated open-meteo.com outage")),
+    ), patch.object(
+        hass.config_entries,
+        "async_forward_entry_setups",
+        new=AsyncMock(return_value=True),
     ):
-        with pytest.raises(ConfigEntryNotReady):
-            await async_setup_entry(hass, entry)
+        # Must NOT raise — setup succeeds even when the API is down.
+        result = await async_setup_entry(hass, entry)
+        assert result is True
 
 
 @pytest.mark.asyncio
@@ -281,12 +281,12 @@ async def test_async_setup_entry_merges_options_and_data(hass: HomeAssistant):
         hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
     ):
         weather_instance = MagicMock()
-        weather_instance.async_config_entry_first_refresh = AsyncMock()
+        weather_instance.async_refresh = AsyncMock()
         mock_weather.return_value = weather_instance
 
         heat_instance = MagicMock()
         heat_instance.async_setup = AsyncMock()
-        heat_instance.async_config_entry_first_refresh = AsyncMock()
+        heat_instance.async_refresh = AsyncMock()
         mock_heat.return_value = heat_instance
 
         opt_instance = MagicMock()
@@ -324,7 +324,7 @@ async def test_async_setup_entry_zero_zones_leaves_coordinators_none(
         hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
     ):
         weather_instance = MagicMock()
-        weather_instance.async_config_entry_first_refresh = AsyncMock()
+        weather_instance.async_refresh = AsyncMock()
         mock_weather.return_value = weather_instance
 
         result = await async_setup_entry(hass, entry)
@@ -362,12 +362,12 @@ async def test_async_setup_entry_one_zone_becomes_primary_with_entry_identity(
         hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
     ):
         weather_instance = MagicMock()
-        weather_instance.async_config_entry_first_refresh = AsyncMock()
+        weather_instance.async_refresh = AsyncMock()
         mock_weather.return_value = weather_instance
 
         heat_instance = MagicMock()
         heat_instance.async_setup = AsyncMock()
-        heat_instance.async_config_entry_first_refresh = AsyncMock()
+        heat_instance.async_refresh = AsyncMock()
         mock_heat.return_value = heat_instance
 
         opt_instance = MagicMock()
@@ -416,13 +416,13 @@ async def test_async_setup_entry_second_zone_goes_through_extra_zone_loop(
         hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
     ):
         weather_instance = MagicMock()
-        weather_instance.async_config_entry_first_refresh = AsyncMock()
+        weather_instance.async_refresh = AsyncMock()
         mock_weather.return_value = weather_instance
 
         for mock_cls in (mock_heat, mock_opt):
             instance = MagicMock()
             instance.async_setup = AsyncMock()
-            instance.async_config_entry_first_refresh = AsyncMock()
+            instance.async_refresh = AsyncMock()
             mock_cls.return_value = instance
 
         await async_setup_entry(hass, entry)
@@ -482,12 +482,12 @@ async def test_async_setup_entry_gas_boiler_absent_by_default(hass: HomeAssistan
         hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
     ):
         weather_instance = MagicMock()
-        weather_instance.async_config_entry_first_refresh = AsyncMock()
+        weather_instance.async_refresh = AsyncMock()
         mock_weather.return_value = weather_instance
 
         heat_instance = MagicMock()
         heat_instance.async_setup = AsyncMock()
-        heat_instance.async_config_entry_first_refresh = AsyncMock()
+        heat_instance.async_refresh = AsyncMock()
         mock_heat.return_value = heat_instance
 
         opt_instance = MagicMock()
@@ -534,12 +534,12 @@ async def test_async_setup_entry_creates_gas_boiler_coordinator_when_subentry_pr
         hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
     ):
         weather_instance = MagicMock()
-        weather_instance.async_config_entry_first_refresh = AsyncMock()
+        weather_instance.async_refresh = AsyncMock()
         mock_weather.return_value = weather_instance
 
         heat_instance = MagicMock()
         heat_instance.async_setup = AsyncMock()
-        heat_instance.async_config_entry_first_refresh = AsyncMock()
+        heat_instance.async_refresh = AsyncMock()
         mock_heat.return_value = heat_instance
 
         opt_instance = MagicMock()

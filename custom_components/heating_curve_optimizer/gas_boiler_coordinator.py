@@ -25,7 +25,6 @@ import logging
 from datetime import timedelta
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_state_change_event
@@ -61,7 +60,6 @@ class GasBoilerCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA b
         optimization_coordinator: OptimizationCoordinator,
         config: dict[str, Any],
         entry_id: str,
-        config_entry: ConfigEntry | None = None,
     ) -> None:
         """Initialize the gas boiler coordinator."""
         super().__init__(
@@ -69,7 +67,6 @@ class GasBoilerCoordinator(DataUpdateCoordinator):  # type: ignore[misc]  # HA b
             _LOGGER,
             name="Gas Boiler Comparison",
             update_interval=DEFAULT_UPDATE_INTERVAL,
-            config_entry=config_entry,
         )
         self.heat_coordinator = heat_coordinator
         self.optimization_coordinator = optimization_coordinator

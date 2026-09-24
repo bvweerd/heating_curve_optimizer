@@ -5,7 +5,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from custom_components.heating_curve_optimizer.const import DOMAIN
@@ -224,7 +223,9 @@ class TestSensorNativeValue:
         )
         assert sensor.native_value == pytest.approx(2.2)
 
-    def test_heating_curve_offset_native_value(self, optimization_coordinator, device_info):
+    def test_heating_curve_offset_native_value(
+        self, optimization_coordinator, device_info
+    ):
         sensor = CoordinatorHeatingCurveOffsetSensor(
             coordinator=optimization_coordinator,
             name="Heating Curve Offset",

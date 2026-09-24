@@ -9,7 +9,6 @@ from custom_components.heating_curve_optimizer.const import (
     CONF_SOURCE_TYPE,
     CONF_SOURCES,
     CONF_CONSUMPTION_PRICE_SENSOR,
-    CONF_POWER_CONSUMPTION,
     CONF_PRODUCTION_PRICE_SENSOR,
     SOURCE_TYPE_CONSUMPTION,
 )
@@ -19,29 +18,23 @@ from custom_components.heating_curve_optimizer.companion_integrations import (
     DetectedSensorList,
 )
 from custom_components.heating_curve_optimizer.config_flow import (
-    STEP_BASIC,
-    STEP_HEATING_CURVE_SETTINGS,
-    STEP_PRICE_SETTINGS,
-    STEP_SELECT_SOURCES,
     HeatingCurveOptimizerConfigFlow,
     _test_api_connection,
 )
 
-# Force the legacy multi-step wizard (not the single-page sectioned form)
-# for all tests in this module. The sectioned form is only available when
-# homeassistant.data_entry_flow.section is importable, which it is in this
-# test environment's HA version. These tests exercise the multi-step flow.
-_patch_section = patch(
-    "custom_components.heating_curve_optimizer.config_flow._section", None
-)
-pytestmark = pytest.mark.usefixtures()
 
-
-@pytest.fixture(autouse=True)
-def _disable_sectioned_form():
-    """Disable the single-page sectioned form for all tests."""
-    with _patch_section:
-        yield
+def _mock_hass_integration():
+    """Context manager pair mocking the integration lookup HA's flow
+    manager does on async_init - same pattern test_show_user_form and
+    test_abort_if_configured already use."""
+    return patch(
+        "homeassistant.config_entries._load_integration", return_value=None
+    ), patch(
+        "homeassistant.loader.async_get_integration",
+        AsyncMock(
+            return_value=SimpleNamespace(domain=DOMAIN, single_config_entry=False)
+        ),
+    )
 
 
 @pytest.mark.asyncio
@@ -88,7 +81,7 @@ async def test_shows_detected_integrations_step_when_battery_controller_configur
 ):
     """companion_integrations.py: a battery_controller entry with a raw
     price sensor is enough to trigger the (opt-in) prefill step, instead of
-    going straight to the normal menu."""
+    going straight to the normal form."""
     bc_entry = MockConfigEntry(
         domain=BATTERY_CONTROLLER_DOMAIN,
         data={"price_sensor": "sensor.raw_price"},
@@ -111,52 +104,13 @@ async def test_shows_detected_integrations_step_when_battery_controller_configur
 
 
 @pytest.mark.asyncio
-async def test_detected_integrations_step_prefills_selected_field(
-    hass: HomeAssistant,
-):
-    bc_entry = MockConfigEntry(
-        domain=BATTERY_CONTROLLER_DOMAIN,
-        data={"price_sensor": "sensor.raw_price"},
-    )
-    bc_entry.add_to_hass(hass)
-    with patch(
-        "homeassistant.config_entries._load_integration", return_value=None
-    ), patch(
-        "homeassistant.loader.async_get_integration",
-        AsyncMock(
-            return_value=SimpleNamespace(domain=DOMAIN, single_config_entry=False)
-        ),
-    ):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {CONF_CONSUMPTION_PRICE_SENSOR: True}
-        )
-        # Falls through to the normal menu after the prefill step.
-        assert result2["type"] == "form"
-        assert result2["step_id"] == "user"
-
-        result3 = await hass.config_entries.flow.async_configure(
-            result2["flow_id"], {CONF_SOURCE_TYPE: STEP_PRICE_SETTINGS}
-        )
-    assert result3["step_id"] == STEP_PRICE_SETTINGS
-    price_schema = result3["data_schema"].schema
-    default_fn = next(
-        key.default for key in price_schema if key == CONF_CONSUMPTION_PRICE_SENSOR
-    )
-    assert default_fn() == "sensor.raw_price"
-
-
-@pytest.mark.asyncio
 async def test_detected_integrations_step_accepts_source_list_field(
     hass: HomeAssistant,
 ):
     """Accepting a detected `sources_consumption` list (Part A of the
     config-flow modernization: companion_integrations.detect_source_sensors)
     must populate self.configs directly, the same shape
-    _update_source_config's step-based flow produces - not just the
-    single-entity_id fields detect_main_flow_sensors already covered."""
+    _build_configs_from_sources produces."""
     flow = HeatingCurveOptimizerConfigFlow()
     flow.hass = hass
     flow._detected_sensor_lists = {
@@ -183,8 +137,8 @@ async def test_detected_integrations_step_replaces_existing_block_for_same_sourc
     hass: HomeAssistant,
 ):
     """Accepting a detected source list must replace any existing block for
-    that source_type (matching _update_source_config's own
-    replace-not-duplicate behaviour), not append a second one."""
+    that source_type (matching replace-not-duplicate behaviour), not append
+    a second one."""
     flow = HeatingCurveOptimizerConfigFlow()
     flow.hass = hass
     flow.configs = [
@@ -201,93 +155,6 @@ async def test_detected_integrations_step_replaces_existing_block_for_same_sourc
     assert flow.configs == [
         {CONF_SOURCE_TYPE: SOURCE_TYPE_CONSUMPTION, CONF_SOURCES: ["sensor.new"]}
     ]
-
-
-@pytest.mark.asyncio
-async def test_basic_options_step(hass: HomeAssistant):
-    with patch(
-        "homeassistant.config_entries._load_integration", return_value=None
-    ), patch(
-        "homeassistant.loader.async_get_integration",
-        AsyncMock(
-            return_value=SimpleNamespace(domain=DOMAIN, single_config_entry=False)
-        ),
-    ):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {CONF_SOURCE_TYPE: STEP_BASIC}
-        )
-    assert result2["type"] == "form"
-    assert result2["step_id"] == STEP_BASIC
-
-
-@pytest.mark.asyncio
-async def test_basic_step_no_longer_collects_zone_specific_fields(
-    hass: HomeAssistant,
-):
-    """Every heating zone, including the first, is configured via
-    HeatingZoneSubentryFlow instead (see test_zone_subentry.py) - the main
-    flow's basic step only asks for shared/infra sensors now."""
-    with patch(
-        "homeassistant.config_entries._load_integration", return_value=None
-    ), patch(
-        "homeassistant.loader.async_get_integration",
-        AsyncMock(
-            return_value=SimpleNamespace(domain=DOMAIN, single_config_entry=False)
-        ),
-    ):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {CONF_SOURCE_TYPE: STEP_BASIC}
-        )
-
-    schema_keys = {str(k) for k in result2["data_schema"].schema}
-    assert "area_m2" not in schema_keys
-    assert "energy_label" not in schema_keys
-    assert "thermal_mass_class" not in schema_keys
-    assert "emitter_type" not in schema_keys
-    assert "indoor_temperature_sensor" not in schema_keys
-    assert "power_consumption" in schema_keys
-
-
-@pytest.mark.asyncio
-async def test_price_settings_step_includes_consumption_and_production(hass):
-    hass.states.async_set(
-        "sensor.price_consumption",
-        "0.1",
-        {"device_class": "monetary"},
-    )
-    hass.states.async_set(
-        "sensor.price_production",
-        "0.2",
-        {"unit_of_measurement": "€/kWh"},
-    )
-    with patch(
-        "homeassistant.config_entries._load_integration", return_value=None
-    ), patch(
-        "homeassistant.loader.async_get_integration",
-        AsyncMock(
-            return_value=SimpleNamespace(domain=DOMAIN, single_config_entry=False)
-        ),
-    ):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {CONF_SOURCE_TYPE: STEP_PRICE_SETTINGS}
-        )
-
-    assert result2["type"] == "form"
-    schema = result2["data_schema"].schema
-    assert CONF_CONSUMPTION_PRICE_SENSOR in schema
-    assert CONF_PRODUCTION_PRICE_SENSOR in schema
-    options = schema[CONF_CONSUMPTION_PRICE_SENSOR].config["options"]
-    assert "sensor.price_consumption" in options
-    assert "sensor.price_production" in options
 
 
 @pytest.mark.asyncio
@@ -348,20 +215,35 @@ async def test_test_api_connection_client_error(hass: HomeAssistant):
 
 
 @pytest.mark.asyncio
-async def test_finish_step_shows_cannot_connect_error_on_api_failure(
+async def test_user_step_shows_cannot_connect_error_on_api_failure(
     hass: HomeAssistant,
 ):
-    """The "finish" branch of async_step_user must reject a config whose
-    weather API can't be reached, rather than creating a dead entry."""
+    """Submitting the sectioned form with a price sensor but failing the
+    API check must re-show the form with a cannot_connect error.
+
+    The handler is called directly (bypassing HA's schema-validation layer)
+    because the sectioned schema's selector validators are not compatible
+    with plain string values in the test environment's pinned HA version."""
     flow = HeatingCurveOptimizerConfigFlow()
     flow.hass = hass
-    flow.configs = [{"source_type": "consumption", "entities": ["sensor.power"]}]
+
+    user_input = {
+        "building": {
+            CONF_CONSUMPTION_PRICE_SENSOR: "sensor.price",
+            CONF_PRODUCTION_PRICE_SENSOR: "sensor.price",
+        },
+        "sensors": {
+            FIELD_SOURCES_CONSUMPTION: ["sensor.power"],
+        },
+        "heat_pump_and_curve": {},
+        "advanced": {},
+    }
 
     with patch(
         "custom_components.heating_curve_optimizer.config_flow._test_api_connection",
         new=AsyncMock(return_value="cannot_connect"),
     ):
-        result = await flow.async_step_user({CONF_SOURCE_TYPE: "finish"})
+        result = await flow.async_step_user(user_input)
 
     assert result["type"] == "form"
     assert result["step_id"] == "user"
@@ -369,50 +251,77 @@ async def test_finish_step_shows_cannot_connect_error_on_api_failure(
 
 
 @pytest.mark.asyncio
-async def test_finish_step_creates_entry_when_api_reachable(hass: HomeAssistant):
-    """The "finish" branch proceeds to async_create_entry once the API
-    check passes, with the merged config still intact. No zone-specific
-    field (area_m2 etc.) is required or present on the main entry - every
-    zone, including the first, is configured via a subentry instead."""
+async def test_user_step_creates_entry_when_api_reachable(hass: HomeAssistant):
+    """Submitting the sectioned form with valid sources and a reachable API
+    creates the entry. No zone-specific field (area_m2 etc.) is required or
+    present on the main entry - every zone, including the first, is
+    configured via a subentry instead.
+
+    The handler is called directly (bypassing HA's schema-validation layer)
+    because the sectioned schema's selector validators are not compatible
+    with plain string values in the test environment's pinned HA version."""
     flow = HeatingCurveOptimizerConfigFlow()
     flow.hass = hass
-    flow.configs = [{"source_type": "consumption", "entities": ["sensor.power"]}]
+
+    user_input = {
+        "building": {
+            CONF_CONSUMPTION_PRICE_SENSOR: "sensor.price",
+            CONF_PRODUCTION_PRICE_SENSOR: "sensor.price",
+        },
+        "sensors": {
+            FIELD_SOURCES_CONSUMPTION: ["sensor.power"],
+        },
+        "heat_pump_and_curve": {},
+        "advanced": {},
+    }
 
     with patch(
         "custom_components.heating_curve_optimizer.config_flow._test_api_connection",
         new=AsyncMock(return_value=None),
     ):
-        result = await flow.async_step_user({CONF_SOURCE_TYPE: "finish"})
+        result = await flow.async_step_user(user_input)
 
     assert result["type"] == "create_entry"
     assert "area_m2" not in result["data"]
     assert "energy_label" not in result["data"]
 
 
-def _mock_hass_integration():
-    """Context manager pair mocking the integration lookup HA's flow
-    manager does on async_init - same pattern test_show_user_form and
-    test_abort_if_configured already use."""
-    return patch(
-        "homeassistant.config_entries._load_integration", return_value=None
-    ), patch(
-        "homeassistant.loader.async_get_integration",
-        AsyncMock(
-            return_value=SimpleNamespace(domain=DOMAIN, single_config_entry=False)
-        ),
-    )
+@pytest.mark.asyncio
+async def test_user_step_no_sources_shows_no_blocks_error(hass: HomeAssistant):
+    """Submitting the form without any consumption/production sources must
+    re-show the form with a no_blocks error.
+
+    The handler is called directly (bypassing HA's schema-validation layer)
+    because the sectioned schema's selector validators are not compatible
+    with plain string values in the test environment's pinned HA version."""
+    flow = HeatingCurveOptimizerConfigFlow()
+    flow.hass = hass
+
+    user_input = {
+        "building": {
+            CONF_CONSUMPTION_PRICE_SENSOR: "sensor.price",
+            CONF_PRODUCTION_PRICE_SENSOR: "sensor.price",
+        },
+        "sensors": {},
+        "heat_pump_and_curve": {},
+        "advanced": {},
+    }
+
+    result = await flow.async_step_user(user_input)
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "user"
+    assert result["errors"] == {"base": "no_blocks"}
 
 
 @pytest.mark.asyncio
-async def test_options_flow_shows_user_form(hass: HomeAssistant):
+async def test_options_flow_shows_init_form(hass: HomeAssistant):
     """quality_scale's config-flow-test-coverage rule: the options flow
-    (Settings > Devices & Services > Configure) is a second, largely
-    parallel entry point into the same schema/validation code the main
-    flow uses - it needs its own coverage, not just the initial setup
-    flow's."""
+    (Settings > Devices & Services > Configure) shows the single-page
+    sectioned form with step_id=init."""
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"area_m2": 150, "energy_label": "C"},
+        data={},
         unique_id=DOMAIN,
     )
     entry.add_to_hass(hass)
@@ -422,148 +331,98 @@ async def test_options_flow_shows_user_form(hass: HomeAssistant):
         result = await hass.config_entries.options.async_init(entry.entry_id)
 
     assert result["type"] == "form"
-    assert result["step_id"] == "user"
+    assert result["step_id"] == "init"
 
 
 @pytest.mark.asyncio
-async def test_options_flow_basic_step(hass: HomeAssistant):
+async def test_options_flow_no_sources_shows_no_blocks_error(hass: HomeAssistant):
+    """Submitting the options form without any consumption/production sources
+    must re-show the form with a no_blocks error.
+
+    The handler is called directly (bypassing HA's schema-validation layer)
+    because the sectioned schema's selector validators are not compatible
+    with plain string values in the test environment's pinned HA version.
+    The handler itself is the unit under test here, not the schema."""
+    from custom_components.heating_curve_optimizer.config_flow import (
+        HeatingCurveOptimizerOptionsFlowHandler,
+    )
+
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"area_m2": 150, "energy_label": "C"},
+        data={},
         unique_id=DOMAIN,
     )
     entry.add_to_hass(hass)
 
-    ctx1, ctx2 = _mock_hass_integration()
-    with ctx1, ctx2:
-        result = await hass.config_entries.options.async_init(entry.entry_id)
-        result2 = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_SOURCE_TYPE: STEP_BASIC}
-        )
+    handler = HeatingCurveOptimizerOptionsFlowHandler(entry)
+    handler.hass = hass
 
-    assert result2["type"] == "form"
-    assert result2["step_id"] == STEP_BASIC
+    result = await handler.async_step_init(
+        {
+            "building": {
+                CONF_CONSUMPTION_PRICE_SENSOR: "sensor.price",
+                CONF_PRODUCTION_PRICE_SENSOR: "sensor.price",
+            },
+            "sensors": {},
+            "heat_pump_and_curve": {},
+            "advanced": {},
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "init"
+    assert result["errors"] == {"base": "no_blocks"}
 
 
 @pytest.mark.asyncio
-async def test_options_flow_basic_step_prefills_existing_values(hass: HomeAssistant):
-    """The basic step's schema prefills the entry's current shared/infra
-    sensors - area/energy_label are no longer part of it at all (every
-    zone, including the first, is configured via a zone subentry)."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"power_consumption": "sensor.hp_power"},
-        unique_id=DOMAIN,
+async def test_options_flow_creates_entry_with_valid_input(hass: HomeAssistant):
+    """Submitting the options form with valid sources creates the entry
+    without zone-specific fields.
+
+    The handler is called directly (bypassing HA's schema-validation layer)
+    because the sectioned schema's selector validators are not compatible
+    with plain string values in the test environment's pinned HA version.
+    The handler itself is the unit under test here, not the schema."""
+    from custom_components.heating_curve_optimizer.config_flow import (
+        HeatingCurveOptimizerOptionsFlowHandler,
     )
-    entry.add_to_hass(hass)
 
-    ctx1, ctx2 = _mock_hass_integration()
-    with ctx1, ctx2:
-        result = await hass.config_entries.options.async_init(entry.entry_id)
-        result2 = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_SOURCE_TYPE: STEP_BASIC}
-        )
-
-    schema = result2["data_schema"].schema
-    schema_keys = {str(k) for k in schema}
-    assert "area_m2" not in schema_keys
-    power_field = next(k for k in schema if str(k) == CONF_POWER_CONSUMPTION)
-    assert power_field.default() == "sensor.hp_power"
-
-
-@pytest.mark.asyncio
-async def test_options_flow_price_settings_step(hass: HomeAssistant):
-    hass.states.async_set(
-        "sensor.price_consumption", "0.1", {"device_class": "monetary"}
-    )
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"area_m2": 150, "energy_label": "C"},
-        unique_id=DOMAIN,
-    )
-    entry.add_to_hass(hass)
-
-    ctx1, ctx2 = _mock_hass_integration()
-    with ctx1, ctx2:
-        result = await hass.config_entries.options.async_init(entry.entry_id)
-        result2 = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_SOURCE_TYPE: STEP_PRICE_SETTINGS}
-        )
-
-    assert result2["type"] == "form"
-    assert result2["step_id"] == STEP_PRICE_SETTINGS
-
-
-@pytest.mark.asyncio
-async def test_options_flow_heating_curve_settings_step(hass: HomeAssistant):
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"area_m2": 150, "energy_label": "C"},
-        unique_id=DOMAIN,
-    )
-    entry.add_to_hass(hass)
-
-    ctx1, ctx2 = _mock_hass_integration()
-    with ctx1, ctx2:
-        result = await hass.config_entries.options.async_init(entry.entry_id)
-        result2 = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_SOURCE_TYPE: STEP_HEATING_CURVE_SETTINGS}
-        )
-
-    assert result2["type"] == "form"
-    assert result2["step_id"] == STEP_HEATING_CURVE_SETTINGS
-
-
-@pytest.mark.asyncio
-async def test_options_flow_select_sources_step(hass: HomeAssistant):
-    hass.states.async_set("sensor.energy_total", "100", {"device_class": "energy"})
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"area_m2": 150, "energy_label": "C"},
-        unique_id=DOMAIN,
-    )
-    entry.add_to_hass(hass)
-
-    ctx1, ctx2 = _mock_hass_integration()
-    with ctx1, ctx2:
-        result = await hass.config_entries.options.async_init(entry.entry_id)
-        result2 = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_SOURCE_TYPE: "Electricity consumption"}
-        )
-
-    assert result2["type"] == "form"
-    assert result2["step_id"] == STEP_SELECT_SOURCES
-
-
-@pytest.mark.asyncio
-async def test_options_flow_finish_creates_entry_when_api_reachable(
-    hass: HomeAssistant,
-):
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
+            CONF_CONSUMPTION_PRICE_SENSOR: "sensor.price",
             "configurations": [
-                {"source_type": "consumption", "entities": ["sensor.power"]}
+                {
+                    CONF_SOURCE_TYPE: SOURCE_TYPE_CONSUMPTION,
+                    CONF_SOURCES: ["sensor.power"],
+                }
             ],
         },
         unique_id=DOMAIN,
     )
     entry.add_to_hass(hass)
 
-    ctx1, ctx2 = _mock_hass_integration()
-    with ctx1, ctx2, patch(
-        "custom_components.heating_curve_optimizer.config_flow._test_api_connection",
-        new=AsyncMock(return_value=None),
-    ):
-        result = await hass.config_entries.options.async_init(entry.entry_id)
-        result2 = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_SOURCE_TYPE: "finish"}
-        )
+    handler = HeatingCurveOptimizerOptionsFlowHandler(entry)
+    handler.hass = hass
 
-    assert result2["type"] == "create_entry"
-    assert "area_m2" not in result2["data"]
+    result = await handler.async_step_init(
+        {
+            "building": {
+                CONF_CONSUMPTION_PRICE_SENSOR: "sensor.price",
+                CONF_PRODUCTION_PRICE_SENSOR: "sensor.price",
+            },
+            "sensors": {
+                FIELD_SOURCES_CONSUMPTION: ["sensor.power"],
+            },
+            "heat_pump_and_curve": {},
+            "advanced": {},
+        }
+    )
+
+    assert result["type"] == "create_entry"
+    assert "area_m2" not in result["data"]
+    assert "energy_label" not in result["data"]
 
 
-# thermal_mass_class/emitter_type coverage moved to test_zone_subentry.py -
-# they're now collected per zone (HeatingZoneSubentryFlow), not on this main
-# entry's basic step, same as area_m2/energy_label.
+# thermal_mass_class/emitter_type coverage is in test_zone_subentry.py -
+# they're collected per zone (HeatingZoneSubentryFlow), not on the main entry.
