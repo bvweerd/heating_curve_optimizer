@@ -1,605 +1,202 @@
-"""Test the __init__ module."""
+"""End-to-end setup tests: real coordinators, mocked open-meteo and sensors."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers.update_coordinator import UpdateFailed
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 
-from custom_components.heating_curve_optimizer import (
-    HeatingCurveOptimizerData,
-    async_setup,
-    async_setup_entry,
-    async_unload_entry,
-    _update_listener,
-)
-from custom_components.heating_curve_optimizer.const import (
-    DOMAIN,
-    PLATFORMS,
-    ZONE_SUBENTRY_TYPE,
-)
+from custom_components.heating_curve_optimizer.const import DOMAIN
+
+from .conftest import INDOOR_SENSOR, POWER_SENSOR, make_entry, setup_entry
 
 
-def _mock_coordinator() -> MagicMock:
-    coordinator = MagicMock()
-    coordinator.async_shutdown = AsyncMock()
-    return coordinator
+def _entity_id(hass: HomeAssistant, platform: str, unique_id: str) -> str:
+    entity_id = er.async_get(hass).async_get_entity_id(platform, DOMAIN, unique_id)
+    assert entity_id is not None, unique_id
+    return entity_id
 
 
-def _zone_subentry(title: str = "Living room", **data: object) -> MagicMock:
-    """A mock ZONE_SUBENTRY_TYPE subentry - the primary-zone-selection
-    logic (_find_primary_zone_subentry) only reads `.subentry_type`,
-    `.title` and `.data`, the same shape every real HA subentry has."""
-    subentry = MagicMock()
-    subentry.subentry_type = ZONE_SUBENTRY_TYPE
-    subentry.title = title
-    subentry.data = {"area_m2": 20.0, "energy_label": "C", **data}
-    return subentry
+def _state(hass: HomeAssistant, platform: str, unique_id: str):
+    return hass.states.get(_entity_id(hass, platform, unique_id))
 
 
-def _make_runtime_data(**overrides) -> HeatingCurveOptimizerData:
-    """Build a minimal HeatingCurveOptimizerData for tests that only care
-    about a subset of its fields."""
-    defaults = dict(
-        weather_coordinator=_mock_coordinator(),
-        heat_coordinator=_mock_coordinator(),
-        optimization_coordinator=_mock_coordinator(),
-        config={},
-        device=MagicMock(),
-    )
-    defaults.update(overrides)
-    return HeatingCurveOptimizerData(**defaults)
+async def test_full_setup_produces_a_plan(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    entry = make_entry()
+    await setup_entry(hass, entry)
+    assert entry.state is ConfigEntryState.LOADED
 
+    prefix = entry.entry_id
+    offset = _state(hass, "sensor", f"{prefix}_heating_curve_offset")
+    assert offset is not None and offset.state not in ("unknown", "unavailable")
+    offsets = offset.attributes["offsets"]
+    assert len(offsets) >= 20  # 24 h horizon, first step shortened
+    assert all(-4 <= o <= 4 for o in offsets)
 
-@pytest.mark.asyncio
-async def test_async_setup(hass: HomeAssistant):
-    """Test async_setup initializes domain data."""
-    result = await async_setup(hass, {})
-    assert result is True
-    assert DOMAIN in hass.data
-    assert isinstance(hass.data[DOMAIN], dict)
+    indoor = _state(hass, "sensor", f"{prefix}_planned_indoor_temperature")
+    assert 18.0 < float(indoor.state) < 22.0
+    assert indoor.attributes["comfort_min"] == 19.7
 
-
-@pytest.mark.asyncio
-async def test_async_setup_entry(hass: HomeAssistant):
-    """Test async_setup_entry sets up coordinators and platforms."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={
-            "latitude": 52.0,
-            "longitude": 5.0,
-        },
-        options={},
-    )
-    entry.add_to_hass(hass)
-    entry.subentries = {"zone1": _zone_subentry()}
-
-    # Mock coordinators
-    with patch(
-        "custom_components.heating_curve_optimizer.WeatherDataCoordinator"
-    ) as mock_weather, patch(
-        "custom_components.heating_curve_optimizer.HeatCalculationCoordinator"
-    ) as mock_heat, patch(
-        "custom_components.heating_curve_optimizer.OptimizationCoordinator"
-    ) as mock_opt:
-        # Setup mock coordinators
-        weather_instance = MagicMock()
-        weather_instance.async_config_entry_first_refresh = AsyncMock()
-        mock_weather.return_value = weather_instance
-
-        heat_instance = MagicMock()
-        heat_instance.async_setup = AsyncMock()
-        heat_instance.async_config_entry_first_refresh = AsyncMock()
-        mock_heat.return_value = heat_instance
-
-        opt_instance = MagicMock()
-        opt_instance.async_setup = AsyncMock()
-        opt_instance.async_request_refresh = AsyncMock()
-        mock_opt.return_value = opt_instance
-
-        # Mock platform forwarding
-        with patch.object(
-            hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
-        ) as mock_forward:
-            result = await async_setup_entry(hass, entry)
-
-            assert result is True
-            runtime_data = entry.runtime_data
-            assert runtime_data.weather_coordinator is weather_instance
-            assert runtime_data.heat_coordinator is heat_instance
-            assert runtime_data.optimization_coordinator is opt_instance
-            assert runtime_data.config == {
-                **entry.data,
-                **entry.options,
-                "pv_arrays": [],
-            }
-            assert runtime_data.device is not None
-
-            # Verify coordinators were initialized
-            weather_instance.async_config_entry_first_refresh.assert_called_once()
-            heat_instance.async_setup.assert_called_once()
-            heat_instance.async_config_entry_first_refresh.assert_called_once()
-            opt_instance.async_setup.assert_called_once()
-
-            # Verify platforms were forwarded
-            mock_forward.assert_called_once_with(entry, PLATFORMS)
-
-
-@pytest.mark.asyncio
-async def test_async_setup_entry_raises_config_entry_not_ready_on_weather_failure(
-    hass: HomeAssistant,
-):
-    """quality_scale's test-before-setup rule: a coordinator failure during
-    first refresh must surface as ConfigEntryNotReady (which HA retries
-    later), not a raw exception or a silently broken entry.
-
-    WeatherDataCoordinator/HeatCalculationCoordinator are both set up with
-    `async_config_entry_first_refresh()`, which already converts an
-    `UpdateFailed` from `_async_update_data` into `ConfigEntryNotReady`
-    (homeassistant.helpers.update_coordinator, verified against the
-    installed HA release) - this test proves __init__.py lets that
-    exception propagate out of async_setup_entry rather than swallowing it.
-    """
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"area_m2": 150, "energy_label": "C"},
-        options={},
-    )
-    entry.add_to_hass(hass)
-    entry.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
-
-    with patch(
-        "custom_components.heating_curve_optimizer.coordinator."
-        "WeatherDataCoordinator._async_update_data",
-        new=AsyncMock(side_effect=UpdateFailed("simulated open-meteo.com outage")),
+    for key in (
+        "outdoor_temperature",
+        "calculated_supply_temperature",
+        "heat_loss",
+        "window_solar_gain",
+        "net_heat_loss",
+        "optimized_supply_temperature",
+        "heat_buffer",
+        "planned_cop",
+        "cost_savings_forecast",
+        "total_cost_savings",
     ):
-        with pytest.raises(ConfigEntryNotReady):
-            await async_setup_entry(hass, entry)
+        state = _state(hass, "sensor", f"{prefix}_{key}")
+        assert state.state not in ("unknown", "unavailable"), key
+
+    assert _state(hass, "binary_sensor", f"{prefix}_heat_pump_demand") is not None
+    assert _state(hass, "number", f"{prefix}_target_indoor_temp").state == "20.0"
 
 
-@pytest.mark.asyncio
-async def test_async_unload_entry(hass: HomeAssistant):
-    """Test async_unload_entry unloads coordinators and platforms."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={},
-        options={},
+async def test_translated_entity_names(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    entry = make_entry()
+    await setup_entry(hass, entry)
+    state = _state(hass, "sensor", f"{entry.entry_id}_heating_curve_offset")
+    assert (
+        state.attributes["friendly_name"]
+        == "Heating Curve Optimizer Heating curve offset"
     )
-    entry.add_to_hass(hass)
-
-    # Setup mock data
-    mock_heat_coordinator = MagicMock()
-    mock_heat_coordinator.async_shutdown = AsyncMock()
-
-    mock_opt_coordinator = MagicMock()
-    mock_opt_coordinator.async_shutdown = AsyncMock()
-
-    entry.runtime_data = _make_runtime_data(
-        heat_coordinator=mock_heat_coordinator,
-        optimization_coordinator=mock_opt_coordinator,
-    )
-    hass.data[DOMAIN] = {"runtime": {entry.entry_id: {}}}
-
-    # Mock platform unloading
-    with patch.object(
-        hass.config_entries, "async_unload_platforms", new=AsyncMock(return_value=True)
-    ) as mock_unload:
-        result = await async_unload_entry(hass, entry)
-
-        assert result is True
-        mock_heat_coordinator.async_shutdown.assert_called_once()
-        mock_opt_coordinator.async_shutdown.assert_called_once()
-        mock_unload.assert_called_once_with(entry, PLATFORMS)
-        # The "runtime" manual-override dict is popped for this entry_id too.
-        if DOMAIN in hass.data:
-            assert entry.entry_id not in hass.data[DOMAIN].get("runtime", {})
 
 
-@pytest.mark.asyncio
-async def test_async_unload_entry_cleanup(hass: HomeAssistant):
-    """Test async_unload_entry cleans up hass.data completely."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={},
-        options={},
-    )
-    entry.add_to_hass(hass)
-
-    # Setup minimal data
-    entry.runtime_data = _make_runtime_data()
-    hass.data[DOMAIN] = {}
-
-    # Mock platform unloading
-    with patch.object(
-        hass.config_entries, "async_unload_platforms", new=AsyncMock(return_value=True)
-    ):
-        result = await async_unload_entry(hass, entry)
-
-        assert result is True
-        # DOMAIN should be removed when empty
-        assert DOMAIN not in hass.data
-
-
-@pytest.mark.asyncio
-async def test_async_unload_entry_failure(hass: HomeAssistant):
-    """Test async_unload_entry when platform unload fails."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={},
-        options={},
-    )
-    entry.add_to_hass(hass)
-
-    entry.runtime_data = _make_runtime_data()
-    hass.data[DOMAIN] = {}
-
-    # Mock platform unloading failure
-    with patch.object(
-        hass.config_entries, "async_unload_platforms", new=AsyncMock(return_value=False)
-    ):
-        result = await async_unload_entry(hass, entry)
-
-        assert result is False
-        # runtime_data should still be there on failure
-        assert entry.runtime_data is not None
-
-
-@pytest.mark.asyncio
-async def test_update_listener(hass: HomeAssistant):
-    """Test _update_listener reloads the config entry."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={},
-        options={"area_m2": 150},
-    )
-    entry.add_to_hass(hass)
-    entry.runtime_data = _make_runtime_data(options={"area_m2": 100})
-
-    with patch.object(
-        hass.config_entries, "async_reload", new=AsyncMock()
-    ) as mock_reload:
-        await _update_listener(hass, entry)
-        mock_reload.assert_called_once_with(entry.entry_id)
-
-
-@pytest.mark.asyncio
-async def test_async_setup_entry_merges_options_and_data(hass: HomeAssistant):
-    """Test that options override data when present."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={
-            "area_m2": 100,
-            "energy_label": "A",
-        },
-        options={
-            "area_m2": 150,  # This should override data
-        },
-    )
-    entry.add_to_hass(hass)
-
-    # Mock coordinators
-    with patch(
-        "custom_components.heating_curve_optimizer.WeatherDataCoordinator"
-    ) as mock_weather, patch(
-        "custom_components.heating_curve_optimizer.HeatCalculationCoordinator"
-    ) as mock_heat, patch(
-        "custom_components.heating_curve_optimizer.OptimizationCoordinator"
-    ) as mock_opt, patch.object(
-        hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
-    ):
-        weather_instance = MagicMock()
-        weather_instance.async_config_entry_first_refresh = AsyncMock()
-        mock_weather.return_value = weather_instance
-
-        heat_instance = MagicMock()
-        heat_instance.async_setup = AsyncMock()
-        heat_instance.async_config_entry_first_refresh = AsyncMock()
-        mock_heat.return_value = heat_instance
-
-        opt_instance = MagicMock()
-        opt_instance.async_setup = AsyncMock()
-        mock_opt.return_value = opt_instance
-
-        await async_setup_entry(hass, entry)
-
-        # Verify merged config
-        config = entry.runtime_data.config
-        assert config["area_m2"] == 150  # From options
-        assert config["energy_label"] == "A"  # From data
-
-
-@pytest.mark.asyncio
-async def test_async_setup_entry_zero_zones_leaves_coordinators_none(
-    hass: HomeAssistant,
-):
-    """No heating-zone subentry configured yet is a valid, if useless,
-    state (matches battery_controller's own "zero batteries" precedent) -
-    setup must not raise, `device` must still exist so the user has
-    somewhere to add their first zone from, but heat_coordinator/
-    optimization_coordinator stay None since there is no zone to build
-    them from."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"latitude": 52.0, "longitude": 5.0},
-        options={},
-    )
-    entry.add_to_hass(hass)
-
-    with patch(
-        "custom_components.heating_curve_optimizer.WeatherDataCoordinator"
-    ) as mock_weather, patch.object(
-        hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
-    ):
-        weather_instance = MagicMock()
-        weather_instance.async_config_entry_first_refresh = AsyncMock()
-        mock_weather.return_value = weather_instance
-
-        result = await async_setup_entry(hass, entry)
-
-        assert result is True
-        assert entry.runtime_data.heat_coordinator is None
-        assert entry.runtime_data.optimization_coordinator is None
-        assert entry.runtime_data.device is not None
-        assert entry.runtime_data.zones == {}
-
-
-@pytest.mark.asyncio
-async def test_async_setup_entry_one_zone_becomes_primary_with_entry_identity(
-    hass: HomeAssistant,
-):
-    """A single zone subentry becomes the primary zone and keeps the
-    entry's own (non-zone-suffixed) identity - unique_ids/calibration
-    storage keys stay exactly as they were before this zone lived in a
-    subentry."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"latitude": 52.0, "longitude": 5.0},
-        options={},
-    )
-    entry.add_to_hass(hass)
-    entry.subentries = {"zone1": _zone_subentry(area_m2=42.0)}
-
-    with patch(
-        "custom_components.heating_curve_optimizer.WeatherDataCoordinator"
-    ) as mock_weather, patch(
-        "custom_components.heating_curve_optimizer.HeatCalculationCoordinator"
-    ) as mock_heat, patch(
-        "custom_components.heating_curve_optimizer.OptimizationCoordinator"
-    ) as mock_opt, patch.object(
-        hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
-    ):
-        weather_instance = MagicMock()
-        weather_instance.async_config_entry_first_refresh = AsyncMock()
-        mock_weather.return_value = weather_instance
-
-        heat_instance = MagicMock()
-        heat_instance.async_setup = AsyncMock()
-        heat_instance.async_config_entry_first_refresh = AsyncMock()
-        mock_heat.return_value = heat_instance
-
-        opt_instance = MagicMock()
-        opt_instance.async_setup = AsyncMock()
-        mock_opt.return_value = opt_instance
-
-        await async_setup_entry(hass, entry)
-
-        assert entry.runtime_data.heat_coordinator is heat_instance
-        assert entry.runtime_data.optimization_coordinator is opt_instance
-        # entry.entry_id, not a zone-suffixed one:
-        call_args = mock_heat.call_args
-        assert call_args.args[0] is hass
-        assert call_args.args[1] is weather_instance
-        assert call_args.args[2]["area_m2"] == 42.0
-        assert call_args.args[3] == entry.entry_id
-        # The primary zone must not also appear in the "extra zones" loop.
-        assert entry.runtime_data.zones == {}
-
-
-@pytest.mark.asyncio
-async def test_async_setup_entry_second_zone_goes_through_extra_zone_loop(
-    hass: HomeAssistant,
-):
-    """The first zone subentry becomes primary; a second one goes through
-    the ordinary "extra zone" loop, unchanged - its own suffixed identity,
-    its own device, its own coordinator pair."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"latitude": 52.0, "longitude": 5.0},
-        options={},
-    )
-    entry.add_to_hass(hass)
-    entry.subentries = {
-        "zone1": _zone_subentry(title="Living room"),
-        "zone2": _zone_subentry(title="Bedroom"),
+async def test_setup_without_zones_only_exposes_weather_sensors(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    entry = make_entry(zones=0)
+    await setup_entry(hass, entry)
+    assert entry.state is ConfigEntryState.LOADED
+    assert entry.runtime_data.optimization_coordinator is None
+    registry = er.async_get(hass)
+    unique_ids = {
+        e.unique_id for e in er.async_entries_for_config_entry(registry, entry.entry_id)
+    }
+    assert unique_ids == {
+        f"{entry.entry_id}_outdoor_temperature",
+        f"{entry.entry_id}_calculated_supply_temperature",
     }
 
-    with patch(
-        "custom_components.heating_curve_optimizer.WeatherDataCoordinator"
-    ) as mock_weather, patch(
-        "custom_components.heating_curve_optimizer.HeatCalculationCoordinator"
-    ) as mock_heat, patch(
-        "custom_components.heating_curve_optimizer.OptimizationCoordinator"
-    ) as mock_opt, patch.object(
-        hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
-    ):
-        weather_instance = MagicMock()
-        weather_instance.async_config_entry_first_refresh = AsyncMock()
-        mock_weather.return_value = weather_instance
 
-        for mock_cls in (mock_heat, mock_opt):
-            instance = MagicMock()
-            instance.async_setup = AsyncMock()
-            instance.async_config_entry_first_refresh = AsyncMock()
-            mock_cls.return_value = instance
+async def test_target_change_reaches_optimizer_without_reload(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    """Setpoints from the number entity must change the optimizer's comfort
+    band right away (the review found them ignored until a restart)."""
+    entry = make_entry()
+    await setup_entry(hass, entry)
+    coordinator = entry.runtime_data.optimization_coordinator
 
-        await async_setup_entry(hass, entry)
-
-        # Primary zone ("zone1") is excluded from the extra-zone loop -
-        # only "zone2" ends up there.
-        assert list(entry.runtime_data.zones.keys()) == ["zone2"]
-        zone2 = entry.runtime_data.zones["zone2"]
-        assert zone2["name"] == "Bedroom"
-        # In test context the parent device is not yet registered in the
-        # device registry (entities haven't been set up), so via_device_id
-        # is not present on the zone device dict.
-        assert "via_device_id" not in zone2["device"]
-
-
-@pytest.mark.asyncio
-async def test_async_unload_entry_clears_runtime_override(hass: HomeAssistant):
-    """Test unload removes this entry's manual-override runtime dict."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={},
-        options={},
+    number_id = _entity_id(hass, "number", f"{entry.entry_id}_target_indoor_temp")
+    await hass.services.async_call(
+        "number", "set_value", {"entity_id": number_id, "value": 21.5}, blocking=True
     )
-    entry.add_to_hass(hass)
+    await hass.async_block_till_done()
+    await coordinator.async_refresh()
 
-    entry.runtime_data = _make_runtime_data()
-    hass.data[DOMAIN] = {"runtime": {entry.entry_id: {"target_indoor_temp": 20.0}}}
-
-    with patch.object(
-        hass.config_entries, "async_unload_platforms", new=AsyncMock(return_value=True)
-    ):
-        await async_unload_entry(hass, entry)
-
-        assert entry.entry_id not in hass.data.get(DOMAIN, {}).get("runtime", {})
+    assert entry.runtime_data.optimization_coordinator is coordinator  # no reload
+    assert coordinator.data["comfort_min"] == 21.2
+    assert coordinator.data["comfort_max"] == 22.0
 
 
-@pytest.mark.asyncio
-async def test_async_setup_entry_gas_boiler_absent_by_default(hass: HomeAssistant):
-    """Core zero-impact regression guard: without a gas_boiler subentry,
-    async_setup_entry must not create a GasBoilerCoordinator or device at
-    all - nothing changes for the overwhelming majority of installations
-    that haven't configured the hybrid comparison."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"area_m2": 150, "energy_label": "C", "latitude": 52.0, "longitude": 5.0},
-        options={},
+async def test_indoor_sensor_unavailable_falls_back_to_target_and_raises_issue(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    hass.states.async_set(INDOOR_SENSOR, "unavailable")
+    entry = make_entry()
+    await setup_entry(hass, entry)
+
+    heat = entry.runtime_data.heat_coordinator
+    assert heat.data["indoor_temperature"] == 20.0
+    assert heat.data["indoor_temperature_source"] == "target_fallback"
+    issue = ir.async_get(hass).async_get_issue(
+        DOMAIN, f"indoor_sensor_unavailable_{entry.entry_id}"
     )
-    entry.add_to_hass(hass)
+    assert issue is not None
 
-    with patch(
-        "custom_components.heating_curve_optimizer.WeatherDataCoordinator"
-    ) as mock_weather, patch(
-        "custom_components.heating_curve_optimizer.HeatCalculationCoordinator"
-    ) as mock_heat, patch(
-        "custom_components.heating_curve_optimizer.OptimizationCoordinator"
-    ) as mock_opt, patch.object(
-        hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
-    ):
-        weather_instance = MagicMock()
-        weather_instance.async_config_entry_first_refresh = AsyncMock()
-        mock_weather.return_value = weather_instance
-
-        heat_instance = MagicMock()
-        heat_instance.async_setup = AsyncMock()
-        heat_instance.async_config_entry_first_refresh = AsyncMock()
-        mock_heat.return_value = heat_instance
-
-        opt_instance = MagicMock()
-        opt_instance.async_setup = AsyncMock()
-        mock_opt.return_value = opt_instance
-
-        await async_setup_entry(hass, entry)
-
-        assert entry.runtime_data.gas_boiler_coordinator is None
-        assert entry.runtime_data.gas_boiler_device is None
-        assert entry.runtime_data.gas_boiler_subentry_id is None
-
-
-@pytest.mark.asyncio
-async def test_async_setup_entry_creates_gas_boiler_coordinator_when_subentry_present(
-    hass: HomeAssistant,
-):
-    """A configured gas_boiler subentry must produce a GasBoilerCoordinator
-    with the merged (main entry + subentry) config."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"area_m2": 150, "energy_label": "C", "latitude": 52.0, "longitude": 5.0},
-        options={},
-    )
-    entry.add_to_hass(hass)
-
-    mock_subentry = MagicMock()
-    mock_subentry.subentry_type = "gas_boiler"
-    mock_subentry.title = "Gas Boiler"
-    mock_subentry.data = {
-        "gas_price_sensor": "sensor.gas_price",
-        "gas_boiler_efficiency": 0.9,
-        "gas_calorific_value_kwh_per_m3": 9.77,
-    }
-    entry.subentries = {"gas_sub_1": mock_subentry, "zone1": _zone_subentry()}
-
-    with patch(
-        "custom_components.heating_curve_optimizer.WeatherDataCoordinator"
-    ) as mock_weather, patch(
-        "custom_components.heating_curve_optimizer.HeatCalculationCoordinator"
-    ) as mock_heat, patch(
-        "custom_components.heating_curve_optimizer.OptimizationCoordinator"
-    ) as mock_opt, patch.object(
-        hass.config_entries, "async_forward_entry_setups", new=AsyncMock()
-    ):
-        weather_instance = MagicMock()
-        weather_instance.async_config_entry_first_refresh = AsyncMock()
-        mock_weather.return_value = weather_instance
-
-        heat_instance = MagicMock()
-        heat_instance.async_setup = AsyncMock()
-        heat_instance.async_config_entry_first_refresh = AsyncMock()
-        mock_heat.return_value = heat_instance
-
-        opt_instance = MagicMock()
-        opt_instance.async_setup = AsyncMock()
-        mock_opt.return_value = opt_instance
-
-        await async_setup_entry(hass, entry)
-
-        assert entry.runtime_data.gas_boiler_coordinator is not None
-        assert entry.runtime_data.gas_boiler_device is not None
-        assert entry.runtime_data.gas_boiler_subentry_id == "gas_sub_1"
-        assert (
-            entry.runtime_data.gas_boiler_coordinator.config["gas_price_sensor"]
-            == "sensor.gas_price"
+    hass.states.async_set(INDOOR_SENSOR, "20.4")
+    await heat.async_refresh()
+    assert heat.data["indoor_temperature_source"] == "sensor"
+    assert (
+        ir.async_get(hass).async_get_issue(
+            DOMAIN, f"indoor_sensor_unavailable_{entry.entry_id}"
         )
-
-
-@pytest.mark.asyncio
-async def test_async_unload_entry_shuts_down_gas_boiler_coordinator_when_present(
-    hass: HomeAssistant,
-):
-    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
-    entry.add_to_hass(hass)
-
-    gas_boiler_coordinator = _mock_coordinator()
-    entry.runtime_data = _make_runtime_data(
-        gas_boiler_coordinator=gas_boiler_coordinator
+        is None
     )
 
-    with patch.object(
-        hass.config_entries, "async_unload_platforms", new=AsyncMock(return_value=True)
-    ):
-        await async_unload_entry(hass, entry)
 
-        gas_boiler_coordinator.async_shutdown.assert_called_once()
+async def test_price_sensor_unavailable_raises_repair_issue(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    entry = make_entry()
+    await setup_entry(hass, entry)
+    hass.states.async_set("sensor.electricity_price", "unavailable")
+    coordinator = entry.runtime_data.optimization_coordinator
+    await coordinator.async_refresh()
+    assert coordinator.last_update_success is False
+    assert ir.async_get(hass).async_get_issue(
+        DOMAIN, f"price_sensor_unavailable_{entry.entry_id}"
+    )
 
 
-@pytest.mark.asyncio
-async def test_async_unload_entry_noop_when_gas_boiler_coordinator_absent(
-    hass: HomeAssistant,
-):
-    """Must not raise when gas_boiler_coordinator is None (the default)."""
-    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
-    entry.add_to_hass(hass)
+async def test_additional_zone_and_gas_boiler_get_their_own_devices(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    hass.states.async_set("sensor.gas_price", "1.20")
+    entry = make_entry(zones=2, gas=True, pv=True)
+    await setup_entry(hass, entry)
 
-    entry.runtime_data = _make_runtime_data()
+    runtime = entry.runtime_data
+    assert len(runtime.zones) == 1
+    zone_subentry_id = next(iter(runtime.zones))
+    zone_state = _state(
+        hass, "sensor", f"{entry.entry_id}_{zone_subentry_id}_heating_curve_offset"
+    )
+    assert zone_state.state not in ("unknown", "unavailable")
 
-    with patch.object(
-        hass.config_entries, "async_unload_platforms", new=AsyncMock(return_value=True)
-    ):
-        result = await async_unload_entry(hass, entry)
+    gas_state = _state(hass, "sensor", f"{entry.entry_id}_gas_boiler_gas_cost")
+    assert float(gas_state.state) > 0
+    pv_state = _state(hass, "sensor", f"{entry.entry_id}_pv_production_forecast")
+    assert pv_state is not None
 
-        assert result is True
+
+async def test_power_sensor_enables_thermal_sensors(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    hass.states.async_set(POWER_SENSOR, "1200", {"unit_of_measurement": "W"})
+    entry = make_entry(power_consumption=POWER_SENSOR)
+    await setup_entry(hass, entry)
+    thermal = _state(hass, "sensor", f"{entry.entry_id}_heat_pump_thermal_power")
+    assert float(thermal.state) > 1.2  # COP > 1
+    energy = _state(hass, "sensor", f"{entry.entry_id}_heat_pump_thermal_energy")
+    assert energy is not None
+
+
+async def test_structural_option_change_reloads(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    entry = make_entry()
+    await setup_entry(hass, entry)
+    before = entry.runtime_data.optimization_coordinator
+    hass.config_entries.async_update_entry(entry, options={"planning_window": 12})
+    await hass.async_block_till_done()
+    assert entry.runtime_data.optimization_coordinator is not before
+
+
+async def test_unload(hass: HomeAssistant, mock_open_meteo, price_state) -> None:
+    entry = make_entry()
+    await setup_entry(hass, entry)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.NOT_LOADED
+    assert not hass.services.has_service(DOMAIN, "reset_thermal_calibration")

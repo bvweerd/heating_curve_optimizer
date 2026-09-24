@@ -110,19 +110,23 @@ def test_effective_offset_clamped_to_dp_curve_bound():
     assert action["effective_offset"] == 4
 
 
-def test_effective_offset_clamped_at_lower_bound():
+def test_import_never_pushes_offset_below_plan():
+    """Grid import is the normal state of a running heat pump: it may only
+    unwind a surplus-driven increase, never lower the offset below the DP
+    plan (the review found the old controller sliding to -max within
+    minutes at night)."""
     controller = _controller(deadband_w=300.0)
-    controller.reset(-6)
-    action = controller.get_control_action(
-        current_grid_w=500.0,
-        shadow_price_eur_per_kwh=0.05,
-        planned_offset=-4,
-        max_adjustment=6,
-        offset_min=-4,
-        offset_max=4,
-    )
-    assert action["adjustment"] == -6
-    assert action["effective_offset"] == -4
+    for _ in range(10):
+        action = controller.get_control_action(
+            current_grid_w=2000.0,
+            shadow_price_eur_per_kwh=0.05,
+            planned_offset=1,
+            max_adjustment=6,
+            offset_min=-4,
+            offset_max=4,
+        )
+    assert action["adjustment"] == 0
+    assert action["effective_offset"] == 1
 
 
 def test_create_realtime_controller_reads_config():

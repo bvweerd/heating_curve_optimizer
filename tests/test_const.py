@@ -1,10 +1,10 @@
 """Test the const module."""
 
 from custom_components.heating_curve_optimizer.const import (
-    calculate_ventilation_htc,
-    calculate_htc_from_energy_label,
     DEFAULT_VENTILATION_TYPE,
     VENTILATION_TYPES,
+    calculate_htc_from_energy_label,
+    calculate_ventilation_htc,
 )
 
 
@@ -144,7 +144,7 @@ def test_calculate_htc_with_zero_degree_days():
 
 def test_ventilation_types_all_have_ach():
     """Test that all ventilation types have ACH defined."""
-    for vent_type, data in VENTILATION_TYPES.items():
+    for data in VENTILATION_TYPES.values():
         assert "ach" in data
         assert "name_en" in data
         assert "name_nl" in data

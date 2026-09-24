@@ -1,18 +1,14 @@
 {
   "domain": "heating_curve_optimizer",
   "name": "Heating Curve Optimizer",
-  "after_dependencies": ["recorder"],
   "codeowners": [
     "@bvweerd"
   ],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://www.github.com/bvweerd/heating_curve_optimizer",
-  "homekit": {},
-  "iot_class": "calculated",
+  "documentation": "https://bvweerd.github.io/heating_curve_optimizer/",
+  "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/bvweerd/heating_curve_optimizer/issues",
   "requirements": [],
-  "ssdp": [],
-  "version": "2.0.0",
-  "zeroconf": []
+  "version": "2.0.0"
 }

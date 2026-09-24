@@ -1,255 +1,360 @@
 {
   "config": {
     "step": {
-      "basic": {
-        "data": {
-          "grid_import_sensor": "Grid import power sensor (W or kW, real-time PV-surplus control)",
-          "grid_export_sensor": "Grid export power sensor (W or kW, real-time PV-surplus control)"
-        }
-      },
-      "heating_curve_settings": {
-        "title": "Heating Curve Settings",
-        "description": "Configure heating curve and optimization parameters",
-        "data": {
-          "supply_temperature_sensor": "Supply temperature sensor",
-          "k_factor": "K-factor (COP decline per °C supply temp increase)",
-          "base_cop": "Base COP at 35°C supply temperature",
-          "outdoor_temp_coefficient": "Outdoor temperature coefficient",
-          "cop_compensation_factor": "COP compensation factor",
-          "planning_window": "Planning window (hours)",
-          "time_base": "Time base (minutes per step)",
-          "offset_delta_t": "Offset change speed (min/°C)",
-          "heat_curve_min_outdoor": "Minimum outdoor temperature (°C)",
-          "heat_curve_max_outdoor": "Maximum outdoor temperature (°C)",
-          "heating_curve_offset": "Manual heating curve offset (°C)",
-          "heat_curve_min": "Minimum supply temperature (°C)",
-          "heat_curve_max": "Maximum supply temperature (°C)"
-        },
-        "data_description": {
-          "supply_temperature_sensor": "Sensor that measures the heat pump supply temperature",
-          "k_factor": "How much COP decreases per °C increase in supply temperature (typical: 0.01-0.11)",
-          "base_cop": "Heat pump COP at 35°C supply temperature (typical: 3.5-5.0)",
-          "outdoor_temp_coefficient": "How much COP increases per °C outdoor temperature rise (typical: 0.025-0.08)",
-          "cop_compensation_factor": "Factor to adjust theoretical COP to actual system performance (typical: 0.8-1.2)",
-          "planning_window": "Optimization planning horizon in hours (default: 6)",
-          "time_base": "Time interval for optimization in minutes (default: 60)",
-          "offset_delta_t": "Minutes required per 1°C offset change. Lower = faster response (default: 10, range: 5-60)",
-          "heat_curve_min_outdoor": "Minimum outdoor temperature for heating curve (default: -20°C)",
-          "heat_curve_max_outdoor": "Maximum outdoor temperature for heating curve (default: 15°C)",
-          "heating_curve_offset": "Manual offset to add to optimized heating curve (range: -4 to +4°C, default: 0)",
-          "heat_curve_min": "Minimum allowed supply temperature (default: 20°C)",
-          "heat_curve_max": "Maximum allowed supply temperature (default: 45°C)"
-        }
-      },
       "user": {
-        "title": "Set up Heating Curve Optimizer",
+        "title": "Heating Curve Optimizer",
+        "description": "Shared settings. Add heating zones, PV arrays and a gas boiler afterwards from the integration page.",
         "sections": {
-          "building": {
-            "name": "Pricing",
-            "description": "Required to create the integration. Heating zones (area, energy label, envelope, target temperature) are added afterwards, from the integration page - see \"Add heating zone\".",
+          "prices": {
+            "name": "Electricity prices",
+            "description": "Sensors with the price forecast the optimizer plans against.",
             "data": {
-              "consumption_price_sensor": "Electricity consumption price sensor",
-              "production_price_sensor": "Electricity production price sensor"
+              "consumption_price_sensor": "Consumption price sensor",
+              "production_price_sensor": "Feed-in price sensor"
             },
             "data_description": {
-              "consumption_price_sensor": "Sensor with electricity buy-price forecast attributes",
-              "production_price_sensor": "Sensor with electricity feed-in/sell-price forecast attributes"
+              "consumption_price_sensor": "Price per kWh with a forecast attribute (raw_today/raw_tomorrow, forecast_prices, net_prices_today/tomorrow, ...). The planning steps follow this sensor's interval (15 or 60 min).",
+              "production_price_sensor": "Optional. Values heating on your own PV surplus at the feed-in price. Without it, 0.07 EUR/kWh is used."
             }
           },
           "sensors": {
-            "name": "Energy sources & sensors",
-            "description": "Which sensors track your electricity consumption/production, and any optional real-time sensors.",
+            "name": "Measurement sensors (optional)",
+            "description": "Improve accuracy and enable thermal calibration and real-time PV-surplus control.",
             "data": {
-              "sources_consumption": "Electricity consumption sensors",
-              "sources_production": "Electricity production sensors",
-              "power_consumption": "Heat pump power consumption sensor",
-              "supply_temperature_sensor": "Supply temperature sensor",
-              "grid_import_sensor": "Grid import power sensor (W or kW, real-time PV-surplus control)",
-              "grid_export_sensor": "Grid export power sensor (W or kW, real-time PV-surplus control)"
+              "power_consumption": "Heat pump electrical power",
+              "supply_temperature_sensor": "Measured supply temperature",
+              "grid_import_sensor": "Grid import power",
+              "grid_export_sensor": "Grid export power"
             },
             "data_description": {
-              "sources_consumption": "Energy sensors (kWh) that track electricity consumption - at least one consumption or production source is required",
-              "sources_production": "Energy sensors (kWh) that track electricity production (e.g. solar)",
-              "power_consumption": "Sensor that measures the heat pump's power consumption",
-              "supply_temperature_sensor": "Sensor that measures the heat pump supply temperature"
+              "power_consumption": "Power sensor (W or kW) of the heat pump. Enables thermal power/energy sensors and thermal calibration.",
+              "supply_temperature_sensor": "Used for the COP of the measured operating point; otherwise the planned supply temperature is used.",
+              "grid_import_sensor": "Live power (W or kW). With import and/or export configured, the real-time offset sensor raises the offset while PV surplus is exported.",
+              "grid_export_sensor": "Live power (W or kW), positive while exporting."
             }
           },
-          "heat_pump_and_curve": {
-            "name": "Heat pump & heating curve",
-            "description": "COP characteristics and the heating curve's physical limits.",
+          "heat_pump": {
+            "name": "Heat pump",
+            "description": "COP = (base COP + outdoor coefficient x T_outdoor - k-factor x (T_supply - 35)) x compensation, capped at the Carnot limit and corrected for defrost losses.",
             "data": {
-              "k_factor": "K-factor (COP decline per °C supply temp increase)",
-              "base_cop": "Base COP at 35°C supply temperature",
-              "outdoor_temp_coefficient": "Outdoor temperature coefficient",
+              "base_cop": "Base COP at 35 °C supply, 0 °C outdoor",
+              "k_factor": "k-factor (COP loss per °C supply)",
+              "outdoor_temp_coefficient": "Outdoor temperature coefficient (COP gain per °C)",
               "cop_compensation_factor": "COP compensation factor",
-              "heat_curve_min_outdoor": "Minimum outdoor temperature (°C)",
-              "heat_curve_max_outdoor": "Maximum outdoor temperature (°C)",
-              "heating_curve_offset": "Manual heating curve offset (°C)",
-              "heat_curve_min": "Minimum supply temperature (°C)",
-              "heat_curve_max": "Maximum supply temperature (°C)",
-              "offset_delta_t": "Offset change speed (min/°C)"
+              "heat_pump_max_thermal_power_kw": "Maximum thermal power"
             },
             "data_description": {
-              "k_factor": "How much COP decreases per °C increase in supply temperature (typical: 0.01-0.11)",
-              "base_cop": "Heat pump COP at 35°C supply temperature (typical: 3.5-5.0)",
-              "outdoor_temp_coefficient": "How much COP increases per °C outdoor temperature rise (typical: 0.025-0.08)",
-              "cop_compensation_factor": "Factor to adjust theoretical COP to actual system performance (typical: 0.8-1.2)",
-              "heat_curve_min_outdoor": "Minimum outdoor temperature for heating curve (default: -20°C)",
-              "heat_curve_max_outdoor": "Maximum outdoor temperature for heating curve (default: 15°C)",
-              "heating_curve_offset": "Manual offset to add to optimized heating curve (range: -4 to +4°C, default: 0)",
-              "heat_curve_min": "Minimum allowed supply temperature (default: 20°C)",
-              "heat_curve_max": "Maximum allowed supply temperature (default: 45°C)",
-              "offset_delta_t": "Minutes required per 1°C offset change. Lower = faster response (default: 10, range: 5-60)"
+              "base_cop": "From the datasheet (e.g. A2/W35). Typical 3.5-4.5 for air-to-water.",
+              "k_factor": "Typically 0.08-0.12: how fast COP drops with higher supply temperature.",
+              "outdoor_temp_coefficient": "Typically 0.05-0.10.",
+              "cop_compensation_factor": "Scales the modelled COP to your measured COP (1.0 = datasheet).",
+              "heat_pump_max_thermal_power_kw": "Optional. Rated heating capacity. Empty: 1.3x the heat loss at the design outdoor temperature."
+            }
+          },
+          "heating_curve": {
+            "name": "Heating curve",
+            "description": "The heating curve as set on the heat pump. The optimizer plans an offset of -4 to +4 °C on top of it.",
+            "data": {
+              "heat_curve_min": "Supply temperature at the warm end",
+              "heat_curve_max": "Supply temperature at the cold end",
+              "heat_curve_min_outdoor": "Design (coldest) outdoor temperature",
+              "heat_curve_max_outdoor": "Outdoor temperature of the warm end",
+              "offset_delta_t": "Minutes per 1 °C offset change"
+            },
+            "data_description": {
+              "heat_curve_min": "Supply temperature at and above the warm-end outdoor temperature.",
+              "heat_curve_max": "Supply temperature at and below the design outdoor temperature. The emitters are assumed to be sized for this point.",
+              "heat_curve_min_outdoor": "Typically -10 °C in the Netherlands.",
+              "heat_curve_max_outdoor": "Typically 15-20 °C.",
+              "offset_delta_t": "Ramp-rate limit: 30 allows 2 °C per hour."
             }
           },
           "advanced": {
             "name": "Advanced",
-            "description": "Optimizer planning window - defaults work for most installs.",
+            "description": "Optimizer horizon.",
             "data": {
-              "planning_window": "Planning window (hours)",
-              "time_base": "Time base (minutes per step)"
+              "planning_window": "Planning horizon"
             },
             "data_description": {
-              "planning_window": "Optimization planning horizon in hours (default: 6)",
-              "time_base": "Time interval for optimization in minutes (default: 60)"
+              "planning_window": "Hours ahead to plan, limited by the available price forecast. Longer horizons shift more load."
             }
           }
         }
       },
       "detected_integrations": {
         "title": "Detected companion integrations",
-        "description": "Found sensor settings already configured in another integration on this Home Assistant instance:\n\n{detected_list}\n\nUse these values instead of selecting them again in the next steps?",
+        "description": "These sensors are already configured in another integration:\n\n{detected_list}\n\nPrefill them in the setup form?",
         "data": {
-          "power_consumption": "Use detected power consumption sensor",
-          "grid_import_sensor": "Use detected grid import sensor",
-          "grid_export_sensor": "Use detected grid export sensor",
-          "consumption_price_sensor": "Use detected consumption price sensor",
-          "production_price_sensor": "Use detected production price sensor",
-          "sources_consumption": "Use detected consumption sensors",
-          "sources_production": "Use detected production sensors"
+          "power_consumption": "Heat pump power sensor",
+          "grid_import_sensor": "Grid import sensor",
+          "grid_export_sensor": "Grid export sensor",
+          "consumption_price_sensor": "Consumption price sensor",
+          "production_price_sensor": "Feed-in price sensor"
         }
       }
     },
-    "abort": {
-      "already_configured": "Device is already configured"
-    },
     "error": {
-      "no_blocks": "Add at least one consumption or production source before finishing.",
-      "cannot_connect": "Could not reach open-meteo.com. Check the internet connection and try again."
+      "cannot_connect": "Cannot reach open-meteo.com. Check the internet connection of Home Assistant.",
+      "price_sensor_required": "A consumption price sensor is required.",
+      "curve_supply_range": "The supply temperature at the warm end must be lower than at the cold end.",
+      "curve_outdoor_range": "The design outdoor temperature must be lower than the warm-end outdoor temperature."
+    },
+    "abort": {
+      "already_configured": "Heating Curve Optimizer is already configured."
     }
   },
-  "entity": {
-    "binary_sensor": {
-      "heat_pump_demand": {
-        "name": "Heat pump demand"
-      },
-      "gas_boiler_preferred": {
-        "name": "Gas boiler preferred"
+  "options": {
+    "step": {
+      "init": {
+        "title": "Heating Curve Optimizer settings",
+        "sections": {
+          "prices": {
+            "name": "Electricity prices",
+            "description": "Sensors with the price forecast the optimizer plans against.",
+            "data": {
+              "consumption_price_sensor": "Consumption price sensor",
+              "production_price_sensor": "Feed-in price sensor"
+            },
+            "data_description": {
+              "consumption_price_sensor": "Price per kWh with a forecast attribute (raw_today/raw_tomorrow, forecast_prices, net_prices_today/tomorrow, ...). The planning steps follow this sensor's interval (15 or 60 min).",
+              "production_price_sensor": "Optional. Values heating on your own PV surplus at the feed-in price. Without it, 0.07 EUR/kWh is used."
+            }
+          },
+          "sensors": {
+            "name": "Measurement sensors (optional)",
+            "description": "Improve accuracy and enable thermal calibration and real-time PV-surplus control.",
+            "data": {
+              "power_consumption": "Heat pump electrical power",
+              "supply_temperature_sensor": "Measured supply temperature",
+              "grid_import_sensor": "Grid import power",
+              "grid_export_sensor": "Grid export power"
+            },
+            "data_description": {
+              "power_consumption": "Power sensor (W or kW) of the heat pump. Enables thermal power/energy sensors and thermal calibration.",
+              "supply_temperature_sensor": "Used for the COP of the measured operating point; otherwise the planned supply temperature is used.",
+              "grid_import_sensor": "Live power (W or kW). With import and/or export configured, the real-time offset sensor raises the offset while PV surplus is exported.",
+              "grid_export_sensor": "Live power (W or kW), positive while exporting."
+            }
+          },
+          "heat_pump": {
+            "name": "Heat pump",
+            "description": "COP = (base COP + outdoor coefficient x T_outdoor - k-factor x (T_supply - 35)) x compensation, capped at the Carnot limit and corrected for defrost losses.",
+            "data": {
+              "base_cop": "Base COP at 35 °C supply, 0 °C outdoor",
+              "k_factor": "k-factor (COP loss per °C supply)",
+              "outdoor_temp_coefficient": "Outdoor temperature coefficient (COP gain per °C)",
+              "cop_compensation_factor": "COP compensation factor",
+              "heat_pump_max_thermal_power_kw": "Maximum thermal power"
+            },
+            "data_description": {
+              "base_cop": "From the datasheet (e.g. A2/W35). Typical 3.5-4.5 for air-to-water.",
+              "k_factor": "Typically 0.08-0.12: how fast COP drops with higher supply temperature.",
+              "outdoor_temp_coefficient": "Typically 0.05-0.10.",
+              "cop_compensation_factor": "Scales the modelled COP to your measured COP (1.0 = datasheet).",
+              "heat_pump_max_thermal_power_kw": "Optional. Rated heating capacity. Empty: 1.3x the heat loss at the design outdoor temperature."
+            }
+          },
+          "heating_curve": {
+            "name": "Heating curve",
+            "description": "The heating curve as set on the heat pump. The optimizer plans an offset of -4 to +4 °C on top of it.",
+            "data": {
+              "heat_curve_min": "Supply temperature at the warm end",
+              "heat_curve_max": "Supply temperature at the cold end",
+              "heat_curve_min_outdoor": "Design (coldest) outdoor temperature",
+              "heat_curve_max_outdoor": "Outdoor temperature of the warm end",
+              "offset_delta_t": "Minutes per 1 °C offset change"
+            },
+            "data_description": {
+              "heat_curve_min": "Supply temperature at and above the warm-end outdoor temperature.",
+              "heat_curve_max": "Supply temperature at and below the design outdoor temperature. The emitters are assumed to be sized for this point.",
+              "heat_curve_min_outdoor": "Typically -10 °C in the Netherlands.",
+              "heat_curve_max_outdoor": "Typically 15-20 °C.",
+              "offset_delta_t": "Ramp-rate limit: 30 allows 2 °C per hour."
+            }
+          },
+          "advanced": {
+            "name": "Advanced",
+            "description": "Optimizer horizon.",
+            "data": {
+              "planning_window": "Planning horizon"
+            },
+            "data_description": {
+              "planning_window": "Hours ahead to plan, limited by the available price forecast. Longer horizons shift more load."
+            }
+          }
+        }
       }
     },
-    "number": {
-      "heating_curve_offset": {
-        "name": "Heating curve offset"
+    "error": {
+      "price_sensor_required": "A consumption price sensor is required.",
+      "curve_supply_range": "The supply temperature at the warm end must be lower than at the cold end.",
+      "curve_outdoor_range": "The design outdoor temperature must be lower than the warm-end outdoor temperature."
+    }
+  },
+  "config_subentries": {
+    "heating_zone": {
+      "entry_type": "Heating zone",
+      "initiate_flow": {
+        "user": "Add heating zone"
       },
-      "heat_curve_min_outdoor": {
-        "name": "Heating curve outdoor temp minimum"
+      "step": {
+        "user": {
+          "title": "Heating zone",
+          "description": "One heating circuit: its building envelope, emitters and thermostat. The first zone is the primary zone and gets the full sensor set.",
+          "data": {
+            "name": "Name",
+            "area_m2": "Heated floor area",
+            "energy_label": "Energy label",
+            "ventilation_type": "Ventilation",
+            "ceiling_height": "Ceiling height",
+            "thermal_mass_class": "Construction (thermal mass)",
+            "emitter_type": "Heat emitters",
+            "internal_gains_w_per_m2": "Internal heat gains",
+            "glass_south_m2": "Window area south",
+            "glass_east_m2": "Window area east",
+            "glass_west_m2": "Window area west",
+            "glass_u_value": "Glazing U-value",
+            "target_indoor_temp": "Target indoor temperature",
+            "indoor_temp_hysteresis_lower": "Comfort band below target",
+            "indoor_temp_hysteresis_upper": "Comfort band above target",
+            "indoor_temperature_sensor": "Indoor temperature sensor",
+            "heat_curve_min": "Own curve: supply temperature at the warm end",
+            "heat_curve_max": "Own curve: supply temperature at the cold end"
+          },
+          "data_description": {
+            "energy_label": "Used to estimate the heat loss coefficient until calibration has learned it.",
+            "internal_gains_w_per_m2": "People, appliances and lighting. 2-4 W/m² for an occupied home.",
+            "glass_u_value": "Double glazing ~2.8, HR++ ~1.2, triple ~0.8.",
+            "indoor_temp_hysteresis_lower": "The optimizer keeps the indoor temperature between target - lower and target + upper.",
+            "indoor_temperature_sensor": "Strongly recommended. Without it the optimizer assumes the room is at the target temperature and calibration is not possible.",
+            "heat_curve_min": "Only for a separate heating circuit with its own curve; leave both empty to use the main curve.",
+            "heat_curve_max": "Fill both or neither."
+          }
+        },
+        "reconfigure": {
+          "title": "Heating zone",
+          "description": "One heating circuit: its building envelope, emitters and thermostat. The first zone is the primary zone and gets the full sensor set.",
+          "data": {
+            "name": "Name",
+            "area_m2": "Heated floor area",
+            "energy_label": "Energy label",
+            "ventilation_type": "Ventilation",
+            "ceiling_height": "Ceiling height",
+            "thermal_mass_class": "Construction (thermal mass)",
+            "emitter_type": "Heat emitters",
+            "internal_gains_w_per_m2": "Internal heat gains",
+            "glass_south_m2": "Window area south",
+            "glass_east_m2": "Window area east",
+            "glass_west_m2": "Window area west",
+            "glass_u_value": "Glazing U-value",
+            "target_indoor_temp": "Target indoor temperature",
+            "indoor_temp_hysteresis_lower": "Comfort band below target",
+            "indoor_temp_hysteresis_upper": "Comfort band above target",
+            "indoor_temperature_sensor": "Indoor temperature sensor",
+            "heat_curve_min": "Own curve: supply temperature at the warm end",
+            "heat_curve_max": "Own curve: supply temperature at the cold end"
+          },
+          "data_description": {
+            "energy_label": "Used to estimate the heat loss coefficient until calibration has learned it.",
+            "internal_gains_w_per_m2": "People, appliances and lighting. 2-4 W/m² for an occupied home.",
+            "glass_u_value": "Double glazing ~2.8, HR++ ~1.2, triple ~0.8.",
+            "indoor_temp_hysteresis_lower": "The optimizer keeps the indoor temperature between target - lower and target + upper.",
+            "indoor_temperature_sensor": "Strongly recommended. Without it the optimizer assumes the room is at the target temperature and calibration is not possible.",
+            "heat_curve_min": "Only for a separate heating circuit with its own curve; leave both empty to use the main curve.",
+            "heat_curve_max": "Fill both or neither."
+          }
+        }
       },
-      "heat_curve_max_outdoor": {
-        "name": "Heating curve outdoor temp maximum"
+      "error": {
+        "name_required": "A name is required.",
+        "zone_curve_incomplete": "Fill in both curve temperatures, or leave both empty.",
+        "curve_supply_range": "The supply temperature at the warm end must be lower than at the cold end."
       },
-      "target_indoor_temperature": {
-        "name": "Target indoor temperature"
-      },
-      "indoor_temp_hysteresis": {
-        "name": "Indoor temperature hysteresis"
-      },
-      "indoor_temp_hysteresis_lower": {
-        "name": "Hysteresis below target (heat pump ON)"
-      },
-      "indoor_temp_hysteresis_upper": {
-        "name": "Hysteresis above target (heat pump OFF)"
+      "abort": {
+        "reconfigure_successful": "Heating zone updated."
       }
     },
-    "sensor": {
-      "heating_curve_offset": {
-        "name": "Heating curve offset (optimized)"
+    "pv_array": {
+      "entry_type": "PV array",
+      "initiate_flow": {
+        "user": "Add PV array"
       },
-      "calculated_supply_temperature": {
-        "name": "Calculated supply temperature"
+      "step": {
+        "user": {
+          "title": "Import PV array",
+          "description": "Battery Controller already has PV arrays configured. Import one, or choose — to enter the values yourself.",
+          "data": {
+            "import_choice": "PV array"
+          }
+        },
+        "configure": {
+          "title": "PV array",
+          "data": {
+            "name": "Name",
+            "peak_power_kwp": "Peak power",
+            "orientation": "Orientation (azimuth, 180 = south)",
+            "tilt": "Tilt (0 = flat)",
+            "efficiency_factor": "System efficiency",
+            "dc_coupled": "DC-coupled"
+          }
+        },
+        "reconfigure": {
+          "title": "PV array",
+          "data": {
+            "name": "Name",
+            "peak_power_kwp": "Peak power",
+            "orientation": "Orientation (azimuth, 180 = south)",
+            "tilt": "Tilt (0 = flat)",
+            "efficiency_factor": "System efficiency",
+            "dc_coupled": "DC-coupled"
+          }
+        }
       },
-      "optimized_supply_temperature": {
-        "name": "Optimized supply temperature"
-      },
-      "heat_loss": {
-        "name": "Heat loss"
-      },
-      "net_heat_loss": {
-        "name": "Net heat loss"
-      },
-      "window_solar_gain": {
-        "name": "Solar gain through windows"
-      },
-      "pv_production_forecast": {
-        "name": "PV production forecast"
-      },
-      "cop_delta": {
-        "name": "COP Delta"
-      },
-      "heat_generation_delta": {
-        "name": "Heat Generation Delta"
-      },
-      "cost_savings_forecast": {
-        "name": "Cost Savings Forecast"
-      },
-      "total_cost_savings": {
-        "name": "Total Cost Savings"
-      },
-      "heat_buffer": {
-        "name": "Heat buffer (energy storage)"
-      },
-      "calibration": {
-        "name": "Parameter Calibration"
-      },
-      "thermal_calibration": {
-        "name": "Thermal calibration (experimental)"
-      },
-      "realtime_offset_adjustment": {
-        "name": "Realtime offset adjustment (PV surplus, experimental)"
-      },
-      "outdoor_temperature": {
-        "name": "Outdoor temperature"
-      },
-      "quadratic_cop": {
-        "name": "Quadratic COP"
-      },
-      "diagnostics": {
-        "name": "Diagnostics"
-      },
-      "heat_pump_thermal_power": {
-        "name": "Heat pump thermal power"
-      },
-      "heat_pump_energy_daily": {
-        "name": "Heat pump energy daily"
-      },
-      "net_heat_loss_energy_daily": {
-        "name": "Net heat loss energy daily"
-      },
-      "gas_boiler_heat_pump_cost": {
-        "name": "Heat pump cost"
-      },
-      "gas_boiler_gas_cost": {
-        "name": "Gas cost"
-      },
-      "gas_boiler_cost_savings": {
-        "name": "Gas boiler cost savings"
-      },
-      "current_consumption_price": {
-        "name": "Current consumption price"
+      "abort": {
+        "reconfigure_successful": "PV array updated."
       }
     },
-    "climate": {
-      "heating": {
-        "name": "Heating"
+    "gas_boiler": {
+      "entry_type": "Gas boiler",
+      "initiate_flow": {
+        "user": "Add gas boiler"
+      },
+      "step": {
+        "user": {
+          "title": "Hybrid gas boiler",
+          "description": "Compares the heat pump's cost per kWh of heat with the gas boiler's.",
+          "data": {
+            "gas_price_sensor": "Gas price sensor",
+            "gas_boiler_efficiency": "Boiler efficiency",
+            "gas_calorific_value_kwh_per_m3": "Calorific value",
+            "gas_comfort_backup": "Gas as comfort backup"
+          },
+          "data_description": {
+            "gas_price_sensor": "Current gas price in EUR/m³.",
+            "gas_boiler_efficiency": "0.90 for a typical HR boiler; up to ~1.07 on upper heating value at low return temperatures.",
+            "gas_calorific_value_kwh_per_m3": "Dutch G-gas upper heating value: 9.77 kWh/m³.",
+            "gas_comfort_backup": "On: recommend the gas boiler whenever the heat pump cannot restore the comfort band within 3 hours, even if gas is more expensive. Off: only when gas is also cheaper."
+          }
+        },
+        "reconfigure": {
+          "title": "Hybrid gas boiler",
+          "data": {
+            "gas_price_sensor": "Gas price sensor",
+            "gas_boiler_efficiency": "Boiler efficiency",
+            "gas_calorific_value_kwh_per_m3": "Calorific value",
+            "gas_comfort_backup": "Gas as comfort backup"
+          },
+          "data_description": {
+            "gas_price_sensor": "Current gas price in EUR/m³.",
+            "gas_boiler_efficiency": "0.90 for a typical HR boiler; up to ~1.07 on upper heating value at low return temperatures.",
+            "gas_calorific_value_kwh_per_m3": "Dutch G-gas upper heating value: 9.77 kWh/m³.",
+            "gas_comfort_backup": "On: recommend the gas boiler whenever the heat pump cannot restore the comfort band within 3 hours, even if gas is more expensive. Off: only when gas is also cheaper."
+          }
+        }
+      },
+      "abort": {
+        "single_instance_allowed": "Only one gas boiler can be configured.",
+        "reconfigure_successful": "Gas boiler updated."
       }
     }
   },
@@ -276,183 +381,109 @@
     },
     "emitter_type": {
       "options": {
-        "radiator": "Radiator",
+        "radiator": "Radiators",
         "underfloor": "Underfloor heating",
-        "fan_coil": "Fan coil"
+        "fan_coil": "Fan coil units"
       }
     }
   },
-  "config_subentries": {
-    "heating_zone": {
-      "entry_type": "Heating Zone",
-      "flow_title": "Heating zone",
-      "initiate_flow": {
-        "user": "Add heating zone"
+  "entity": {
+    "sensor": {
+      "outdoor_temperature": {
+        "name": "Outdoor temperature"
       },
-      "step": {
-        "user": {
-          "title": "Add heating zone",
-          "description": "Configure a room or heating circuit - every zone, including the first, is set up this way. Price sensor, heating curve limits and heat pump parameters are shared from the main configuration.",
-          "data": {
-            "name": "Zone name",
-            "area_m2": "Floor area (m²)",
-            "energy_label": "Energy label",
-            "glass_east_m2": "East-facing glass area (m²)",
-            "glass_west_m2": "West-facing glass area (m²)",
-            "glass_south_m2": "South-facing glass area (m²)",
-            "glass_u_value": "Glass U-value (W/m²K)",
-            "ventilation_type": "Ventilation type",
-            "ceiling_height": "Ceiling height (m)",
-            "thermal_mass_class": "Thermal mass class",
-            "emitter_type": "Heat emitter type",
-            "target_indoor_temp": "Target indoor temperature (°C)",
-            "indoor_temp_hysteresis_lower": "Lower hysteresis - heat pump ON (°C)",
-            "indoor_temp_hysteresis_upper": "Upper hysteresis - heat pump OFF (°C)",
-            "indoor_temperature_sensor": "Indoor temperature sensor (optional)"
-          },
-          "data_description": {
-            "glass_u_value": "Heat transfer coefficient of the glass (default: 1.2)",
-            "ventilation_type": "Type of ventilation system for calculating ventilation heat loss",
-            "ceiling_height": "Average ceiling height for calculating building volume (default: 2.5m)",
-            "thermal_mass_class": "Construction weight class, used instead of the energy-label-derived estimate (default: medium)",
-            "emitter_type": "How emitter output falls off as supply temperature drops (default: radiator)",
-            "indoor_temp_hysteresis_lower": "How far below target temp before heat pump turns ON (default: 0.3°C)",
-            "indoor_temp_hysteresis_upper": "How far above target temp before heat pump turns OFF (default: 0.5°C)"
-          }
-        },
-        "reconfigure": {
-          "title": "Edit heating zone",
-          "description": "Update this zone's configuration.",
-          "data": {
-            "name": "Zone name",
-            "area_m2": "Floor area (m²)",
-            "energy_label": "Energy label",
-            "glass_east_m2": "East-facing glass area (m²)",
-            "glass_west_m2": "West-facing glass area (m²)",
-            "glass_south_m2": "South-facing glass area (m²)",
-            "glass_u_value": "Glass U-value (W/m²K)",
-            "ventilation_type": "Ventilation type",
-            "ceiling_height": "Ceiling height (m)",
-            "thermal_mass_class": "Thermal mass class",
-            "emitter_type": "Heat emitter type",
-            "target_indoor_temp": "Target indoor temperature (°C)",
-            "indoor_temp_hysteresis_lower": "Lower hysteresis - heat pump ON (°C)",
-            "indoor_temp_hysteresis_upper": "Upper hysteresis - heat pump OFF (°C)",
-            "indoor_temperature_sensor": "Indoor temperature sensor (optional)"
-          },
-          "data_description": {
-            "glass_u_value": "Heat transfer coefficient of the glass (default: 1.2)",
-            "ventilation_type": "Type of ventilation system for calculating ventilation heat loss",
-            "ceiling_height": "Average ceiling height for calculating building volume (default: 2.5m)",
-            "thermal_mass_class": "Construction weight class, used instead of the energy-label-derived estimate (default: medium)",
-            "emitter_type": "How emitter output falls off as supply temperature drops (default: radiator)",
-            "indoor_temp_hysteresis_lower": "How far below target temp before heat pump turns ON (default: 0.3°C)",
-            "indoor_temp_hysteresis_upper": "How far above target temp before heat pump turns OFF (default: 0.5°C)"
-          }
+      "calculated_supply_temperature": {
+        "name": "Heating curve supply temperature"
+      },
+      "heat_loss": {
+        "name": "Heat loss"
+      },
+      "window_solar_gain": {
+        "name": "Window solar gain"
+      },
+      "net_heat_loss": {
+        "name": "Net heat demand"
+      },
+      "pv_production_forecast": {
+        "name": "PV production forecast"
+      },
+      "heating_curve_offset": {
+        "name": "Heating curve offset"
+      },
+      "optimized_supply_temperature": {
+        "name": "Optimized supply temperature"
+      },
+      "planned_indoor_temperature": {
+        "name": "Planned indoor temperature"
+      },
+      "heat_buffer": {
+        "name": "Heat buffer"
+      },
+      "planned_cop": {
+        "name": "Planned COP"
+      },
+      "cost_savings_forecast": {
+        "name": "Cost savings forecast"
+      },
+      "total_cost_savings": {
+        "name": "Total cost savings"
+      },
+      "shadow_price": {
+        "name": "Value of stored heat"
+      },
+      "thermal_calibration": {
+        "name": "Thermal calibration samples"
+      },
+      "realtime_offset": {
+        "name": "Real-time heating curve offset"
+      },
+      "diagnostics": {
+        "name": "Status",
+        "state": {
+          "ok": "OK",
+          "partial": "Partially available",
+          "initializing": "Initializing",
+          "error": "Error"
         }
       },
-      "error": {
-        "invalid_zone_input": "Invalid zone configuration. Check the name and floor area."
+      "heat_pump_thermal_power": {
+        "name": "Heat pump thermal power"
       },
-      "abort": {
-        "reconfigure_successful": "Heating zone updated successfully."
+      "heat_pump_thermal_energy": {
+        "name": "Heat pump thermal energy"
+      },
+      "gas_boiler_heat_pump_cost": {
+        "name": "Heat pump cost per kWh heat"
+      },
+      "gas_boiler_gas_cost": {
+        "name": "Gas boiler cost per kWh heat"
+      },
+      "gas_boiler_cost_savings": {
+        "name": "Gas boiler advantage per kWh heat"
       }
     },
-    "gas_boiler": {
-      "entry_type": "Hybrid Gas Boiler",
-      "flow_title": "Hybrid gas boiler",
-      "initiate_flow": {
-        "user": "Add hybrid gas boiler"
+    "binary_sensor": {
+      "heat_pump_demand": {
+        "name": "Heat demand"
       },
-      "step": {
-        "user": {
-          "title": "Add hybrid gas boiler",
-          "description": "Compare the heat pump's cost per kWh against a gas boiler's, so you can see when it would be cheaper to heat with gas instead. Only one gas boiler can be configured.",
-          "data": {
-            "gas_price_sensor": "Gas price sensor (€/m³)",
-            "gas_boiler_efficiency": "Boiler efficiency (fraction, e.g. 0.90 = 90%)",
-            "gas_calorific_value_kwh_per_m3": "Gas calorific value (kWh/m³)"
-          },
-          "data_description": {
-            "gas_boiler_efficiency": "Typical Dutch HR-combi boiler: 0.90 at normal return temperatures, up to ~1.07 for a well-tuned condensing unit at low return temperature.",
-            "gas_calorific_value_kwh_per_m3": "Dutch G-gas bovenwaarde (HHV) is typically 9.77 kWh/m³ - not the lower heating value (~8.8 kWh/m³) some appliance datasheets quote instead.",
-            "gas_price_sensor": "If Dynamic Energy Contract Calculator is configured with a gas source, its current_gas_consumption_price sensor is offered here automatically."
-          }
-        },
-        "reconfigure": {
-          "title": "Edit hybrid gas boiler",
-          "description": "Update the gas boiler comparison settings.",
-          "data": {
-            "gas_price_sensor": "Gas price sensor (€/m³)",
-            "gas_boiler_efficiency": "Boiler efficiency (fraction, e.g. 0.90 = 90%)",
-            "gas_calorific_value_kwh_per_m3": "Gas calorific value (kWh/m³)"
-          },
-          "data_description": {
-            "gas_boiler_efficiency": "Typical Dutch HR-combi boiler: 0.90 at normal return temperatures, up to ~1.07 for a well-tuned condensing unit at low return temperature.",
-            "gas_calorific_value_kwh_per_m3": "Dutch G-gas bovenwaarde (HHV) is typically 9.77 kWh/m³ - not the lower heating value (~8.8 kWh/m³) some appliance datasheets quote instead."
-          }
-        }
-      },
-      "error": {
-        "invalid_gas_boiler_input": "Invalid gas boiler configuration.",
-        "gas_price_sensor_required": "A gas price sensor is required.",
-        "efficiency_out_of_range": "Boiler efficiency must be between 0.5 and 1.2.",
-        "calorific_value_must_be_positive": "Calorific value must be greater than 0."
-      },
-      "abort": {
-        "single_instance_allowed": "Only one hybrid gas boiler can be configured.",
-        "reconfigure_successful": "Hybrid gas boiler updated successfully."
+      "gas_boiler_preferred": {
+        "name": "Gas boiler preferred"
       }
     },
-    "pv_array": {
-      "entry_type": "PV Array",
-      "flow_title": "PV array",
-      "initiate_flow": {
-        "user": "Add PV array"
+    "number": {
+      "target_indoor_temperature": {
+        "name": "Target indoor temperature"
       },
-      "step": {
-        "user": {
-          "title": "Add PV array",
-          "description": "Battery Controller already has one or more PV arrays configured. Import one to reuse its peak power, orientation and tilt, or enter a new array manually.",
-          "data": {
-            "import_choice": "Array to import"
-          }
-        },
-        "configure": {
-          "title": "Add PV array",
-          "description": "Add one solar panel array. Panels facing different directions or at different tilts are added as separate arrays; their forecasted production is summed.",
-          "data": {
-            "name": "Array name (optional)",
-            "peak_power_kwp": "Peak power (kWp)",
-            "orientation": "Orientation (degrees, 180 = south)",
-            "tilt": "Tilt (degrees, 0 = flat, 90 = vertical)",
-            "efficiency_factor": "System efficiency (inverter/wiring/temperature losses)",
-            "dc_coupled": "DC-coupled (e.g. hybrid inverter with battery)"
-          },
-          "data_description": {
-            "peak_power_kwp": "Total peak power (STC) of this array in kWp",
-            "orientation": "Compass direction the panels face - 0/360 = north, 90 = east, 180 = south, 270 = west",
-            "efficiency_factor": "Typical value: 0.85"
-          }
-        },
-        "reconfigure": {
-          "title": "Edit PV array",
-          "description": "Update this array's configuration.",
-          "data": {
-            "name": "Array name (optional)",
-            "peak_power_kwp": "Peak power (kWp)",
-            "orientation": "Orientation (degrees, 180 = south)",
-            "tilt": "Tilt (degrees, 0 = flat, 90 = vertical)",
-            "efficiency_factor": "System efficiency (inverter/wiring/temperature losses)",
-            "dc_coupled": "DC-coupled (e.g. hybrid inverter with battery)"
-          }
-        }
+      "indoor_temp_hysteresis_lower": {
+        "name": "Comfort band below target"
       },
-      "error": {
-        "invalid_pv_array_input": "Invalid PV array configuration. Check the peak power, orientation and tilt."
-      },
-      "abort": {
-        "reconfigure_successful": "PV array updated successfully."
+      "indoor_temp_hysteresis_upper": {
+        "name": "Comfort band above target"
+      }
+    },
+    "climate": {
+      "heating": {
+        "name": "Heating"
       }
     }
   },
@@ -464,19 +495,19 @@
       "message": "Error fetching weather data from open-meteo.com: {error}."
     },
     "no_forecast_data": {
-      "message": "No forecast data in the open-Meteo API response."
+      "message": "No forecast data in the Open-Meteo response."
     },
     "no_weather_data": {
-      "message": "Weather coordinator has no data yet."
+      "message": "No weather data available yet."
     },
     "missing_building_config": {
-      "message": "Missing area or energy label configuration."
+      "message": "The heating zone has no valid floor area."
     },
     "no_heat_data": {
-      "message": "Heat calculation coordinator has no data yet."
+      "message": "Heat calculation has no data yet."
     },
     "no_weather_data_for_optimization": {
-      "message": "No weather data available for optimization."
+      "message": "No weather forecast available for the optimization."
     },
     "no_price_sensor": {
       "message": "No electricity price sensor is configured."
@@ -485,7 +516,7 @@
       "message": "Price sensor {sensor} is unavailable."
     },
     "price_data_extraction_failed": {
-      "message": "Cannot extract price data from sensor {sensor}."
+      "message": "Cannot read a price forecast from sensor {sensor}."
     },
     "no_gas_price_sensor": {
       "message": "No gas price sensor is configured."
@@ -497,24 +528,37 @@
       "message": "No operating point (outdoor/supply temperature) available yet for the gas boiler comparison."
     },
     "gas_boiler_electricity_price_unavailable": {
-      "message": "Electricity price sensor {sensor} is unavailable (see the main price_sensor_unavailable repair issue)."
-    },
-    "thermal_optimizer_failed": {
-      "message": "The thermal optimizer failed this cycle: {error}."
+      "message": "Electricity price sensor {sensor} is unavailable."
     }
   },
   "issues": {
     "weather_data_unavailable": {
-      "title": "Weather data unavailable (open-meteo)",
-      "description": "The integration cannot reach the open-meteo.com weather API, so heat loss, solar gain and optimization cannot be calculated. Check your internet connection or open-meteo.com service status."
+      "title": "Weather data unavailable",
+      "description": "open-meteo.com cannot be reached, so heat loss, solar gain and the optimization cannot be calculated. Check the internet connection of Home Assistant."
     },
     "price_sensor_unavailable": {
       "title": "Electricity price sensor unavailable",
-      "description": "The configured price sensor **{sensor}** is unavailable or unknown. The heating curve optimizer cannot run without price data. Check that the sensor exists and is working."
+      "description": "The price sensor **{sensor}** is unavailable. The optimizer cannot run without price data."
+    },
+    "indoor_sensor_unavailable": {
+      "title": "Indoor temperature sensor unavailable",
+      "description": "The indoor temperature sensor **{sensor}** is unavailable. Until it reports again, the optimizer assumes the room is at its target temperature and calibration is paused."
     },
     "gas_price_sensor_unavailable": {
       "title": "Gas price sensor unavailable",
-      "description": "The configured gas price sensor **{sensor}** is unavailable or unknown. The hybrid gas-boiler cost comparison cannot run without gas price data. Check that the sensor exists and is working."
+      "description": "The gas price sensor **{sensor}** is unavailable. The gas boiler comparison cannot run without it."
+    }
+  },
+  "services": {
+    "reset_thermal_calibration": {
+      "name": "Reset thermal calibration",
+      "description": "Discard the learned heat loss coefficient and thermal mass and return to the energy-label estimate.",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": "Optional. Only reset this entry; empty resets all."
+        }
+      }
     }
   }
 }

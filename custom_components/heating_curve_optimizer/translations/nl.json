@@ -1,255 +1,360 @@
 {
   "config": {
     "step": {
-      "basic": {
-        "data": {
-          "grid_import_sensor": "Netafname vermogen sensor (W of kW, realtime PV-overschot regeling)",
-          "grid_export_sensor": "Netteruglevering vermogen sensor (W of kW, realtime PV-overschot regeling)"
-        }
-      },
-      "heating_curve_settings": {
-        "title": "Stooklijn instellingen",
-        "description": "Configureer stooklijn en optimalisatie parameters",
-        "data": {
-          "supply_temperature_sensor": "Aanvoertemperatuur sensor",
-          "k_factor": "K-factor (COP afname per °C aanvoertemp verhoging)",
-          "base_cop": "Basale COP bij 35°C aanvoertemperatuur",
-          "outdoor_temp_coefficient": "Buitentemperatuur-coëfficiënt",
-          "cop_compensation_factor": "COP-compensatiefactor",
-          "planning_window": "Planningsvenster (uren)",
-          "time_base": "Tijdsbasis (minuten per stap)",
-          "offset_delta_t": "Offset wijzigingssnelheid (min/°C)",
-          "heat_curve_min_outdoor": "Minimum buitentemperatuur (°C)",
-          "heat_curve_max_outdoor": "Maximum buitentemperatuur (°C)",
-          "heating_curve_offset": "Handmatige stooklijn offset (°C)",
-          "heat_curve_min": "Minimum aanvoertemperatuur (°C)",
-          "heat_curve_max": "Maximum aanvoertemperatuur (°C)"
-        },
-        "data_description": {
-          "supply_temperature_sensor": "Sensor die de aanvoertemperatuur van de warmtepomp meet",
-          "k_factor": "Hoeveel de COP afneemt per °C verhoging van de aanvoertemperatuur (typisch: 0,01-0,11)",
-          "base_cop": "COP van de warmtepomp bij 35°C aanvoertemperatuur (typisch: 3,5-5,0)",
-          "outdoor_temp_coefficient": "Hoeveel de COP toeneemt per °C stijging van de buitentemperatuur (typisch: 0,025-0,08)",
-          "cop_compensation_factor": "Factor om theoretische COP aan te passen aan werkelijke systeemprestaties (typisch: 0,8-1,2)",
-          "planning_window": "Optimalisatie planningshorizon in uren (standaard: 6)",
-          "time_base": "Tijdsinterval voor optimalisatie in minuten (standaard: 60)",
-          "offset_delta_t": "Minuten nodig per 1°C offset verandering. Lager = snellere respons (standaard: 10, bereik: 5-60)",
-          "heat_curve_min_outdoor": "Minimum buitentemperatuur voor stooklijn (standaard: -20°C)",
-          "heat_curve_max_outdoor": "Maximum buitentemperatuur voor stooklijn (standaard: 15°C)",
-          "heating_curve_offset": "Handmatige offset om toe te voegen aan geoptimaliseerde stooklijn (bereik: -4 tot +4°C, standaard: 0)",
-          "heat_curve_min": "Minimum toegestane aanvoertemperatuur (standaard: 20°C)",
-          "heat_curve_max": "Maximum toegestane aanvoertemperatuur (standaard: 45°C)"
-        }
-      },
       "user": {
-        "title": "Heating Curve Optimizer instellen",
+        "title": "Heating Curve Optimizer",
+        "description": "Gedeelde instellingen. Voeg daarna verwarmingszones, PV-installaties en een gasketel toe via de integratiepagina.",
         "sections": {
-          "building": {
-            "name": "Prijzen",
-            "description": "Vereist om de integratie aan te maken. Verwarmingszones (oppervlak, energielabel, bouwschil, doeltemperatuur) voeg je daarna toe vanaf de integratiepagina - zie \"Verwarmingszone toevoegen\".",
+          "prices": {
+            "name": "Elektriciteitsprijzen",
+            "description": "Sensoren met de prijsverwachting waarop de optimizer plant.",
             "data": {
-              "consumption_price_sensor": "Elektriciteit verbruiksprijs sensor",
-              "production_price_sensor": "Elektriciteit productieprijs sensor"
+              "consumption_price_sensor": "Sensor afnameprijs",
+              "production_price_sensor": "Sensor terugleverprijs"
             },
             "data_description": {
-              "consumption_price_sensor": "Sensor met elektriciteit inkoopprijs forecast-attributen",
-              "production_price_sensor": "Sensor met elektriciteit teruglever-/verkoopprijs forecast-attributen"
+              "consumption_price_sensor": "Prijs per kWh met een forecast-attribuut (raw_today/raw_tomorrow, forecast_prices, net_prices_today/tomorrow, ...). De planningsstappen volgen het interval van deze sensor (15 of 60 min).",
+              "production_price_sensor": "Optioneel. Waardeert stoken op eigen PV-overschot tegen de terugleverprijs. Zonder deze sensor wordt 0,07 EUR/kWh gebruikt."
             }
           },
           "sensors": {
-            "name": "Energiebronnen & sensoren",
-            "description": "Welke sensoren uw elektriciteitsverbruik/-productie meten, plus eventuele optionele realtime sensoren.",
+            "name": "Meetsensoren (optioneel)",
+            "description": "Verbeteren de nauwkeurigheid en maken thermische kalibratie en realtime PV-overschotsturing mogelijk.",
             "data": {
-              "sources_consumption": "Elektriciteitsverbruik sensoren",
-              "sources_production": "Elektriciteitsproductie sensoren",
-              "power_consumption": "Warmtepomp vermogensverbruik sensor",
-              "supply_temperature_sensor": "Aanvoertemperatuur sensor",
-              "grid_import_sensor": "Netafname vermogen sensor (W of kW, realtime PV-overschot regeling)",
-              "grid_export_sensor": "Netteruglevering vermogen sensor (W of kW, realtime PV-overschot regeling)"
+              "power_consumption": "Elektrisch vermogen warmtepomp",
+              "supply_temperature_sensor": "Gemeten aanvoertemperatuur",
+              "grid_import_sensor": "Netafname vermogen",
+              "grid_export_sensor": "Netteruglevering vermogen"
             },
             "data_description": {
-              "sources_consumption": "Energiesensoren (kWh) die elektriciteitsverbruik meten - minstens één verbruiks- of productiebron is verplicht",
-              "sources_production": "Energiesensoren (kWh) die elektriciteitsproductie meten (bijv. zonnepanelen)",
-              "power_consumption": "Sensor die het vermogensverbruik van de warmtepomp meet",
-              "supply_temperature_sensor": "Sensor die de aanvoertemperatuur van de warmtepomp meet"
+              "power_consumption": "Vermogenssensor (W of kW) van de warmtepomp. Activeert de thermisch vermogen/energie-sensoren en thermische kalibratie.",
+              "supply_temperature_sensor": "Gebruikt voor de COP van het gemeten werkpunt; anders wordt de geplande aanvoertemperatuur gebruikt.",
+              "grid_import_sensor": "Actueel vermogen (W of kW). Met afname en/of teruglevering ingesteld verhoogt de realtime-offsetsensor de offset zolang er PV-overschot wordt teruggeleverd.",
+              "grid_export_sensor": "Actueel vermogen (W of kW), positief tijdens teruglevering."
             }
           },
-          "heat_pump_and_curve": {
-            "name": "Warmtepomp & stooklijn",
-            "description": "COP-eigenschappen en de fysieke grenzen van de stooklijn.",
+          "heat_pump": {
+            "name": "Warmtepomp",
+            "description": "COP = (basis-COP + buitentemperatuurcoëfficiënt x T_buiten - k-factor x (T_aanvoer - 35)) x compensatie, begrensd op de Carnot-limiet en gecorrigeerd voor ontdooiverliezen.",
             "data": {
-              "k_factor": "K-factor (COP afname per °C aanvoertemp verhoging)",
-              "base_cop": "Basale COP bij 35°C aanvoertemperatuur",
-              "outdoor_temp_coefficient": "Buitentemperatuur-coëfficiënt",
+              "base_cop": "Basis-COP bij 35 °C aanvoer, 0 °C buiten",
+              "k_factor": "k-factor (COP-verlies per °C aanvoer)",
+              "outdoor_temp_coefficient": "Buitentemperatuurcoëfficiënt (COP-winst per °C)",
               "cop_compensation_factor": "COP-compensatiefactor",
-              "heat_curve_min_outdoor": "Minimum buitentemperatuur (°C)",
-              "heat_curve_max_outdoor": "Maximum buitentemperatuur (°C)",
-              "heating_curve_offset": "Handmatige stooklijn offset (°C)",
-              "heat_curve_min": "Minimum aanvoertemperatuur (°C)",
-              "heat_curve_max": "Maximum aanvoertemperatuur (°C)",
-              "offset_delta_t": "Offset wijzigingssnelheid (min/°C)"
+              "heat_pump_max_thermal_power_kw": "Maximaal thermisch vermogen"
             },
             "data_description": {
-              "k_factor": "Hoeveel de COP afneemt per °C verhoging van de aanvoertemperatuur (typisch: 0,01-0,11)",
-              "base_cop": "COP van de warmtepomp bij 35°C aanvoertemperatuur (typisch: 3,5-5,0)",
-              "outdoor_temp_coefficient": "Hoeveel de COP toeneemt per °C stijging van de buitentemperatuur (typisch: 0,025-0,08)",
-              "cop_compensation_factor": "Factor om theoretische COP aan te passen aan werkelijke systeemprestaties (typisch: 0,8-1,2)",
-              "heat_curve_min_outdoor": "Minimum buitentemperatuur voor stooklijn (standaard: -20°C)",
-              "heat_curve_max_outdoor": "Maximum buitentemperatuur voor stooklijn (standaard: 15°C)",
-              "heating_curve_offset": "Handmatige offset om toe te voegen aan geoptimaliseerde stooklijn (bereik: -4 tot +4°C, standaard: 0)",
-              "heat_curve_min": "Minimum toegestane aanvoertemperatuur (standaard: 20°C)",
-              "heat_curve_max": "Maximum toegestane aanvoertemperatuur (standaard: 45°C)",
-              "offset_delta_t": "Minuten nodig per 1°C offset verandering. Lager = snellere respons (standaard: 10, bereik: 5-60)"
+              "base_cop": "Uit het datablad (bijv. A2/W35). Typisch 3,5-4,5 voor lucht-water.",
+              "k_factor": "Typisch 0,08-0,12: hoe snel de COP daalt bij hogere aanvoertemperatuur.",
+              "outdoor_temp_coefficient": "Typisch 0,05-0,10.",
+              "cop_compensation_factor": "Schaalt de gemodelleerde COP naar je gemeten COP (1,0 = datablad).",
+              "heat_pump_max_thermal_power_kw": "Optioneel. Nominaal verwarmingsvermogen. Leeg: 1,3x het warmteverlies bij de ontwerp-buitentemperatuur."
+            }
+          },
+          "heating_curve": {
+            "name": "Stooklijn",
+            "description": "De stooklijn zoals ingesteld op de warmtepomp. De optimizer plant een offset van -4 tot +4 °C daarbovenop.",
+            "data": {
+              "heat_curve_min": "Aanvoertemperatuur aan de warme kant",
+              "heat_curve_max": "Aanvoertemperatuur aan de koude kant",
+              "heat_curve_min_outdoor": "Ontwerp- (koudste) buitentemperatuur",
+              "heat_curve_max_outdoor": "Buitentemperatuur aan de warme kant",
+              "offset_delta_t": "Minuten per 1 °C offsetwijziging"
+            },
+            "data_description": {
+              "heat_curve_min": "Aanvoertemperatuur bij en boven de buitentemperatuur van de warme kant.",
+              "heat_curve_max": "Aanvoertemperatuur bij en onder de ontwerp-buitentemperatuur. Aangenomen wordt dat de afgiftesystemen voor dit punt zijn gedimensioneerd.",
+              "heat_curve_min_outdoor": "In Nederland typisch -10 °C.",
+              "heat_curve_max_outdoor": "Typisch 15-20 °C.",
+              "offset_delta_t": "Hellingsbegrenzing: 30 staat 2 °C per uur toe."
             }
           },
           "advanced": {
             "name": "Geavanceerd",
-            "description": "Planningsvenster van de optimizer - standaardwaarden werken voor de meeste installaties.",
+            "description": "Horizon van de optimizer.",
             "data": {
-              "planning_window": "Planningsvenster (uren)",
-              "time_base": "Tijdsbasis (minuten per stap)"
+              "planning_window": "Planningshorizon"
             },
             "data_description": {
-              "planning_window": "Optimalisatie planningshorizon in uren (standaard: 6)",
-              "time_base": "Tijdsinterval voor optimalisatie in minuten (standaard: 60)"
+              "planning_window": "Aantal uren vooruit, begrensd door de beschikbare prijsverwachting. Een langere horizon verschuift meer verbruik."
             }
           }
         }
       },
       "detected_integrations": {
-        "title": "Gedetecteerde gekoppelde integraties",
-        "description": "Sensorinstellingen gevonden die al zijn geconfigureerd in een andere integratie op dit Home Assistant-systeem:\n\n{detected_list}\n\nDeze waarden gebruiken in plaats van ze in de volgende stappen opnieuw te selecteren?",
+        "title": "Gevonden bijbehorende integraties",
+        "description": "Deze sensoren zijn al ingesteld in een andere integratie:\n\n{detected_list}\n\nVooraf invullen in het instelformulier?",
         "data": {
-          "power_consumption": "Gedetecteerde vermogenssensor gebruiken",
-          "grid_import_sensor": "Gedetecteerde netafname-sensor gebruiken",
-          "grid_export_sensor": "Gedetecteerde netteruglevering-sensor gebruiken",
-          "consumption_price_sensor": "Gedetecteerde verbruiksprijssensor gebruiken",
-          "production_price_sensor": "Gedetecteerde productieprijssensor gebruiken",
-          "sources_consumption": "Gedetecteerde verbruikssensoren gebruiken",
-          "sources_production": "Gedetecteerde productiesensoren gebruiken"
+          "power_consumption": "Vermogenssensor warmtepomp",
+          "grid_import_sensor": "Netafname-sensor",
+          "grid_export_sensor": "Netteruglevering-sensor",
+          "consumption_price_sensor": "Sensor afnameprijs",
+          "production_price_sensor": "Sensor terugleverprijs"
         }
       }
     },
-    "abort": {
-      "already_configured": "Apparaat is al geconfigureerd"
-    },
     "error": {
-      "no_blocks": "Voeg minstens één verbruiks- of productiebron toe voordat je afrondt.",
-      "cannot_connect": "Kon open-meteo.com niet bereiken. Controleer de internetverbinding en probeer het opnieuw."
+      "cannot_connect": "Kan open-meteo.com niet bereiken. Controleer de internetverbinding van Home Assistant.",
+      "price_sensor_required": "Een sensor voor de afnameprijs is verplicht.",
+      "curve_supply_range": "De aanvoertemperatuur aan de warme kant moet lager zijn dan aan de koude kant.",
+      "curve_outdoor_range": "De ontwerp-buitentemperatuur moet lager zijn dan de buitentemperatuur aan de warme kant."
+    },
+    "abort": {
+      "already_configured": "Heating Curve Optimizer is al ingesteld."
     }
   },
-  "entity": {
-    "binary_sensor": {
-      "heat_pump_demand": {
-        "name": "Warmtevraag warmtepomp"
-      },
-      "gas_boiler_preferred": {
-        "name": "Gas-cv voordeliger"
+  "options": {
+    "step": {
+      "init": {
+        "title": "Instellingen Heating Curve Optimizer",
+        "sections": {
+          "prices": {
+            "name": "Elektriciteitsprijzen",
+            "description": "Sensoren met de prijsverwachting waarop de optimizer plant.",
+            "data": {
+              "consumption_price_sensor": "Sensor afnameprijs",
+              "production_price_sensor": "Sensor terugleverprijs"
+            },
+            "data_description": {
+              "consumption_price_sensor": "Prijs per kWh met een forecast-attribuut (raw_today/raw_tomorrow, forecast_prices, net_prices_today/tomorrow, ...). De planningsstappen volgen het interval van deze sensor (15 of 60 min).",
+              "production_price_sensor": "Optioneel. Waardeert stoken op eigen PV-overschot tegen de terugleverprijs. Zonder deze sensor wordt 0,07 EUR/kWh gebruikt."
+            }
+          },
+          "sensors": {
+            "name": "Meetsensoren (optioneel)",
+            "description": "Verbeteren de nauwkeurigheid en maken thermische kalibratie en realtime PV-overschotsturing mogelijk.",
+            "data": {
+              "power_consumption": "Elektrisch vermogen warmtepomp",
+              "supply_temperature_sensor": "Gemeten aanvoertemperatuur",
+              "grid_import_sensor": "Netafname vermogen",
+              "grid_export_sensor": "Netteruglevering vermogen"
+            },
+            "data_description": {
+              "power_consumption": "Vermogenssensor (W of kW) van de warmtepomp. Activeert de thermisch vermogen/energie-sensoren en thermische kalibratie.",
+              "supply_temperature_sensor": "Gebruikt voor de COP van het gemeten werkpunt; anders wordt de geplande aanvoertemperatuur gebruikt.",
+              "grid_import_sensor": "Actueel vermogen (W of kW). Met afname en/of teruglevering ingesteld verhoogt de realtime-offsetsensor de offset zolang er PV-overschot wordt teruggeleverd.",
+              "grid_export_sensor": "Actueel vermogen (W of kW), positief tijdens teruglevering."
+            }
+          },
+          "heat_pump": {
+            "name": "Warmtepomp",
+            "description": "COP = (basis-COP + buitentemperatuurcoëfficiënt x T_buiten - k-factor x (T_aanvoer - 35)) x compensatie, begrensd op de Carnot-limiet en gecorrigeerd voor ontdooiverliezen.",
+            "data": {
+              "base_cop": "Basis-COP bij 35 °C aanvoer, 0 °C buiten",
+              "k_factor": "k-factor (COP-verlies per °C aanvoer)",
+              "outdoor_temp_coefficient": "Buitentemperatuurcoëfficiënt (COP-winst per °C)",
+              "cop_compensation_factor": "COP-compensatiefactor",
+              "heat_pump_max_thermal_power_kw": "Maximaal thermisch vermogen"
+            },
+            "data_description": {
+              "base_cop": "Uit het datablad (bijv. A2/W35). Typisch 3,5-4,5 voor lucht-water.",
+              "k_factor": "Typisch 0,08-0,12: hoe snel de COP daalt bij hogere aanvoertemperatuur.",
+              "outdoor_temp_coefficient": "Typisch 0,05-0,10.",
+              "cop_compensation_factor": "Schaalt de gemodelleerde COP naar je gemeten COP (1,0 = datablad).",
+              "heat_pump_max_thermal_power_kw": "Optioneel. Nominaal verwarmingsvermogen. Leeg: 1,3x het warmteverlies bij de ontwerp-buitentemperatuur."
+            }
+          },
+          "heating_curve": {
+            "name": "Stooklijn",
+            "description": "De stooklijn zoals ingesteld op de warmtepomp. De optimizer plant een offset van -4 tot +4 °C daarbovenop.",
+            "data": {
+              "heat_curve_min": "Aanvoertemperatuur aan de warme kant",
+              "heat_curve_max": "Aanvoertemperatuur aan de koude kant",
+              "heat_curve_min_outdoor": "Ontwerp- (koudste) buitentemperatuur",
+              "heat_curve_max_outdoor": "Buitentemperatuur aan de warme kant",
+              "offset_delta_t": "Minuten per 1 °C offsetwijziging"
+            },
+            "data_description": {
+              "heat_curve_min": "Aanvoertemperatuur bij en boven de buitentemperatuur van de warme kant.",
+              "heat_curve_max": "Aanvoertemperatuur bij en onder de ontwerp-buitentemperatuur. Aangenomen wordt dat de afgiftesystemen voor dit punt zijn gedimensioneerd.",
+              "heat_curve_min_outdoor": "In Nederland typisch -10 °C.",
+              "heat_curve_max_outdoor": "Typisch 15-20 °C.",
+              "offset_delta_t": "Hellingsbegrenzing: 30 staat 2 °C per uur toe."
+            }
+          },
+          "advanced": {
+            "name": "Geavanceerd",
+            "description": "Horizon van de optimizer.",
+            "data": {
+              "planning_window": "Planningshorizon"
+            },
+            "data_description": {
+              "planning_window": "Aantal uren vooruit, begrensd door de beschikbare prijsverwachting. Een langere horizon verschuift meer verbruik."
+            }
+          }
+        }
       }
     },
-    "number": {
-      "heating_curve_offset": {
-        "name": "Stooklijn offset"
+    "error": {
+      "price_sensor_required": "Een sensor voor de afnameprijs is verplicht.",
+      "curve_supply_range": "De aanvoertemperatuur aan de warme kant moet lager zijn dan aan de koude kant.",
+      "curve_outdoor_range": "De ontwerp-buitentemperatuur moet lager zijn dan de buitentemperatuur aan de warme kant."
+    }
+  },
+  "config_subentries": {
+    "heating_zone": {
+      "entry_type": "Verwarmingszone",
+      "initiate_flow": {
+        "user": "Verwarmingszone toevoegen"
       },
-      "heat_curve_min_outdoor": {
-        "name": "Stooklijn buitentemperatuur minimum"
+      "step": {
+        "user": {
+          "title": "Verwarmingszone",
+          "description": "Eén verwarmingsgroep: gebouwschil, afgiftesysteem en thermostaat. De eerste zone is de hoofdzone en krijgt de volledige set sensoren.",
+          "data": {
+            "name": "Naam",
+            "area_m2": "Verwarmd vloeroppervlak",
+            "energy_label": "Energielabel",
+            "ventilation_type": "Ventilatie",
+            "ceiling_height": "Plafondhoogte",
+            "thermal_mass_class": "Bouwwijze (thermische massa)",
+            "emitter_type": "Afgiftesysteem",
+            "internal_gains_w_per_m2": "Interne warmtelast",
+            "glass_south_m2": "Raamoppervlak zuid",
+            "glass_east_m2": "Raamoppervlak oost",
+            "glass_west_m2": "Raamoppervlak west",
+            "glass_u_value": "U-waarde beglazing",
+            "target_indoor_temp": "Gewenste binnentemperatuur",
+            "indoor_temp_hysteresis_lower": "Comfortband onder doel",
+            "indoor_temp_hysteresis_upper": "Comfortband boven doel",
+            "indoor_temperature_sensor": "Binnentemperatuursensor",
+            "heat_curve_min": "Eigen stooklijn: aanvoertemperatuur warme kant",
+            "heat_curve_max": "Eigen stooklijn: aanvoertemperatuur koude kant"
+          },
+          "data_description": {
+            "energy_label": "Gebruikt om de warmteverliescoëfficiënt te schatten totdat de kalibratie die heeft geleerd.",
+            "internal_gains_w_per_m2": "Bewoners, apparaten en verlichting. 2-4 W/m² voor een bewoonde woning.",
+            "glass_u_value": "Dubbel glas ~2,8, HR++ ~1,2, triple ~0,8.",
+            "indoor_temp_hysteresis_lower": "De optimizer houdt de binnentemperatuur tussen doel - onder en doel + boven.",
+            "indoor_temperature_sensor": "Sterk aanbevolen. Zonder sensor neemt de optimizer aan dat de ruimte op de doeltemperatuur is en is kalibratie niet mogelijk.",
+            "heat_curve_min": "Alleen voor een aparte verwarmingsgroep met een eigen stooklijn; laat beide leeg om de hoofdstooklijn te gebruiken.",
+            "heat_curve_max": "Vul beide of geen van beide in."
+          }
+        },
+        "reconfigure": {
+          "title": "Verwarmingszone",
+          "description": "Eén verwarmingsgroep: gebouwschil, afgiftesysteem en thermostaat. De eerste zone is de hoofdzone en krijgt de volledige set sensoren.",
+          "data": {
+            "name": "Naam",
+            "area_m2": "Verwarmd vloeroppervlak",
+            "energy_label": "Energielabel",
+            "ventilation_type": "Ventilatie",
+            "ceiling_height": "Plafondhoogte",
+            "thermal_mass_class": "Bouwwijze (thermische massa)",
+            "emitter_type": "Afgiftesysteem",
+            "internal_gains_w_per_m2": "Interne warmtelast",
+            "glass_south_m2": "Raamoppervlak zuid",
+            "glass_east_m2": "Raamoppervlak oost",
+            "glass_west_m2": "Raamoppervlak west",
+            "glass_u_value": "U-waarde beglazing",
+            "target_indoor_temp": "Gewenste binnentemperatuur",
+            "indoor_temp_hysteresis_lower": "Comfortband onder doel",
+            "indoor_temp_hysteresis_upper": "Comfortband boven doel",
+            "indoor_temperature_sensor": "Binnentemperatuursensor",
+            "heat_curve_min": "Eigen stooklijn: aanvoertemperatuur warme kant",
+            "heat_curve_max": "Eigen stooklijn: aanvoertemperatuur koude kant"
+          },
+          "data_description": {
+            "energy_label": "Gebruikt om de warmteverliescoëfficiënt te schatten totdat de kalibratie die heeft geleerd.",
+            "internal_gains_w_per_m2": "Bewoners, apparaten en verlichting. 2-4 W/m² voor een bewoonde woning.",
+            "glass_u_value": "Dubbel glas ~2,8, HR++ ~1,2, triple ~0,8.",
+            "indoor_temp_hysteresis_lower": "De optimizer houdt de binnentemperatuur tussen doel - onder en doel + boven.",
+            "indoor_temperature_sensor": "Sterk aanbevolen. Zonder sensor neemt de optimizer aan dat de ruimte op de doeltemperatuur is en is kalibratie niet mogelijk.",
+            "heat_curve_min": "Alleen voor een aparte verwarmingsgroep met een eigen stooklijn; laat beide leeg om de hoofdstooklijn te gebruiken.",
+            "heat_curve_max": "Vul beide of geen van beide in."
+          }
+        }
       },
-      "heat_curve_max_outdoor": {
-        "name": "Stooklijn buitentemperatuur maximum"
+      "error": {
+        "name_required": "Een naam is verplicht.",
+        "zone_curve_incomplete": "Vul beide stooklijntemperaturen in, of laat beide leeg.",
+        "curve_supply_range": "De aanvoertemperatuur aan de warme kant moet lager zijn dan aan de koude kant."
       },
-      "target_indoor_temperature": {
-        "name": "Gewenste kamertemperatuur"
-      },
-      "indoor_temp_hysteresis": {
-        "name": "Kamertemperatuur hysterese"
-      },
-      "indoor_temp_hysteresis_lower": {
-        "name": "Hysterese onder setpoint (warmtepomp AAN)"
-      },
-      "indoor_temp_hysteresis_upper": {
-        "name": "Hysterese boven setpoint (warmtepomp UIT)"
+      "abort": {
+        "reconfigure_successful": "Verwarmingszone bijgewerkt."
       }
     },
-    "sensor": {
-      "heating_curve_offset": {
-        "name": "Stooklijn offset (geoptimaliseerd)"
+    "pv_array": {
+      "entry_type": "PV-installatie",
+      "initiate_flow": {
+        "user": "PV-installatie toevoegen"
       },
-      "calculated_supply_temperature": {
-        "name": "Berekende aanvoertemperatuur"
+      "step": {
+        "user": {
+          "title": "PV-installatie importeren",
+          "description": "Battery Controller heeft al PV-installaties ingesteld. Importeer er één, of kies — om de waarden zelf in te voeren.",
+          "data": {
+            "import_choice": "PV-installatie"
+          }
+        },
+        "configure": {
+          "title": "PV-installatie",
+          "data": {
+            "name": "Naam",
+            "peak_power_kwp": "Piekvermogen",
+            "orientation": "Oriëntatie (azimut, 180 = zuid)",
+            "tilt": "Hellingshoek (0 = plat)",
+            "efficiency_factor": "Systeemrendement",
+            "dc_coupled": "DC-gekoppeld"
+          }
+        },
+        "reconfigure": {
+          "title": "PV-installatie",
+          "data": {
+            "name": "Naam",
+            "peak_power_kwp": "Piekvermogen",
+            "orientation": "Oriëntatie (azimut, 180 = zuid)",
+            "tilt": "Hellingshoek (0 = plat)",
+            "efficiency_factor": "Systeemrendement",
+            "dc_coupled": "DC-gekoppeld"
+          }
+        }
       },
-      "optimized_supply_temperature": {
-        "name": "Geoptimaliseerde aanvoertemperatuur"
-      },
-      "heat_loss": {
-        "name": "Warmteverlies"
-      },
-      "net_heat_loss": {
-        "name": "Netto warmteverlies"
-      },
-      "window_solar_gain": {
-        "name": "Zonnewinst via ramen"
-      },
-      "pv_production_forecast": {
-        "name": "PV productie voorspelling"
-      },
-      "cop_delta": {
-        "name": "COP Verschil"
-      },
-      "heat_generation_delta": {
-        "name": "Warmteproductie Verschil"
-      },
-      "cost_savings_forecast": {
-        "name": "Kostenbesparing Voorspelling"
-      },
-      "total_cost_savings": {
-        "name": "Totale Kostenbesparing"
-      },
-      "heat_buffer": {
-        "name": "Warmtebuffer (energie opslag)"
-      },
-      "calibration": {
-        "name": "Parameter Kalibratie"
-      },
-      "thermal_calibration": {
-        "name": "Thermische kalibratie (experimenteel)"
-      },
-      "realtime_offset_adjustment": {
-        "name": "Realtime offset-aanpassing (PV-overschot, experimenteel)"
-      },
-      "outdoor_temperature": {
-        "name": "Buitentemperatuur"
-      },
-      "quadratic_cop": {
-        "name": "Kwadratische COP"
-      },
-      "diagnostics": {
-        "name": "Diagnostiek"
-      },
-      "heat_pump_thermal_power": {
-        "name": "Thermisch vermogen warmtepomp"
-      },
-      "heat_pump_energy_daily": {
-        "name": "Warmtepomp energie per dag"
-      },
-      "net_heat_loss_energy_daily": {
-        "name": "Netto warmteverlies energie per dag"
-      },
-      "gas_boiler_heat_pump_cost": {
-        "name": "Kosten warmtepomp"
-      },
-      "gas_boiler_gas_cost": {
-        "name": "Kosten gas-cv"
-      },
-      "gas_boiler_cost_savings": {
-        "name": "Besparing gas-cv"
-      },
-      "current_consumption_price": {
-        "name": "Huidige verbruiksprijs"
+      "abort": {
+        "reconfigure_successful": "PV-installatie bijgewerkt."
       }
     },
-    "climate": {
-      "heating": {
-        "name": "Verwarming"
+    "gas_boiler": {
+      "entry_type": "Gasketel",
+      "initiate_flow": {
+        "user": "Gasketel toevoegen"
+      },
+      "step": {
+        "user": {
+          "title": "Hybride gasketel",
+          "description": "Vergelijkt de kosten per kWh warmte van de warmtepomp met die van de gasketel.",
+          "data": {
+            "gas_price_sensor": "Sensor gasprijs",
+            "gas_boiler_efficiency": "Ketelrendement",
+            "gas_calorific_value_kwh_per_m3": "Verbrandingswaarde",
+            "gas_comfort_backup": "Gas als comfort-backup"
+          },
+          "data_description": {
+            "gas_price_sensor": "Actuele gasprijs in EUR/m³.",
+            "gas_boiler_efficiency": "0,90 voor een gangbare HR-ketel; tot ~1,07 op bovenwaarde bij lage retourtemperaturen.",
+            "gas_calorific_value_kwh_per_m3": "Bovenwaarde Gronings aardgas: 9,77 kWh/m³.",
+            "gas_comfort_backup": "Aan: adviseer de gasketel zodra de warmtepomp de comfortband niet binnen 3 uur herstelt, ook als gas duurder is. Uit: alleen als gas ook goedkoper is."
+          }
+        },
+        "reconfigure": {
+          "title": "Hybride gasketel",
+          "data": {
+            "gas_price_sensor": "Sensor gasprijs",
+            "gas_boiler_efficiency": "Ketelrendement",
+            "gas_calorific_value_kwh_per_m3": "Verbrandingswaarde",
+            "gas_comfort_backup": "Gas als comfort-backup"
+          },
+          "data_description": {
+            "gas_price_sensor": "Actuele gasprijs in EUR/m³.",
+            "gas_boiler_efficiency": "0,90 voor een gangbare HR-ketel; tot ~1,07 op bovenwaarde bij lage retourtemperaturen.",
+            "gas_calorific_value_kwh_per_m3": "Bovenwaarde Gronings aardgas: 9,77 kWh/m³.",
+            "gas_comfort_backup": "Aan: adviseer de gasketel zodra de warmtepomp de comfortband niet binnen 3 uur herstelt, ook als gas duurder is. Uit: alleen als gas ook goedkoper is."
+          }
+        }
+      },
+      "abort": {
+        "single_instance_allowed": "Er kan maar één gasketel worden ingesteld.",
+        "reconfigure_successful": "Gasketel bijgewerkt."
       }
     }
   },
@@ -276,245 +381,184 @@
     },
     "emitter_type": {
       "options": {
-        "radiator": "Radiator",
+        "radiator": "Radiatoren",
         "underfloor": "Vloerverwarming",
-        "fan_coil": "Ventilatorconvector"
+        "fan_coil": "Ventilatorconvectoren"
       }
     }
   },
-  "config_subentries": {
-    "heating_zone": {
-      "entry_type": "Verwarmingszone",
-      "flow_title": "Verwarmingszone",
-      "initiate_flow": {
-        "user": "Verwarmingszone toevoegen"
+  "entity": {
+    "sensor": {
+      "outdoor_temperature": {
+        "name": "Buitentemperatuur"
       },
-      "step": {
-        "user": {
-          "title": "Verwarmingszone toevoegen",
-          "description": "Configureer een ruimte of verwarmingscircuit - elke zone, ook de eerste, wordt op deze manier ingesteld. Prijssensor, curvegrenzen en warmtepompparameters worden gedeeld met de hoofdconfiguratie.",
-          "data": {
-            "name": "Zonenaam",
-            "area_m2": "Vloeroppervlak (m²)",
-            "energy_label": "Energielabel",
-            "glass_east_m2": "Glasoppervlak oost (m²)",
-            "glass_west_m2": "Glasoppervlak west (m²)",
-            "glass_south_m2": "Glasoppervlak zuid (m²)",
-            "glass_u_value": "Glas U-waarde (W/m²K)",
-            "ventilation_type": "Ventilatietype",
-            "ceiling_height": "Plafondhoogte (m)",
-            "thermal_mass_class": "Thermische massa klasse",
-            "emitter_type": "Type warmteafgever",
-            "target_indoor_temp": "Gewenste binnentemperatuur (°C)",
-            "indoor_temp_hysteresis_lower": "Onderste hysterese - warmtepomp AAN (°C)",
-            "indoor_temp_hysteresis_upper": "Bovenste hysterese - warmtepomp UIT (°C)",
-            "indoor_temperature_sensor": "Binnentemperatuursensor (optioneel)"
-          },
-          "data_description": {
-            "glass_u_value": "Warmtedoorgangscoëfficiënt van het glas (standaard: 1,2)",
-            "ventilation_type": "Type ventilatiesysteem in de woning voor berekening van ventilatieverliezen",
-            "ceiling_height": "Gemiddelde plafondhoogte voor berekening van gebouwvolume (standaard: 2,5m)",
-            "thermal_mass_class": "Bouwgewichtklasse, gebruikt in plaats van de op het energielabel gebaseerde schatting (standaard: medium)",
-            "emitter_type": "Hoe het afgiftevermogen van de warmteafgever afneemt bij lagere aanvoertemperatuur (standaard: radiator)",
-            "indoor_temp_hysteresis_lower": "Hoeveel graden onder setpoint voordat warmtepomp AAN gaat (standaard: 0,3°C)",
-            "indoor_temp_hysteresis_upper": "Hoeveel graden boven setpoint voordat warmtepomp UIT gaat (standaard: 0,5°C)"
-          }
-        },
-        "reconfigure": {
-          "title": "Verwarmingszone bewerken",
-          "description": "Werk de configuratie van deze zone bij.",
-          "data": {
-            "name": "Zonenaam",
-            "area_m2": "Vloeroppervlak (m²)",
-            "energy_label": "Energielabel",
-            "glass_east_m2": "Glasoppervlak oost (m²)",
-            "glass_west_m2": "Glasoppervlak west (m²)",
-            "glass_south_m2": "Glasoppervlak zuid (m²)",
-            "glass_u_value": "Glas U-waarde (W/m²K)",
-            "ventilation_type": "Ventilatietype",
-            "ceiling_height": "Plafondhoogte (m)",
-            "thermal_mass_class": "Thermische massa klasse",
-            "emitter_type": "Type warmteafgever",
-            "target_indoor_temp": "Gewenste binnentemperatuur (°C)",
-            "indoor_temp_hysteresis_lower": "Onderste hysterese - warmtepomp AAN (°C)",
-            "indoor_temp_hysteresis_upper": "Bovenste hysterese - warmtepomp UIT (°C)",
-            "indoor_temperature_sensor": "Binnentemperatuursensor (optioneel)"
-          },
-          "data_description": {
-            "glass_u_value": "Warmtedoorgangscoëfficiënt van het glas (standaard: 1,2)",
-            "ventilation_type": "Type ventilatiesysteem in de woning voor berekening van ventilatieverliezen",
-            "ceiling_height": "Gemiddelde plafondhoogte voor berekening van gebouwvolume (standaard: 2,5m)",
-            "thermal_mass_class": "Bouwgewichtklasse, gebruikt in plaats van de op het energielabel gebaseerde schatting (standaard: medium)",
-            "emitter_type": "Hoe het afgiftevermogen van de warmteafgever afneemt bij lagere aanvoertemperatuur (standaard: radiator)",
-            "indoor_temp_hysteresis_lower": "Hoeveel graden onder setpoint voordat warmtepomp AAN gaat (standaard: 0,3°C)",
-            "indoor_temp_hysteresis_upper": "Hoeveel graden boven setpoint voordat warmtepomp UIT gaat (standaard: 0,5°C)"
-          }
+      "calculated_supply_temperature": {
+        "name": "Aanvoertemperatuur stooklijn"
+      },
+      "heat_loss": {
+        "name": "Warmteverlies"
+      },
+      "window_solar_gain": {
+        "name": "Zonnewinst ramen"
+      },
+      "net_heat_loss": {
+        "name": "Netto warmtevraag"
+      },
+      "pv_production_forecast": {
+        "name": "Verwachte PV-opwek"
+      },
+      "heating_curve_offset": {
+        "name": "Stooklijn-offset"
+      },
+      "optimized_supply_temperature": {
+        "name": "Geoptimaliseerde aanvoertemperatuur"
+      },
+      "planned_indoor_temperature": {
+        "name": "Geplande binnentemperatuur"
+      },
+      "heat_buffer": {
+        "name": "Warmtebuffer"
+      },
+      "planned_cop": {
+        "name": "Geplande COP"
+      },
+      "cost_savings_forecast": {
+        "name": "Verwachte besparing"
+      },
+      "total_cost_savings": {
+        "name": "Totale besparing"
+      },
+      "shadow_price": {
+        "name": "Waarde opgeslagen warmte"
+      },
+      "thermal_calibration": {
+        "name": "Thermische kalibratie-metingen"
+      },
+      "realtime_offset": {
+        "name": "Realtime stooklijn-offset"
+      },
+      "diagnostics": {
+        "name": "Status",
+        "state": {
+          "ok": "OK",
+          "partial": "Gedeeltelijk beschikbaar",
+          "initializing": "Opstarten",
+          "error": "Fout"
         }
       },
-      "error": {
-        "invalid_zone_input": "Ongeldige zoneconfiguratie. Controleer de naam en het vloeroppervlak."
+      "heat_pump_thermal_power": {
+        "name": "Thermisch vermogen warmtepomp"
       },
-      "abort": {
-        "reconfigure_successful": "Verwarmingszone bijgewerkt."
+      "heat_pump_thermal_energy": {
+        "name": "Thermische energie warmtepomp"
+      },
+      "gas_boiler_heat_pump_cost": {
+        "name": "Kosten warmtepomp per kWh warmte"
+      },
+      "gas_boiler_gas_cost": {
+        "name": "Kosten gasketel per kWh warmte"
+      },
+      "gas_boiler_cost_savings": {
+        "name": "Voordeel gasketel per kWh warmte"
       }
     },
-    "gas_boiler": {
-      "entry_type": "Hybride gas-cv",
-      "flow_title": "Hybride gas-cv",
-      "initiate_flow": {
-        "user": "Hybride gas-cv toevoegen"
+    "binary_sensor": {
+      "heat_pump_demand": {
+        "name": "Warmtevraag"
       },
-      "step": {
-        "user": {
-          "title": "Hybride gas-cv toevoegen",
-          "description": "Vergelijk de kosten per kWh van de warmtepomp met die van een gas-cv, zodat je kunt zien wanneer stoken op gas goedkoper is. Er kan maar een gas-cv worden geconfigureerd.",
-          "data": {
-            "gas_price_sensor": "Gasprijssensor (€/m³)",
-            "gas_boiler_efficiency": "Cv-rendement (breuk, bv. 0.90 = 90%)",
-            "gas_calorific_value_kwh_per_m3": "Calorische waarde gas (kWh/m³)"
-          },
-          "data_description": {
-            "gas_boiler_efficiency": "Gangbare Nederlandse HR-combiketel: 0.90 bij normale retourtemperaturen, tot ~1.07 voor een goed afgestelde condenserende ketel bij lage retourtemperatuur.",
-            "gas_calorific_value_kwh_per_m3": "De Nederlandse G-gas bovenwaarde (bovenste verbrandingswaarde) is doorgaans 9.77 kWh/m³ - niet de onderwaarde (~8.8 kWh/m³) die sommige productbladen van cv-ketels gebruiken.",
-            "gas_price_sensor": "Als Dynamic Energy Contract Calculator is geconfigureerd met een gasbron, wordt de current_gas_consumption_price sensor hiervan hier automatisch voorgesteld."
-          }
-        },
-        "reconfigure": {
-          "title": "Hybride gas-cv bewerken",
-          "description": "Werk de instellingen van de gas-cv vergelijking bij.",
-          "data": {
-            "gas_price_sensor": "Gasprijssensor (€/m³)",
-            "gas_boiler_efficiency": "Cv-rendement (breuk, bv. 0.90 = 90%)",
-            "gas_calorific_value_kwh_per_m3": "Calorische waarde gas (kWh/m³)"
-          },
-          "data_description": {
-            "gas_boiler_efficiency": "Gangbare Nederlandse HR-combiketel: 0.90 bij normale retourtemperaturen, tot ~1.07 voor een goed afgestelde condenserende ketel bij lage retourtemperatuur.",
-            "gas_calorific_value_kwh_per_m3": "De Nederlandse G-gas bovenwaarde (bovenste verbrandingswaarde) is doorgaans 9.77 kWh/m³ - niet de onderwaarde (~8.8 kWh/m³) die sommige productbladen van cv-ketels gebruiken."
-          }
-        }
-      },
-      "error": {
-        "invalid_gas_boiler_input": "Ongeldige gas-cv configuratie.",
-        "gas_price_sensor_required": "Een gasprijssensor is verplicht.",
-        "efficiency_out_of_range": "Het rendement moet tussen 0.5 en 1.2 liggen.",
-        "calorific_value_must_be_positive": "De calorische waarde moet groter zijn dan 0."
-      },
-      "abort": {
-        "single_instance_allowed": "Er kan maar een hybride gas-cv worden geconfigureerd.",
-        "reconfigure_successful": "Hybride gas-cv bijgewerkt."
+      "gas_boiler_preferred": {
+        "name": "Gasketel voordeliger"
       }
     },
-    "pv_array": {
-      "entry_type": "PV-array",
-      "flow_title": "PV-array",
-      "initiate_flow": {
-        "user": "PV-array toevoegen"
+    "number": {
+      "target_indoor_temperature": {
+        "name": "Gewenste binnentemperatuur"
       },
-      "step": {
-        "user": {
-          "title": "PV-array toevoegen",
-          "description": "Battery Controller heeft al een of meer PV-arrays geconfigureerd. Importeer er een om piekvermogen, oriëntatie en hellingshoek over te nemen, of voer een nieuwe array handmatig in.",
-          "data": {
-            "import_choice": "Te importeren array"
-          }
-        },
-        "configure": {
-          "title": "PV-array toevoegen",
-          "description": "Voeg één zonnepaneel-array toe. Panelen die een andere kant op wijzen of een andere hellingshoek hebben, voeg je toe als aparte array; hun verwachte opbrengst wordt bij elkaar opgeteld.",
-          "data": {
-            "name": "Naam array (optioneel)",
-            "peak_power_kwp": "Piekvermogen (kWp)",
-            "orientation": "Oriëntatie (graden, 180 = zuid)",
-            "tilt": "Hellingshoek (graden, 0 = plat, 90 = verticaal)",
-            "efficiency_factor": "Systeemrendement (omvormer/bekabeling/temperatuurverliezen)",
-            "dc_coupled": "DC-gekoppeld (bijv. hybride omvormer met batterij)"
-          },
-          "data_description": {
-            "peak_power_kwp": "Totaal piekvermogen (STC) van deze array in kWp",
-            "orientation": "Kompasrichting waar de panelen naar wijzen - 0/360 = noord, 90 = oost, 180 = zuid, 270 = west",
-            "efficiency_factor": "Typische waarde: 0,85"
-          }
-        },
-        "reconfigure": {
-          "title": "PV-array bewerken",
-          "description": "Werk de configuratie van deze array bij.",
-          "data": {
-            "name": "Naam array (optioneel)",
-            "peak_power_kwp": "Piekvermogen (kWp)",
-            "orientation": "Oriëntatie (graden, 180 = zuid)",
-            "tilt": "Hellingshoek (graden, 0 = plat, 90 = verticaal)",
-            "efficiency_factor": "Systeemrendement (omvormer/bekabeling/temperatuurverliezen)",
-            "dc_coupled": "DC-gekoppeld (bijv. hybride omvormer met batterij)"
-          }
-        }
+      "indoor_temp_hysteresis_lower": {
+        "name": "Comfortband onder doel"
       },
-      "error": {
-        "invalid_pv_array_input": "Ongeldige PV-array configuratie. Controleer piekvermogen, oriëntatie en hellingshoek."
-      },
-      "abort": {
-        "reconfigure_successful": "PV-array bijgewerkt."
+      "indoor_temp_hysteresis_upper": {
+        "name": "Comfortband boven doel"
+      }
+    },
+    "climate": {
+      "heating": {
+        "name": "Verwarming"
       }
     }
   },
   "exceptions": {
     "api_error": {
-      "message": "Open-Meteo API gaf status {status} terug."
+      "message": "Open-Meteo API gaf status {status}."
     },
     "connection_error": {
-      "message": "Fout bij ophalen weergegevens van open-meteo.com: {error}."
+      "message": "Fout bij ophalen weerdata van open-meteo.com: {error}."
     },
     "no_forecast_data": {
-      "message": "Geen prognosegegevens in het antwoord van de open-Meteo API."
+      "message": "Geen verwachting in het antwoord van Open-Meteo."
     },
     "no_weather_data": {
-      "message": "Weer-coordinator heeft nog geen gegevens."
+      "message": "Nog geen weerdata beschikbaar."
     },
     "missing_building_config": {
-      "message": "Oppervlakte of energielabel ontbreekt in de configuratie."
+      "message": "De verwarmingszone heeft geen geldig vloeroppervlak."
     },
     "no_heat_data": {
-      "message": "Warmteberekening-coordinator heeft nog geen gegevens."
+      "message": "Warmteberekening heeft nog geen data."
     },
     "no_weather_data_for_optimization": {
-      "message": "Geen weergegevens beschikbaar voor optimalisatie."
+      "message": "Geen weersverwachting beschikbaar voor de optimalisatie."
     },
     "no_price_sensor": {
-      "message": "Er is geen elektriciteitsprijs-sensor geconfigureerd."
+      "message": "Er is geen elektriciteitsprijssensor ingesteld."
     },
     "price_sensor_unavailable": {
       "message": "Prijssensor {sensor} is niet beschikbaar."
     },
     "price_data_extraction_failed": {
-      "message": "Kan geen prijsgegevens ophalen uit sensor {sensor}."
+      "message": "Kan geen prijsverwachting lezen uit sensor {sensor}."
     },
     "no_gas_price_sensor": {
-      "message": "Er is geen gasprijssensor geconfigureerd."
+      "message": "Er is geen gasprijssensor ingesteld."
     },
     "gas_price_sensor_unavailable": {
       "message": "Gasprijssensor {sensor} is niet beschikbaar."
     },
     "gas_boiler_operating_point_unavailable": {
-      "message": "Nog geen werkpunt (buiten-/aanvoertemperatuur) beschikbaar voor de gas-cv vergelijking."
+      "message": "Nog geen werkpunt (buiten-/aanvoertemperatuur) beschikbaar voor de gasketelvergelijking."
     },
     "gas_boiler_electricity_price_unavailable": {
-      "message": "Elektriciteitsprijssensor {sensor} is niet beschikbaar (zie de hoofd price_sensor_unavailable melding)."
-    },
-    "thermal_optimizer_failed": {
-      "message": "De thermische optimizer is deze cyclus mislukt: {error}."
+      "message": "Elektriciteitsprijssensor {sensor} is niet beschikbaar."
     }
   },
   "issues": {
     "weather_data_unavailable": {
-      "title": "Weergegevens niet beschikbaar (open-meteo)",
-      "description": "De integratie kan de open-meteo.com weer-API niet bereiken, waardoor warmteverlies, zonnewinst en optimalisatie niet berekend kunnen worden. Controleer de internetverbinding of de status van open-meteo.com."
+      "title": "Weerdata niet beschikbaar",
+      "description": "open-meteo.com is niet bereikbaar, waardoor warmteverlies, zonnewinst en de optimalisatie niet berekend kunnen worden. Controleer de internetverbinding van Home Assistant."
     },
     "price_sensor_unavailable": {
-      "title": "Elektriciteitsprijs-sensor niet beschikbaar",
-      "description": "De geconfigureerde prijssensor **{sensor}** is niet beschikbaar of onbekend. De stooklijnoptimalisatie kan niet draaien zonder prijsgegevens. Controleer of de sensor bestaat en werkt."
+      "title": "Elektriciteitsprijssensor niet beschikbaar",
+      "description": "De prijssensor **{sensor}** is niet beschikbaar. De optimizer kan niet draaien zonder prijsdata."
+    },
+    "indoor_sensor_unavailable": {
+      "title": "Binnentemperatuursensor niet beschikbaar",
+      "description": "De binnentemperatuursensor **{sensor}** is niet beschikbaar. Tot hij weer meet, neemt de optimizer aan dat de ruimte op de doeltemperatuur is en staat de kalibratie stil."
     },
     "gas_price_sensor_unavailable": {
       "title": "Gasprijssensor niet beschikbaar",
-      "description": "De geconfigureerde gasprijssensor **{sensor}** is niet beschikbaar of onbekend. De hybride gas-cv kostenvergelijking kan niet draaien zonder gasprijsgegevens. Controleer of de sensor bestaat en werkt."
+      "description": "De gasprijssensor **{sensor}** is niet beschikbaar. De gasketelvergelijking kan zonder deze sensor niet draaien."
+    }
+  },
+  "services": {
+    "reset_thermal_calibration": {
+      "name": "Thermische kalibratie resetten",
+      "description": "Verwijder de geleerde warmteverliescoëfficiënt en thermische massa en ga terug naar de schatting op basis van het energielabel.",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry-ID",
+          "description": "Optioneel. Reset alleen deze entry; leeg reset alle."
+        }
+      }
     }
   }
 }

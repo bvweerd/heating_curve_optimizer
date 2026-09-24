@@ -47,12 +47,13 @@ def _make_coordinator(
         optimization_data
         if optimization_data is not None
         else {
-            "future_supply_temperatures": [40.0],
+            "supply_temps": [40.0],
             "heat_pump_actively_running": True,
         }
     )
     return GasBoilerCoordinator(
         hass,
+        None,
         heat_coordinator,
         optimization_coordinator,
         config if config is not None else dict(BASE_CONFIG),
@@ -98,80 +99,89 @@ async def test_gas_price_ignores_forecast_attribute_uses_state(hass: HomeAssista
     assert data["gas_price_eur_per_m3"] == pytest.approx(1.20)
 
 
-@pytest.mark.asyncio
-async def test_prefer_gas_boiler_true_when_needed_and_cheaper(hass: HomeAssistant):
-    """A high electricity price with a low gas price and heat pump
-    confirmed actively running -> prefer_gas_boiler must be True."""
-    hass.states.async_set("sensor.gas_price", "0.50")
-    hass.states.async_set("sensor.elec_price", "1.00")
-    coordinator = _make_coordinator(hass)
+COMFORTABLE_HEAT = {
+    "outdoor_temperature": -5.0,
+    "indoor_temperature": 20.0,
+    "indoor_temperature_source": "sensor",
+    "lower_bound": 19.7,
+}
+COMFORTABLE_PLAN = {
+    "supply_temps": [40.0],
+    "comfort_min": 19.7,
+    "indoor_temps": [20.0, 19.9, 19.8, 19.8],
+    "step_durations_hours": [1.0, 1.0, 1.0, 1.0],
+}
 
-    data = await coordinator._async_update_data()
 
-    assert data["heat_currently_needed"] is True
-    assert data["heat_currently_needed_source"] == "power_sensor"
-    assert data["prefer_gas_boiler"] is True
-
-
-@pytest.mark.asyncio
-async def test_prefer_gas_boiler_false_when_heat_not_needed_even_if_gas_cheaper(
-    hass: HomeAssistant,
+@pytest.mark.parametrize(
+    ("heat", "plan", "gas_price", "expected", "reason"),
+    [
+        # Comfortable, gas cheaper: stay on the heat pump.
+        ({}, {}, "0.10", False, None),
+        # House already below the comfort band, gas cheaper: gas.
+        ({"indoor_temperature": 19.3}, {}, "0.10", True, "below_comfort_band"),
+        # Plan predicts the heat pump cannot keep up, gas cheaper: gas.
+        (
+            {},
+            {"indoor_temps": [19.8, 19.6, 19.4, 19.2]},
+            "0.10",
+            True,
+            "heat_pump_cannot_keep_up",
+        ),
+        # Below the band, plan recovers, heat pump cheaper: heat pump.
+        ({"indoor_temperature": 19.3}, {}, "3.00", False, "below_comfort_band"),
+        # Heat pump cannot restore comfort: gas as backup even when dearer.
+        (
+            {},
+            {"indoor_temps": [19.8, 19.6, 19.4, 19.2]},
+            "3.00",
+            True,
+            "heat_pump_cannot_keep_up",
+        ),
+        # Temporary dip the heat pump recovers from, gas dearer: heat pump.
+        (
+            {},
+            {"indoor_temps": [19.5, 19.8, 19.9, 20.0]},
+            "3.00",
+            False,
+            "below_comfort_band",
+        ),
+        # A predicted dip beyond the lookahead does not count yet.
+        (
+            {},
+            {"indoor_temps": [19.8, 19.8, 19.8, 19.0]},
+            "0.10",
+            False,
+            None,
+        ),
+        # Without a measured indoor temperature only the plan counts.
+        (
+            {
+                "indoor_temperature": 19.0,
+                "indoor_temperature_source": "target_fallback",
+            },
+            {},
+            "0.10",
+            False,
+            None,
+        ),
+    ],
+)
+async def test_heat_pump_first_policy(
+    hass: HomeAssistant, heat, plan, gas_price, expected, reason
 ):
-    """Critical regression: gas being cheaper must never recommend
-    switching when no heat is needed at all (buffer/solar gain covers
-    demand) - coasting costs nothing and always wins."""
-    hass.states.async_set("sensor.gas_price", "0.10")
-    hass.states.async_set("sensor.elec_price", "1.00")
+    hass.states.async_set("sensor.gas_price", gas_price)
+    hass.states.async_set("sensor.elec_price", "0.40")
     coordinator = _make_coordinator(
         hass,
-        optimization_data={
-            "future_supply_temperatures": [40.0],
-            "heat_pump_actively_running": False,
-        },
+        heat_data={**COMFORTABLE_HEAT, **heat},
+        optimization_data={**COMFORTABLE_PLAN, **plan},
     )
 
     data = await coordinator._async_update_data()
 
-    assert data["heat_currently_needed"] is False
-    assert data["prefer_gas_boiler"] is False
-
-
-@pytest.mark.asyncio
-async def test_prefer_gas_boiler_false_when_heat_pump_cheaper(hass: HomeAssistant):
-    hass.states.async_set("sensor.gas_price", "2.00")
-    hass.states.async_set("sensor.elec_price", "0.20")
-    coordinator = _make_coordinator(hass)
-
-    data = await coordinator._async_update_data()
-
-    assert data["heat_currently_needed"] is True
-    assert data["prefer_gas_boiler"] is False
-
-
-@pytest.mark.asyncio
-async def test_falls_back_to_modeled_demand_when_no_power_sensor(hass: HomeAssistant):
-    """heat_pump_actively_running is None (no power sensor configured) ->
-    fall back to the modeled heat_pump_on demand signal, not False."""
-    hass.states.async_set("sensor.gas_price", "0.10")
-    hass.states.async_set("sensor.elec_price", "1.00")
-    coordinator = _make_coordinator(
-        hass,
-        heat_data={
-            "outdoor_temperature": -5.0,
-            "heat_pump_on": True,
-            "net_heat_loss": 1.0,
-        },
-        optimization_data={
-            "future_supply_temperatures": [40.0],
-            "heat_pump_actively_running": None,
-        },
-    )
-
-    data = await coordinator._async_update_data()
-
-    assert data["heat_currently_needed"] is True
-    assert data["heat_currently_needed_source"] == "modeled_demand"
-    assert data["prefer_gas_boiler"] is True
+    assert data["prefer_gas_boiler"] is expected
+    assert data["comfort_reason"] == reason
 
 
 @pytest.mark.asyncio
@@ -236,7 +246,7 @@ async def test_missing_operating_point_self_heals(hass: HomeAssistant):
         "net_heat_loss": 1.0,
     }
     coordinator.optimization_coordinator.data = {
-        "future_supply_temperatures": [40.0],
+        "supply_temps": [40.0],
         "heat_pump_actively_running": True,
     }
     data = await coordinator._async_update_data()
@@ -257,3 +267,25 @@ async def test_async_shutdown_unsubscribes(hass: HomeAssistant):
     await coordinator.async_setup()
     await coordinator.async_shutdown()
     assert coordinator._unsub is None
+
+
+async def test_comfort_backup_can_be_switched_off(hass: HomeAssistant):
+    """With the comfort backup off, a heat pump that cannot keep up only
+    hands over to gas when gas is also cheaper."""
+    hass.states.async_set("sensor.gas_price", "3.00")
+    hass.states.async_set("sensor.elec_price", "0.40")
+    coordinator = _make_coordinator(
+        hass,
+        config={**BASE_CONFIG, "gas_comfort_backup": False},
+        heat_data=COMFORTABLE_HEAT,
+        optimization_data={
+            **COMFORTABLE_PLAN,
+            "indoor_temps": [19.8, 19.6, 19.4, 19.2],
+        },
+    )
+
+    data = await coordinator._async_update_data()
+
+    assert data["comfort_reason"] == "heat_pump_cannot_keep_up"
+    assert data["comfort_backup"] is False
+    assert data["prefer_gas_boiler"] is False

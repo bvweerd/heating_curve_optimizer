@@ -1,569 +1,181 @@
-import pytest
-from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+"""Tests for the config flow, options flow and subentry flows."""
 
+from __future__ import annotations
+
+from unittest.mock import patch
+
+from homeassistant import config_entries
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
+
+from custom_components.heating_curve_optimizer.config_flow import (
+    flatten_main_input,
+    validate_main_config,
+    validate_zone_input,
+)
 from custom_components.heating_curve_optimizer.const import (
     DOMAIN,
-    CONF_SOURCE_TYPE,
-    CONF_SOURCES,
-    CONF_CONSUMPTION_PRICE_SENSOR,
-    CONF_POWER_CONSUMPTION,
-    CONF_PRODUCTION_PRICE_SENSOR,
-    SOURCE_TYPE_CONSUMPTION,
-)
-from custom_components.heating_curve_optimizer.companion_integrations import (
-    BATTERY_CONTROLLER_DOMAIN,
-    FIELD_SOURCES_CONSUMPTION,
-    DetectedSensorList,
-)
-from custom_components.heating_curve_optimizer.config_flow import (
-    STEP_BASIC,
-    STEP_HEATING_CURVE_SETTINGS,
-    STEP_PRICE_SETTINGS,
-    STEP_SELECT_SOURCES,
-    HeatingCurveOptimizerConfigFlow,
-    _test_api_connection,
+    GAS_SUBENTRY_TYPE,
+    PV_SUBENTRY_TYPE,
+    ZONE_SUBENTRY_TYPE,
 )
 
-# Force the legacy multi-step wizard (not the single-page sectioned form)
-# for all tests in this module. The sectioned form is only available when
-# homeassistant.data_entry_flow.section is importable, which it is in this
-# test environment's HA version. These tests exercise the multi-step flow.
-_patch_section = patch(
-    "custom_components.heating_curve_optimizer.config_flow._section", None
-)
-pytestmark = pytest.mark.usefixtures()
+from .conftest import PRICE_SENSOR, make_entry, zone_data
+
+API_CHECK = "custom_components.heating_curve_optimizer.config_flow._test_api_connection"
 
 
-@pytest.fixture(autouse=True)
-def _disable_sectioned_form():
-    """Disable the single-page sectioned form for all tests."""
-    with _patch_section:
-        yield
-
-
-@pytest.mark.asyncio
-async def test_show_user_form(hass: HomeAssistant):
-    with patch("homeassistant.config_entries._load_integration", return_value=None):
-        with patch(
-            "homeassistant.loader.async_get_integration",
-            AsyncMock(
-                return_value=SimpleNamespace(domain=DOMAIN, single_config_entry=False)
-            ),
-        ):
-            result = await hass.config_entries.flow.async_init(
-                DOMAIN, context={"source": "user"}
-            )
-    assert result["type"] == "form"
-    assert result["step_id"] == "user"
-
-
-@pytest.mark.asyncio
-async def test_abort_if_configured(hass: HomeAssistant):
-    """An entry created by this flow always carries unique_id=DOMAIN (see
-    async_step_user's async_set_unique_id call), so a second attempt must
-    be caught by _abort_if_unique_id_configured()."""
-    entry = MockConfigEntry(domain=DOMAIN, data={}, unique_id=DOMAIN)
-    entry.add_to_hass(hass)
-    with patch(
-        "homeassistant.config_entries._load_integration", return_value=None
-    ), patch(
-        "homeassistant.loader.async_get_integration",
-        AsyncMock(
-            return_value=SimpleNamespace(domain=DOMAIN, single_config_entry=False)
-        ),
-    ):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
-    assert result["type"] == "abort"
-    assert result["reason"] == "already_configured"
-
-
-@pytest.mark.asyncio
-async def test_shows_detected_integrations_step_when_battery_controller_configured(
-    hass: HomeAssistant,
-):
-    """companion_integrations.py: a battery_controller entry with a raw
-    price sensor is enough to trigger the (opt-in) prefill step, instead of
-    going straight to the normal menu."""
-    bc_entry = MockConfigEntry(
-        domain=BATTERY_CONTROLLER_DOMAIN,
-        data={"price_sensor": "sensor.raw_price"},
-    )
-    bc_entry.add_to_hass(hass)
-    with patch(
-        "homeassistant.config_entries._load_integration", return_value=None
-    ), patch(
-        "homeassistant.loader.async_get_integration",
-        AsyncMock(
-            return_value=SimpleNamespace(domain=DOMAIN, single_config_entry=False)
-        ),
-    ):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
-    assert result["type"] == "form"
-    assert result["step_id"] == "detected_integrations"
-    assert CONF_CONSUMPTION_PRICE_SENSOR in result["data_schema"].schema
-
-
-@pytest.mark.asyncio
-async def test_detected_integrations_step_prefills_selected_field(
-    hass: HomeAssistant,
-):
-    bc_entry = MockConfigEntry(
-        domain=BATTERY_CONTROLLER_DOMAIN,
-        data={"price_sensor": "sensor.raw_price"},
-    )
-    bc_entry.add_to_hass(hass)
-    with patch(
-        "homeassistant.config_entries._load_integration", return_value=None
-    ), patch(
-        "homeassistant.loader.async_get_integration",
-        AsyncMock(
-            return_value=SimpleNamespace(domain=DOMAIN, single_config_entry=False)
-        ),
-    ):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {CONF_CONSUMPTION_PRICE_SENSOR: True}
-        )
-        # Falls through to the normal menu after the prefill step.
-        assert result2["type"] == "form"
-        assert result2["step_id"] == "user"
-
-        result3 = await hass.config_entries.flow.async_configure(
-            result2["flow_id"], {CONF_SOURCE_TYPE: STEP_PRICE_SETTINGS}
-        )
-    assert result3["step_id"] == STEP_PRICE_SETTINGS
-    price_schema = result3["data_schema"].schema
-    default_fn = next(
-        key.default for key in price_schema if key == CONF_CONSUMPTION_PRICE_SENSOR
-    )
-    assert default_fn() == "sensor.raw_price"
-
-
-@pytest.mark.asyncio
-async def test_detected_integrations_step_accepts_source_list_field(
-    hass: HomeAssistant,
-):
-    """Accepting a detected `sources_consumption` list (Part A of the
-    config-flow modernization: companion_integrations.detect_source_sensors)
-    must populate self.configs directly, the same shape
-    _update_source_config's step-based flow produces - not just the
-    single-entity_id fields detect_main_flow_sensors already covered."""
-    flow = HeatingCurveOptimizerConfigFlow()
-    flow.hass = hass
-    flow._detected_sensor_lists = {
-        FIELD_SOURCES_CONSUMPTION: DetectedSensorList(
-            ["sensor.elec_consumption"], "Battery Controller"
-        )
+def _sectioned(**overrides) -> dict:
+    user_input = {
+        "prices": {"consumption_price_sensor": PRICE_SENSOR},
+        "sensors": {},
+        "heat_pump": {
+            "base_cop": 4.0,
+            "k_factor": 0.1,
+            "outdoor_temp_coefficient": 0.08,
+            "cop_compensation_factor": 0.95,
+        },
+        "heating_curve": {
+            "heat_curve_min": 25.0,
+            "heat_curve_max": 45.0,
+            "heat_curve_min_outdoor": -10.0,
+            "heat_curve_max_outdoor": 15.0,
+            "offset_delta_t": 30,
+        },
+        "advanced": {"planning_window": 24},
     }
+    for section, values in overrides.items():
+        user_input[section] = {**user_input[section], **values}
+    return user_input
 
-    result = await flow.async_step_detected_integrations(
-        {FIELD_SOURCES_CONSUMPTION: True}
+
+def test_flatten_stores_cleared_optional_fields_as_none() -> None:
+    flat = flatten_main_input(_sectioned())
+    assert flat["consumption_price_sensor"] == PRICE_SENSOR
+    assert flat["production_price_sensor"] is None
+    assert flat["offset_delta_t"] == 30
+    assert validate_main_config(flat) == {}
+
+
+def test_validate_rejects_inverted_curve() -> None:
+    flat = flatten_main_input(
+        _sectioned(heating_curve={"heat_curve_min": 50.0, "heat_curve_max": 40.0})
     )
-
-    assert result["step_id"] == "user"
-    assert flow.configs == [
-        {
-            CONF_SOURCE_TYPE: SOURCE_TYPE_CONSUMPTION,
-            CONF_SOURCES: ["sensor.elec_consumption"],
-        }
-    ]
-
-
-@pytest.mark.asyncio
-async def test_detected_integrations_step_replaces_existing_block_for_same_source_type(
-    hass: HomeAssistant,
-):
-    """Accepting a detected source list must replace any existing block for
-    that source_type (matching _update_source_config's own
-    replace-not-duplicate behaviour), not append a second one."""
-    flow = HeatingCurveOptimizerConfigFlow()
-    flow.hass = hass
-    flow.configs = [
-        {CONF_SOURCE_TYPE: SOURCE_TYPE_CONSUMPTION, CONF_SOURCES: ["sensor.old"]}
-    ]
-    flow._detected_sensor_lists = {
-        FIELD_SOURCES_CONSUMPTION: DetectedSensorList(
-            ["sensor.new"], "Battery Controller"
-        )
-    }
-
-    await flow.async_step_detected_integrations({FIELD_SOURCES_CONSUMPTION: True})
-
-    assert flow.configs == [
-        {CONF_SOURCE_TYPE: SOURCE_TYPE_CONSUMPTION, CONF_SOURCES: ["sensor.new"]}
-    ]
-
-
-@pytest.mark.asyncio
-async def test_basic_options_step(hass: HomeAssistant):
-    with patch(
-        "homeassistant.config_entries._load_integration", return_value=None
-    ), patch(
-        "homeassistant.loader.async_get_integration",
-        AsyncMock(
-            return_value=SimpleNamespace(domain=DOMAIN, single_config_entry=False)
-        ),
-    ):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {CONF_SOURCE_TYPE: STEP_BASIC}
-        )
-    assert result2["type"] == "form"
-    assert result2["step_id"] == STEP_BASIC
-
-
-@pytest.mark.asyncio
-async def test_basic_step_no_longer_collects_zone_specific_fields(
-    hass: HomeAssistant,
-):
-    """Every heating zone, including the first, is configured via
-    HeatingZoneSubentryFlow instead (see test_zone_subentry.py) - the main
-    flow's basic step only asks for shared/infra sensors now."""
-    with patch(
-        "homeassistant.config_entries._load_integration", return_value=None
-    ), patch(
-        "homeassistant.loader.async_get_integration",
-        AsyncMock(
-            return_value=SimpleNamespace(domain=DOMAIN, single_config_entry=False)
-        ),
-    ):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
-        )
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {CONF_SOURCE_TYPE: STEP_BASIC}
-        )
-
-    schema_keys = {str(k) for k in result2["data_schema"].schema}
-    assert "area_m2" not in schema_keys
-    assert "energy_label" not in schema_keys
-    assert "thermal_mass_class" not in schema_keys
-    assert "emitter_type" not in schema_keys
-    assert "indoor_temperature_sensor" not in schema_keys
-    assert "power_consumption" in schema_keys
-
-
-@pytest.mark.asyncio
-async def test_price_settings_step_includes_consumption_and_production(hass):
-    hass.states.async_set(
-        "sensor.price_consumption",
-        "0.1",
-        {"device_class": "monetary"},
+    assert validate_main_config(flat) == {"base": "curve_supply_range"}
+    flat = flatten_main_input(
+        _sectioned(heating_curve={"heat_curve_min_outdoor": 20.0})
     )
-    hass.states.async_set(
-        "sensor.price_production",
-        "0.2",
-        {"unit_of_measurement": "€/kWh"},
+    assert validate_main_config(flat) == {"base": "curve_outdoor_range"}
+
+
+async def test_user_flow_creates_entry(hass: HomeAssistant) -> None:
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
-    with patch(
-        "homeassistant.config_entries._load_integration", return_value=None
-    ), patch(
-        "homeassistant.loader.async_get_integration",
-        AsyncMock(
-            return_value=SimpleNamespace(domain=DOMAIN, single_config_entry=False)
-        ),
-    ):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
+    assert result["type"] is FlowResultType.FORM
+    with patch(API_CHECK, return_value=None):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], _sectioned()
         )
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {CONF_SOURCE_TYPE: STEP_PRICE_SETTINGS}
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"]["base_cop"] == 4.0
+    assert result["data"]["planning_window"] == 24
+
+
+async def test_user_flow_reports_unreachable_api(hass: HomeAssistant) -> None:
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    with patch(API_CHECK, return_value="cannot_connect"):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], _sectioned()
         )
-
-    assert result2["type"] == "form"
-    schema = result2["data_schema"].schema
-    assert CONF_CONSUMPTION_PRICE_SENSOR in schema
-    assert CONF_PRODUCTION_PRICE_SENSOR in schema
-    options = schema[CONF_CONSUMPTION_PRICE_SENSOR].config["options"]
-    assert "sensor.price_consumption" in options
-    assert "sensor.price_production" in options
-
-
-@pytest.mark.asyncio
-async def test_test_api_connection_success(hass: HomeAssistant):
-    """quality_scale's test-before-configure rule: open-meteo.com
-    reachability is checked (ported from battery_controller's
-    _test_api_connection) before the entry is created."""
-    mock_response = AsyncMock()
-    mock_response.status = 200
-    mock_response.__aenter__.return_value = mock_response
-    mock_response.__aexit__.return_value = None
-
-    mock_session = MagicMock()
-    mock_session.get.return_value = mock_response
-
-    with patch(
-        "custom_components.heating_curve_optimizer.config_flow.async_get_clientsession",
-        return_value=mock_session,
-    ):
-        error = await _test_api_connection(hass)
-
-    assert error is None
-
-
-@pytest.mark.asyncio
-async def test_test_api_connection_bad_status(hass: HomeAssistant):
-    mock_response = AsyncMock()
-    mock_response.status = 500
-    mock_response.__aenter__.return_value = mock_response
-    mock_response.__aexit__.return_value = None
-
-    mock_session = MagicMock()
-    mock_session.get.return_value = mock_response
-
-    with patch(
-        "custom_components.heating_curve_optimizer.config_flow.async_get_clientsession",
-        return_value=mock_session,
-    ):
-        error = await _test_api_connection(hass)
-
-    assert error == "cannot_connect"
-
-
-@pytest.mark.asyncio
-async def test_test_api_connection_client_error(hass: HomeAssistant):
-    import aiohttp
-
-    mock_session = MagicMock()
-    mock_session.get.side_effect = aiohttp.ClientError("boom")
-
-    with patch(
-        "custom_components.heating_curve_optimizer.config_flow.async_get_clientsession",
-        return_value=mock_session,
-    ):
-        error = await _test_api_connection(hass)
-
-    assert error == "cannot_connect"
-
-
-@pytest.mark.asyncio
-async def test_finish_step_shows_cannot_connect_error_on_api_failure(
-    hass: HomeAssistant,
-):
-    """The "finish" branch of async_step_user must reject a config whose
-    weather API can't be reached, rather than creating a dead entry."""
-    flow = HeatingCurveOptimizerConfigFlow()
-    flow.hass = hass
-    flow.configs = [{"source_type": "consumption", "entities": ["sensor.power"]}]
-
-    with patch(
-        "custom_components.heating_curve_optimizer.config_flow._test_api_connection",
-        new=AsyncMock(return_value="cannot_connect"),
-    ):
-        result = await flow.async_step_user({CONF_SOURCE_TYPE: "finish"})
-
-    assert result["type"] == "form"
-    assert result["step_id"] == "user"
+    assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "cannot_connect"}
 
 
-@pytest.mark.asyncio
-async def test_finish_step_creates_entry_when_api_reachable(hass: HomeAssistant):
-    """The "finish" branch proceeds to async_create_entry once the API
-    check passes, with the merged config still intact. No zone-specific
-    field (area_m2 etc.) is required or present on the main entry - every
-    zone, including the first, is configured via a subentry instead."""
-    flow = HeatingCurveOptimizerConfigFlow()
-    flow.hass = hass
-    flow.configs = [{"source_type": "consumption", "entities": ["sensor.power"]}]
+async def test_single_instance(hass: HomeAssistant) -> None:
+    make_entry().add_to_hass(hass)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    assert result["type"] is FlowResultType.ABORT
 
+
+async def test_options_flow_keeps_entity_managed_setpoints(hass: HomeAssistant) -> None:
+    entry = make_entry(options={"target_indoor_temp": 21.0})
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
     with patch(
-        "custom_components.heating_curve_optimizer.config_flow._test_api_connection",
-        new=AsyncMock(return_value=None),
+        "custom_components.heating_curve_optimizer.async_setup_entry", return_value=True
     ):
-        result = await flow.async_step_user({CONF_SOURCE_TYPE: "finish"})
-
-    assert result["type"] == "create_entry"
-    assert "area_m2" not in result["data"]
-    assert "energy_label" not in result["data"]
-
-
-def _mock_hass_integration():
-    """Context manager pair mocking the integration lookup HA's flow
-    manager does on async_init - same pattern test_show_user_form and
-    test_abort_if_configured already use."""
-    return patch(
-        "homeassistant.config_entries._load_integration", return_value=None
-    ), patch(
-        "homeassistant.loader.async_get_integration",
-        AsyncMock(
-            return_value=SimpleNamespace(domain=DOMAIN, single_config_entry=False)
-        ),
-    )
-
-
-@pytest.mark.asyncio
-async def test_options_flow_shows_user_form(hass: HomeAssistant):
-    """quality_scale's config-flow-test-coverage rule: the options flow
-    (Settings > Devices & Services > Configure) is a second, largely
-    parallel entry point into the same schema/validation code the main
-    flow uses - it needs its own coverage, not just the initial setup
-    flow's."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"area_m2": 150, "energy_label": "C"},
-        unique_id=DOMAIN,
-    )
-    entry.add_to_hass(hass)
-
-    ctx1, ctx2 = _mock_hass_integration()
-    with ctx1, ctx2:
-        result = await hass.config_entries.options.async_init(entry.entry_id)
-
-    assert result["type"] == "form"
-    assert result["step_id"] == "user"
-
-
-@pytest.mark.asyncio
-async def test_options_flow_basic_step(hass: HomeAssistant):
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"area_m2": 150, "energy_label": "C"},
-        unique_id=DOMAIN,
-    )
-    entry.add_to_hass(hass)
-
-    ctx1, ctx2 = _mock_hass_integration()
-    with ctx1, ctx2:
-        result = await hass.config_entries.options.async_init(entry.entry_id)
-        result2 = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_SOURCE_TYPE: STEP_BASIC}
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], _sectioned(advanced={"planning_window": 12})
         )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options["planning_window"] == 12
+    assert entry.options["target_indoor_temp"] == 21.0
 
-    assert result2["type"] == "form"
-    assert result2["step_id"] == STEP_BASIC
 
+def test_zone_validation() -> None:
+    data, error = validate_zone_input(zone_data())
+    assert error is None
+    assert "heat_curve_min" not in data
 
-@pytest.mark.asyncio
-async def test_options_flow_basic_step_prefills_existing_values(hass: HomeAssistant):
-    """The basic step's schema prefills the entry's current shared/infra
-    sensors - area/energy_label are no longer part of it at all (every
-    zone, including the first, is configured via a zone subentry)."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"power_consumption": "sensor.hp_power"},
-        unique_id=DOMAIN,
+    _, error = validate_zone_input(zone_data(heat_curve_min=30.0))
+    assert error == "zone_curve_incomplete"
+
+    data, error = validate_zone_input(
+        zone_data(heat_curve_min=25.0, heat_curve_max=35.0)
     )
+    assert error is None and data["heat_curve_max"] == 35.0
+
+    _, error = validate_zone_input(zone_data(name="  "))
+    assert error == "name_required"
+
+
+async def _start_subentry_flow(hass: HomeAssistant, entry, subentry_type: str):
+    return await hass.config_entries.subentries.async_init(
+        (entry.entry_id, subentry_type),
+        context={"source": config_entries.SOURCE_USER},
+    )
+
+
+async def test_zone_subentry_flow(hass: HomeAssistant) -> None:
+    entry = make_entry(zones=0)
     entry.add_to_hass(hass)
-
-    ctx1, ctx2 = _mock_hass_integration()
-    with ctx1, ctx2:
-        result = await hass.config_entries.options.async_init(entry.entry_id)
-        result2 = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_SOURCE_TYPE: STEP_BASIC}
-        )
-
-    schema = result2["data_schema"].schema
-    schema_keys = {str(k) for k in schema}
-    assert "area_m2" not in schema_keys
-    power_field = next(k for k in schema if str(k) == CONF_POWER_CONSUMPTION)
-    assert power_field.default() == "sensor.hp_power"
-
-
-@pytest.mark.asyncio
-async def test_options_flow_price_settings_step(hass: HomeAssistant):
-    hass.states.async_set(
-        "sensor.price_consumption", "0.1", {"device_class": "monetary"}
+    result = await _start_subentry_flow(hass, entry, ZONE_SUBENTRY_TYPE)
+    assert result["type"] is FlowResultType.FORM
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], zone_data("Upstairs")
     )
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"area_m2": 150, "energy_label": "C"},
-        unique_id=DOMAIN,
-    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "Upstairs"
+
+
+async def test_pv_subentry_flow(hass: HomeAssistant) -> None:
+    entry = make_entry(zones=0)
     entry.add_to_hass(hass)
-
-    ctx1, ctx2 = _mock_hass_integration()
-    with ctx1, ctx2:
-        result = await hass.config_entries.options.async_init(entry.entry_id)
-        result2 = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_SOURCE_TYPE: STEP_PRICE_SETTINGS}
-        )
-
-    assert result2["type"] == "form"
-    assert result2["step_id"] == STEP_PRICE_SETTINGS
-
-
-@pytest.mark.asyncio
-async def test_options_flow_heating_curve_settings_step(hass: HomeAssistant):
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"area_m2": 150, "energy_label": "C"},
-        unique_id=DOMAIN,
-    )
-    entry.add_to_hass(hass)
-
-    ctx1, ctx2 = _mock_hass_integration()
-    with ctx1, ctx2:
-        result = await hass.config_entries.options.async_init(entry.entry_id)
-        result2 = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_SOURCE_TYPE: STEP_HEATING_CURVE_SETTINGS}
-        )
-
-    assert result2["type"] == "form"
-    assert result2["step_id"] == STEP_HEATING_CURVE_SETTINGS
-
-
-@pytest.mark.asyncio
-async def test_options_flow_select_sources_step(hass: HomeAssistant):
-    hass.states.async_set("sensor.energy_total", "100", {"device_class": "energy"})
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"area_m2": 150, "energy_label": "C"},
-        unique_id=DOMAIN,
-    )
-    entry.add_to_hass(hass)
-
-    ctx1, ctx2 = _mock_hass_integration()
-    with ctx1, ctx2:
-        result = await hass.config_entries.options.async_init(entry.entry_id)
-        result2 = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_SOURCE_TYPE: "Electricity consumption"}
-        )
-
-    assert result2["type"] == "form"
-    assert result2["step_id"] == STEP_SELECT_SOURCES
-
-
-@pytest.mark.asyncio
-async def test_options_flow_finish_creates_entry_when_api_reachable(
-    hass: HomeAssistant,
-):
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={
-            "configurations": [
-                {"source_type": "consumption", "entities": ["sensor.power"]}
-            ],
+    result = await _start_subentry_flow(hass, entry, PV_SUBENTRY_TYPE)
+    assert result["step_id"] == "configure"
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {
+            "peak_power_kwp": 4.2,
+            "orientation": 180,
+            "tilt": 30,
+            "efficiency_factor": 0.85,
+            "dc_coupled": False,
         },
-        unique_id=DOMAIN,
     )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "4.2 kWp"
+
+
+async def test_gas_subentry_is_single_instance(hass: HomeAssistant) -> None:
+    entry = make_entry(zones=0, gas=True)
     entry.add_to_hass(hass)
-
-    ctx1, ctx2 = _mock_hass_integration()
-    with ctx1, ctx2, patch(
-        "custom_components.heating_curve_optimizer.config_flow._test_api_connection",
-        new=AsyncMock(return_value=None),
-    ):
-        result = await hass.config_entries.options.async_init(entry.entry_id)
-        result2 = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_SOURCE_TYPE: "finish"}
-        )
-
-    assert result2["type"] == "create_entry"
-    assert "area_m2" not in result2["data"]
-
-
-# thermal_mass_class/emitter_type coverage moved to test_zone_subentry.py -
-# they're now collected per zone (HeatingZoneSubentryFlow), not on this main
-# entry's basic step, same as area_m2/energy_label.
+    result = await _start_subentry_flow(hass, entry, GAS_SUBENTRY_TYPE)
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "single_instance_allowed"

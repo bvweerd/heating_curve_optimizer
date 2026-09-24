@@ -1,9 +1,8 @@
-"""Tests for the redesigned thermal DP optimizer.
+"""Tests for the thermal DP optimizer.
 
-Covers the specific failure modes diagnosed in docs/redesign/REDESIGN.md §2.1
-and the test strategy laid out in §3.8: energy conservation end-to-end, a
-brute-force cross-check of the DP search itself, comfort never breached,
-no horizon-end drain, and price monotonicity.
+Energy conservation end-to-end, a brute-force cross-check of the DP search,
+comfort never breached, no horizon-end drain, price monotonicity, and slow
+drift not being lost to state discretization.
 """
 
 from __future__ import annotations
@@ -22,6 +21,7 @@ from custom_components.heating_curve_optimizer.helpers import (
     calculate_supply_temperature,
 )
 from custom_components.heating_curve_optimizer.thermal_optimizer import (
+    comfort_penalty,
     optimize_thermal_schedule,
 )
 
@@ -42,9 +42,8 @@ def _make_system(**overrides):
 
 def test_optimizer_conserves_energy_along_chosen_path():
     """Reconstruct the indoor-temperature trajectory independently from the
-    returned thermal power and compare it to the returned indoor_temps -
-    they must match to DP snapping resolution. This is the end-to-end
-    version of the energy-conservation property in test_building_model.py."""
+    returned thermal power: the reported temperatures are the continuous
+    physics, not grid-snapped values."""
     building, heatpump, emitter = _make_system()
     horizon = 12
     outdoor = [3.0 - 0.3 * t for t in range(horizon)]
@@ -68,9 +67,8 @@ def test_optimizer_conserves_energy_along_chosen_path():
             heat_input_kw=result.thermal_power_kw[t],
             step_hours=1.0,
         )
-        # Snapped to the same 0.1°C ladder the optimizer used internally.
-        assert next_t == pytest.approx(result.indoor_temps[t], abs=0.06)
-        t_in = result.indoor_temps[t]
+        assert next_t == pytest.approx(result.indoor_temps[t], abs=2e-3)
+        t_in = next_t
 
 
 def test_comfort_band_never_breached_in_normal_conditions():
@@ -121,11 +119,9 @@ def test_out_of_range_current_offset_does_not_raise():
     assert len(result.offsets) == horizon
 
 
-def test_hard_floor_never_breached_even_when_undersized():
-    """Even when the heat pump is deliberately too small for a cold snap,
-    the DP must never report an indoor temperature below the discretized
-    ladder's hard floor - REDESIGN.md §2.1.D/E's silent-all-zero failure
-    mode must not resurface as a silent floor breach either."""
+def test_undersized_heat_pump_heats_at_maximum():
+    """When the heat pump cannot keep up with a cold snap, the plan must be
+    to heat as hard as the curve allows every step - not give up."""
     building = BuildingConfig(
         area_m2=200, energy_label="G", comfort_min=19.5, comfort_max=20.5
     )
@@ -134,22 +130,72 @@ def test_hard_floor_never_breached_even_when_undersized():
     )
     undersized_heatpump = HeatPumpConfig(max_thermal_power_kw=0.5)
     horizon = 12
-    outdoor = [-15.0] * horizon
-    prices = [0.20] * horizon
 
     result = optimize_thermal_schedule(
         building=building,
         heatpump=undersized_heatpump,
         emitter=emitter,
-        outdoor_temps=outdoor,
-        prices=prices,
+        outdoor_temps=[-15.0] * horizon,
+        prices=[0.20] * horizon,
         initial_indoor_temp=19.5,
         time_base=60,
-        state_margin=1.5,
     )
 
-    hard_floor = building.comfort_min - 1.5
-    assert all(t >= hard_floor - 1e-6 for t in result.indoor_temps)
+    assert len(result.offsets) == horizon
+    assert all(q == pytest.approx(0.5) for q in result.thermal_power_kw)
+    assert result.indoor_temps[-1] < 19.5
+
+
+def test_slow_drift_is_not_rounded_away():
+    """A drift smaller than half a state-grid cell per step must still be
+    seen by the optimizer. With flat prices the plan has to keep the
+    building inside the comfort band over a long horizon - a DP that
+    rounds each transition to the grid believes a slowly cooling house is
+    stable and lets it sag below comfort."""
+    building = BuildingConfig(
+        area_m2=150, energy_label="C", comfort_min=19.7, comfort_max=20.5
+    )
+    emitter = EmitterConfig.sized_to_building(
+        building, design_outdoor_temp=-20.0, design_supply_temp=45.0
+    )
+    heatpump = HeatPumpConfig(max_thermal_power_kw=emitter.nominal_power_kw * 1.3)
+    horizon = 24
+
+    result = optimize_thermal_schedule(
+        building=building,
+        heatpump=heatpump,
+        emitter=emitter,
+        outdoor_temps=[5.0] * horizon,
+        prices=[0.25] * horizon,
+        initial_indoor_temp=20.0,
+        water_min=25.0,
+        water_max=45.0,
+        outdoor_min=-20.0,
+        outdoor_max=20.0,
+        time_base=60,
+    )
+
+    assert min(result.indoor_temps) >= building.comfort_min - 0.05
+
+
+def test_baseline_uses_same_physics_and_savings_account_for_stored_heat():
+    """The baseline is the plain curve (offset 0) through the same model;
+    under flat prices optimizing can never be worse than the baseline once
+    the heat left in the building is valued."""
+    building, heatpump, emitter = _make_system()
+    horizon = 12
+    result = optimize_thermal_schedule(
+        building=building,
+        heatpump=heatpump,
+        emitter=emitter,
+        outdoor_temps=[3.0] * horizon,
+        prices=[0.10] * 6 + [0.40] * 6,
+        initial_indoor_temp=20.0,
+        time_base=60,
+    )
+    assert len(result.baseline_cost_eur) == horizon
+    assert len(result.baseline_indoor_temps) == horizon
+    assert result.cost_savings_eur > 0
 
 
 def test_no_horizon_end_drain():
@@ -238,11 +284,11 @@ def test_higher_price_never_increases_thermal_power_same_step():
 
 
 def test_dp_matches_brute_force_on_small_horizon():
-    """Cross-check the DP search itself (not the physics, which is tested
-    independently) against exhaustive enumeration of every rate-limit-
-    respecting offset sequence, on a horizon small enough to enumerate.
-    Mirrors battery_controller's brute_force_step0.py cross-check
-    (REDESIGN.md §3.8 item 2)."""
+    """Cross-check the DP search against exhaustive enumeration of every
+    rate-limit-respecting offset sequence, simulated with the same
+    continuous physics and scored with the same objective. The DP works
+    on an interpolated value function, so its plan may be marginally
+    worse than the true optimum, but never by more than a small margin."""
     building = BuildingConfig(
         area_m2=100, energy_label="C", comfort_min=19.5, comfort_max=20.5
     )
@@ -251,20 +297,18 @@ def test_dp_matches_brute_force_on_small_horizon():
     )
     heatpump = HeatPumpConfig(max_thermal_power_kw=emitter.nominal_power_kw * 1.5)
 
-    horizon = 3
-    offset_choices = (-1, 0, 1)
-    outdoor = [2.0, 0.0, 4.0]
-    prices = [0.10, 0.35, 0.15]
-    time_base = 60
-    offset_delta_t = 60  # max_offset_change = 1, so offset_choices already cover it
-    water_min, water_max = 20.0, 45.0
-    outdoor_min, outdoor_max = -20.0, 15.0
+    horizon = 4
+    outdoor = [2.0, 0.0, 4.0, 1.0]
+    prices = [0.10, 0.35, 0.15, 0.30]
+    kwargs = {
+        "water_min": 20.0,
+        "water_max": 45.0,
+        "outdoor_min": -20.0,
+        "outdoor_max": 15.0,
+        "comfort_penalty_weight": 50.0,
+        "cycling_penalty_weight": 0.01,
+    }
     initial_indoor_temp = 20.0
-    current_offset = 0
-    comfort_penalty_weight = 50.0
-    cycling_penalty_weight = 0.01
-    state_resolution = 0.1
-    state_margin = 1.5
 
     result = optimize_thermal_schedule(
         building=building,
@@ -273,123 +317,64 @@ def test_dp_matches_brute_force_on_small_horizon():
         outdoor_temps=outdoor,
         prices=prices,
         initial_indoor_temp=initial_indoor_temp,
-        time_base=time_base,
-        offset_delta_t=offset_delta_t,
-        offset_min=-1,
-        offset_max=1,
-        water_min=water_min,
-        water_max=water_max,
-        outdoor_min=outdoor_min,
-        outdoor_max=outdoor_max,
-        current_offset=current_offset,
-        comfort_penalty_weight=comfort_penalty_weight,
-        cycling_penalty_weight=cycling_penalty_weight,
-        state_resolution=state_resolution,
-        state_margin=state_margin,
+        time_base=60,
+        offset_delta_t=60,
+        offset_min=-2,
+        offset_max=2,
+        current_offset=0,
+        **kwargs,
     )
-
-    # --- independent brute-force reference over the same discretization ---
-    states = building.discretize_states(
-        resolution=state_resolution, margin=state_margin
-    )
-    state_lo, state_hi = states[0], states[-1]
-    n_states = len(states)
-
-    def snap(t_in: float) -> int:
-        clamped = min(max(t_in, state_lo), state_hi)
-        return round((clamped - state_lo) / (state_hi - state_lo) * (n_states - 1))
-
-    def comfort_penalty(t_in: float) -> float:
-        if t_in < state_lo:
-            return comfort_penalty_weight * (building.comfort_min - t_in) ** 2 + 1000.0
-        if t_in < building.comfort_min:
-            return comfort_penalty_weight * (building.comfort_min - t_in) ** 2
-        if t_in > building.comfort_max:
-            return comfort_penalty_weight * (t_in - building.comfort_max) ** 2
-        return 0.0
 
     base_supply = [
         calculate_supply_temperature(
             outdoor[t],
-            water_min=water_min,
-            water_max=water_max,
-            outdoor_min=outdoor_min,
-            outdoor_max=outdoor_max,
+            water_min=kwargs["water_min"],
+            water_max=kwargs["water_max"],
+            outdoor_min=kwargs["outdoor_min"],
+            outdoor_max=kwargs["outdoor_max"],
         )
         for t in range(horizon)
     ]
+    terminal_cop = heatpump.cop_at(
+        supply_temp=base_supply[-1], outdoor_temp=outdoor[-1]
+    )
 
-    step_hours = 1.0
-    # The DP's search objective includes comfort/cycling penalties (soft
-    # constraints that shape the search) and the terminal value, but
-    # `total_cost_eur` deliberately reports only real currency spent - see
-    # thermal_optimizer.py's forward pass. So here: pick the sequence that
-    # minimizes the *full* objective (matching what the DP actually
-    # searches over), then compare its *energy-only* cost against
-    # `result.total_cost_eur`.
-    best_objective = math.inf
-    best_energy_cost = math.inf
-
-    for sequence in itertools.product(offset_choices, repeat=horizon):
-        # Rate limit: max change of 1 per step (matches offset_delta_t=60).
-        prev = current_offset
-        feasible = True
-        for off in sequence:
-            if abs(off - prev) > 1:
-                feasible = False
-                break
-            prev = off
-        if not feasible:
-            continue
-
+    def objective(sequence: tuple[int, ...]) -> float:
         t_in = initial_indoor_temp
-        prev_offset = current_offset
-        objective = 0.0
-        energy_cost_total = 0.0
+        prev = 0
+        total = 0.0
         for t, offset in enumerate(sequence):
-            supply_temp = min(water_max, max(water_min, base_supply[t] + offset))
-            q_available = emitter.available_power_kw(
-                supply_temp=supply_temp, indoor_temp=states[snap(t_in)]
+            supply = min(
+                kwargs["water_max"], max(kwargs["water_min"], base_supply[t] + offset)
             )
-            q_hp = max(0.0, min(q_available, heatpump.max_thermal_power_kw))
-            p_elec = heatpump.electrical_power_kw(
-                thermal_power_kw=q_hp,
-                supply_temp=supply_temp,
-                outdoor_temp=outdoor[t],
+            q = min(
+                emitter.available_power_kw(supply_temp=supply, indoor_temp=t_in),
+                heatpump.max_thermal_power_kw,
             )
-            energy_cost = p_elec * prices[t] * step_hours
-
-            next_t = building.next_indoor_temp(
-                states[snap(t_in)],
-                outdoor_temp=outdoor[t],
-                heat_input_kw=q_hp,
-                step_hours=step_hours,
+            cop = heatpump.cop_at(supply_temp=supply, outdoor_temp=outdoor[t])
+            t_in = building.next_indoor_temp(
+                t_in, outdoor_temp=outdoor[t], heat_input_kw=q, step_hours=1.0
             )
-            next_idx = snap(next_t)
-            objective += (
-                energy_cost
-                + comfort_penalty(states[next_idx])
-                + cycling_penalty_weight * (offset - prev_offset) ** 2
+            total += (
+                q / cop * prices[t]
+                + comfort_penalty(
+                    t_in,
+                    comfort_min=building.comfort_min,
+                    comfort_max=building.comfort_max,
+                    weight=kwargs["comfort_penalty_weight"],
+                    hard_floor=building.comfort_min - 1.5,
+                )
+                + kwargs["cycling_penalty_weight"] * (offset - prev) ** 2
             )
-            energy_cost_total += energy_cost
-            t_in = states[next_idx]
-            prev_offset = offset
-
-        # Match the DP's terminal value.
-        terminal_cop = heatpump.cop_at(
-            supply_temp=base_supply[-1], outdoor_temp=outdoor[-1]
+            prev = offset
+        return total - max(0.0, t_in - building.comfort_min) * (
+            building.thermal_mass_kwh_per_k * prices[-1] / terminal_cop
         )
-        stored_above_min = max(0.0, t_in - building.comfort_min)
-        terminal_value = (
-            -stored_above_min
-            * building.thermal_mass_kwh_per_k
-            * prices[-1]
-            / terminal_cop
-        )
-        objective += terminal_value
 
-        if objective < best_objective:
-            best_objective = objective
-            best_energy_cost = energy_cost_total
+    best = math.inf
+    for sequence in itertools.product(range(-2, 3), repeat=horizon):
+        steps = (0, *sequence)
+        if all(abs(b - a) <= 1 for a, b in itertools.pairwise(steps)):
+            best = min(best, objective(sequence))
 
-    assert result.total_cost_eur == pytest.approx(best_energy_cost, abs=1e-3)
+    assert objective(tuple(result.offsets)) <= best + 0.02

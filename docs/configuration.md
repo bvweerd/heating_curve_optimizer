@@ -1,404 +1,103 @@
-# Configuration Guide
+# Configuration
 
-This guide explains all configuration options for the Heating Curve Optimizer integration.
+All settings are made in the UI. Main settings can be changed later through
+**Configure** on the integration page; zones, PV arrays and the gas boiler
+through their own **Reconfigure** menu. Changing a main setting reloads the
+integration; changing the target temperature or comfort band through the
+number/climate entities re-runs the optimizer immediately without a reload.
 
-## Configuration Flow
+## Main entry
 
-The integration uses a multi-step configuration wizard for the shared,
-whole-house settings (sensors, sources, price settings), followed by at
-least one heating-zone subentry added from the integration page for the
-building/room settings:
+### Electricity prices
 
-```mermaid
-graph LR
-    A[Start] --> B[Basic Settings]
-    B --> C[Source Selection]
-    C --> D[Price Settings]
-    D --> E[Complete]
-    E --> F["Add heating zone(s)"]
+| Setting | Default | Notes |
+|---|---|---|
+| Consumption price sensor | — | Required. Must carry a forecast (see [Installation](installation.md)). The optimizer's steps follow this sensor's interval, so quarter-hour prices give quarter-hour planning. If the sensor only has a current price, that price is assumed for the whole horizon. |
+| Feed-in price sensor | — | Optional. Heat-pump electricity covered by your own PV is valued at this price. Without it, 0.07 EUR/kWh is used, so PV-covered heating is never treated as free. |
 
-    style A fill:#4caf50,stroke:#333,stroke-width:2px
-    style F fill:#4caf50,stroke:#333,stroke-width:2px
+### Measurement sensors (optional)
+
+| Setting | Used for |
+|---|---|
+| Heat pump electrical power | Thermal power and energy sensors; thermal calibration; the gas-boiler comparison. W or kW (unit attribute required). |
+| Measured supply temperature | COP of the actual operating point (thermal power sensor, calibration). Without it the planned supply temperature is used. |
+| Grid import / export power | Enables the real-time PV-surplus layer. W or kW; a sensor without unit is read as W. |
+
+### Heat pump
+
+COP model:
+
+```
+COP = (base_cop + outdoor_coefficient × T_outdoor − k_factor × (T_supply − 35)) × compensation
+COP ≤ (T_supply + 273.15) / (T_supply − T_outdoor)          (Carnot limit)
+COP × defrost factor (0.6 … 1.0, between −10 °C and +6 °C at high humidity)
 ```
 
-!!! note "Every heating zone, including the first, is a subentry"
-    Area, energy label, glazing, ventilation, thermal mass, emitter type,
-    target indoor temperature and its indoor temperature sensor are **not**
-    part of the setup wizard - they're configured per heating zone, via
-    **Add heating zone** on the integration's device page after setup
-    (Settings → Devices & services → Heating Curve Optimizer → "+"). A home
-    with one heating zone still needs that one subentry added; nothing
-    works before it exists. The field descriptions below still apply -
-    they've just moved from the wizard into that subentry form.
-
-## Heating Zone Settings
-
-### Building Parameters
-
-#### **Area (m²)**
-- **Description**: Total heated floor area of your home
-- **Range**: 50 - 500 m²
-- **Default**: 150 m²
-- **Impact**: Directly affects heat loss calculation
-
-!!! example
-    A typical Dutch terraced house: 120-150 m²
-    Detached house: 180-250 m²
-
-#### **Energy Label**
-- **Description**: Building energy efficiency rating
-- **Options**: A+++, A++, A+, A, B, C, D, E, F, G
-- **Default**: C
-- **Impact**: Determines U-value (thermal transmittance)
-
-Energy label to U-value mapping:
-
-| Label | U-value (W/m²K) | Insulation Quality |
-|-------|-----------------|-------------------|
-| A+++ | 0.18 | Passive house standard |
-| A++ | 0.25 | Excellent insulation |
-| A+ | 0.35 | Very good insulation |
-| A | 0.45 | Good insulation |
-| B | 0.60 | Above average |
-| C | 0.80 | Average (default) |
-| D | 1.00 | Below average |
-| E | 1.40 | Poor insulation |
-| F | 1.80 | Very poor |
-| G | 2.50 | Minimal insulation |
-
-!!! tip "Finding Your Energy Label"
-    Check your property's Energy Performance Certificate (EPC). In the Netherlands, this is called the "Energielabel". You can find it at [ep-online.nl](https://www.ep-online.nl/).
-
-### Window Configuration
-
-#### **Glass East (m²)**
-- **Description**: Total window area facing east (±45°)
-- **Range**: 0 - 50 m²
-- **Default**: 5 m²
-- **Impact**: Morning solar gain
-
-#### **Glass West (m²)**
-- **Description**: Total window area facing west (±45°)
-- **Range**: 0 - 50 m²
-- **Default**: 5 m²
-- **Impact**: Evening solar gain
-
-#### **Glass South (m²)**
-- **Description**: Total window area facing south (±45°)
-- **Range**: 0 - 50 m²
-- **Default**: 10 m²
-- **Impact**: Peak solar gain (most important)
-
-#### **Glass U-value (W/m²K)**
-- **Description**: Thermal transmittance of windows
-- **Range**: 0.5 - 3.0
-- **Default**: 1.2
-- **Impact**: Heat loss through windows
-
-Common window U-values:
-
-| Window Type | U-value | Notes |
-|-------------|---------|-------|
-| Triple glazing, argon fill | 0.6 - 0.8 | Best performance |
-| Double glazing, HR++ | 1.0 - 1.2 | Modern standard |
-| Double glazing, HR+ | 1.6 - 2.0 | Older double glazing |
-| Single glazing | 5.0 - 6.0 | Very poor |
-
-!!! warning "Accurate Measurements Matter"
-    Measure window dimensions (width × height) and sum by orientation. Include patio doors and skylights.
-
-### Heat Pump Parameters
-
-#### **Base COP**
-- **Description**: Heat pump COP at 35°C supply temperature and 7°C outdoor temperature
-- **Range**: 2.0 - 6.0
-- **Default**: 3.5
-- **Impact**: Baseline efficiency calculation
-
-!!! info "Finding Base COP"
-    Check your heat pump datasheet for COP at A7/W35 (7°C outdoor, 35°C water). This is a standardized test condition.
-
-#### **K-Factor**
-- **Description**: COP degradation per °C supply temperature increase
-- **Range**: 0.01 - 0.10
-- **Default**: 0.03
-- **Impact**: How much COP drops when supply temp rises
-
-Heat pump type guidelines:
-
-| Type | K-Factor | Notes |
-|------|----------|-------|
-| Ground source | 0.02 - 0.025 | More stable |
-| Air-to-water (inverter) | 0.025 - 0.035 | Good modulation |
-| Air-to-water (on/off) | 0.035 - 0.045 | Less efficient at high temps |
-
-!!! tip "Calibrating K-Factor"
-    Monitor your heat pump's actual COP at different supply temperatures and adjust k-factor to match reality.
-
-#### **COP Compensation Factor**
-- **Description**: Multiplier to adjust theoretical COP to real-world system efficiency
-- **Range**: 0.5 - 1.2
-- **Default**: 0.9
-- **Impact**: Accounts for distribution losses, defrost cycles, auxiliary pumps
-
-!!! example
-    Theoretical COP = 4.0
-    Real system COP = 3.6 (measured)
-    Compensation factor = 3.6 / 4.0 = **0.9**
-
-### Advanced Settings
-
-#### **Planning Window (hours)**
-- **Description**: How far ahead to optimize
-- **Range**: 2 - 24 hours
-- **Default**: 6 hours
-- **Impact**: Longer window = better optimization but more computation
-
-#### **Time Base (minutes)**
-- **Description**: Optimization time step size
-- **Range**: 15 - 120 minutes
-- **Default**: 60 minutes
-- **Impact**: Smaller steps = finer control but more computation
-
-#### **Offset Change Speed (offset_delta_t)**
-- **Description**: Minutes required per 1°C offset change
-- **Range**: 10 - 60 minutes
-- **Default**: 10 minutes
-- **Impact**: Controls how quickly the heating curve offset can change
-- **Formula**: Max change per step = time_base / offset_delta_t
-  - At 60 min time_base, 10 min delta: max 6°C/hour
-  - At 60 min time_base, 60 min delta: max 1°C/hour
-
-!!! tip "Choosing offset_delta_t"
-    - **Lower values (10-20)**: More responsive to price changes, good for volatile electricity markets
-    - **Higher values (30-60)**: Smoother operation, less stress on heating system
-
-### Temperature Control Settings
-
-#### **Target Indoor Temperature**
-- **Description**: Desired indoor temperature setpoint
-- **Range**: 15 - 25°C
-- **Default**: 20°C
-- **Impact**: Base temperature for heat demand calculation
-
-#### **Indoor Temperature Hysteresis**
-- **Description**: Temperature band around setpoint for smooth control
-- **Range**: 0.1 - 2.0°C
-- **Default**: 0.5°C
-- **Impact**: Prevents frequent on/off cycling
-
-!!! info "Heat Demand Modulation"
-    When configured with an indoor temperature sensor, heat demand is automatically adjusted:
-
-    - **Below (target - hysteresis)**: Demand increases proportionally
-    - **Within hysteresis band**: Linear reduction from 100% to 0%
-    - **Above (target + hysteresis)**: No heat demand
-
-!!! warning "Performance Consideration"
-    Planning window of 24 hours with 15-minute time base creates 96 time steps, which may be computationally intensive.
-
-## Wizard Step 1: Source Selection
-
-Select the sensors that provide power consumption and production data.
-
-### **Consumption Sensor**
-- **Required**: Yes
-- **Device Class**: `power` or `energy`
-- **Unit**: W or kW
-- **Description**: Your home's total electricity consumption
-
-!!! example "Typical Sources"
-    - Smart meter sensor: `sensor.power_consumption`
-    - Energy monitor: `sensor.house_power`
-    - Shelly EM: `sensor.shellyem_power`
-
-### **Production Sensor**
-- **Required**: No (but recommended if you have solar panels)
-- **Device Class**: `power` or `energy`
-- **Unit**: W or kW
-- **Description**: Solar panel or other electricity production
-
-!!! tip "Solar Production"
-    If you have solar panels, **definitely** configure production sensor. This enables:
-    - Solar gain buffering
-    - Net price calculation (consumption price - production price)
-    - Optimized heating during peak production
-
-## Wizard Step 2: Price Settings
-
-Configure electricity price sensors for optimization.
-
-### **Consumption Price Sensor**
-- **Required**: Yes (or configure fixed price)
-- **Unit**: €/kWh or your currency
-- **Description**: Variable electricity consumption price
-
-#### Supported Price Sensor Formats
-
-The integration supports multiple price sensor attribute formats:
-
-=== "Format 1: raw_today / raw_tomorrow"
-    ```yaml
-    attributes:
-      raw_today:
-        - hour: "2025-11-15T00:00:00+01:00"
-          price: 0.23
-        - hour: "2025-11-15T01:00:00+01:00"
-          price: 0.21
-        ...
-      raw_tomorrow:
-        - hour: "2025-11-16T00:00:00+01:00"
-          price: 0.25
-        ...
-    ```
-
-=== "Format 2: forecast_prices"
-    ```yaml
-    attributes:
-      forecast_prices:
-        - datetime: "2025-11-15T00:00:00+01:00"
-          price: 0.23
-        - datetime: "2025-11-15T01:00:00+01:00"
-          price: 0.21
-        ...
-    ```
-
-=== "Format 3: net_prices_today / net_prices_tomorrow"
-    ```yaml
-    attributes:
-      net_prices_today:
-        - 0.23
-        - 0.21
-        - 0.19
-        ...
-      net_prices_tomorrow:
-        - 0.25
-        - 0.24
-        ...
-    ```
-
-!!! example "Popular Integrations"
-    - **Nordpool**: Uses `raw_today` / `raw_tomorrow`
-    - **ENTSO-E**: Uses `forecast_prices`
-    - **Energy Tariffs**: Uses custom formats
-
-### **Production Price Sensor**
-- **Required**: No
-- **Unit**: €/kWh
-- **Description**: Electricity sell-back price (feed-in tariff)
-
-!!! info "Why Production Price?"
-    When you have solar production, the **effective** cost of electricity is:
-
-    \\[ \text{Net Cost} = \text{Consumption Price} - \text{Production Price} \\]
-
-    During peak production, net cost can be negative, making heating essentially free!
-
-### **Fixed Price Mode**
-
-If you don't have a variable price sensor:
-
-1. Leave price sensors empty
-2. Integration uses current sensor state as fixed price
-3. Optimization still works but focuses on COP efficiency rather than price timing
-
-!!! warning "Limited Optimization"
-    Fixed price mode provides minimal cost savings. Variable pricing (e.g., dynamic contracts) unlocks the full potential.
-
-## Updating Configuration
-
-After initial setup, you can modify settings:
-
-1. **Navigate** to Settings → Devices & Services
-2. **Find** "Heating Curve Optimizer"
-3. **Click** "Configure"
-4. **Modify** parameters
-5. **Save**
-
-Changes take effect immediately (within one update cycle).
-
-## Configuration Examples
-
-### Example 1: Well-Insulated House with Solar
-
-```yaml
-Area: 150 m²
-Energy Label: A+
-Glass East: 3 m²
-Glass West: 3 m²
-Glass South: 12 m²
-Glass U-value: 0.8 W/m²K
-
-Base COP: 4.2
-K-Factor: 0.025
-COP Compensation: 0.92
-
-Consumption Sensor: sensor.power_consumption
-Production Sensor: sensor.solar_production
-Consumption Price: sensor.nordpool_kwh_nl_eur_3_10_0
-Production Price: sensor.feed_in_tariff
-```
-
-### Example 2: Average House, No Solar
-
-```yaml
-Area: 120 m²
-Energy Label: C
-Glass East: 5 m²
-Glass West: 5 m²
-Glass South: 8 m²
-Glass U-value: 1.2 W/m²K
-
-Base COP: 3.5
-K-Factor: 0.03
-COP Compensation: 0.9
-
-Consumption Sensor: sensor.power_consumption
-Production Sensor: (none)
-Consumption Price: sensor.electricity_price
-Production Price: (none)
-```
-
-### Example 3: Poorly Insulated House
-
-```yaml
-Area: 180 m²
-Energy Label: E
-Glass East: 6 m²
-Glass West: 6 m²
-Glass South: 10 m²
-Glass U-value: 2.0 W/m²K
-
-Base COP: 3.0
-K-Factor: 0.035
-COP Compensation: 0.85
-
-Consumption Sensor: sensor.power_consumption
-Production Sensor: (none)
-Consumption Price: 0.30 (fixed)
-Production Price: (none)
-```
-
-## Advanced: Thermal Optimizer Settings
-
-A few settings refine the thermal optimizer or enable the real-time
-PV-surplus controller. `grid_import_sensor`/`grid_export_sensor` are in
-the setup wizard's Basic Settings step; `thermal_mass_class`/
-`emitter_type` are per heating zone (see "Add heating zone" above). See
-[Configuration Reference](reference/configuration.md#thermal-optimizer-parameters)
-for the full parameter table, valid values and what each one changes.
-
-## Validation
-
-The integration validates your configuration:
-
-- ✓ Area must be reasonable (50-500 m²)
-- ✓ Energy label must be valid
-- ✓ COP parameters must be physically plausible
-- ✓ Selected sensors must exist and have valid states
-
-If validation fails, you'll see an error message explaining the issue.
-
----
-
-**Next**: [Quick Start Guide](quick-start.md) - Start optimizing your heating!
+| Setting | Default | Typical |
+|---|---|---|
+| Base COP | 4.2 | COP at 35 °C supply and 0 °C outdoor. From the datasheet (A2/W35 is a good reference). |
+| k-factor | 0.11 | COP loss per °C supply temperature above 35 °C. 0.08–0.12 for air-to-water. |
+| Outdoor temperature coefficient | 0.08 | COP gain per °C outdoor temperature. 0.05–0.10. |
+| Compensation factor | 1.0 | Scales the model to your measured seasonal COP. |
+| Maximum thermal power | empty | Rated heating capacity in kW. Empty: 1.3 × the building's heat loss at the design outdoor temperature. |
+
+### Heating curve
+
+Enter the curve exactly as it is set on the heat pump; the optimizer adds an
+offset of −4 … +4 °C on top of it.
+
+| Setting | Default | Notes |
+|---|---|---|
+| Supply temperature at the warm end | 25 °C | Used at and above the warm-end outdoor temperature. |
+| Supply temperature at the cold end | 45 °C | Used at and below the design outdoor temperature. The emitters are assumed to deliver exactly the building's heat loss at this point. |
+| Design outdoor temperature | −10 °C | Dutch design value. |
+| Warm-end outdoor temperature | 15 °C | |
+| Minutes per 1 °C offset change | 30 | Ramp-rate limit: 30 allows 2 °C per hour. With 15-minute steps the limit is at least 1 °C per step. |
+
+### Advanced
+
+| Setting | Default | Notes |
+|---|---|---|
+| Planning horizon | 24 h | Rounded up to whole price periods and limited by the available price forecast (day-ahead prices usually reach 12–36 h ahead). |
+
+## Heating zone
+
+| Setting | Default | Notes |
+|---|---|---|
+| Name | — | |
+| Heated floor area | — | m². |
+| Energy label | C | Converted to a heat loss coefficient (NTA 8800 energy use × heating share / degree days), plus ventilation loss. Replaced by the calibrated value once learned. |
+| Ventilation | natural (standard) | Air change rate for the ventilation loss. |
+| Ceiling height | 2.5 m | Volume for the ventilation loss. |
+| Construction | medium | Thermal mass: light 40, medium 90, heavy 165 Wh/(m²·K). |
+| Heat emitters | radiators | Emitter exponent: radiators 1.3, underfloor 1.1, fan coils 1.0. |
+| Internal heat gains | 3 W/m² | People, appliances, lighting. |
+| Window area south/east/west | 0 | m² glass; solar gain uses sun position and direct/diffuse irradiance. |
+| Glazing U-value | 1.2 | Determines the solar heat gain coefficient. |
+| Target temperature, comfort band below/above | 20 °C, 0.3, 0.5 | The optimizer keeps the indoor temperature between target − below and target + above. Deviations are penalised quadratically (50 €/K²/h). |
+| Indoor temperature sensor | — | Strongly recommended. Without it the optimizer assumes the room is at its target temperature and calibration is disabled. An unavailable sensor raises a repair issue. |
+| Own heating curve (warm/cold end) | empty | Only for a separate heating circuit with its own curve. Fill both or neither. |
+
+The first zone is the primary zone; its setpoints are exposed as number and
+climate entities. Additional zones each get their own device with offset,
+supply temperature, planned indoor temperature, savings and heat demand.
+
+!!! note "Several zones on one heat pump"
+    Each zone is optimized independently, as its own heating circuit. The
+    shared heat pump capacity is not divided between zones.
+
+## PV array
+
+Peak power (kWp), orientation (azimuth, 180 = south), tilt, system
+efficiency and DC coupling. Several arrays can be added. When Battery
+Controller has PV arrays, you can import one.
+
+## Gas boiler (hybrid)
+
+Gas price sensor (EUR/m³), boiler efficiency (default 0.90), calorific
+value (default 9.77 kWh/m³, Dutch upper heating value) and **Gas as comfort
+backup** (default on): recommend the boiler whenever the heat pump cannot
+restore the comfort band within 3 hours, even if gas is more expensive.
+Switch it off to use gas only when it is also cheaper. See
+[How it works](algorithm.md#hybrid-gas-boiler) for when the boiler is
+recommended.

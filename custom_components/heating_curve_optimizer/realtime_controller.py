@@ -1,21 +1,16 @@
-"""Real-time PV-surplus controller (phase 5b, docs/redesign/REDESIGN.md).
+"""Real-time PV-surplus controller.
 
-Modelled on battery_controller's `zero_grid_controller.py`: a fast feedback
-loop on a live grid-power reading, layered on top of the periodic DP
-optimizer's plan rather than replacing it - the same relationship
-`ZeroGridController` has to the DP schedule there.
+A fast feedback loop on live grid power, layered on top of the periodic DP
+plan. The heat pump only accepts whole-degree curve offsets, so this is a
+deadbanded step controller rather than a continuous integrator: exporting
+more than the deadband (while the DP says stored heat is worth something)
+raises the offset one degree above the plan; once the export is gone,
+importing more than the deadband steps that extra back down.
 
-Deliberately not a port of the continuous integrator battery_controller
-uses (`target = last_target - gain * grid_error`, tuned so the settling
-time stays bounded under sensor delay - see `ZERO_GRID_LOOP_GAIN` there).
-That design exists because a battery inverter accepts a continuous power
-setpoint; a heat pump here only ever accepts a whole-degree curve offset
-(the same `offset` the DP itself plans in). Chasing a continuous target
-with a discrete actuator is exactly the mismatch that causes oscillation,
-so this is a plain deadbanded step controller instead: exporting more than
-the deadband nudges the offset up by one degree, importing more than the
-deadband nudges it back down, anything in between holds. No gain tuning
-needed because there is no continuous quantity being tracked.
+The adjustment is only ever *upward* from the plan, bounded to
+``[0, max_adjustment]``. Importing from the grid is the normal state of a
+running heat pump, so import alone must never push the offset below what
+the DP planned - it only unwinds surplus-driven increases.
 """
 
 from __future__ import annotations
@@ -41,16 +36,11 @@ class RealtimeControllerConfig:
 
 
 class RealtimeController:
-    """Nudges the offset up/down between DP runs based on live grid power.
+    """Raises the offset above the DP plan while PV surplus is exported.
 
-    Only ever adjusts *around* the DP's planned offset for the current
-    step - it never bypasses the DP's own curve-limit or ramp-rate
-    constraints (the caller clamps `max_adjustment` to the same
-    `max_offset_change` the DP itself respects), and its output is
-    published as a separate sensor (`realtime_offset.py`) rather than
-    silently changing `optimized_offset` - phase 3's backward-compatibility
-    guarantee (legacy behaviour unchanged unless a user opts in) stays
-    untouched by this.
+    The caller bounds `max_adjustment` by the DP's own ramp-rate limit; the
+    result is published as the effective offset of the real-time sensor,
+    never written back into the plan itself.
     """
 
     def __init__(self, config: RealtimeControllerConfig):
@@ -95,7 +85,7 @@ class RealtimeController:
         else:
             target = self._last_adjustment
 
-        self._last_adjustment = int(_clamp(target, -max_adjustment, max_adjustment))
+        self._last_adjustment = int(_clamp(target, 0, max_adjustment))
         return self._last_adjustment
 
     def get_control_action(

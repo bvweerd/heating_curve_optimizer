@@ -17,6 +17,7 @@ from typing import Any
 from .const import (
     CONF_BASE_COP,
     CONF_COP_COMPENSATION_FACTOR,
+    CONF_HEAT_PUMP_MAX_THERMAL_POWER,
     CONF_K_FACTOR,
     CONF_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_COP_AT_35,
@@ -26,9 +27,7 @@ from .const import (
 )
 from .helpers import calculate_defrost_factor
 
-# Below this COP the "electrical power" calculation switches to a steep
-# penalty instead of dividing by a near-zero number. Matches the legacy
-# optimizer's floor (optimizer.py), kept for continuity of behaviour.
+# Floor for the COP so electrical power never divides by a near-zero number.
 MIN_COP = 0.5
 
 
@@ -36,11 +35,9 @@ MIN_COP = 0.5
 class HeatPumpConfig:
     """Heat pump performance parameters.
 
-    `cop_at` reuses the exact COP formula the legacy optimizer used
-    (optimizer.py's `_calculate_cop`), including the defrost factor -
-    behaviour here is not new, only correctly *coupled to delivered heat*
-    now that thermal_optimizer.py asks the emitter how much power a given
-    supply temperature can actually push into the room.
+    `cop_at` is the single COP implementation used everywhere in the
+    integration (optimizer, sensors, calibration, gas-boiler comparison),
+    so every figure the user sees is computed with the same model.
     """
 
     base_cop_at_35: float = DEFAULT_COP_AT_35
@@ -54,7 +51,14 @@ class HeatPumpConfig:
     def from_config(
         cls, config: dict[str, Any], *, max_thermal_power_kw: float = 8.0
     ) -> HeatPumpConfig:
-        """Build a `HeatPumpConfig` from a merged config-entry dict."""
+        """Build a `HeatPumpConfig` from a merged config-entry dict.
+
+        A configured `CONF_HEAT_PUMP_MAX_THERMAL_POWER` wins over the
+        `max_thermal_power_kw` fallback supplied by the caller.
+        """
+        configured = config.get(CONF_HEAT_PUMP_MAX_THERMAL_POWER)
+        if configured is not None and float(configured) > 0:
+            max_thermal_power_kw = float(configured)
         return cls(
             base_cop_at_35=float(config.get(CONF_BASE_COP, DEFAULT_COP_AT_35)),
             k_factor=float(config.get(CONF_K_FACTOR, DEFAULT_K_FACTOR)),
