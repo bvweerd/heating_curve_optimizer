@@ -425,7 +425,7 @@
         "name": "Buitentemperatuur"
       },
       "calculated_supply_temperature": {
-        "name": "Aanvoertemperatuur stooklijn"
+        "name": "Basis aanvoertemperatuur"
       },
       "heat_loss": {
         "name": "Warmteverlies"
@@ -440,25 +440,25 @@
         "name": "Verwachte PV-opwek"
       },
       "heating_curve_offset": {
-        "name": "Stooklijn-offset"
+        "name": "Geplande offset"
       },
       "optimized_supply_temperature": {
-        "name": "Geoptimaliseerde aanvoertemperatuur"
+        "name": "Geplande aanvoertemperatuur"
       },
       "planned_indoor_temperature": {
-        "name": "Geplande binnentemperatuur"
+        "name": "Verwachte binnentemperatuur"
       },
       "heat_buffer": {
-        "name": "Warmtebuffer"
+        "name": "Warmtereserve"
       },
       "planned_cop": {
-        "name": "Geplande COP"
+        "name": "Verwachte COP"
       },
       "cost_savings_forecast": {
         "name": "Verwachte besparing"
       },
       "total_cost_savings": {
-        "name": "Totale besparing"
+        "name": "Cumulatieve besparing"
       },
       "shadow_price": {
         "name": "Waarde opgeslagen warmte"
@@ -478,7 +478,7 @@
         "name": "Modelnauwkeurigheid"
       },
       "realtime_offset": {
-        "name": "Realtime stooklijn-offset"
+        "name": "Actieve offset"
       },
       "diagnostics": {
         "name": "Status",
@@ -502,7 +502,7 @@
         "name": "Kosten gasketel per kWh warmte"
       },
       "gas_boiler_cost_savings": {
-        "name": "Voordeel gasketel per kWh warmte"
+        "name": "Besparing gasketel per kWh warmte"
       }
     },
     "binary_sensor": {

@@ -22,7 +22,7 @@ PARALLEL_UPDATES = 0
 class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Binary sensor that indicates heat demand using coordinator."""
 
-    _attr_device_class = BinarySensorDeviceClass.HEAT
+    _attr_device_class = BinarySensorDeviceClass.RUNNING
     _attr_has_entity_name = True
     _attr_translation_key = "heat_pump_demand"
     _attr_should_poll = False
@@ -81,7 +81,7 @@ class HeatPumpPlanActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
     the integration never actuates hardware.
     """
 
-    _attr_device_class = BinarySensorDeviceClass.HEAT
+    _attr_device_class = BinarySensorDeviceClass.RUNNING
     _attr_has_entity_name = True
     _attr_translation_key = "heat_pump_plan_active"
     _attr_should_poll = False

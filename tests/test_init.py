@@ -67,7 +67,7 @@ async def test_translated_entity_names(
     state = _state(hass, "sensor", f"{entry.entry_id}_heating_curve_offset")
     assert (
         state.attributes["friendly_name"]
-        == "Heating Curve Optimizer Heating curve offset"
+        == "Heating Curve Optimizer Planned offset"
     )
 
 

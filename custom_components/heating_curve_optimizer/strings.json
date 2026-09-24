@@ -425,7 +425,7 @@
         "name": "Outdoor temperature"
       },
       "calculated_supply_temperature": {
-        "name": "Heating curve supply temperature"
+        "name": "Base supply temperature"
       },
       "heat_loss": {
         "name": "Heat loss"
@@ -440,25 +440,25 @@
         "name": "PV production forecast"
       },
       "heating_curve_offset": {
-        "name": "Heating curve offset"
+        "name": "Planned offset"
       },
       "optimized_supply_temperature": {
-        "name": "Optimized supply temperature"
+        "name": "Planned supply temperature"
       },
       "planned_indoor_temperature": {
-        "name": "Planned indoor temperature"
+        "name": "Expected indoor temperature"
       },
       "heat_buffer": {
-        "name": "Heat buffer"
+        "name": "Thermal reserve"
       },
       "planned_cop": {
-        "name": "Planned COP"
+        "name": "Expected COP"
       },
       "cost_savings_forecast": {
-        "name": "Cost savings forecast"
+        "name": "Forecast savings"
       },
       "total_cost_savings": {
-        "name": "Total cost savings"
+        "name": "Cumulative savings"
       },
       "shadow_price": {
         "name": "Value of stored heat"
@@ -478,7 +478,7 @@
         "name": "Model accuracy"
       },
       "realtime_offset": {
-        "name": "Real-time heating curve offset"
+        "name": "Active offset"
       },
       "diagnostics": {
         "name": "Status",
@@ -502,7 +502,7 @@
         "name": "Gas boiler cost per kWh heat"
       },
       "gas_boiler_cost_savings": {
-        "name": "Gas boiler advantage per kWh heat"
+        "name": "Gas boiler savings per kWh heat"
       }
     },
     "binary_sensor": {
