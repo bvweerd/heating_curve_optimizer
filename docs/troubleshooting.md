@@ -30,22 +30,27 @@ No heating zone has been added yet. Add one from the integration page.
   attribute. Without an indoor sensor the target temperature is assumed.
 - Check the heating curve settings: they must match the curve on the heat
   pump, otherwise the modelled heat output is wrong.
-- Check `ua_w_per_k_in_use` on *Thermal calibration samples*: an energy
-  label that is far off makes the house look leakier or tighter than it
-  is. Calibration corrects this over time.
+- Check `ua_w_per_k_in_use` on the *Calibration* sensor: an energy label
+  that is far off makes the house look leakier or tighter than it is.
+  Calibration corrects this over time.
 
 ## Calibration does not progress
 
-`last_result` on *Thermal calibration samples* tells why:
+`last_result` and `excluded_windows` on the *Calibration* sensor tell why:
 
 | Value | Meaning |
 |---|---|
 | `no_indoor_sensor` | No (working) indoor temperature sensor. |
 | `no_power_reading` | No heat pump power sensor, or its unit is not W/kW. |
-| `elapsed_gap` | Too long between runs, or the temperature did not move 0.3 °C within 6 hours. |
-| `implausible` | The fit is more than 3× off the label estimate; samples are kept, the fit is not applied. |
-| `fitted` | Working; applied after 30 samples. |
+| `multi_zone` | Several zones share the heat pump; calibration is off. |
+| `excluded_dhw` / `excluded_window_open` | Tap water run or open window during the window. |
+| `excluded_temperature_jump` | The indoor temperature jumped more than 1 °C between runs. |
+| `elapsed_gap` | Data gap, or the temperature did not move 0.3 °C within 6 hours. |
+| `implausible` | The fit is outside the plausible range; it is not used. |
+| `fitted` | Working. |
 
+State *Provisional* with enough samples usually means too few cooling (or
+heating) windows, or a low `r_squared`: the building needs some variation.
 A wrong fit can be cleared with `heating_curve_optimizer.reset_thermal_calibration`.
 
 ## Gas boiler preferred never turns on

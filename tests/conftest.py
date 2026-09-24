@@ -74,6 +74,7 @@ def zone_data(name: str = "Living room", **overrides: Any) -> dict[str, Any]:
         "indoor_temp_hysteresis_lower": 0.3,
         "indoor_temp_hysteresis_upper": 0.5,
         "indoor_temperature_sensor": INDOOR_SENSOR,
+        "calibration_mode": "observe",
         **overrides,
     }
 

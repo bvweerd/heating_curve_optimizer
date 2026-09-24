@@ -1,35 +1,88 @@
 {
   "entity": {
     "sensor": {
-      "heat_loss": { "default": "mdi:home-export-outline" },
-      "window_solar_gain": { "default": "mdi:white-balance-sunny" },
-      "pv_production_forecast": { "default": "mdi:solar-power" },
-      "net_heat_loss": { "default": "mdi:fire-off" },
-      "heating_curve_offset": { "default": "mdi:chart-line" },
-      "calculated_supply_temperature": { "default": "mdi:chart-bell-curve-cumulative" },
-      "optimized_supply_temperature": { "default": "mdi:thermometer-chevron-up" },
-      "planned_indoor_temperature": { "default": "mdi:home-thermometer" },
-      "heat_buffer": { "default": "mdi:battery-medium" },
-      "planned_cop": { "default": "mdi:heat-pump" },
-      "cost_savings_forecast": { "default": "mdi:chart-line-variant" },
-      "total_cost_savings": { "default": "mdi:piggy-bank" },
-      "shadow_price": { "default": "mdi:scale-balance" },
-      "thermal_calibration": { "default": "mdi:tune" },
-      "realtime_offset": { "default": "mdi:solar-power-variant" },
-      "diagnostics": { "default": "mdi:information-outline" },
-      "heat_pump_thermal_power": { "default": "mdi:heat-wave" },
-      "heat_pump_thermal_energy": { "default": "mdi:fire" },
-      "gas_boiler_heat_pump_cost": { "default": "mdi:heat-pump" },
-      "gas_boiler_gas_cost": { "default": "mdi:fire" },
-      "gas_boiler_cost_savings": { "default": "mdi:piggy-bank-outline" }
+      "heat_loss": {
+        "default": "mdi:home-export-outline"
+      },
+      "window_solar_gain": {
+        "default": "mdi:white-balance-sunny"
+      },
+      "pv_production_forecast": {
+        "default": "mdi:solar-power"
+      },
+      "net_heat_loss": {
+        "default": "mdi:fire-off"
+      },
+      "heating_curve_offset": {
+        "default": "mdi:chart-line"
+      },
+      "calculated_supply_temperature": {
+        "default": "mdi:chart-bell-curve-cumulative"
+      },
+      "optimized_supply_temperature": {
+        "default": "mdi:thermometer-chevron-up"
+      },
+      "planned_indoor_temperature": {
+        "default": "mdi:home-thermometer"
+      },
+      "heat_buffer": {
+        "default": "mdi:battery-medium"
+      },
+      "planned_cop": {
+        "default": "mdi:heat-pump"
+      },
+      "cost_savings_forecast": {
+        "default": "mdi:chart-line-variant"
+      },
+      "total_cost_savings": {
+        "default": "mdi:piggy-bank"
+      },
+      "shadow_price": {
+        "default": "mdi:scale-balance"
+      },
+      "realtime_offset": {
+        "default": "mdi:solar-power-variant"
+      },
+      "diagnostics": {
+        "default": "mdi:information-outline"
+      },
+      "heat_pump_thermal_power": {
+        "default": "mdi:heat-wave"
+      },
+      "heat_pump_thermal_energy": {
+        "default": "mdi:fire"
+      },
+      "gas_boiler_heat_pump_cost": {
+        "default": "mdi:heat-pump"
+      },
+      "gas_boiler_gas_cost": {
+        "default": "mdi:fire"
+      },
+      "gas_boiler_cost_savings": {
+        "default": "mdi:piggy-bank-outline"
+      },
+      "calibration": {
+        "default": "mdi:tune-variant"
+      },
+      "model_accuracy": {
+        "default": "mdi:target"
+      }
     },
     "number": {
-      "target_indoor_temperature": { "default": "mdi:home-thermometer" },
-      "indoor_temp_hysteresis_lower": { "default": "mdi:thermometer-chevron-down" },
-      "indoor_temp_hysteresis_upper": { "default": "mdi:thermometer-chevron-up" }
+      "target_indoor_temperature": {
+        "default": "mdi:home-thermometer"
+      },
+      "indoor_temp_hysteresis_lower": {
+        "default": "mdi:thermometer-chevron-down"
+      },
+      "indoor_temp_hysteresis_upper": {
+        "default": "mdi:thermometer-chevron-up"
+      }
     },
     "binary_sensor": {
-      "heat_pump_demand": { "default": "mdi:radiator" },
+      "heat_pump_demand": {
+        "default": "mdi:radiator"
+      },
       "gas_boiler_preferred": {
         "default": "mdi:gas-burner",
         "state": {
@@ -40,6 +93,8 @@
     }
   },
   "services": {
-    "reset_thermal_calibration": { "service": "mdi:restore" }
+    "reset_thermal_calibration": {
+      "service": "mdi:restore"
+    }
   }
 }

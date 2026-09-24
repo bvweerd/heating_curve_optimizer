@@ -26,7 +26,8 @@ plus hassfest and HACS validation.
 | `building_model.py` | 1R1C building and emitter model (pure Python). |
 | `heatpump_model.py` | The single COP implementation. |
 | `thermal_optimizer.py` | DP optimizer and baseline (pure Python). |
-| `calibration.py` | Least-squares fit of `UA` and `C`, persisted. |
+| `calibration.py` | Building, COP and emitter fits, quality gates, residual diagnosis; persisted. |
+| `repairs.py` | Fix flow that switches a zone's calibration to *Apply*. |
 | `coordinator_weather.py` / `coordinator_heat.py` / `coordinator_optimization.py` | Data pipeline. |
 | `gas_boiler_model.py` / `gas_boiler_coordinator.py` | Hybrid advice. |
 | `realtime_controller.py` | PV-surplus layer. |

@@ -22,12 +22,16 @@
             "description": "Verbeteren de nauwkeurigheid en maken thermische kalibratie en realtime PV-overschotsturing mogelijk.",
             "data": {
               "power_consumption": "Elektrisch vermogen warmtepomp",
+              "heat_pump_thermal_power_sensor": "Thermisch vermogen warmtepomp",
               "supply_temperature_sensor": "Gemeten aanvoertemperatuur",
+              "dhw_active_sensor": "Tapwaterbedrijf actief",
               "grid_import_sensor": "Netafname vermogen",
               "grid_export_sensor": "Netteruglevering vermogen"
             },
             "data_description": {
               "power_consumption": "Vermogenssensor (W of kW) van de warmtepomp. Activeert de thermisch vermogen/energie-sensoren en thermische kalibratie.",
+              "heat_pump_thermal_power_sensor": "Optionele warmtemeter of door de warmtepomp gerapporteerd afgegeven vermogen (W of kW). Maakt de kalibratie onafhankelijk van het COP-model en maakt het leren van de COP-curve mogelijk.",
+              "dhw_active_sensor": "Binaire sensor die aan is terwijl de warmtepomp tapwater verwarmt. Die periodes worden buiten de kalibratie gehouden. Leeg laten als er geen tapwaterbedrijf is.",
               "supply_temperature_sensor": "Gebruikt voor de COP van het gemeten werkpunt; anders wordt de geplande aanvoertemperatuur gebruikt.",
               "grid_import_sensor": "Actueel vermogen (W of kW). Met afname en/of teruglevering ingesteld verhoogt de realtime-offsetsensor de offset zolang er PV-overschot wordt teruggeleverd.",
               "grid_export_sensor": "Actueel vermogen (W of kW), positief tijdens teruglevering."
@@ -121,12 +125,16 @@
             "description": "Verbeteren de nauwkeurigheid en maken thermische kalibratie en realtime PV-overschotsturing mogelijk.",
             "data": {
               "power_consumption": "Elektrisch vermogen warmtepomp",
+              "heat_pump_thermal_power_sensor": "Thermisch vermogen warmtepomp",
               "supply_temperature_sensor": "Gemeten aanvoertemperatuur",
+              "dhw_active_sensor": "Tapwaterbedrijf actief",
               "grid_import_sensor": "Netafname vermogen",
               "grid_export_sensor": "Netteruglevering vermogen"
             },
             "data_description": {
               "power_consumption": "Vermogenssensor (W of kW) van de warmtepomp. Activeert de thermisch vermogen/energie-sensoren en thermische kalibratie.",
+              "heat_pump_thermal_power_sensor": "Optionele warmtemeter of door de warmtepomp gerapporteerd afgegeven vermogen (W of kW). Maakt de kalibratie onafhankelijk van het COP-model en maakt het leren van de COP-curve mogelijk.",
+              "dhw_active_sensor": "Binaire sensor die aan is terwijl de warmtepomp tapwater verwarmt. Die periodes worden buiten de kalibratie gehouden. Leeg laten als er geen tapwaterbedrijf is.",
               "supply_temperature_sensor": "Gebruikt voor de COP van het gemeten werkpunt; anders wordt de geplande aanvoertemperatuur gebruikt.",
               "grid_import_sensor": "Actueel vermogen (W of kW). Met afname en/of teruglevering ingesteld verhoogt de realtime-offsetsensor de offset zolang er PV-overschot wordt teruggeleverd.",
               "grid_export_sensor": "Actueel vermogen (W of kW), positief tijdens teruglevering."
@@ -214,6 +222,8 @@
             "indoor_temp_hysteresis_lower": "Comfortband onder doel",
             "indoor_temp_hysteresis_upper": "Comfortband boven doel",
             "indoor_temperature_sensor": "Binnentemperatuursensor",
+            "window_sensors": "Raam- en deurcontacten",
+            "calibration_mode": "Kalibratie",
             "heat_curve_min": "Eigen stooklijn: aanvoertemperatuur warme kant",
             "heat_curve_max": "Eigen stooklijn: aanvoertemperatuur koude kant"
           },
@@ -223,6 +233,8 @@
             "glass_u_value": "Dubbel glas ~2,8, HR++ ~1,2, triple ~0,8.",
             "indoor_temp_hysteresis_lower": "De optimizer houdt de binnentemperatuur tussen doel - onder en doel + boven.",
             "indoor_temperature_sensor": "Sterk aanbevolen. Zonder sensor neemt de optimizer aan dat de ruimte op de doeltemperatuur is en is kalibratie niet mogelijk.",
+            "window_sensors": "Optioneel. Periodes met een open raam of deur worden buiten de kalibratie gehouden.",
+            "calibration_mode": "Leer het gebouw uit metingen. Observeren: leren en resultaten tonen, vragen voordat ze gebruikt worden. Toepassen: het geleerde model gebruiken zodra het de kwaliteitscontroles doorstaat.",
             "heat_curve_min": "Alleen voor een aparte verwarmingsgroep met een eigen stooklijn; laat beide leeg om de hoofdstooklijn te gebruiken.",
             "heat_curve_max": "Vul beide of geen van beide in."
           }
@@ -247,6 +259,8 @@
             "indoor_temp_hysteresis_lower": "Comfortband onder doel",
             "indoor_temp_hysteresis_upper": "Comfortband boven doel",
             "indoor_temperature_sensor": "Binnentemperatuursensor",
+            "window_sensors": "Raam- en deurcontacten",
+            "calibration_mode": "Kalibratie",
             "heat_curve_min": "Eigen stooklijn: aanvoertemperatuur warme kant",
             "heat_curve_max": "Eigen stooklijn: aanvoertemperatuur koude kant"
           },
@@ -256,6 +270,8 @@
             "glass_u_value": "Dubbel glas ~2,8, HR++ ~1,2, triple ~0,8.",
             "indoor_temp_hysteresis_lower": "De optimizer houdt de binnentemperatuur tussen doel - onder en doel + boven.",
             "indoor_temperature_sensor": "Sterk aanbevolen. Zonder sensor neemt de optimizer aan dat de ruimte op de doeltemperatuur is en is kalibratie niet mogelijk.",
+            "window_sensors": "Optioneel. Periodes met een open raam of deur worden buiten de kalibratie gehouden.",
+            "calibration_mode": "Leer het gebouw uit metingen. Observeren: leren en resultaten tonen, vragen voordat ze gebruikt worden. Toepassen: het geleerde model gebruiken zodra het de kwaliteitscontroles doorstaat.",
             "heat_curve_min": "Alleen voor een aparte verwarmingsgroep met een eigen stooklijn; laat beide leeg om de hoofdstooklijn te gebruiken.",
             "heat_curve_max": "Vul beide of geen van beide in."
           }
@@ -323,12 +339,14 @@
             "gas_price_sensor": "Sensor gasprijs",
             "gas_boiler_efficiency": "Ketelrendement",
             "gas_calorific_value_kwh_per_m3": "Verbrandingswaarde",
-            "gas_comfort_backup": "Gas als comfort-backup"
+            "gas_comfort_backup": "Gas als comfort-backup",
+            "gas_meter_sensor": "Gasmeter"
           },
           "data_description": {
             "gas_price_sensor": "Actuele gasprijs in EUR/m³.",
             "gas_boiler_efficiency": "0,90 voor een gangbare HR-ketel; tot ~1,07 op bovenwaarde bij lage retourtemperaturen.",
             "gas_calorific_value_kwh_per_m3": "Bovenwaarde Gronings aardgas: 9,77 kWh/m³.",
+            "gas_meter_sensor": "Optionele cumulatieve gasmeter (m³ of kWh). Periodes op gas geven een absolute warmtemeting waarmee het COP-niveau van de warmtepomp geijkt wordt. Grove (bijv. uurlijkse) updates zijn geen probleem. Alleen betrouwbaar als de ketel niet ook tapwater verwarmt.",
             "gas_comfort_backup": "Aan: adviseer de gasketel zodra de warmtepomp de comfortband niet binnen 3 uur herstelt, ook als gas duurder is. Uit: alleen als gas ook goedkoper is."
           }
         },
@@ -338,12 +356,14 @@
             "gas_price_sensor": "Sensor gasprijs",
             "gas_boiler_efficiency": "Ketelrendement",
             "gas_calorific_value_kwh_per_m3": "Verbrandingswaarde",
-            "gas_comfort_backup": "Gas als comfort-backup"
+            "gas_comfort_backup": "Gas als comfort-backup",
+            "gas_meter_sensor": "Gasmeter"
           },
           "data_description": {
             "gas_price_sensor": "Actuele gasprijs in EUR/m³.",
             "gas_boiler_efficiency": "0,90 voor een gangbare HR-ketel; tot ~1,07 op bovenwaarde bij lage retourtemperaturen.",
             "gas_calorific_value_kwh_per_m3": "Bovenwaarde Gronings aardgas: 9,77 kWh/m³.",
+            "gas_meter_sensor": "Optionele cumulatieve gasmeter (m³ of kWh). Periodes op gas geven een absolute warmtemeting waarmee het COP-niveau van de warmtepomp geijkt wordt. Grove (bijv. uurlijkse) updates zijn geen probleem. Alleen betrouwbaar als de ketel niet ook tapwater verwarmt.",
             "gas_comfort_backup": "Aan: adviseer de gasketel zodra de warmtepomp de comfortband niet binnen 3 uur herstelt, ook als gas duurder is. Uit: alleen als gas ook goedkoper is."
           }
         }
@@ -362,6 +382,13 @@
         "power_consumption": "Vermogen warmtepomp",
         "grid_import_sensor": "Netafname",
         "grid_export_sensor": "Netteruglevering"
+      }
+    },
+    "calibration_mode": {
+      "options": {
+        "off": "Uit",
+        "observe": "Observeren (vragen voor toepassen)",
+        "apply": "Automatisch toepassen"
       }
     },
     "ventilation_type": {
@@ -436,8 +463,19 @@
       "shadow_price": {
         "name": "Waarde opgeslagen warmte"
       },
-      "thermal_calibration": {
-        "name": "Thermische kalibratie-metingen"
+      "calibration": {
+        "name": "Kalibratie",
+        "state": {
+          "off": "Uit",
+          "unavailable": "Niet mogelijk",
+          "collecting": "Metingen verzamelen",
+          "provisional": "Voorlopig",
+          "ready": "Klaar, wacht op bevestiging",
+          "applied": "Toegepast"
+        }
+      },
+      "model_accuracy": {
+        "name": "Modelnauwkeurigheid"
       },
       "realtime_offset": {
         "name": "Realtime stooklijn-offset"
@@ -548,6 +586,17 @@
     "indoor_sensor_unavailable": {
       "title": "Binnentemperatuursensor niet beschikbaar",
       "description": "De binnentemperatuursensor **{sensor}** is niet beschikbaar. Tot hij weer meet, neemt de optimizer aan dat de ruimte op de doeltemperatuur is en staat de kalibratie stil."
+    },
+    "calibration_ready": {
+      "title": "Kalibratie van {zone} is klaar",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Het geleerde gebouwmodel gebruiken?",
+            "description": "Na {samples} metingen doorstaat de kalibratie alle kwaliteitscontroles: warmteverlies {ua} W/K, tijdconstante {tau} uur. De details staan op de sensor Kalibratie. Verzend om de optimizer het geleerde model te laten gebruiken (kalibratiemodus wordt Toepassen). Terugzetten kan in de zone-instellingen."
+          }
+        }
+      }
     },
     "gas_price_sensor_unavailable": {
       "title": "Gasprijssensor niet beschikbaar",
