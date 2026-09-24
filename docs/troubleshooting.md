@@ -8,6 +8,11 @@ logger:
     custom_components.heating_curve_optimizer: debug
 ```
 
+Repair notifications (price, indoor temperature, gas price, weather) clear
+themselves within seconds once the sensor reports again, and are removed
+when the integration is unloaded or the zone/gas boiler they belong to is
+deleted.
+
 The *Status* diagnostic sensor shows per coordinator whether it has data
 and the last error. **Download diagnostics** on the integration page gives
 the full state with sensor IDs redacted.

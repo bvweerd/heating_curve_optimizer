@@ -7,7 +7,7 @@ from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import Event, EventStateChangedData, HomeAssistant
+from homeassistant.core import Event, EventStateChangedData, HomeAssistant, State
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -44,6 +44,16 @@ _LOGGER = logging.getLogger(__name__)
 
 INDOOR_SOURCE_SENSOR = "sensor"
 INDOOR_SOURCE_TARGET = "target_fallback"
+
+
+def _numeric_state(state: State | None) -> float | None:
+    """A state's numeric value, or None when missing/unavailable/non-numeric."""
+    if state is None:
+        return None
+    try:
+        return float(state.state)
+    except (TypeError, ValueError):
+        return None
 
 
 class HeatCalculationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -109,16 +119,15 @@ class HeatCalculationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _handle_indoor_temp_change(
         self, event: Event[EventStateChangedData]
     ) -> None:
-        """Refresh on a significant indoor temperature change."""
-        old_state = event.data.get("old_state")
-        new_state = event.data.get("new_state")
-        if not old_state or not new_state:
-            return
-        try:
-            if abs(float(new_state.state) - float(old_state.state)) >= 0.5:
-                await self.async_request_refresh()
-        except (ValueError, TypeError):
-            return
+        """Refresh on a significant change, or when the sensor drops out or recovers."""
+        old_value = _numeric_state(event.data.get("old_state"))
+        new_value = _numeric_state(event.data.get("new_state"))
+        if (old_value is None) != (new_value is None) or (
+            old_value is not None
+            and new_value is not None
+            and abs(new_value - old_value) >= 0.5
+        ):
+            await self.async_request_refresh()
 
     async def async_shutdown(self) -> None:
         """Clean up event tracking."""
@@ -137,6 +146,7 @@ class HeatCalculationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         issue_id = f"indoor_sensor_unavailable_{self.zone_id}"
         if not self._indoor_temp_sensor:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
             return target_temp, INDOOR_SOURCE_TARGET
         state = self.hass.states.get(self._indoor_temp_sensor)
         if state is not None and state.state not in ("unknown", "unavailable"):
