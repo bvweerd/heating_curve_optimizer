@@ -39,29 +39,43 @@ from typing import Any
 
 from homeassistant.helpers import storage
 
-from .const import ENERGY_LABELS, calculate_htc_from_energy_label
+from .const import (
+    DEFAULT_CALIBRATION_WINDOW,
+    DEFAULT_COP_SCALE_BOUNDS_LOWER,
+    DEFAULT_COP_SCALE_BOUNDS_UPPER,
+    DEFAULT_EMITTER_EXPONENT_BOUNDS_LOWER,
+    DEFAULT_EMITTER_EXPONENT_BOUNDS_UPPER,
+    DEFAULT_INTERNAL_GAIN_MAX_W_PER_M2,
+    DEFAULT_MIN_COP_SAMPLES,
+    DEFAULT_MIN_EMITTER_SAMPLES,
+    DEFAULT_MIN_INDOOR_TEMP_DELTA,
+    DEFAULT_MIN_R_SQUARED,
+    DEFAULT_MIN_RESIDUAL_SAMPLES,
+    DEFAULT_MIN_SAMPLES_TO_APPLY,
+    DEFAULT_MIN_SHARE_EACH_DIRECTION,
+    DEFAULT_PRIOR_STRENGTH,
+    DEFAULT_RATIO_BOUNDS_LOWER,
+    DEFAULT_RATIO_BOUNDS_UPPER,
+    DEFAULT_SOLAR_FACTOR_BOUNDS_UPPER,
+    DEFAULT_TWO_MASS_AUTOCORRELATION,
+    ENERGY_LABELS,
+    calculate_htc_from_energy_label,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 STORAGE_VERSION = 2
 
-# Rolling window of samples behind the current fit.
-CALIBRATION_WINDOW = 300
-# Quality gates before a fit may be applied.
-MIN_SAMPLES_TO_APPLY = 30
-MIN_R_SQUARED = 0.5
-# Both heating and coasting windows are needed to separate C from UA.
-MIN_SHARE_EACH_DIRECTION = 0.15
-# A window closes once the indoor temperature has moved this far.
-MIN_INDOOR_TEMP_DELTA_C = 0.3
-# Ridge strength, in "equivalent samples" pulling each normalised parameter
-# towards its prior.
-PRIOR_STRENGTH = 3.0
-
-# Plausibility bounds, as multiples of the prior (UA, C) or absolute.
-RATIO_BOUNDS = (0.3, 3.0)
-SOLAR_FACTOR_BOUNDS = (0.0, 2.5)
-INTERNAL_GAIN_MAX_W_PER_M2 = 12.0
+# Module-level aliases for backward compatibility (used by coordinator imports).
+CALIBRATION_WINDOW = DEFAULT_CALIBRATION_WINDOW
+MIN_SAMPLES_TO_APPLY = DEFAULT_MIN_SAMPLES_TO_APPLY
+MIN_R_SQUARED = DEFAULT_MIN_R_SQUARED
+MIN_SHARE_EACH_DIRECTION = DEFAULT_MIN_SHARE_EACH_DIRECTION
+MIN_INDOOR_TEMP_DELTA_C = DEFAULT_MIN_INDOOR_TEMP_DELTA
+PRIOR_STRENGTH = DEFAULT_PRIOR_STRENGTH
+RATIO_BOUNDS = (DEFAULT_RATIO_BOUNDS_LOWER, DEFAULT_RATIO_BOUNDS_UPPER)
+SOLAR_FACTOR_BOUNDS = (0.0, DEFAULT_SOLAR_FACTOR_BOUNDS_UPPER)
+INTERNAL_GAIN_MAX_W_PER_M2 = DEFAULT_INTERNAL_GAIN_MAX_W_PER_M2
 
 # Calibration modes (zone setting).
 MODE_OFF = "off"
@@ -106,6 +120,142 @@ EXCLUSION_RESULTS = (
     RESULT_EXCLUDED_JUMP,
     RESULT_ELAPSED_GAP,
 )
+
+
+@dataclass(frozen=True)
+class CalibrationSettings:
+    """All tuneable calibration constants, read from the user's config."""
+
+    calibration_window: int = DEFAULT_CALIBRATION_WINDOW
+    min_samples_to_apply: int = DEFAULT_MIN_SAMPLES_TO_APPLY
+    min_r_squared: float = DEFAULT_MIN_R_SQUARED
+    min_share_each_direction: float = DEFAULT_MIN_SHARE_EACH_DIRECTION
+    min_indoor_temp_delta_c: float = DEFAULT_MIN_INDOOR_TEMP_DELTA
+    prior_strength: float = DEFAULT_PRIOR_STRENGTH
+    ratio_bounds: tuple[float, float] = (
+        DEFAULT_RATIO_BOUNDS_LOWER,
+        DEFAULT_RATIO_BOUNDS_UPPER,
+    )
+    solar_factor_bounds: tuple[float, float] = (
+        0.0,
+        DEFAULT_SOLAR_FACTOR_BOUNDS_UPPER,
+    )
+    internal_gain_max_w_per_m2: float = DEFAULT_INTERNAL_GAIN_MAX_W_PER_M2
+    min_cop_samples: int = DEFAULT_MIN_COP_SAMPLES
+    cop_scale_bounds: tuple[float, float] = (
+        DEFAULT_COP_SCALE_BOUNDS_LOWER,
+        DEFAULT_COP_SCALE_BOUNDS_UPPER,
+    )
+    min_emitter_samples: int = DEFAULT_MIN_EMITTER_SAMPLES
+    emitter_exponent_bounds: tuple[float, float] = (
+        DEFAULT_EMITTER_EXPONENT_BOUNDS_LOWER,
+        DEFAULT_EMITTER_EXPONENT_BOUNDS_UPPER,
+    )
+    min_residual_samples: int = DEFAULT_MIN_RESIDUAL_SAMPLES
+    two_mass_autocorrelation: float = DEFAULT_TWO_MASS_AUTOCORRELATION
+
+    @classmethod
+    def from_config(cls, config: dict[str, Any]) -> CalibrationSettings:
+        """Build settings from a flat config dict."""
+        from .const import (
+            CONF_CALIBRATION_WINDOW,
+            CONF_COP_SCALE_BOUNDS_LOWER,
+            CONF_COP_SCALE_BOUNDS_UPPER,
+            CONF_EMITTER_EXPONENT_BOUNDS_LOWER,
+            CONF_EMITTER_EXPONENT_BOUNDS_UPPER,
+            CONF_INTERNAL_GAIN_MAX_W_PER_M2,
+            CONF_MIN_COP_SAMPLES,
+            CONF_MIN_EMITTER_SAMPLES,
+            CONF_MIN_INDOOR_TEMP_DELTA,
+            CONF_MIN_R_SQUARED,
+            CONF_MIN_RESIDUAL_SAMPLES,
+            CONF_MIN_SAMPLES_TO_APPLY,
+            CONF_MIN_SHARE_EACH_DIRECTION,
+            CONF_PRIOR_STRENGTH,
+            CONF_RATIO_BOUNDS_LOWER,
+            CONF_RATIO_BOUNDS_UPPER,
+            CONF_SOLAR_FACTOR_BOUNDS_UPPER,
+            CONF_TWO_MASS_AUTOCORRELATION,
+        )
+
+        return cls(
+            calibration_window=int(
+                config.get(CONF_CALIBRATION_WINDOW, DEFAULT_CALIBRATION_WINDOW)
+            ),
+            min_samples_to_apply=int(
+                config.get(CONF_MIN_SAMPLES_TO_APPLY, DEFAULT_MIN_SAMPLES_TO_APPLY)
+            ),
+            min_r_squared=float(config.get(CONF_MIN_R_SQUARED, DEFAULT_MIN_R_SQUARED)),
+            min_share_each_direction=float(
+                config.get(
+                    CONF_MIN_SHARE_EACH_DIRECTION, DEFAULT_MIN_SHARE_EACH_DIRECTION
+                )
+            ),
+            min_indoor_temp_delta_c=float(
+                config.get(CONF_MIN_INDOOR_TEMP_DELTA, DEFAULT_MIN_INDOOR_TEMP_DELTA)
+            ),
+            prior_strength=float(
+                config.get(CONF_PRIOR_STRENGTH, DEFAULT_PRIOR_STRENGTH)
+            ),
+            ratio_bounds=(
+                float(config.get(CONF_RATIO_BOUNDS_LOWER, DEFAULT_RATIO_BOUNDS_LOWER)),
+                float(config.get(CONF_RATIO_BOUNDS_UPPER, DEFAULT_RATIO_BOUNDS_UPPER)),
+            ),
+            solar_factor_bounds=(
+                0.0,
+                float(
+                    config.get(
+                        CONF_SOLAR_FACTOR_BOUNDS_UPPER,
+                        DEFAULT_SOLAR_FACTOR_BOUNDS_UPPER,
+                    )
+                ),
+            ),
+            internal_gain_max_w_per_m2=float(
+                config.get(
+                    CONF_INTERNAL_GAIN_MAX_W_PER_M2, DEFAULT_INTERNAL_GAIN_MAX_W_PER_M2
+                )
+            ),
+            min_cop_samples=int(
+                config.get(CONF_MIN_COP_SAMPLES, DEFAULT_MIN_COP_SAMPLES)
+            ),
+            cop_scale_bounds=(
+                float(
+                    config.get(
+                        CONF_COP_SCALE_BOUNDS_LOWER, DEFAULT_COP_SCALE_BOUNDS_LOWER
+                    )
+                ),
+                float(
+                    config.get(
+                        CONF_COP_SCALE_BOUNDS_UPPER, DEFAULT_COP_SCALE_BOUNDS_UPPER
+                    )
+                ),
+            ),
+            min_emitter_samples=int(
+                config.get(CONF_MIN_EMITTER_SAMPLES, DEFAULT_MIN_EMITTER_SAMPLES)
+            ),
+            emitter_exponent_bounds=(
+                float(
+                    config.get(
+                        CONF_EMITTER_EXPONENT_BOUNDS_LOWER,
+                        DEFAULT_EMITTER_EXPONENT_BOUNDS_LOWER,
+                    )
+                ),
+                float(
+                    config.get(
+                        CONF_EMITTER_EXPONENT_BOUNDS_UPPER,
+                        DEFAULT_EMITTER_EXPONENT_BOUNDS_UPPER,
+                    )
+                ),
+            ),
+            min_residual_samples=int(
+                config.get(CONF_MIN_RESIDUAL_SAMPLES, DEFAULT_MIN_RESIDUAL_SAMPLES)
+            ),
+            two_mass_autocorrelation=float(
+                config.get(
+                    CONF_TWO_MASS_AUTOCORRELATION, DEFAULT_TWO_MASS_AUTOCORRELATION
+                )
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -175,20 +325,27 @@ MIN_GAS_SAMPLES = 5
 
 
 def _ridge(
-    rows: list[list[float]], ys: list[float], prior_x: list[float]
+    rows: list[list[float]],
+    ys: list[float],
+    prior_x: list[float],
+    prior_strength: float = DEFAULT_PRIOR_STRENGTH,
 ) -> list[float] | None:
     """Ridge least squares towards ``prior_x`` (columns already normalised)."""
     n = len(prior_x)
     ata = [[sum(r[i] * r[j] for r in rows) for j in range(n)] for i in range(n)]
     aty = [sum(r[i] * y for r, y in zip(rows, ys, strict=True)) for i in range(n)]
     for i in range(n):
-        lam = PRIOR_STRENGTH * max(ata[i][i] / len(rows), 1e-9)
+        lam = prior_strength * max(ata[i][i] / len(rows), 1e-9)
         ata[i][i] += lam
         aty[i] += lam * prior_x[i]
     return _solve(ata, aty)
 
 
-def fit_building(samples: list[Sample], prior: Prior) -> FitResult | None:
+def fit_building(
+    samples: list[Sample],
+    prior: Prior,
+    settings: CalibrationSettings | None = None,
+) -> FitResult | None:
     """Ridge least-squares fit of (C, UA, s, g[, φ]), regularised to the prior.
 
         C·rate + UA·ΔT − s·Q_solar − g − φ·Q_hp = Q_hp + Q_gas
@@ -197,6 +354,8 @@ def fit_building(samples: list[Sample], prior: Prior) -> FitResult | None:
     contain absolute gas heat; without them it is not identifiable (every
     parameter could be scaled together) and is fixed at 0.
     """
+    if settings is None:
+        settings = CalibrationSettings()
     if len(samples) < 2:
         return None
     use_gas = sum(1 for s in samples if s.gas_kw > 0.1) >= MIN_GAS_SAMPLES
@@ -228,7 +387,7 @@ def fit_building(samples: list[Sample], prior: Prior) -> FitResult | None:
         for s in samples
     ]
     ys = [s.heat_kw + s.gas_kw for s in samples]
-    x = _ridge(rows, ys, prior_x[:n])
+    x = _ridge(rows, ys, prior_x[:n], prior_strength=settings.prior_strength)
     if x is None:
         return None
 
@@ -247,17 +406,19 @@ def fit_building(samples: list[Sample], prior: Prior) -> FitResult | None:
     r_squared = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
     heating_share = sum(1 for s in samples if s.rate > 0) / len(samples)
 
-    lo, hi = RATIO_BOUNDS
+    lo, hi = settings.ratio_bounds
+    cop_lo, cop_hi = settings.cop_scale_bounds
+    solar_lo, solar_hi = settings.solar_factor_bounds
     plausible = (
         lo * prior.ua_w_per_k <= ua_kw * 1000.0 <= hi * prior.ua_w_per_k
         and lo * prior.thermal_mass_kwh_per_k
         <= thermal_mass
         <= hi * prior.thermal_mass_kwh_per_k
-        and SOLAR_FACTOR_BOUNDS[0] <= solar_factor <= SOLAR_FACTOR_BOUNDS[1]
+        and solar_lo <= solar_factor <= solar_hi
         and 0.0
         <= internal_kw
-        <= INTERNAL_GAIN_MAX_W_PER_M2 * max(prior.area_m2, 1.0) / 1000.0
-        and COP_SCALE_BOUNDS[0] <= cop_scale <= COP_SCALE_BOUNDS[1]
+        <= settings.internal_gain_max_w_per_m2 * max(prior.area_m2, 1.0) / 1000.0
+        and cop_lo <= cop_scale <= cop_hi
     )
     return FitResult(
         ua_w_per_k=ua_kw * 1000.0,
@@ -274,8 +435,8 @@ def fit_building(samples: list[Sample], prior: Prior) -> FitResult | None:
 
 # --- Phase 2: COP curve from measured heat --------------------------------
 
-MIN_COP_SAMPLES = 20
-COP_SCALE_BOUNDS = (0.5, 1.5)
+MIN_COP_SAMPLES = DEFAULT_MIN_COP_SAMPLES
+COP_SCALE_BOUNDS = (DEFAULT_COP_SCALE_BOUNDS_LOWER, DEFAULT_COP_SCALE_BOUNDS_UPPER)
 
 
 @dataclass(frozen=True)
@@ -302,18 +463,27 @@ class CopFit:
     r_squared: float
     mean_abs_error: float
 
-    @property
-    def usable(self) -> bool:
+    def usable_with(self, settings: CalibrationSettings | None = None) -> bool:
+        """Whether this COP fit is usable, given the settings."""
+        min_samples = (
+            settings.min_cop_samples if settings is not None else MIN_COP_SAMPLES
+        )
         return (
-            self.sample_count >= MIN_COP_SAMPLES
+            self.sample_count >= min_samples
             and 1.0 <= self.base_cop <= 9.0
             and 0.0 <= self.k_factor <= 0.4
             and -0.05 <= self.outdoor_coefficient <= 0.3
         )
 
+    @property
+    def usable(self) -> bool:
+        return self.usable_with()
+
 
 def fit_cop(
-    samples: list[CopSample], prior: tuple[float, float, float]
+    samples: list[CopSample],
+    prior: tuple[float, float, float],
+    settings: CalibrationSettings | None = None,
 ) -> CopFit | None:
     """Fit ``COP/defrost = b + a·T_out − k·(T_sup − 35)``, ridge to the prior.
 
@@ -330,7 +500,8 @@ def fit_cop(
         for s in samples
     ]
     ys = [s.cop / max(s.defrost_factor, 0.1) for s in samples]
-    x = _ridge(rows, ys, prior_x)
+    ps = settings.prior_strength if settings is not None else PRIOR_STRENGTH
+    x = _ridge(rows, ys, prior_x, prior_strength=ps)
     if x is None:
         return None
     predicted = [sum(r[i] * x[i] for i in range(3)) for r in rows]
@@ -350,8 +521,11 @@ def fit_cop(
 
 # --- Phase 3: emitter curve --------------------------------------------------
 
-MIN_EMITTER_SAMPLES = 20
-EMITTER_EXPONENT_BOUNDS = (0.9, 1.6)
+MIN_EMITTER_SAMPLES = DEFAULT_MIN_EMITTER_SAMPLES
+EMITTER_EXPONENT_BOUNDS = (
+    DEFAULT_EMITTER_EXPONENT_BOUNDS_LOWER,
+    DEFAULT_EMITTER_EXPONENT_BOUNDS_UPPER,
+)
 
 
 @dataclass(frozen=True)
@@ -375,16 +549,21 @@ class EmitterFit:
     sample_count: int
     r_squared: float
 
+    def usable_with(self, settings: CalibrationSettings | None = None) -> bool:
+        """Whether this emitter fit is usable, given the settings."""
+        if settings is None:
+            settings = CalibrationSettings()
+        lo, hi = settings.emitter_exponent_bounds
+        return (
+            self.sample_count >= settings.min_emitter_samples
+            and lo <= self.exponent <= hi
+            and self.nominal_power_kw > 0
+            and self.r_squared >= settings.min_r_squared
+        )
+
     @property
     def usable(self) -> bool:
-        return (
-            self.sample_count >= MIN_EMITTER_SAMPLES
-            and EMITTER_EXPONENT_BOUNDS[0]
-            <= self.exponent
-            <= EMITTER_EXPONENT_BOUNDS[1]
-            and self.nominal_power_kw > 0
-            and self.r_squared >= MIN_R_SQUARED
-        )
+        return self.usable_with()
 
 
 def fit_emitter(
@@ -393,6 +572,7 @@ def fit_emitter(
     prior_nominal_kw: float,
     prior_exponent: float,
     nominal_delta_t: float,
+    settings: CalibrationSettings | None = None,
 ) -> EmitterFit | None:
     """Fit ``ln Q = ln Q_n + n · ln(ΔT/ΔT_n)``, ridge to the prior."""
     usable = [s for s in samples if s.delta_t > 1.0 and s.heat_kw > 0.05]
@@ -401,7 +581,8 @@ def fit_emitter(
     prior_x = [math.log(prior_nominal_kw), prior_exponent]
     rows = [[1.0, math.log(s.delta_t / nominal_delta_t)] for s in usable]
     ys = [math.log(s.heat_kw) for s in usable]
-    x = _ridge(rows, ys, prior_x)
+    ps = settings.prior_strength if settings is not None else PRIOR_STRENGTH
+    x = _ridge(rows, ys, prior_x, prior_strength=ps)
     if x is None:
         return None
     predicted = [x[0] + x[1] * r[1] for r in rows]
@@ -419,11 +600,14 @@ def fit_emitter(
 
 # --- Phase 4: does a single thermal mass describe the building? --------------
 
-MIN_RESIDUAL_SAMPLES = 48
-TWO_MASS_AUTOCORRELATION = 0.6
+MIN_RESIDUAL_SAMPLES = DEFAULT_MIN_RESIDUAL_SAMPLES
+TWO_MASS_AUTOCORRELATION = DEFAULT_TWO_MASS_AUTOCORRELATION
 
 
-def residual_diagnosis(errors: list[float]) -> dict[str, Any]:
+def residual_diagnosis(
+    errors: list[float],
+    settings: CalibrationSettings | None = None,
+) -> dict[str, Any]:
     """Lag-1 autocorrelation of the 1-hour-ahead prediction errors.
 
     A 1R1C model that fits well leaves errors that look like noise. Strongly
@@ -432,7 +616,15 @@ def residual_diagnosis(errors: list[float]) -> dict[str, Any]:
     point at a second, faster thermal mass - e.g. room air and furniture on
     top of a heavy screed.
     """
-    if len(errors) < MIN_RESIDUAL_SAMPLES:
+    min_residual = (
+        settings.min_residual_samples if settings is not None else MIN_RESIDUAL_SAMPLES
+    )
+    two_mass_threshold = (
+        settings.two_mass_autocorrelation
+        if settings is not None
+        else TWO_MASS_AUTOCORRELATION
+    )
+    if len(errors) < min_residual:
         return {"residual_autocorrelation": None, "two_mass_suspected": None}
     mean = sum(errors) / len(errors)
     centred = [e - mean for e in errors]
@@ -442,20 +634,25 @@ def residual_diagnosis(errors: list[float]) -> dict[str, Any]:
     autocorr = sum(a * b for a, b in itertools.pairwise(centred)) / denom
     return {
         "residual_autocorrelation": round(autocorr, 2),
-        "two_mass_suspected": autocorr >= TWO_MASS_AUTOCORRELATION,
+        "two_mass_suspected": autocorr >= two_mass_threshold,
     }
 
 
-def fit_passes_quality_gates(fit: FitResult | None) -> bool:
+def fit_passes_quality_gates(
+    fit: FitResult | None,
+    settings: CalibrationSettings | None = None,
+) -> bool:
     """Whether a fit is good enough to be used by the optimizer."""
+    if settings is None:
+        settings = CalibrationSettings()
     return (
         fit is not None
         and fit.plausible
-        and fit.sample_count >= MIN_SAMPLES_TO_APPLY
-        and fit.r_squared >= MIN_R_SQUARED
-        and MIN_SHARE_EACH_DIRECTION
+        and fit.sample_count >= settings.min_samples_to_apply
+        and fit.r_squared >= settings.min_r_squared
+        and settings.min_share_each_direction
         <= fit.heating_share
-        <= 1.0 - MIN_SHARE_EACH_DIRECTION
+        <= 1.0 - settings.min_share_each_direction
     )
 
 
@@ -464,14 +661,15 @@ class ThermalCalibrationState:
     """Samples, fits and exclusion statistics for one zone, persisted."""
 
     store: storage.Store[dict[str, Any]]
+    settings: CalibrationSettings = field(default_factory=CalibrationSettings)
     samples: deque[Sample] = field(
-        default_factory=lambda: deque(maxlen=CALIBRATION_WINDOW)
+        default_factory=lambda: deque(maxlen=DEFAULT_CALIBRATION_WINDOW)
     )
     cop_samples: deque[CopSample] = field(
-        default_factory=lambda: deque(maxlen=CALIBRATION_WINDOW)
+        default_factory=lambda: deque(maxlen=DEFAULT_CALIBRATION_WINDOW)
     )
     emitter_samples: deque[EmitterSample] = field(
-        default_factory=lambda: deque(maxlen=CALIBRATION_WINDOW)
+        default_factory=lambda: deque(maxlen=DEFAULT_CALIBRATION_WINDOW)
     )
     fit: FitResult | None = None
     cop_fit: CopFit | None = None
@@ -488,7 +686,7 @@ class ThermalCalibrationState:
     @property
     def ready(self) -> bool:
         """The building fit passes every quality gate."""
-        return fit_passes_quality_gates(self.fit)
+        return fit_passes_quality_gates(self.fit, self.settings)
 
     def record_exclusion(self, reason: str) -> None:
         """Count a discarded observation window."""
@@ -499,7 +697,7 @@ class ThermalCalibrationState:
     def record_sample(self, sample: Sample, prior: Prior) -> FitResult | None:
         """Add one building observation and refit."""
         self.samples.append(sample)
-        fit = fit_building(list(self.samples), prior)
+        fit = fit_building(list(self.samples), prior, settings=self.settings)
         if fit is None:
             self.last_result = RESULT_SINGULAR
             return None
@@ -512,7 +710,7 @@ class ThermalCalibrationState:
     ) -> None:
         """Add one measured COP point and refit the COP curve."""
         self.cop_samples.append(sample)
-        self.cop_fit = fit_cop(list(self.cop_samples), prior)
+        self.cop_fit = fit_cop(list(self.cop_samples), prior, settings=self.settings)
 
     def record_emitter_sample(
         self,
@@ -529,6 +727,7 @@ class ThermalCalibrationState:
             prior_nominal_kw=prior_nominal_kw,
             prior_exponent=prior_exponent,
             nominal_delta_t=nominal_delta_t,
+            settings=self.settings,
         )
 
     def refit(
@@ -539,9 +738,15 @@ class ThermalCalibrationState:
         emitter_prior: tuple[float, float, float] | None = None,
     ) -> None:
         """Refit stored samples against (possibly changed) priors."""
-        self.fit = fit_building(list(self.samples), prior) if self.samples else None
+        self.fit = (
+            fit_building(list(self.samples), prior, settings=self.settings)
+            if self.samples
+            else None
+        )
         if cop_prior is not None and self.cop_samples:
-            self.cop_fit = fit_cop(list(self.cop_samples), cop_prior)
+            self.cop_fit = fit_cop(
+                list(self.cop_samples), cop_prior, settings=self.settings
+            )
         if emitter_prior is not None and self.emitter_samples:
             nominal_kw, exponent, nominal_delta_t = emitter_prior
             self.emitter_fit = fit_emitter(
@@ -549,6 +754,7 @@ class ThermalCalibrationState:
                 prior_nominal_kw=nominal_kw,
                 prior_exponent=exponent,
                 nominal_delta_t=nominal_delta_t,
+                settings=self.settings,
             )
 
     async def async_load(self) -> None:
@@ -556,17 +762,18 @@ class ThermalCalibrationState:
         stored = await self.store.async_load()
         if not stored:
             return
+        maxlen = self.settings.calibration_window
         self.samples = deque(
             (Sample(*values) for values in stored.get("samples", [])),
-            maxlen=CALIBRATION_WINDOW,
+            maxlen=maxlen,
         )
         self.cop_samples = deque(
             (CopSample(*values) for values in stored.get("cop_samples", [])),
-            maxlen=CALIBRATION_WINDOW,
+            maxlen=maxlen,
         )
         self.emitter_samples = deque(
             (EmitterSample(*values) for values in stored.get("emitter_samples", [])),
-            maxlen=CALIBRATION_WINDOW,
+            maxlen=maxlen,
         )
         for key, value in (stored.get("exclusions") or {}).items():
             if key in self.exclusions:

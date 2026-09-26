@@ -43,9 +43,56 @@ def _sectioned(**overrides) -> dict:
             "offset_delta_t": 30,
         },
         "advanced": {"planning_window": 24},
+        "expert_optimizer": {
+            "comfort_penalty_weight": 50.0,
+            "cycling_penalty_weight": 0.01,
+            "hard_floor_penalty": 1000.0,
+            "feed_in_price_fallback": 0.07,
+            "offset_min": -4,
+            "offset_max": 4,
+            "heatpump_headroom": 1.3,
+        },
+        "expert_calibration": {
+            "calibration_window": 300,
+            "min_samples_to_apply": 30,
+            "min_r_squared": 0.5,
+            "min_share_each_direction": 0.15,
+            "min_indoor_temp_delta": 0.3,
+            "prior_strength": 3.0,
+            "ratio_bounds_lower": 0.3,
+            "ratio_bounds_upper": 3.0,
+            "solar_factor_bounds_upper": 2.5,
+            "internal_gain_max_w_per_m2": 12.0,
+            "min_cop_samples": 20,
+            "cop_scale_bounds_lower": 0.5,
+            "cop_scale_bounds_upper": 1.5,
+            "min_emitter_samples": 20,
+            "emitter_exponent_bounds_lower": 0.9,
+            "emitter_exponent_bounds_upper": 1.6,
+            "calibration_min_hours": 0.25,
+            "calibration_max_hours": 6.0,
+            "calibration_max_jump_c": 1.0,
+            "gas_min_window_hours": 2.0,
+            "min_residual_samples": 48,
+            "two_mass_autocorrelation": 0.6,
+        },
+        "expert_climate": {
+            "ground_albedo": 0.2,
+            "defrost_free_threshold": 6.0,
+            "defrost_cold_threshold": -10.0,
+            "defrost_base_penalty": 0.25,
+            "defrost_min_cop_multiplier": 0.6,
+            "min_cop": 0.5,
+            "mwh_magnitude_threshold": 5.0,
+            "idle_power_threshold_kw": 0.1,
+            "price_change_rel": 0.10,
+            "price_change_min_abs": 0.01,
+            "min_running_power_kw": 0.3,
+            "accuracy_horizon_hours": 1.0,
+        },
     }
     for section, values in overrides.items():
-        user_input[section] = {**user_input[section], **values}
+        user_input[section] = {**user_input.get(section, {}), **values}
     return user_input
 
 

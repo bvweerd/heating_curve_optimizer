@@ -69,3 +69,12 @@ sensor.
 
 Expected while pre-heating: the extra cost is booked when it is made, the
 saving when the building coasts through the expensive hours.
+
+## Expert settings diagnostics
+
+The **Download diagnostics** file includes an `expert_settings` section
+that shows which expert settings differ from their defaults, plus
+context-aware tips. This is the fastest way to spot misconfiguration
+when troubleshooting unexpected optimizer behaviour.
+
+See [Expert settings](expert-settings.md) for the full reference.

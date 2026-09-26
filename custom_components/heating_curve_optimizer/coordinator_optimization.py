@@ -39,6 +39,7 @@ from .calibration import (
     STATUS_PROVISIONAL,
     STATUS_READY,
     STATUS_UNAVAILABLE,
+    CalibrationSettings,
     CopSample,
     EmitterSample,
     Prior,
@@ -51,41 +52,83 @@ from .calibration import (
     STORAGE_VERSION as CALIBRATION_STORAGE_VERSION,
 )
 from .const import (
+    CONF_ACCURACY_HORIZON_HOURS,
+    CONF_CALIBRATION_MAX_HOURS,
+    CONF_CALIBRATION_MAX_JUMP_C,
+    CONF_CALIBRATION_MIN_HOURS,
     CONF_CALIBRATION_MODE,
     CONF_CEILING_HEIGHT,
+    CONF_COMFORT_PENALTY_WEIGHT,
     CONF_CONSUMPTION_PRICE_SENSOR,
+    CONF_CYCLING_PENALTY_WEIGHT,
+    CONF_DEFROST_BASE_PENALTY,
+    CONF_DEFROST_COLD_THRESHOLD,
+    CONF_DEFROST_FREE_THRESHOLD,
+    CONF_DEFROST_MIN_COP_MULTIPLIER,
     CONF_DHW_ACTIVE_SENSOR,
     CONF_EMITTER_TYPE,
     CONF_ENERGY_LABEL,
+    CONF_FEED_IN_PRICE_FALLBACK,
     CONF_GAS_BOILER_EFFICIENCY,
     CONF_GAS_CALORIFIC_VALUE,
     CONF_GAS_METER_SENSOR,
+    CONF_GAS_MIN_WINDOW_HOURS,
     CONF_GRID_EXPORT_SENSOR,
     CONF_GRID_IMPORT_SENSOR,
+    CONF_HARD_FLOOR_PENALTY,
     CONF_HEAT_CURVE_MAX,
     CONF_HEAT_CURVE_MAX_OUTDOOR,
     CONF_HEAT_CURVE_MIN,
     CONF_HEAT_CURVE_MIN_OUTDOOR,
     CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
+    CONF_HEATPUMP_HEADROOM,
+    CONF_IDLE_POWER_THRESHOLD_KW,
     CONF_INDOOR_TEMPERATURE_SENSOR,
+    CONF_MIN_RUNNING_POWER_KW,
+    CONF_MWH_MAGNITUDE_THRESHOLD,
     CONF_OFFSET_DELTA_T,
+    CONF_OFFSET_MAX,
+    CONF_OFFSET_MIN,
     CONF_PLANNING_WINDOW,
     CONF_POWER_CONSUMPTION,
+    CONF_PRICE_CHANGE_MIN_ABS,
+    CONF_PRICE_CHANGE_REL,
     CONF_PRODUCTION_PRICE_SENSOR,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
     CONF_VENTILATION_TYPE,
     CONF_WINDOW_SENSORS,
+    DEFAULT_ACCURACY_HORIZON_HOURS,
+    DEFAULT_CALIBRATION_MAX_HOURS,
+    DEFAULT_CALIBRATION_MAX_JUMP_C,
+    DEFAULT_CALIBRATION_MIN_HOURS,
     DEFAULT_CALIBRATION_MODE,
     DEFAULT_CEILING_HEIGHT,
+    DEFAULT_COMFORT_PENALTY_WEIGHT,
+    DEFAULT_CYCLING_PENALTY_WEIGHT,
+    DEFAULT_DEFROST_BASE_PENALTY,
+    DEFAULT_DEFROST_COLD_THRESHOLD,
+    DEFAULT_DEFROST_FREE_THRESHOLD,
+    DEFAULT_DEFROST_MIN_COP_MULTIPLIER,
     DEFAULT_EMITTER_TYPE,
+    DEFAULT_FEED_IN_PRICE_FALLBACK,
     DEFAULT_GAS_BOILER_EFFICIENCY,
     DEFAULT_GAS_CALORIFIC_VALUE_KWH_PER_M3,
+    DEFAULT_GAS_MIN_WINDOW_HOURS,
+    DEFAULT_HARD_FLOOR_PENALTY,
     DEFAULT_HEAT_CURVE_MAX,
     DEFAULT_HEAT_CURVE_MAX_OUTDOOR,
     DEFAULT_HEAT_CURVE_MIN,
     DEFAULT_HEAT_CURVE_MIN_OUTDOOR,
+    DEFAULT_HEATPUMP_HEADROOM,
+    DEFAULT_IDLE_POWER_THRESHOLD_KW,
+    DEFAULT_MIN_RUNNING_POWER_KW,
+    DEFAULT_MWH_MAGNITUDE_THRESHOLD,
     DEFAULT_OFFSET_DELTA_T,
+    DEFAULT_OFFSET_MAX,
+    DEFAULT_OFFSET_MIN,
     DEFAULT_PLANNING_WINDOW,
+    DEFAULT_PRICE_CHANGE_MIN_ABS,
+    DEFAULT_PRICE_CHANGE_REL,
     DEFAULT_REALTIME_INTERVAL_S,
     DEFAULT_VENTILATION_TYPE,
     DOMAIN,
@@ -103,23 +146,21 @@ from .helpers import (
 )
 from .realtime_controller import RealtimeController, create_realtime_controller
 from .thermal_optimizer import (
-    DEFAULT_OFFSET_MAX,
-    DEFAULT_OFFSET_MIN,
     ThermalOptimizationResult,
     optimize_thermal_schedule,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-# Below this, the heat pump's electricity meter reading is treated as idle
-# (standby draw), not an active heating cycle. Also used for the planned
-# thermal_power_kw, to decide whether the optimized plan calls for heat.
-IDLE_POWER_THRESHOLD_KW = 0.1
+# Model accuracy match tolerance and window (not user-configurable).
+ACCURACY_MATCH_TOLERANCE = timedelta(minutes=30)
+ACCURACY_WINDOW = timedelta(hours=24)
 
 
 def _plan_run_advice(
     thermal_power_kw: list[float],
     step_starts: list[datetime],
+    idle_power_threshold_kw: float = DEFAULT_IDLE_POWER_THRESHOLD_KW,
 ) -> tuple[bool | None, datetime | None]:
     """Whether the optimized plan currently calls for heat, and when that
     next changes.
@@ -131,52 +172,23 @@ def _plan_run_advice(
     """
     if not thermal_power_kw:
         return None, None
-    current_on = thermal_power_kw[0] > IDLE_POWER_THRESHOLD_KW
+    current_on = thermal_power_kw[0] > idle_power_threshold_kw
     for power, start in zip(thermal_power_kw[1:], step_starts[1:], strict=False):
-        if (power > IDLE_POWER_THRESHOLD_KW) != current_on:
+        if (power > idle_power_threshold_kw) != current_on:
             return current_on, start
     return current_on, None
 
 
-# A price move of at least this fraction of the previous price, or at least
-# PRICE_CHANGE_MIN_ABS €/kWh (whichever is larger in magnitude), triggers a
-# re-optimization outside the regular schedule. The absolute floor keeps the
-# check meaningful around zero and for negative prices.
-PRICE_CHANGE_REL = 0.10
-PRICE_CHANGE_MIN_ABS = 0.01
-
-# Calibration: a sample spans from one snapshot until the indoor temperature
-# has moved by MIN_INDOOR_TEMP_DELTA_C, within these elapsed-time bounds.
-CALIBRATION_MIN_HOURS = 0.25
-CALIBRATION_MAX_HOURS = 6.0
-
-# A jump of more than this between two runs (sensor glitch, sensor moved,
-# window opened without a contact) invalidates the observation window.
-CALIBRATION_MAX_JUMP_C = 1.0
-
-# Model accuracy: the plan's indoor temperature this far ahead is compared
-# with the measurement once that moment has passed.
-ACCURACY_HORIZON = timedelta(hours=1)
-ACCURACY_MATCH_TOLERANCE = timedelta(minutes=30)
-ACCURACY_WINDOW = timedelta(hours=24)
-
-# Below this, the heat pump is not in a steady heating state for COP and
-# emitter samples.
-MIN_RUNNING_POWER_KW = 0.3
-
-# Minimum observation window when gas-meter heat is part of the sample.
-GAS_MIN_WINDOW_HOURS = 2.0
-
-# Heat pump capacity headroom over the emitter's design-point output, used
-# when no heat pump capacity is configured.
-DEFAULT_HEATPUMP_HEADROOM = 1.3
-
-
-def price_change_is_significant(old: float | None, new: float) -> bool:
+def price_change_is_significant(
+    old: float | None,
+    new: float,
+    price_change_rel: float = DEFAULT_PRICE_CHANGE_REL,
+    price_change_min_abs: float = DEFAULT_PRICE_CHANGE_MIN_ABS,
+) -> bool:
     """Whether a price update warrants an immediate re-optimization."""
     if old is None:
         return False
-    return abs(new - old) >= max(PRICE_CHANGE_MIN_ABS, PRICE_CHANGE_REL * abs(old))
+    return abs(new - old) >= max(price_change_min_abs, price_change_rel * abs(old))
 
 
 class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -223,6 +235,45 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._accuracy: deque[tuple[datetime, float, float]] = deque(maxlen=500)
         self._realtime_controller: RealtimeController | None = None
 
+        # Config-driven thresholds (read once; updated on config reload).
+        self._idle_power_threshold_kw = float(
+            config.get(CONF_IDLE_POWER_THRESHOLD_KW, DEFAULT_IDLE_POWER_THRESHOLD_KW)
+        )
+        self._price_change_rel = float(
+            config.get(CONF_PRICE_CHANGE_REL, DEFAULT_PRICE_CHANGE_REL)
+        )
+        self._price_change_min_abs = float(
+            config.get(CONF_PRICE_CHANGE_MIN_ABS, DEFAULT_PRICE_CHANGE_MIN_ABS)
+        )
+        self._calibration_min_hours = float(
+            config.get(CONF_CALIBRATION_MIN_HOURS, DEFAULT_CALIBRATION_MIN_HOURS)
+        )
+        self._calibration_max_hours = float(
+            config.get(CONF_CALIBRATION_MAX_HOURS, DEFAULT_CALIBRATION_MAX_HOURS)
+        )
+        self._calibration_max_jump_c = float(
+            config.get(CONF_CALIBRATION_MAX_JUMP_C, DEFAULT_CALIBRATION_MAX_JUMP_C)
+        )
+        self._accuracy_horizon = timedelta(
+            hours=float(
+                config.get(CONF_ACCURACY_HORIZON_HOURS, DEFAULT_ACCURACY_HORIZON_HOURS)
+            )
+        )
+        self._min_running_power_kw = float(
+            config.get(CONF_MIN_RUNNING_POWER_KW, DEFAULT_MIN_RUNNING_POWER_KW)
+        )
+        self._heatpump_headroom = float(
+            config.get(CONF_HEATPUMP_HEADROOM, DEFAULT_HEATPUMP_HEADROOM)
+        )
+        self._gas_min_window_hours = float(
+            config.get(CONF_GAS_MIN_WINDOW_HOURS, DEFAULT_GAS_MIN_WINDOW_HOURS)
+        )
+        self._offset_min = int(config.get(CONF_OFFSET_MIN, DEFAULT_OFFSET_MIN))
+        self._offset_max = int(config.get(CONF_OFFSET_MAX, DEFAULT_OFFSET_MAX))
+        self._mwh_magnitude_threshold = float(
+            config.get(CONF_MWH_MAGNITUDE_THRESHOLD, DEFAULT_MWH_MAGNITUDE_THRESHOLD)
+        )
+
     @property
     def thermal_calibration(self) -> ThermalCalibrationState | None:
         """Return the thermal calibration state, if set up."""
@@ -248,7 +299,8 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.hass,
                 CALIBRATION_STORAGE_VERSION,
                 f"{DOMAIN}_{self.zone_id}_thermal_calibration",
-            )
+            ),
+            settings=CalibrationSettings.from_config(self.config),
         )
         await self._calibration.async_load()
         prior_emitter = self._prior_emitter(self.heat_coordinator.effective_config())
@@ -299,7 +351,12 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (ValueError, TypeError):
             return
         recovered = old_state is None or old_state.state in ("unknown", "unavailable")
-        if recovered or price_change_is_significant(self._last_price, new_price):
+        if recovered or price_change_is_significant(
+            self._last_price,
+            new_price,
+            price_change_rel=self._price_change_rel,
+            price_change_min_abs=self._price_change_min_abs,
+        ):
             await self.async_request_refresh()
         self._last_price = new_price
 
@@ -359,8 +416,8 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             max_adjustment=max_offset_change(
                 self.data.get("step_minutes", 60), self._offset_delta_t()
             ),
-            offset_min=DEFAULT_OFFSET_MIN,
-            offset_max=DEFAULT_OFFSET_MAX,
+            offset_min=self._offset_min,
+            offset_max=self._offset_max,
         )
         self.async_set_updated_data({**self.data, "realtime": action})
 
@@ -412,7 +469,9 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         ir.async_delete_issue(self.hass, DOMAIN, issue_id)
 
-        prices, starts, interval = extract_price_forecast_with_timestamps(state)
+        prices, starts, interval = extract_price_forecast_with_timestamps(
+            state, mwh_magnitude_threshold=self._mwh_magnitude_threshold
+        )
         if not prices:
             raise _update_failed(
                 "price_data_extraction_failed",
@@ -427,7 +486,9 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         state = self.hass.states.get(sensor)
         if not state or state.state in ("unknown", "unavailable"):
             return None
-        prices, starts, interval = extract_price_forecast_with_timestamps(state)
+        prices, starts, interval = extract_price_forecast_with_timestamps(
+            state, mwh_magnitude_threshold=self._mwh_magnitude_threshold
+        )
         return (prices, starts, interval) if prices else None
 
     def _build_steps(
@@ -561,7 +622,9 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return round((temp - building.comfort_min) * mass, 3)
 
         self._update_calibration_issue()
-        plan_on, plan_change_at = _plan_run_advice(opt.thermal_power_kw, step_starts)
+        plan_on, plan_change_at = _plan_run_advice(
+            opt.thermal_power_kw, step_starts, self._idle_power_threshold_kw
+        )
         return {
             "offset": self._current_offset,
             "offsets": opt.offsets,
@@ -600,7 +663,9 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "model_accuracy": self.accuracy_summary(now),
             "heat_pump_power_kw": power_kw,
             "heat_pump_actively_running": (
-                power_kw > IDLE_POWER_THRESHOLD_KW if power_kw is not None else None
+                power_kw > self._idle_power_threshold_kw
+                if power_kw is not None
+                else None
             ),
             "heat_pump_plan_on": plan_on,
             "heat_pump_plan_change_at": (
@@ -716,7 +781,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """COP curve: measured fit, else configured x learned scale."""
         heatpump = HeatPumpConfig.from_config(
             config,
-            max_thermal_power_kw=emitter.nominal_power_kw * DEFAULT_HEATPUMP_HEADROOM,
+            max_thermal_power_kw=emitter.nominal_power_kw * self._heatpump_headroom,
         )
         calibration = self._calibration
         if not self._calibration_applied() or calibration is None:
@@ -779,7 +844,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if (
             measured_heat is not None
             and power_kw is not None
-            and power_kw >= MIN_RUNNING_POWER_KW
+            and power_kw >= self._min_running_power_kw
             and measured_heat > 0
         ):
             operating_supply = supply if supply is not None else planned_supply
@@ -788,7 +853,34 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     CopSample(
                         outdoor_temp=outdoor_temp,
                         supply_temp=operating_supply,
-                        defrost_factor=calculate_defrost_factor(outdoor_temp, humidity),
+                        defrost_factor=calculate_defrost_factor(
+                            outdoor_temp,
+                            humidity,
+                            defrost_free_threshold=float(
+                                self.config.get(
+                                    CONF_DEFROST_FREE_THRESHOLD,
+                                    DEFAULT_DEFROST_FREE_THRESHOLD,
+                                )
+                            ),
+                            defrost_cold_threshold=float(
+                                self.config.get(
+                                    CONF_DEFROST_COLD_THRESHOLD,
+                                    DEFAULT_DEFROST_COLD_THRESHOLD,
+                                )
+                            ),
+                            defrost_base_penalty=float(
+                                self.config.get(
+                                    CONF_DEFROST_BASE_PENALTY,
+                                    DEFAULT_DEFROST_BASE_PENALTY,
+                                )
+                            ),
+                            defrost_min_cop_multiplier=float(
+                                self.config.get(
+                                    CONF_DEFROST_MIN_COP_MULTIPLIER,
+                                    DEFAULT_DEFROST_MIN_COP_MULTIPLIER,
+                                )
+                            ),
+                        ),
                         cop=measured_heat / power_kw,
                     ),
                     self.cop_prior(),
@@ -800,7 +892,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             heat = power_kw * HeatPumpConfig.from_config(self.config).cop_at(
                 supply_temp=supply, outdoor_temp=outdoor_temp, humidity=humidity
             )
-        if heat is None or heat < MIN_RUNNING_POWER_KW:
+        if heat is None or heat < self._min_running_power_kw:
             return
         prior = self._prior_emitter(self.heat_coordinator.effective_config())
         calibration.record_emitter_sample(
@@ -841,14 +933,28 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             solar_gain_kw=solar[:horizon] or None,
             pv_surplus_kw=pv[:horizon] or None,
             feed_in_prices=feed_in[:horizon] if feed_in else None,
+            feed_in_price_fallback=float(
+                config.get(CONF_FEED_IN_PRICE_FALLBACK, DEFAULT_FEED_IN_PRICE_FALLBACK)
+            ),
             humidity_forecast=humidity[:horizon] or None,
             step_durations_hours=durations[:horizon],
             time_base=step_minutes,
             offset_delta_t=self._offset_delta_t(),
+            offset_min=self._offset_min,
+            offset_max=self._offset_max,
             water_min=min_supply,
             water_max=max_supply,
             outdoor_min=min_outdoor,
             outdoor_max=max_outdoor,
+            comfort_penalty_weight=float(
+                config.get(CONF_COMFORT_PENALTY_WEIGHT, DEFAULT_COMFORT_PENALTY_WEIGHT)
+            ),
+            cycling_penalty_weight=float(
+                config.get(CONF_CYCLING_PENALTY_WEIGHT, DEFAULT_CYCLING_PENALTY_WEIGHT)
+            ),
+            hard_floor_penalty=float(
+                config.get(CONF_HARD_FLOOR_PENALTY, DEFAULT_HARD_FLOOR_PENALTY)
+            ),
             current_offset=self._current_offset,
         )
         return {
@@ -1079,7 +1185,8 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         snapshot = self._calibration_snapshot
         if (
             snapshot is not None
-            and abs(indoor_temp - snapshot["last_indoor"]) > CALIBRATION_MAX_JUMP_C
+            and abs(indoor_temp - snapshot["last_indoor"])
+            > self._calibration_max_jump_c
         ):
             exclusion = RESULT_EXCLUDED_JUMP
         if exclusion is not None:
@@ -1121,12 +1228,12 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # A gas meter reports in coarse steps; a longer window keeps one
         # step from dominating the window's gas heat.
         min_hours = (
-            GAS_MIN_WINDOW_HOURS
+            self._gas_min_window_hours
             if self.config.get(CONF_GAS_METER_SENSOR)
-            else CALIBRATION_MIN_HOURS
+            else self._calibration_min_hours
         )
         if abs(moved) < MIN_INDOOR_TEMP_DELTA_C or elapsed_h < min_hours:
-            if elapsed_h > CALIBRATION_MAX_HOURS:
+            if elapsed_h > self._calibration_max_hours:
                 calibration.record_exclusion(RESULT_ELAPSED_GAP)
                 self._calibration_snapshot = None
             return
@@ -1197,7 +1304,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         elapsed = 0.0
         predicted = label_temp = indoor_temp
-        target_h = ACCURACY_HORIZON.total_seconds() / 3600.0
+        target_h = self._accuracy_horizon.total_seconds() / 3600.0
         for i, hours in enumerate(durations):
             if elapsed >= target_h or i >= len(opt.indoor_temps):
                 break
@@ -1216,7 +1323,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             elapsed += used
         if elapsed >= target_h - 1e-6:
             self._pending_predictions.append(
-                (now + ACCURACY_HORIZON, predicted, label_temp)
+                (now + self._accuracy_horizon, predicted, label_temp)
             )
 
     def accuracy_summary(self, now: datetime) -> dict[str, Any]:

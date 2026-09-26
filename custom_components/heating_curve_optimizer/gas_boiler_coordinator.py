@@ -30,9 +30,13 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
+    CONF_COMFORT_LOOKAHEAD_HOURS,
+    CONF_COMFORT_TOLERANCE_C,
     CONF_CONSUMPTION_PRICE_SENSOR,
     CONF_GAS_COMFORT_BACKUP,
     CONF_GAS_PRICE_SENSOR,
+    DEFAULT_COMFORT_LOOKAHEAD_HOURS,
+    DEFAULT_COMFORT_TOLERANCE_C,
     DEFAULT_GAS_COMFORT_BACKUP,
     DOMAIN,
 )
@@ -44,18 +48,16 @@ from .heatpump_model import HeatPumpConfig
 
 _LOGGER = logging.getLogger(__name__)
 
-# How far ahead the heat-pump-only plan is checked for a comfort breach.
-COMFORT_LOOKAHEAD_HOURS = 3.0
-# Tolerance below the comfort floor before the plan counts as a breach.
-COMFORT_TOLERANCE_C = 0.1
-
 
 REASON_BELOW_BAND = "below_comfort_band"
 REASON_CANNOT_KEEP_UP = "heat_pump_cannot_keep_up"
 
 
 def _comfort_at_risk(
-    heat_data: dict[str, Any], optimization_data: dict[str, Any]
+    heat_data: dict[str, Any],
+    optimization_data: dict[str, Any],
+    comfort_lookahead_hours: float = DEFAULT_COMFORT_LOOKAHEAD_HOURS,
+    comfort_tolerance_c: float = DEFAULT_COMFORT_TOLERANCE_C,
 ) -> tuple[bool, str | None, float | None]:
     """(at risk, reason, lowest planned indoor temperature in the lookahead).
 
@@ -71,14 +73,14 @@ def _comfort_at_risk(
         optimization_data.get("step_durations_hours") or [],
         strict=False,
     ):
-        if elapsed >= COMFORT_LOOKAHEAD_HOURS:
+        if elapsed >= comfort_lookahead_hours:
             break
         planned.append(temp)
         elapsed += hours
     lowest = min(planned) if planned else None
     if comfort_min is None:
         return False, None, lowest
-    floor = comfort_min - COMFORT_TOLERANCE_C
+    floor = comfort_min - comfort_tolerance_c
     indoor = heat_data.get("indoor_temperature")
     below_now = (
         heat_data.get("indoor_temperature_source") == "sensor"
@@ -250,7 +252,16 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         comfort_at_risk, comfort_reason, lowest_planned = _comfort_at_risk(
-            heat_data, optimization_data
+            heat_data,
+            optimization_data,
+            comfort_lookahead_hours=float(
+                self.config.get(
+                    CONF_COMFORT_LOOKAHEAD_HOURS, DEFAULT_COMFORT_LOOKAHEAD_HOURS
+                )
+            ),
+            comfort_tolerance_c=float(
+                self.config.get(CONF_COMFORT_TOLERANCE_C, DEFAULT_COMFORT_TOLERANCE_C)
+            ),
         )
         # Comfort backup: gas regardless of price when the heat pump cannot
         # restore comfort; otherwise only when comfort is at risk and gas

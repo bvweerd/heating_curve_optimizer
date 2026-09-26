@@ -39,6 +39,14 @@ import math
 from dataclasses import dataclass, field
 
 from .building_model import BuildingConfig, EmitterConfig
+from .const import (
+    DEFAULT_COMFORT_PENALTY_WEIGHT,
+    DEFAULT_CYCLING_PENALTY_WEIGHT,
+    DEFAULT_FEED_IN_PRICE_FALLBACK,
+    DEFAULT_HARD_FLOOR_PENALTY,
+    DEFAULT_OFFSET_MAX,
+    DEFAULT_OFFSET_MIN,
+)
 from .heatpump_model import HeatPumpConfig
 from .helpers import (
     calculate_supply_temperature,
@@ -48,19 +56,6 @@ from .helpers import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-# Added once per step whenever indoor temperature falls below
-# `comfort_min - state_margin`. Large enough that no realistic energy saving
-# outweighs it, finite so an undersized system still gets a best-effort plan.
-HARD_FLOOR_PENALTY_EUR = 1000.0
-
-# Price used for self-consumed PV when no feed-in forecast is given - a
-# missing feed-in price must never make PV-covered heating look free.
-DEFAULT_FEED_IN_PRICE = 0.07
-
-# Absolute heating-curve offset bounds, shared with the real-time controller.
-DEFAULT_OFFSET_MIN = -4
-DEFAULT_OFFSET_MAX = 4
 
 
 def _pad(data: list[float] | None, length: int, default: float) -> list[float]:
@@ -79,6 +74,7 @@ def comfort_penalty(
     comfort_max: float,
     weight: float,
     hard_floor: float,
+    hard_floor_penalty: float = DEFAULT_HARD_FLOOR_PENALTY,
     step_hours: float = 1.0,
 ) -> float:
     """Quadratic comfort penalty outside the band, plus a hard-floor penalty.
@@ -92,7 +88,7 @@ def comfort_penalty(
     elif t_in > comfort_max:
         penalty = weight * (t_in - comfort_max) ** 2 * step_hours
     if t_in < hard_floor:
-        penalty += HARD_FLOOR_PENALTY_EUR
+        penalty += hard_floor_penalty
     return penalty
 
 
@@ -146,7 +142,7 @@ def optimize_thermal_schedule(
     solar_gain_kw: list[float] | None = None,
     pv_surplus_kw: list[float] | None = None,
     feed_in_prices: list[float] | None = None,
-    feed_in_price_fallback: float = DEFAULT_FEED_IN_PRICE,
+    feed_in_price_fallback: float = DEFAULT_FEED_IN_PRICE_FALLBACK,
     humidity_forecast: list[float] | None = None,
     step_durations_hours: list[float] | None = None,
     time_base: int = 60,
@@ -159,8 +155,9 @@ def optimize_thermal_schedule(
     outdoor_max: float = 15.0,
     state_resolution: float = 0.1,
     state_margin: float = 1.5,
-    comfort_penalty_weight: float = 50.0,
-    cycling_penalty_weight: float = 0.01,
+    comfort_penalty_weight: float = DEFAULT_COMFORT_PENALTY_WEIGHT,
+    cycling_penalty_weight: float = DEFAULT_CYCLING_PENALTY_WEIGHT,
+    hard_floor_penalty: float = DEFAULT_HARD_FLOOR_PENALTY,
     current_offset: int = 0,
 ) -> ThermalOptimizationResult:
     """Return a cost-optimal offset schedule over indoor temperature.
@@ -263,6 +260,7 @@ def optimize_thermal_schedule(
             comfort_max=building.comfort_max,
             weight=comfort_penalty_weight,
             hard_floor=hard_floor,
+            hard_floor_penalty=hard_floor_penalty,
             step_hours=step_durations[t],
         )
 

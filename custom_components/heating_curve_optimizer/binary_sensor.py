@@ -47,7 +47,8 @@ class HeatPumpPlanActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
         """Return whether the plan currently calls for heat."""
         if not self.coordinator.data:
             return None
-        return self.coordinator.data.get("heat_pump_plan_on")
+        result = self.coordinator.data.get("heat_pump_plan_on")
+        return bool(result) if result is not None else None
 
     @property
     def available(self) -> bool:

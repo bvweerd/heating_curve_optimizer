@@ -17,18 +17,28 @@ from typing import Any
 from .const import (
     CONF_BASE_COP,
     CONF_COP_COMPENSATION_FACTOR,
+    CONF_DEFROST_BASE_PENALTY,
+    CONF_DEFROST_COLD_THRESHOLD,
+    CONF_DEFROST_FREE_THRESHOLD,
+    CONF_DEFROST_MIN_COP_MULTIPLIER,
     CONF_HEAT_PUMP_MAX_THERMAL_POWER,
     CONF_K_FACTOR,
+    CONF_MIN_COP,
     CONF_OUTDOOR_TEMP_COEFFICIENT,
     DEFAULT_COP_AT_35,
     DEFAULT_COP_COMPENSATION_FACTOR,
+    DEFAULT_DEFROST_BASE_PENALTY,
+    DEFAULT_DEFROST_COLD_THRESHOLD,
+    DEFAULT_DEFROST_FREE_THRESHOLD,
+    DEFAULT_DEFROST_MIN_COP_MULTIPLIER,
     DEFAULT_K_FACTOR,
+    DEFAULT_MIN_COP,
     DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
 )
 from .helpers import calculate_defrost_factor
 
 # Floor for the COP so electrical power never divides by a near-zero number.
-MIN_COP = 0.5
+MIN_COP = DEFAULT_MIN_COP
 
 
 @dataclass
@@ -45,7 +55,11 @@ class HeatPumpConfig:
     outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT
     cop_compensation_factor: float = DEFAULT_COP_COMPENSATION_FACTOR
     max_thermal_power_kw: float = 8.0
-    min_cop: float = MIN_COP
+    min_cop: float = DEFAULT_MIN_COP
+    defrost_free_threshold: float = DEFAULT_DEFROST_FREE_THRESHOLD
+    defrost_cold_threshold: float = DEFAULT_DEFROST_COLD_THRESHOLD
+    defrost_base_penalty: float = DEFAULT_DEFROST_BASE_PENALTY
+    defrost_min_cop_multiplier: float = DEFAULT_DEFROST_MIN_COP_MULTIPLIER
 
     @classmethod
     def from_config(
@@ -73,6 +87,22 @@ class HeatPumpConfig:
                 )
             ),
             max_thermal_power_kw=max_thermal_power_kw,
+            min_cop=float(config.get(CONF_MIN_COP, DEFAULT_MIN_COP)),
+            defrost_free_threshold=float(
+                config.get(CONF_DEFROST_FREE_THRESHOLD, DEFAULT_DEFROST_FREE_THRESHOLD)
+            ),
+            defrost_cold_threshold=float(
+                config.get(CONF_DEFROST_COLD_THRESHOLD, DEFAULT_DEFROST_COLD_THRESHOLD)
+            ),
+            defrost_base_penalty=float(
+                config.get(CONF_DEFROST_BASE_PENALTY, DEFAULT_DEFROST_BASE_PENALTY)
+            ),
+            defrost_min_cop_multiplier=float(
+                config.get(
+                    CONF_DEFROST_MIN_COP_MULTIPLIER,
+                    DEFAULT_DEFROST_MIN_COP_MULTIPLIER,
+                )
+            ),
         )
 
     def cop_at(
@@ -106,7 +136,14 @@ class HeatPumpConfig:
             + self.outdoor_temp_coefficient * outdoor_temp
             - self.k_factor * (supply_temp - 35.0)
         ) * self.cop_compensation_factor
-        cop *= calculate_defrost_factor(outdoor_temp, humidity)
+        cop *= calculate_defrost_factor(
+            outdoor_temp,
+            humidity,
+            defrost_free_threshold=self.defrost_free_threshold,
+            defrost_cold_threshold=self.defrost_cold_threshold,
+            defrost_base_penalty=self.defrost_base_penalty,
+            defrost_min_cop_multiplier=self.defrost_min_cop_multiplier,
+        )
         lift_k = supply_temp - outdoor_temp
         if lift_k > 0.1:
             carnot_cop = (supply_temp + 273.15) / lift_k

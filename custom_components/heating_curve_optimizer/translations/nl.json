@@ -82,6 +82,109 @@
             "data_description": {
               "planning_window": "Aantal uren vooruit, begrensd door de beschikbare prijsverwachting. Een langere horizon verschuift meer verbruik."
             }
+          },
+          "expert_optimizer": {
+            "name": "Expert: Optimizer",
+            "data": {
+              "comfort_penalty_weight": "Comfortstraf gewicht",
+              "cycling_penalty_weight": "Schakelstraf gewicht",
+              "hard_floor_penalty": "Harde vloerstraf",
+              "feed_in_price_fallback": "Terugleverprijs terugval",
+              "offset_min": "Minimum offset",
+              "offset_max": "Maximum offset",
+              "heatpump_headroom": "Warmtepomp overcapaciteit"
+            },
+            "data_description": {
+              "comfort_penalty_weight": "Kosten van comfort-afwijking in EUR per K² per uur. Hogere waarden geven comfort prioriteit boven energiebesparing.",
+              "cycling_penalty_weight": "Straf voor offset-wisselingen tussen stappen. Hogere waarden produceren stabielere plannen.",
+              "hard_floor_penalty": "Straf in EUR als de binnentemperatuur ver onder het comfort-minimum zakt.",
+              "feed_in_price_fallback": "Terugvalwaarde terugleverpijs als er geen productieprijs-sensor is geconfigureerd.",
+              "offset_min": "Laagste stooklijn-offset die de optimizer mag gebruiken.",
+              "offset_max": "Hoogste stooklijn-offset die de optimizer mag gebruiken.",
+              "heatpump_headroom": "Veronderstelde capaciteit warmtepomp als verhouding tot het ontwerppunt van de emitter. 1,3 betekent 30% overcapaciteit."
+            }
+          },
+          "expert_calibration": {
+            "name": "Expert: Kalibratie",
+            "data": {
+              "calibration_window": "Kalibratie venster",
+              "min_samples_to_apply": "Minimum meetpunten",
+              "min_r_squared": "Minimum R²",
+              "min_share_each_direction": "Minimum aandeel per richting",
+              "min_indoor_temp_delta": "Minimum temperatuurverandering",
+              "prior_strength": "Prior sterkte",
+              "ratio_bounds_lower": "Ondergrens verhoudingsgrenzen",
+              "ratio_bounds_upper": "Bovengrens verhoudingsgrenzen",
+              "solar_factor_bounds_upper": "Bovengrens zonfactor",
+              "internal_gain_max_w_per_m2": "Max interne winst",
+              "min_cop_samples": "Minimum COP-metingen",
+              "cop_scale_bounds_lower": "Ondergrens COP-schaal",
+              "cop_scale_bounds_upper": "Bovengrens COP-schaal",
+              "min_emitter_samples": "Minimum emitter-metingen",
+              "emitter_exponent_bounds_lower": "Ondergrens emitter-exponent",
+              "emitter_exponent_bounds_upper": "Bovengrens emitter-exponent",
+              "calibration_min_hours": "Minimum observatievenster",
+              "calibration_max_hours": "Maximum observatievenster",
+              "calibration_max_jump_c": "Maximum temperatuursprong",
+              "gas_min_window_hours": "Gas minimum venster",
+              "min_residual_samples": "Minimum residuele metingen",
+              "two_mass_autocorrelation": "Drempel tweemassa-autocorrelatie"
+            },
+            "data_description": {
+              "calibration_window": "Maximum aantal meetpunten dat bewaard wordt.",
+              "min_samples_to_apply": "Minimum metingen voor toepassing kalibratie.",
+              "min_r_squared": "Minimale determinatiecoëfficiënt voor een goedgekeurde fit.",
+              "min_share_each_direction": "Minimumfractie meetpunten in zowel verwarmen als uitkoelen.",
+              "min_indoor_temp_delta": "Benodigde binnentemperatuurverandering om een kalibratievenster te sluiten.",
+              "prior_strength": "Ridge-regularisatiesterkte in equivalente meetpunten. Hogere waarden trekken de fit naar het energielabel.",
+              "ratio_bounds_lower": "Ondergrens plausibiliteit gefitte UA en C als vermenigvuldiging van het energielabel.",
+              "ratio_bounds_upper": "Bovengrens plausibiliteit gefitte UA en C als vermenigvuldiging van het energielabel.",
+              "solar_factor_bounds_upper": "Bovengrens plausibiliteit van de geleerde zonnewinst-correctiefactor.",
+              "internal_gain_max_w_per_m2": "Maximale plausibele interne warmtewinst per m².",
+              "min_cop_samples": "Minimum meetpunten voordat de COP-fit bruikbaar is.",
+              "cop_scale_bounds_lower": "Ondergrens plausibiliteit van de geleerde COP-schaalfactor.",
+              "cop_scale_bounds_upper": "Bovengrens plausibiliteit van de geleerde COP-schaalfactor.",
+              "min_emitter_samples": "Minimum metingen voordat de emitter-fit bruikbaar is.",
+              "emitter_exponent_bounds_lower": "Ondergrens plausibiliteit van de geleerde emitter-exponent.",
+              "emitter_exponent_bounds_upper": "Bovengrens plausibiliteit van de geleerde emitter-exponent.",
+              "calibration_min_hours": "Minimumduur van een kalibratie-observatievenster.",
+              "calibration_max_hours": "Maximumduur voordat een kalibratievenster vervalt.",
+              "calibration_max_jump_c": "Temperatuursprong die een kalibratievenster ongeldig maakt.",
+              "gas_min_window_hours": "Minimum observatievenster bij gasmeter-warmte in een kalibratiemeting.",
+              "min_residual_samples": "Minimum metingen voor de residuele autocorrelatie-diagnose.",
+              "two_mass_autocorrelation": "Autocorrelatie waarboven een tweede thermische massa wordt vermoed."
+            }
+          },
+          "expert_climate": {
+            "name": "Expert: Klimaat & detectie",
+            "data": {
+              "ground_albedo": "Grondalbedo",
+              "defrost_free_threshold": "Ontdooivrije drempel",
+              "defrost_cold_threshold": "Ontdooi koudedrempel",
+              "defrost_base_penalty": "Ontdooi basisstraf",
+              "defrost_min_cop_multiplier": "Ontdooi minimum COP-factor",
+              "min_cop": "Minimum COP",
+              "mwh_magnitude_threshold": "MWh-detectiedrempel",
+              "idle_power_threshold_kw": "Stilstandvermogen drempel",
+              "price_change_rel": "Prijswijziging trigger (relatief)",
+              "price_change_min_abs": "Prijswijziging trigger (absoluut)",
+              "min_running_power_kw": "Minimum bedrijfsvermogen",
+              "accuracy_horizon_hours": "Nauwkeurigheidshorizon"
+            },
+            "data_description": {
+              "ground_albedo": "Grondreflectie voor zonneberekeningen. Sneeuwdek: 0,5–0,7.",
+              "defrost_free_threshold": "Buitentemperatuur waarboven geen ontdooistraf wordt toegepast.",
+              "defrost_cold_threshold": "Buitentemperatuur waaronder aanvriezing stopt (te koud voor vocht).",
+              "defrost_base_penalty": "Maximale fractionele COP-straf door ontdooicycli bij slechtste omstandigheden.",
+              "defrost_min_cop_multiplier": "Bodem voor de ontdooi COP-vermenigvuldiger.",
+              "min_cop": "Minimale COP-waarde om deling door bijna nul te voorkomen.",
+              "mwh_magnitude_threshold": "Prijsdrempel voor automatische detectie van EUR/MWh vs EUR/kWh.",
+              "idle_power_threshold_kw": "Onder dit vermogen wordt de warmtepomp als stilstaand beschouwd.",
+              "price_change_rel": "Relatieve prijswijziging die onmiddellijke heroptimalisatie triggert.",
+              "price_change_min_abs": "Minimale absolute prijswijziging voor heroptimalisatie.",
+              "min_running_power_kw": "Minimaal vermogen voor een stabiele verwarmingstoestand voor COP- en emittermetingen.",
+              "accuracy_horizon_hours": "Voorspellingshorizon voor modelnauwkeurigheidsregistratie."
+            }
           }
         }
       },
@@ -185,6 +288,109 @@
             "data_description": {
               "planning_window": "Aantal uren vooruit, begrensd door de beschikbare prijsverwachting. Een langere horizon verschuift meer verbruik."
             }
+          },
+          "expert_optimizer": {
+            "name": "Expert: Optimizer",
+            "data": {
+              "comfort_penalty_weight": "Comfortstraf gewicht",
+              "cycling_penalty_weight": "Schakelstraf gewicht",
+              "hard_floor_penalty": "Harde vloerstraf",
+              "feed_in_price_fallback": "Terugleverprijs terugval",
+              "offset_min": "Minimum offset",
+              "offset_max": "Maximum offset",
+              "heatpump_headroom": "Warmtepomp overcapaciteit"
+            },
+            "data_description": {
+              "comfort_penalty_weight": "Kosten van comfort-afwijking in EUR per K² per uur. Hogere waarden geven comfort prioriteit boven energiebesparing.",
+              "cycling_penalty_weight": "Straf voor offset-wisselingen tussen stappen. Hogere waarden produceren stabielere plannen.",
+              "hard_floor_penalty": "Straf in EUR als de binnentemperatuur ver onder het comfort-minimum zakt.",
+              "feed_in_price_fallback": "Terugvalwaarde terugleverpijs als er geen productieprijs-sensor is geconfigureerd.",
+              "offset_min": "Laagste stooklijn-offset die de optimizer mag gebruiken.",
+              "offset_max": "Hoogste stooklijn-offset die de optimizer mag gebruiken.",
+              "heatpump_headroom": "Veronderstelde capaciteit warmtepomp als verhouding tot het ontwerppunt van de emitter. 1,3 betekent 30% overcapaciteit."
+            }
+          },
+          "expert_calibration": {
+            "name": "Expert: Kalibratie",
+            "data": {
+              "calibration_window": "Kalibratie venster",
+              "min_samples_to_apply": "Minimum meetpunten",
+              "min_r_squared": "Minimum R²",
+              "min_share_each_direction": "Minimum aandeel per richting",
+              "min_indoor_temp_delta": "Minimum temperatuurverandering",
+              "prior_strength": "Prior sterkte",
+              "ratio_bounds_lower": "Ondergrens verhoudingsgrenzen",
+              "ratio_bounds_upper": "Bovengrens verhoudingsgrenzen",
+              "solar_factor_bounds_upper": "Bovengrens zonfactor",
+              "internal_gain_max_w_per_m2": "Max interne winst",
+              "min_cop_samples": "Minimum COP-metingen",
+              "cop_scale_bounds_lower": "Ondergrens COP-schaal",
+              "cop_scale_bounds_upper": "Bovengrens COP-schaal",
+              "min_emitter_samples": "Minimum emitter-metingen",
+              "emitter_exponent_bounds_lower": "Ondergrens emitter-exponent",
+              "emitter_exponent_bounds_upper": "Bovengrens emitter-exponent",
+              "calibration_min_hours": "Minimum observatievenster",
+              "calibration_max_hours": "Maximum observatievenster",
+              "calibration_max_jump_c": "Maximum temperatuursprong",
+              "gas_min_window_hours": "Gas minimum venster",
+              "min_residual_samples": "Minimum residuele metingen",
+              "two_mass_autocorrelation": "Drempel tweemassa-autocorrelatie"
+            },
+            "data_description": {
+              "calibration_window": "Maximum aantal meetpunten dat bewaard wordt.",
+              "min_samples_to_apply": "Minimum metingen voor toepassing kalibratie.",
+              "min_r_squared": "Minimale determinatiecoëfficiënt voor een goedgekeurde fit.",
+              "min_share_each_direction": "Minimumfractie meetpunten in zowel verwarmen als uitkoelen.",
+              "min_indoor_temp_delta": "Benodigde binnentemperatuurverandering om een kalibratievenster te sluiten.",
+              "prior_strength": "Ridge-regularisatiesterkte in equivalente meetpunten. Hogere waarden trekken de fit naar het energielabel.",
+              "ratio_bounds_lower": "Ondergrens plausibiliteit gefitte UA en C als vermenigvuldiging van het energielabel.",
+              "ratio_bounds_upper": "Bovengrens plausibiliteit gefitte UA en C als vermenigvuldiging van het energielabel.",
+              "solar_factor_bounds_upper": "Bovengrens plausibiliteit van de geleerde zonnewinst-correctiefactor.",
+              "internal_gain_max_w_per_m2": "Maximale plausibele interne warmtewinst per m².",
+              "min_cop_samples": "Minimum meetpunten voordat de COP-fit bruikbaar is.",
+              "cop_scale_bounds_lower": "Ondergrens plausibiliteit van de geleerde COP-schaalfactor.",
+              "cop_scale_bounds_upper": "Bovengrens plausibiliteit van de geleerde COP-schaalfactor.",
+              "min_emitter_samples": "Minimum metingen voordat de emitter-fit bruikbaar is.",
+              "emitter_exponent_bounds_lower": "Ondergrens plausibiliteit van de geleerde emitter-exponent.",
+              "emitter_exponent_bounds_upper": "Bovengrens plausibiliteit van de geleerde emitter-exponent.",
+              "calibration_min_hours": "Minimumduur van een kalibratie-observatievenster.",
+              "calibration_max_hours": "Maximumduur voordat een kalibratievenster vervalt.",
+              "calibration_max_jump_c": "Temperatuursprong die een kalibratievenster ongeldig maakt.",
+              "gas_min_window_hours": "Minimum observatievenster bij gasmeter-warmte in een kalibratiemeting.",
+              "min_residual_samples": "Minimum metingen voor de residuele autocorrelatie-diagnose.",
+              "two_mass_autocorrelation": "Autocorrelatie waarboven een tweede thermische massa wordt vermoed."
+            }
+          },
+          "expert_climate": {
+            "name": "Expert: Klimaat & detectie",
+            "data": {
+              "ground_albedo": "Grondalbedo",
+              "defrost_free_threshold": "Ontdooivrije drempel",
+              "defrost_cold_threshold": "Ontdooi koudedrempel",
+              "defrost_base_penalty": "Ontdooi basisstraf",
+              "defrost_min_cop_multiplier": "Ontdooi minimum COP-factor",
+              "min_cop": "Minimum COP",
+              "mwh_magnitude_threshold": "MWh-detectiedrempel",
+              "idle_power_threshold_kw": "Stilstandvermogen drempel",
+              "price_change_rel": "Prijswijziging trigger (relatief)",
+              "price_change_min_abs": "Prijswijziging trigger (absoluut)",
+              "min_running_power_kw": "Minimum bedrijfsvermogen",
+              "accuracy_horizon_hours": "Nauwkeurigheidshorizon"
+            },
+            "data_description": {
+              "ground_albedo": "Grondreflectie voor zonneberekeningen. Sneeuwdek: 0,5–0,7.",
+              "defrost_free_threshold": "Buitentemperatuur waarboven geen ontdooistraf wordt toegepast.",
+              "defrost_cold_threshold": "Buitentemperatuur waaronder aanvriezing stopt (te koud voor vocht).",
+              "defrost_base_penalty": "Maximale fractionele COP-straf door ontdooicycli bij slechtste omstandigheden.",
+              "defrost_min_cop_multiplier": "Bodem voor de ontdooi COP-vermenigvuldiger.",
+              "min_cop": "Minimale COP-waarde om deling door bijna nul te voorkomen.",
+              "mwh_magnitude_threshold": "Prijsdrempel voor automatische detectie van EUR/MWh vs EUR/kWh.",
+              "idle_power_threshold_kw": "Onder dit vermogen wordt de warmtepomp als stilstaand beschouwd.",
+              "price_change_rel": "Relatieve prijswijziging die onmiddellijke heroptimalisatie triggert.",
+              "price_change_min_abs": "Minimale absolute prijswijziging voor heroptimalisatie.",
+              "min_running_power_kw": "Minimaal vermogen voor een stabiele verwarmingstoestand voor COP- en emittermetingen.",
+              "accuracy_horizon_hours": "Voorspellingshorizon voor modelnauwkeurigheidsregistratie."
+            }
           }
         }
       }
@@ -225,7 +431,8 @@
             "window_sensors": "Raam- en deurcontacten",
             "calibration_mode": "Kalibratie",
             "heat_curve_min": "Eigen stooklijn: aanvoertemperatuur warme kant",
-            "heat_curve_max": "Eigen stooklijn: aanvoertemperatuur koude kant"
+            "heat_curve_max": "Eigen stooklijn: aanvoertemperatuur koude kant",
+            "window_shgc": "SHGC-ramen overschrijving"
           },
           "data_description": {
             "energy_label": "Gebruikt om de warmteverliescoëfficiënt te schatten totdat de kalibratie die heeft geleerd.",
@@ -236,7 +443,8 @@
             "window_sensors": "Optioneel. Periodes met een open raam of deur worden buiten de kalibratie gehouden.",
             "calibration_mode": "Leer het gebouw uit metingen. Observeren: leren en resultaten tonen, vragen voordat ze gebruikt worden. Toepassen: het geleerde model gebruiken zodra het de kwaliteitscontroles doorstaat.",
             "heat_curve_min": "Alleen voor een aparte verwarmingsgroep met een eigen stooklijn; laat beide leeg om de hoofdstooklijn te gebruiken.",
-            "heat_curve_max": "Vul beide of geen van beide in."
+            "heat_curve_max": "Vul beide of geen van beide in.",
+            "window_shgc": "Zonnewinst-coëfficiënt van ramen. Leeg laten om af te leiden van glas U-waarde."
           }
         },
         "reconfigure": {
@@ -262,7 +470,8 @@
             "window_sensors": "Raam- en deurcontacten",
             "calibration_mode": "Kalibratie",
             "heat_curve_min": "Eigen stooklijn: aanvoertemperatuur warme kant",
-            "heat_curve_max": "Eigen stooklijn: aanvoertemperatuur koude kant"
+            "heat_curve_max": "Eigen stooklijn: aanvoertemperatuur koude kant",
+            "window_shgc": "SHGC-ramen overschrijving"
           },
           "data_description": {
             "energy_label": "Gebruikt om de warmteverliescoëfficiënt te schatten totdat de kalibratie die heeft geleerd.",
@@ -273,7 +482,8 @@
             "window_sensors": "Optioneel. Periodes met een open raam of deur worden buiten de kalibratie gehouden.",
             "calibration_mode": "Leer het gebouw uit metingen. Observeren: leren en resultaten tonen, vragen voordat ze gebruikt worden. Toepassen: het geleerde model gebruiken zodra het de kwaliteitscontroles doorstaat.",
             "heat_curve_min": "Alleen voor een aparte verwarmingsgroep met een eigen stooklijn; laat beide leeg om de hoofdstooklijn te gebruiken.",
-            "heat_curve_max": "Vul beide of geen van beide in."
+            "heat_curve_max": "Vul beide of geen van beide in.",
+            "window_shgc": "Zonnewinst-coëfficiënt van ramen. Leeg laten om af te leiden van glas U-waarde."
           }
         }
       },
@@ -340,14 +550,18 @@
             "gas_boiler_efficiency": "Ketelrendement",
             "gas_calorific_value_kwh_per_m3": "Verbrandingswaarde",
             "gas_comfort_backup": "Gas als comfort-backup",
-            "gas_meter_sensor": "Gasmeter"
+            "gas_meter_sensor": "Gasmeter",
+            "comfort_lookahead_hours": "Comfort-vooruitblik",
+            "comfort_tolerance_c": "Comfort-tolerantie"
           },
           "data_description": {
             "gas_price_sensor": "Actuele gasprijs in EUR/m³.",
             "gas_boiler_efficiency": "0,90 voor een gangbare HR-ketel; tot ~1,07 op bovenwaarde bij lage retourtemperaturen.",
             "gas_calorific_value_kwh_per_m3": "Bovenwaarde Gronings aardgas: 9,77 kWh/m³.",
             "gas_meter_sensor": "Optionele cumulatieve gasmeter (m³ of kWh). Periodes op gas geven een absolute warmtemeting waarmee het COP-niveau van de warmtepomp geijkt wordt. Grove (bijv. uurlijkse) updates zijn geen probleem. Alleen betrouwbaar als de ketel niet ook tapwater verwarmt.",
-            "gas_comfort_backup": "Aan: adviseer de gasketel zodra de warmtepomp de comfortband niet binnen 3 uur herstelt, ook als gas duurder is. Uit: alleen als gas ook goedkoper is."
+            "gas_comfort_backup": "Aan: adviseer de gasketel zodra de warmtepomp de comfortband niet binnen 3 uur herstelt, ook als gas duurder is. Uit: alleen als gas ook goedkoper is.",
+            "comfort_lookahead_hours": "Hoe ver vooruit het plan wordt gecontroleerd op comfortschendingen.",
+            "comfort_tolerance_c": "Tolerantie onder comfortvloer voordat het plan als schending telt."
           }
         },
         "reconfigure": {
@@ -357,14 +571,18 @@
             "gas_boiler_efficiency": "Ketelrendement",
             "gas_calorific_value_kwh_per_m3": "Verbrandingswaarde",
             "gas_comfort_backup": "Gas als comfort-backup",
-            "gas_meter_sensor": "Gasmeter"
+            "gas_meter_sensor": "Gasmeter",
+            "comfort_lookahead_hours": "Comfort-vooruitblik",
+            "comfort_tolerance_c": "Comfort-tolerantie"
           },
           "data_description": {
             "gas_price_sensor": "Actuele gasprijs in EUR/m³.",
             "gas_boiler_efficiency": "0,90 voor een gangbare HR-ketel; tot ~1,07 op bovenwaarde bij lage retourtemperaturen.",
             "gas_calorific_value_kwh_per_m3": "Bovenwaarde Gronings aardgas: 9,77 kWh/m³.",
             "gas_meter_sensor": "Optionele cumulatieve gasmeter (m³ of kWh). Periodes op gas geven een absolute warmtemeting waarmee het COP-niveau van de warmtepomp geijkt wordt. Grove (bijv. uurlijkse) updates zijn geen probleem. Alleen betrouwbaar als de ketel niet ook tapwater verwarmt.",
-            "gas_comfort_backup": "Aan: adviseer de gasketel zodra de warmtepomp de comfortband niet binnen 3 uur herstelt, ook als gas duurder is. Uit: alleen als gas ook goedkoper is."
+            "gas_comfort_backup": "Aan: adviseer de gasketel zodra de warmtepomp de comfortband niet binnen 3 uur herstelt, ook als gas duurder is. Uit: alleen als gas ook goedkoper is.",
+            "comfort_lookahead_hours": "Hoe ver vooruit het plan wordt gecontroleerd op comfortschendingen.",
+            "comfort_tolerance_c": "Tolerantie onder comfortvloer voordat het plan als schending telt."
           }
         }
       },

@@ -64,10 +64,7 @@ async def test_translated_entity_names(
     entry = make_entry()
     await setup_entry(hass, entry)
     state = _state(hass, "sensor", f"{entry.entry_id}_heating_curve_offset")
-    assert (
-        state.attributes["friendly_name"]
-        == "Heating Curve Optimizer Planned offset"
-    )
+    assert state.attributes["friendly_name"] == "Heating Curve Optimizer Planned offset"
 
 
 async def test_setup_without_zones_only_exposes_weather_sensors(
