@@ -82,6 +82,109 @@
             "data_description": {
               "planning_window": "Hours ahead to plan, limited by the available price forecast. Longer horizons shift more load."
             }
+          },
+          "expert_optimizer": {
+            "name": "Expert: Optimizer",
+            "data": {
+              "comfort_penalty_weight": "Comfort penalty weight",
+              "cycling_penalty_weight": "Cycling penalty weight",
+              "hard_floor_penalty": "Hard floor penalty",
+              "feed_in_price_fallback": "Feed-in price fallback",
+              "offset_min": "Minimum offset",
+              "offset_max": "Maximum offset",
+              "heatpump_headroom": "Heat pump headroom"
+            },
+            "data_description": {
+              "comfort_penalty_weight": "Cost of comfort deviation in EUR per K² per hour. Higher values prioritize comfort over energy savings.",
+              "cycling_penalty_weight": "Penalty for offset changes between steps. Higher values produce more stable plans with less switching.",
+              "hard_floor_penalty": "Penalty in EUR when indoor temperature falls far below comfort minimum. Prevents deep undershoot.",
+              "feed_in_price_fallback": "Fallback feed-in price when no production price sensor is configured.",
+              "offset_min": "Lowest heating curve offset the optimizer may use.",
+              "offset_max": "Highest heating curve offset the optimizer may use.",
+              "heatpump_headroom": "Assumed heat pump capacity as a ratio of emitter design-point output. 1.3 means 30% overcapacity."
+            }
+          },
+          "expert_calibration": {
+            "name": "Expert: Calibration",
+            "data": {
+              "calibration_window": "Calibration window",
+              "min_samples_to_apply": "Minimum samples to apply",
+              "min_r_squared": "Minimum R²",
+              "min_share_each_direction": "Minimum share each direction",
+              "min_indoor_temp_delta": "Minimum indoor temp delta",
+              "prior_strength": "Prior strength",
+              "ratio_bounds_lower": "Ratio bounds lower",
+              "ratio_bounds_upper": "Ratio bounds upper",
+              "solar_factor_bounds_upper": "Solar factor upper bound",
+              "internal_gain_max_w_per_m2": "Max internal gains",
+              "min_cop_samples": "Minimum COP samples",
+              "cop_scale_bounds_lower": "COP scale lower bound",
+              "cop_scale_bounds_upper": "COP scale upper bound",
+              "min_emitter_samples": "Minimum emitter samples",
+              "emitter_exponent_bounds_lower": "Emitter exponent lower bound",
+              "emitter_exponent_bounds_upper": "Emitter exponent upper bound",
+              "calibration_min_hours": "Minimum observation window",
+              "calibration_max_hours": "Maximum observation window",
+              "calibration_max_jump_c": "Maximum temperature jump",
+              "gas_min_window_hours": "Gas minimum window",
+              "min_residual_samples": "Minimum residual samples",
+              "two_mass_autocorrelation": "Two-mass autocorrelation threshold"
+            },
+            "data_description": {
+              "calibration_window": "Maximum number of rolling samples retained for fitting.",
+              "min_samples_to_apply": "Minimum observation samples before calibration can be applied.",
+              "min_r_squared": "Minimum coefficient of determination for a calibration fit to pass quality gates.",
+              "min_share_each_direction": "Minimum fraction of samples in both heating and coasting for a balanced fit.",
+              "min_indoor_temp_delta": "Indoor temperature movement required to close a calibration window.",
+              "prior_strength": "Ridge regularization strength in equivalent samples. Higher values pull the fit toward the energy-label prior.",
+              "ratio_bounds_lower": "Lower plausibility bound on fitted UA and C as a multiple of the energy-label prior.",
+              "ratio_bounds_upper": "Upper plausibility bound on fitted UA and C as a multiple of the energy-label prior.",
+              "solar_factor_bounds_upper": "Upper plausibility bound on the learned solar gain correction factor.",
+              "internal_gain_max_w_per_m2": "Maximum plausible internal gains per m² floor area.",
+              "min_cop_samples": "Minimum operating points before the COP curve fit is usable.",
+              "cop_scale_bounds_lower": "Lower plausibility bound on the learned COP scale factor.",
+              "cop_scale_bounds_upper": "Upper plausibility bound on the learned COP scale factor.",
+              "min_emitter_samples": "Minimum samples before the emitter curve fit is usable.",
+              "emitter_exponent_bounds_lower": "Lower plausibility bound on the learned emitter exponent.",
+              "emitter_exponent_bounds_upper": "Upper plausibility bound on the learned emitter exponent.",
+              "calibration_min_hours": "Minimum duration of a calibration observation window.",
+              "calibration_max_hours": "Maximum duration before a calibration window is discarded.",
+              "calibration_max_jump_c": "Indoor temperature jump that invalidates a calibration window.",
+              "gas_min_window_hours": "Minimum observation window when gas-meter heat is part of a calibration sample.",
+              "min_residual_samples": "Minimum samples for the residual autocorrelation diagnostic.",
+              "two_mass_autocorrelation": "Autocorrelation above which a second thermal mass is suspected."
+            }
+          },
+          "expert_climate": {
+            "name": "Expert: Climate & detection",
+            "data": {
+              "ground_albedo": "Ground albedo",
+              "defrost_free_threshold": "Defrost-free threshold",
+              "defrost_cold_threshold": "Defrost cold threshold",
+              "defrost_base_penalty": "Defrost base penalty",
+              "defrost_min_cop_multiplier": "Defrost minimum COP multiplier",
+              "min_cop": "Minimum COP",
+              "mwh_magnitude_threshold": "MWh detection threshold",
+              "idle_power_threshold_kw": "Idle power threshold",
+              "price_change_rel": "Price change trigger (relative)",
+              "price_change_min_abs": "Price change trigger (absolute)",
+              "min_running_power_kw": "Minimum running power",
+              "accuracy_horizon_hours": "Accuracy horizon"
+            },
+            "data_description": {
+              "ground_albedo": "Ground reflectance for solar calculations. Snow cover: 0.5–0.7.",
+              "defrost_free_threshold": "Outdoor temperature above which no defrost penalty is applied.",
+              "defrost_cold_threshold": "Outdoor temperature below which frosting is assumed to stop (too cold for moisture).",
+              "defrost_base_penalty": "Maximum fractional COP penalty from defrost cycles at worst conditions.",
+              "defrost_min_cop_multiplier": "Floor for the defrost COP multiplier to prevent unrealistically low COP values.",
+              "min_cop": "Floor COP value to prevent division by near-zero in extreme conditions.",
+              "mwh_magnitude_threshold": "Price magnitude threshold for auto-detecting EUR/MWh vs EUR/kWh.",
+              "idle_power_threshold_kw": "Below this power level the heat pump is considered idle or in standby.",
+              "price_change_rel": "Relative price change that triggers immediate re-optimization.",
+              "price_change_min_abs": "Minimum absolute price change for re-optimization trigger.",
+              "min_running_power_kw": "Minimum power for a steady heating state for COP and emitter samples.",
+              "accuracy_horizon_hours": "Prediction horizon used for model accuracy tracking."
+            }
           }
         }
       },
@@ -185,6 +288,109 @@
             "data_description": {
               "planning_window": "Hours ahead to plan, limited by the available price forecast. Longer horizons shift more load."
             }
+          },
+          "expert_optimizer": {
+            "name": "Expert: Optimizer",
+            "data": {
+              "comfort_penalty_weight": "Comfort penalty weight",
+              "cycling_penalty_weight": "Cycling penalty weight",
+              "hard_floor_penalty": "Hard floor penalty",
+              "feed_in_price_fallback": "Feed-in price fallback",
+              "offset_min": "Minimum offset",
+              "offset_max": "Maximum offset",
+              "heatpump_headroom": "Heat pump headroom"
+            },
+            "data_description": {
+              "comfort_penalty_weight": "Cost of comfort deviation in EUR per K² per hour. Higher values prioritize comfort over energy savings.",
+              "cycling_penalty_weight": "Penalty for offset changes between steps. Higher values produce more stable plans with less switching.",
+              "hard_floor_penalty": "Penalty in EUR when indoor temperature falls far below comfort minimum. Prevents deep undershoot.",
+              "feed_in_price_fallback": "Fallback feed-in price when no production price sensor is configured.",
+              "offset_min": "Lowest heating curve offset the optimizer may use.",
+              "offset_max": "Highest heating curve offset the optimizer may use.",
+              "heatpump_headroom": "Assumed heat pump capacity as a ratio of emitter design-point output. 1.3 means 30% overcapacity."
+            }
+          },
+          "expert_calibration": {
+            "name": "Expert: Calibration",
+            "data": {
+              "calibration_window": "Calibration window",
+              "min_samples_to_apply": "Minimum samples to apply",
+              "min_r_squared": "Minimum R²",
+              "min_share_each_direction": "Minimum share each direction",
+              "min_indoor_temp_delta": "Minimum indoor temp delta",
+              "prior_strength": "Prior strength",
+              "ratio_bounds_lower": "Ratio bounds lower",
+              "ratio_bounds_upper": "Ratio bounds upper",
+              "solar_factor_bounds_upper": "Solar factor upper bound",
+              "internal_gain_max_w_per_m2": "Max internal gains",
+              "min_cop_samples": "Minimum COP samples",
+              "cop_scale_bounds_lower": "COP scale lower bound",
+              "cop_scale_bounds_upper": "COP scale upper bound",
+              "min_emitter_samples": "Minimum emitter samples",
+              "emitter_exponent_bounds_lower": "Emitter exponent lower bound",
+              "emitter_exponent_bounds_upper": "Emitter exponent upper bound",
+              "calibration_min_hours": "Minimum observation window",
+              "calibration_max_hours": "Maximum observation window",
+              "calibration_max_jump_c": "Maximum temperature jump",
+              "gas_min_window_hours": "Gas minimum window",
+              "min_residual_samples": "Minimum residual samples",
+              "two_mass_autocorrelation": "Two-mass autocorrelation threshold"
+            },
+            "data_description": {
+              "calibration_window": "Maximum number of rolling samples retained for fitting.",
+              "min_samples_to_apply": "Minimum observation samples before calibration can be applied.",
+              "min_r_squared": "Minimum coefficient of determination for a calibration fit to pass quality gates.",
+              "min_share_each_direction": "Minimum fraction of samples in both heating and coasting for a balanced fit.",
+              "min_indoor_temp_delta": "Indoor temperature movement required to close a calibration window.",
+              "prior_strength": "Ridge regularization strength in equivalent samples. Higher values pull the fit toward the energy-label prior.",
+              "ratio_bounds_lower": "Lower plausibility bound on fitted UA and C as a multiple of the energy-label prior.",
+              "ratio_bounds_upper": "Upper plausibility bound on fitted UA and C as a multiple of the energy-label prior.",
+              "solar_factor_bounds_upper": "Upper plausibility bound on the learned solar gain correction factor.",
+              "internal_gain_max_w_per_m2": "Maximum plausible internal gains per m² floor area.",
+              "min_cop_samples": "Minimum operating points before the COP curve fit is usable.",
+              "cop_scale_bounds_lower": "Lower plausibility bound on the learned COP scale factor.",
+              "cop_scale_bounds_upper": "Upper plausibility bound on the learned COP scale factor.",
+              "min_emitter_samples": "Minimum samples before the emitter curve fit is usable.",
+              "emitter_exponent_bounds_lower": "Lower plausibility bound on the learned emitter exponent.",
+              "emitter_exponent_bounds_upper": "Upper plausibility bound on the learned emitter exponent.",
+              "calibration_min_hours": "Minimum duration of a calibration observation window.",
+              "calibration_max_hours": "Maximum duration before a calibration window is discarded.",
+              "calibration_max_jump_c": "Indoor temperature jump that invalidates a calibration window.",
+              "gas_min_window_hours": "Minimum observation window when gas-meter heat is part of a calibration sample.",
+              "min_residual_samples": "Minimum samples for the residual autocorrelation diagnostic.",
+              "two_mass_autocorrelation": "Autocorrelation above which a second thermal mass is suspected."
+            }
+          },
+          "expert_climate": {
+            "name": "Expert: Climate & detection",
+            "data": {
+              "ground_albedo": "Ground albedo",
+              "defrost_free_threshold": "Defrost-free threshold",
+              "defrost_cold_threshold": "Defrost cold threshold",
+              "defrost_base_penalty": "Defrost base penalty",
+              "defrost_min_cop_multiplier": "Defrost minimum COP multiplier",
+              "min_cop": "Minimum COP",
+              "mwh_magnitude_threshold": "MWh detection threshold",
+              "idle_power_threshold_kw": "Idle power threshold",
+              "price_change_rel": "Price change trigger (relative)",
+              "price_change_min_abs": "Price change trigger (absolute)",
+              "min_running_power_kw": "Minimum running power",
+              "accuracy_horizon_hours": "Accuracy horizon"
+            },
+            "data_description": {
+              "ground_albedo": "Ground reflectance for solar calculations. Snow cover: 0.5–0.7.",
+              "defrost_free_threshold": "Outdoor temperature above which no defrost penalty is applied.",
+              "defrost_cold_threshold": "Outdoor temperature below which frosting is assumed to stop (too cold for moisture).",
+              "defrost_base_penalty": "Maximum fractional COP penalty from defrost cycles at worst conditions.",
+              "defrost_min_cop_multiplier": "Floor for the defrost COP multiplier to prevent unrealistically low COP values.",
+              "min_cop": "Floor COP value to prevent division by near-zero in extreme conditions.",
+              "mwh_magnitude_threshold": "Price magnitude threshold for auto-detecting EUR/MWh vs EUR/kWh.",
+              "idle_power_threshold_kw": "Below this power level the heat pump is considered idle or in standby.",
+              "price_change_rel": "Relative price change that triggers immediate re-optimization.",
+              "price_change_min_abs": "Minimum absolute price change for re-optimization trigger.",
+              "min_running_power_kw": "Minimum power for a steady heating state for COP and emitter samples.",
+              "accuracy_horizon_hours": "Prediction horizon used for model accuracy tracking."
+            }
           }
         }
       }
@@ -225,7 +431,8 @@
             "window_sensors": "Window and door contacts",
             "calibration_mode": "Calibration",
             "heat_curve_min": "Own curve: supply temperature at the warm end",
-            "heat_curve_max": "Own curve: supply temperature at the cold end"
+            "heat_curve_max": "Own curve: supply temperature at the cold end",
+            "window_shgc": "Window SHGC override"
           },
           "data_description": {
             "energy_label": "Used to estimate the heat loss coefficient until calibration has learned it.",
@@ -236,7 +443,8 @@
             "window_sensors": "Optional. Periods with an open window or door are left out of the calibration.",
             "calibration_mode": "Learn the building from measurements. Observe: learn and show results, ask before using them. Apply: use the learned model as soon as it passes the quality checks.",
             "heat_curve_min": "Only for a separate heating circuit with its own curve; leave both empty to use the main curve.",
-            "heat_curve_max": "Fill both or neither."
+            "heat_curve_max": "Fill both or neither.",
+            "window_shgc": "Solar Heat Gain Coefficient of windows. Leave empty to derive from glass U-value."
           }
         },
         "reconfigure": {
@@ -262,7 +470,8 @@
             "window_sensors": "Window and door contacts",
             "calibration_mode": "Calibration",
             "heat_curve_min": "Own curve: supply temperature at the warm end",
-            "heat_curve_max": "Own curve: supply temperature at the cold end"
+            "heat_curve_max": "Own curve: supply temperature at the cold end",
+            "window_shgc": "Window SHGC override"
           },
           "data_description": {
             "energy_label": "Used to estimate the heat loss coefficient until calibration has learned it.",
@@ -273,7 +482,8 @@
             "window_sensors": "Optional. Periods with an open window or door are left out of the calibration.",
             "calibration_mode": "Learn the building from measurements. Observe: learn and show results, ask before using them. Apply: use the learned model as soon as it passes the quality checks.",
             "heat_curve_min": "Only for a separate heating circuit with its own curve; leave both empty to use the main curve.",
-            "heat_curve_max": "Fill both or neither."
+            "heat_curve_max": "Fill both or neither.",
+            "window_shgc": "Solar Heat Gain Coefficient of windows. Leave empty to derive from glass U-value."
           }
         }
       },
@@ -340,14 +550,18 @@
             "gas_boiler_efficiency": "Boiler efficiency",
             "gas_calorific_value_kwh_per_m3": "Calorific value",
             "gas_comfort_backup": "Gas as comfort backup",
-            "gas_meter_sensor": "Gas meter"
+            "gas_meter_sensor": "Gas meter",
+            "comfort_lookahead_hours": "Comfort lookahead",
+            "comfort_tolerance_c": "Comfort tolerance"
           },
           "data_description": {
             "gas_price_sensor": "Current gas price in EUR/m³.",
             "gas_boiler_efficiency": "0.90 for a typical HR boiler; up to ~1.07 on upper heating value at low return temperatures.",
             "gas_calorific_value_kwh_per_m3": "Dutch G-gas upper heating value: 9.77 kWh/m³.",
             "gas_meter_sensor": "Optional cumulative gas meter (m³ or kWh). Periods on gas give an absolute heat measurement that calibrates the heat pump's COP level. Coarse (e.g. hourly) updates are fine. Only reliable if the boiler does not also heat tap water.",
-            "gas_comfort_backup": "On: recommend the gas boiler whenever the heat pump cannot restore the comfort band within 3 hours, even if gas is more expensive. Off: only when gas is also cheaper."
+            "gas_comfort_backup": "On: recommend the gas boiler whenever the heat pump cannot restore the comfort band within 3 hours, even if gas is more expensive. Off: only when gas is also cheaper.",
+            "comfort_lookahead_hours": "How far ahead the plan is checked for comfort breaches before recommending gas.",
+            "comfort_tolerance_c": "Tolerance below comfort floor before the plan counts as a breach."
           }
         },
         "reconfigure": {
@@ -357,14 +571,18 @@
             "gas_boiler_efficiency": "Boiler efficiency",
             "gas_calorific_value_kwh_per_m3": "Calorific value",
             "gas_comfort_backup": "Gas as comfort backup",
-            "gas_meter_sensor": "Gas meter"
+            "gas_meter_sensor": "Gas meter",
+            "comfort_lookahead_hours": "Comfort lookahead",
+            "comfort_tolerance_c": "Comfort tolerance"
           },
           "data_description": {
             "gas_price_sensor": "Current gas price in EUR/m³.",
             "gas_boiler_efficiency": "0.90 for a typical HR boiler; up to ~1.07 on upper heating value at low return temperatures.",
             "gas_calorific_value_kwh_per_m3": "Dutch G-gas upper heating value: 9.77 kWh/m³.",
             "gas_meter_sensor": "Optional cumulative gas meter (m³ or kWh). Periods on gas give an absolute heat measurement that calibrates the heat pump's COP level. Coarse (e.g. hourly) updates are fine. Only reliable if the boiler does not also heat tap water.",
-            "gas_comfort_backup": "On: recommend the gas boiler whenever the heat pump cannot restore the comfort band within 3 hours, even if gas is more expensive. Off: only when gas is also cheaper."
+            "gas_comfort_backup": "On: recommend the gas boiler whenever the heat pump cannot restore the comfort band within 3 hours, even if gas is more expensive. Off: only when gas is also cheaper.",
+            "comfort_lookahead_hours": "How far ahead the plan is checked for comfort breaches before recommending gas.",
+            "comfort_tolerance_c": "Tolerance below comfort floor before the plan counts as a breach."
           }
         }
       },

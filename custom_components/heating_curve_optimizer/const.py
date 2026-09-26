@@ -372,3 +372,145 @@ DEFAULT_REALTIME_DEADBAND_W = 300.0  # W - looser than a battery's ~50 W:
 DEFAULT_REALTIME_INTERVAL_S = 60  # much slower than battery_controller's
 # ~10 s: a heat pump's weather-compensation curve has nothing to gain from
 # being re-commanded faster than its own control loop settles.
+
+# --- Expert: Optimizer tuning ------------------------------------------------
+
+CONF_COMFORT_PENALTY_WEIGHT = "comfort_penalty_weight"
+DEFAULT_COMFORT_PENALTY_WEIGHT = 50.0  # EUR/K²/h
+
+CONF_CYCLING_PENALTY_WEIGHT = "cycling_penalty_weight"
+DEFAULT_CYCLING_PENALTY_WEIGHT = 0.01  # EUR per step per K² offset change
+
+CONF_HARD_FLOOR_PENALTY = "hard_floor_penalty"
+DEFAULT_HARD_FLOOR_PENALTY = 1000.0  # EUR, penalty below comfort_min - margin
+
+CONF_FEED_IN_PRICE_FALLBACK = "feed_in_price_fallback"
+DEFAULT_FEED_IN_PRICE_FALLBACK = 0.07  # EUR/kWh
+
+CONF_OFFSET_MIN = "offset_min"
+DEFAULT_OFFSET_MIN = -4  # K
+
+CONF_OFFSET_MAX = "offset_max"
+DEFAULT_OFFSET_MAX = 4  # K
+
+CONF_HEATPUMP_HEADROOM = "heatpump_headroom"
+DEFAULT_HEATPUMP_HEADROOM = 1.3  # ratio: HP capacity / emitter design power
+
+# --- Expert: Detection thresholds -------------------------------------------
+
+CONF_IDLE_POWER_THRESHOLD_KW = "idle_power_threshold_kw"
+DEFAULT_IDLE_POWER_THRESHOLD_KW = 0.1
+
+CONF_PRICE_CHANGE_REL = "price_change_rel"
+DEFAULT_PRICE_CHANGE_REL = 0.10
+
+CONF_PRICE_CHANGE_MIN_ABS = "price_change_min_abs"
+DEFAULT_PRICE_CHANGE_MIN_ABS = 0.01  # EUR/kWh
+
+CONF_MIN_RUNNING_POWER_KW = "min_running_power_kw"
+DEFAULT_MIN_RUNNING_POWER_KW = 0.3
+
+CONF_ACCURACY_HORIZON_HOURS = "accuracy_horizon_hours"
+DEFAULT_ACCURACY_HORIZON_HOURS = 1.0
+
+CONF_MWH_MAGNITUDE_THRESHOLD = "mwh_magnitude_threshold"
+DEFAULT_MWH_MAGNITUDE_THRESHOLD = 5.0
+
+# --- Expert: Calibration ---------------------------------------------------
+
+CONF_CALIBRATION_WINDOW = "calibration_window"
+DEFAULT_CALIBRATION_WINDOW = 300  # max rolling samples
+
+CONF_MIN_SAMPLES_TO_APPLY = "min_samples_to_apply"
+DEFAULT_MIN_SAMPLES_TO_APPLY = 30
+
+CONF_MIN_R_SQUARED = "min_r_squared"
+DEFAULT_MIN_R_SQUARED = 0.5
+
+CONF_MIN_SHARE_EACH_DIRECTION = "min_share_each_direction"
+DEFAULT_MIN_SHARE_EACH_DIRECTION = 0.15
+
+CONF_MIN_INDOOR_TEMP_DELTA = "min_indoor_temp_delta"
+DEFAULT_MIN_INDOOR_TEMP_DELTA = 0.3  # K
+
+CONF_PRIOR_STRENGTH = "prior_strength"
+DEFAULT_PRIOR_STRENGTH = 3.0  # equivalent samples
+
+CONF_RATIO_BOUNDS_LOWER = "ratio_bounds_lower"
+DEFAULT_RATIO_BOUNDS_LOWER = 0.3
+
+CONF_RATIO_BOUNDS_UPPER = "ratio_bounds_upper"
+DEFAULT_RATIO_BOUNDS_UPPER = 3.0
+
+CONF_SOLAR_FACTOR_BOUNDS_UPPER = "solar_factor_bounds_upper"
+DEFAULT_SOLAR_FACTOR_BOUNDS_UPPER = 2.5
+
+CONF_INTERNAL_GAIN_MAX_W_PER_M2 = "internal_gain_max_w_per_m2"
+DEFAULT_INTERNAL_GAIN_MAX_W_PER_M2 = 12.0
+
+CONF_MIN_COP_SAMPLES = "min_cop_samples"
+DEFAULT_MIN_COP_SAMPLES = 20
+
+CONF_COP_SCALE_BOUNDS_LOWER = "cop_scale_bounds_lower"
+DEFAULT_COP_SCALE_BOUNDS_LOWER = 0.5
+
+CONF_COP_SCALE_BOUNDS_UPPER = "cop_scale_bounds_upper"
+DEFAULT_COP_SCALE_BOUNDS_UPPER = 1.5
+
+CONF_MIN_EMITTER_SAMPLES = "min_emitter_samples"
+DEFAULT_MIN_EMITTER_SAMPLES = 20
+
+CONF_EMITTER_EXPONENT_BOUNDS_LOWER = "emitter_exponent_bounds_lower"
+DEFAULT_EMITTER_EXPONENT_BOUNDS_LOWER = 0.9
+
+CONF_EMITTER_EXPONENT_BOUNDS_UPPER = "emitter_exponent_bounds_upper"
+DEFAULT_EMITTER_EXPONENT_BOUNDS_UPPER = 1.6
+
+CONF_CALIBRATION_MIN_HOURS = "calibration_min_hours"
+DEFAULT_CALIBRATION_MIN_HOURS = 0.25
+
+CONF_CALIBRATION_MAX_HOURS = "calibration_max_hours"
+DEFAULT_CALIBRATION_MAX_HOURS = 6.0
+
+CONF_CALIBRATION_MAX_JUMP_C = "calibration_max_jump_c"
+DEFAULT_CALIBRATION_MAX_JUMP_C = 1.0
+
+CONF_GAS_MIN_WINDOW_HOURS = "gas_min_window_hours"
+DEFAULT_GAS_MIN_WINDOW_HOURS = 2.0
+
+CONF_MIN_RESIDUAL_SAMPLES = "min_residual_samples"
+DEFAULT_MIN_RESIDUAL_SAMPLES = 48
+
+CONF_TWO_MASS_AUTOCORRELATION = "two_mass_autocorrelation"
+DEFAULT_TWO_MASS_AUTOCORRELATION = 0.6
+
+# --- Expert: Climate model --------------------------------------------------
+
+CONF_GROUND_ALBEDO = "ground_albedo"
+DEFAULT_GROUND_ALBEDO = 0.2
+
+CONF_DEFROST_FREE_THRESHOLD = "defrost_free_threshold"
+DEFAULT_DEFROST_FREE_THRESHOLD = 6.0  # °C
+
+CONF_DEFROST_COLD_THRESHOLD = "defrost_cold_threshold"
+DEFAULT_DEFROST_COLD_THRESHOLD = -10.0  # °C
+
+CONF_DEFROST_BASE_PENALTY = "defrost_base_penalty"
+DEFAULT_DEFROST_BASE_PENALTY = 0.25
+
+CONF_DEFROST_MIN_COP_MULTIPLIER = "defrost_min_cop_multiplier"
+DEFAULT_DEFROST_MIN_COP_MULTIPLIER = 0.60
+
+CONF_MIN_COP = "min_cop"
+DEFAULT_MIN_COP = 0.5
+
+CONF_WINDOW_SHGC = "window_shgc"
+# No default: when absent, SHGC is derived from glass U-value
+
+# --- Expert: Gas boiler policy -----------------------------------------------
+
+CONF_COMFORT_LOOKAHEAD_HOURS = "comfort_lookahead_hours"
+DEFAULT_COMFORT_LOOKAHEAD_HOURS = 3.0
+
+CONF_COMFORT_TOLERANCE_C = "comfort_tolerance_c"
+DEFAULT_COMFORT_TOLERANCE_C = 0.1  # K

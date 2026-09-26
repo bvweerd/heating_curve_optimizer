@@ -112,11 +112,13 @@ def _skip_index_since_local_midnight(now_local: datetime, interval_minutes: int)
 
 # A per-kWh price never reaches 5 EUR and a per-MWh price practically always
 # passes it, so the magnitude settles the unit whenever the sensor does not.
-MWH_MAGNITUDE_THRESHOLD = 5.0
+MWH_MAGNITUDE_THRESHOLD = 5.0  # DEFAULT_MWH_MAGNITUDE_THRESHOLD
 
 
 def price_unit_scale(
-    state: State | None, samples: Sequence[float] | None = None
+    state: State | None,
+    samples: Sequence[float] | None = None,
+    mwh_magnitude_threshold: float = MWH_MAGNITUDE_THRESHOLD,
 ) -> float:
     """Return the factor converting a sensor's prices to EUR/kWh.
 
@@ -130,7 +132,7 @@ def price_unit_scale(
         unit = str(state.attributes.get("unit_of_measurement") or "").lower()
     if unit:
         return 0.001 if "mwh" in unit else 1.0
-    if samples and any(abs(value) > MWH_MAGNITUDE_THRESHOLD for value in samples):
+    if samples and any(abs(value) > mwh_magnitude_threshold for value in samples):
         return 0.001
     return 1.0
 
@@ -473,6 +475,8 @@ def _extract_price_forecast_raw(
 
 def extract_price_forecast_with_timestamps(
     state: State,
+    *,
+    mwh_magnitude_threshold: float = MWH_MAGNITUDE_THRESHOLD,
 ) -> tuple[list[float], list[datetime], int]:
     """Extract a price forecast in EUR/kWh with UTC start times from a price state.
 
@@ -486,7 +490,7 @@ def extract_price_forecast_with_timestamps(
         Tuple of (prices in EUR/kWh, start_times_utc, interval_minutes)
     """
     prices, start_times, interval = _extract_price_forecast_raw(state)
-    scale = price_unit_scale(state, prices)
+    scale = price_unit_scale(state, prices, mwh_magnitude_threshold)
     if scale != 1.0:
         prices = [price * scale for price in prices]
     return _drop_elapsed_periods(prices, start_times, interval)
@@ -693,7 +697,7 @@ def _poa_irradiance(
     sun_azimuth_deg: float,
     tilt_deg: float,
     panel_azimuth_deg: float,
-    albedo: float = 0.2,
+    albedo: float = 0.2,  # DEFAULT_GROUND_ALBEDO
 ) -> float:
     """Compute Plane of Array (POA) irradiance using the isotropic diffuse model.
 
@@ -744,6 +748,7 @@ def calculate_pv_forecast(
     timestamps_utc: list[datetime] | None = None,
     latitude: float | None = None,
     longitude: float | None = None,
+    ground_albedo: float = 0.2,
 ) -> list[float]:
     """Calculate PV production forecast from solar radiation.
 
@@ -807,6 +812,7 @@ def calculate_pv_forecast(
                 azim,
                 tilt_deg,
                 orientation_deg,
+                albedo=ground_albedo,
             )
             power_kw = poa / 1000.0 * peak_power_kwp * efficiency_factor
             forecast.append(max(0.0, power_kw))
@@ -838,31 +844,45 @@ def calculate_pv_forecast(
     return forecast
 
 
-def calculate_defrost_factor(outdoor_temp: float, humidity: float = 80.0) -> float:
+def calculate_defrost_factor(
+    outdoor_temp: float,
+    humidity: float = 80.0,
+    *,
+    defrost_free_threshold: float = 6.0,
+    defrost_cold_threshold: float = -10.0,
+    defrost_base_penalty: float = 0.25,
+    defrost_min_cop_multiplier: float = 0.60,
+) -> float:
     """Calculate COP degradation due to defrost cycles for air-source heat pumps.
 
     Based on research for air-source heat pumps in humid climates (like Netherlands).
-    Frosting occurs when outdoor temperature is between -10°C and 6°C with sufficient humidity.
+    Frosting occurs when outdoor temperature is between ``defrost_cold_threshold``
+    and ``defrost_free_threshold`` with sufficient humidity.
     The worst frosting occurs around 0-3°C with high humidity (70-90%).
 
     Args:
         outdoor_temp: Outdoor temperature in °C
         humidity: Relative humidity in % (default 80% for Dutch maritime climate)
+        defrost_free_threshold: Temperature above which no frosting occurs (°C)
+        defrost_cold_threshold: Temperature below which air is too dry to frost (°C)
+        defrost_base_penalty: Maximum COP penalty fraction in worst conditions
+        defrost_min_cop_multiplier: Minimum COP multiplier (floor)
 
     Returns:
-        Multiplier (0.60-1.0) to apply to base COP accounting for defrost losses
+        Multiplier (defrost_min_cop_multiplier-1.0) to apply to base COP
+        accounting for defrost losses
 
     Research references:
     - Frosting occurs at 100% RH below 3.1°C, at 70% RH below 5.3°C
     - COP degradation: typical 10-15%, worst case up to 40%
     - Most critical range: 0-7°C in humid climates
     """
-    # No frosting above 6°C - heat pump operates at full efficiency
-    if outdoor_temp >= 6.0:
+    # No frosting above threshold - heat pump operates at full efficiency
+    if outdoor_temp >= defrost_free_threshold:
         return 1.0
 
-    # No frosting below -10°C (air too dry, insufficient moisture to freeze)
-    if outdoor_temp <= -10.0:
+    # No frosting below cold threshold (air too dry, insufficient moisture to freeze)
+    if outdoor_temp <= defrost_cold_threshold:
         return 1.0
 
     # Calculate humidity-dependent frosting threshold
@@ -870,7 +890,9 @@ def calculate_defrost_factor(outdoor_temp: float, humidity: float = 80.0) -> flo
     # At 70% RH: frosting starts at 5.3°C
     # Linear interpolation for other humidity levels
     frosting_threshold = 3.1 + (humidity - 100) * (5.3 - 3.1) / (70 - 100)
-    frosting_threshold = max(min(frosting_threshold, 6.0), -10.0)
+    frosting_threshold = max(
+        min(frosting_threshold, defrost_free_threshold), defrost_cold_threshold
+    )
 
     # No frosting if temperature is above the humidity-dependent threshold
     if outdoor_temp >= frosting_threshold:
@@ -882,28 +904,28 @@ def calculate_defrost_factor(outdoor_temp: float, humidity: float = 80.0) -> flo
         # COP loss increases as we approach 0-2°C
         if outdoor_temp <= 3:
             # Maximum penalty at 0-2°C: 15-40% depending on humidity
-            base_penalty = 0.25  # 25% base COP loss in worst conditions
+            base_penalty = defrost_base_penalty
             temp_factor = (
                 1.0 - (outdoor_temp / 3.0) * 0.4
             )  # Reduces penalty as temp increases
         else:
             # Moderate frosting zone: 3-6°C
             # Linear reduction in penalty from 3°C to frosting threshold
-            base_penalty = 0.15  # 15% COP loss
+            base_penalty = defrost_base_penalty * 0.6  # 60% of worst-case
             temp_factor = (frosting_threshold - outdoor_temp) / (
                 frosting_threshold - 3.0
             )
     else:
-        # Below freezing: -10 to 0°C. Colder air holds less absolute
-        # moisture even at the same relative humidity, so frosting tapers
-        # off toward -10°C - but it must start from the SAME penalty the
-        # 0-3°C branch above gives at outdoor_temp=0 (base_penalty=0.25,
-        # temp_factor=1.0), or the two branches disagree at their shared
-        # boundary and cop_multiplier jumps discontinuously right at the
-        # freezing point (found in review; was base_penalty=0.12 here,
-        # a ~2x mismatch against the 0.25 the other branch gives at 0°C).
-        base_penalty = 0.25
-        temp_factor = (outdoor_temp + 10) / 10.0
+        # Below freezing: cold_threshold to 0°C. Colder air holds less
+        # absolute moisture even at the same relative humidity, so frosting
+        # tapers off toward cold_threshold - but it must start from the
+        # SAME penalty the 0-3°C branch above gives at outdoor_temp=0,
+        # or the two branches disagree at their shared boundary and
+        # cop_multiplier jumps discontinuously right at the freezing point.
+        base_penalty = defrost_base_penalty
+        temp_factor = (outdoor_temp - defrost_cold_threshold) / (
+            0.0 - defrost_cold_threshold
+        )
 
     # Adjust for humidity (Dutch climate typically 75-90% RH in winter)
     # Higher humidity = more frost formation = worse COP degradation
@@ -912,10 +934,10 @@ def calculate_defrost_factor(outdoor_temp: float, humidity: float = 80.0) -> flo
     # Calculate final defrost penalty
     defrost_penalty = base_penalty * temp_factor * humidity_factor
 
-    # Return COP multiplier (1.0 = no loss, 0.6 = 40% loss in worst case)
+    # Return COP multiplier (1.0 = no loss, floor at defrost_min_cop_multiplier)
     cop_multiplier = 1.0 - defrost_penalty
 
-    return max(0.60, cop_multiplier)  # Minimum 60% efficiency (40% max loss)
+    return max(defrost_min_cop_multiplier, cop_multiplier)
 
 
 # Window orientations as azimuth from North, clockwise.
@@ -941,6 +963,8 @@ def calculate_window_solar_gain(
     timestamps_utc: list[datetime] | None = None,
     latitude: float | None = None,
     longitude: float | None = None,
+    shgc_override: float | None = None,
+    ground_albedo: float = 0.2,
 ) -> list[float]:
     """Solar heat gain through vertical windows, in kW per forecast hour.
 
@@ -949,7 +973,7 @@ def calculate_window_solar_gain(
     available, so low winter sun on a south façade is not underestimated.
     Falls back to fixed orientation factors on the horizontal irradiance.
     """
-    shgc = window_shgc(glass_u_value)
+    shgc = shgc_override if shgc_override is not None else window_shgc(glass_u_value)
     areas = {k: max(0.0, float(v)) for k, v in glass_m2.items()}
     if not ghi_forecast or sum(areas.values()) <= 0:
         return [0.0] * len(ghi_forecast)
@@ -988,6 +1012,7 @@ def calculate_window_solar_gain(
                     azimuth,
                     90.0,
                     WINDOW_AZIMUTH_DEG.get(side, 180.0),
+                    albedo=ground_albedo,
                 )
                 gain_w += area * poa * shgc
         else:

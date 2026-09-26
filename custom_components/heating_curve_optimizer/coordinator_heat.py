@@ -19,6 +19,7 @@ from .const import (
     CONF_GLASS_SOUTH_M2,
     CONF_GLASS_U_VALUE,
     CONF_GLASS_WEST_M2,
+    CONF_GROUND_ALBEDO,
     CONF_INDOOR_TEMP_HYSTERESIS_LOWER,
     CONF_INDOOR_TEMP_HYSTERESIS_UPPER,
     CONF_INDOOR_TEMPERATURE_SENSOR,
@@ -27,7 +28,9 @@ from .const import (
     CONF_PV_PEAK_POWER_KWP,
     CONF_PV_TILT,
     CONF_TARGET_INDOOR_TEMP,
+    CONF_WINDOW_SHGC,
     DEFAULT_GLASS_U_VALUE,
+    DEFAULT_GROUND_ALBEDO,
     DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER,
     DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER,
     DEFAULT_PV_EFFICIENCY_FACTOR,
@@ -267,6 +270,8 @@ class HeatCalculationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self, weather_data: dict[str, Any], timestamps: list[Any]
     ) -> list[float]:
         """Solar gain through the zone's windows (blocking call)."""
+        shgc_raw = self.config.get(CONF_WINDOW_SHGC)
+        shgc_override = float(shgc_raw) if shgc_raw is not None else None
         return calculate_window_solar_gain(
             weather_data["radiation_forecast"],
             {
@@ -280,6 +285,10 @@ class HeatCalculationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             timestamps_utc=timestamps,
             latitude=self.weather_coordinator.latitude,
             longitude=self.weather_coordinator.longitude,
+            shgc_override=shgc_override,
+            ground_albedo=float(
+                self.config.get(CONF_GROUND_ALBEDO, DEFAULT_GROUND_ALBEDO)
+            ),
         )
 
     def _calculate_pv_production(
@@ -307,6 +316,9 @@ class HeatCalculationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 timestamps_utc=timestamps,
                 latitude=self.weather_coordinator.latitude,
                 longitude=self.weather_coordinator.longitude,
+                ground_albedo=float(
+                    self.config.get(CONF_GROUND_ALBEDO, DEFAULT_GROUND_ALBEDO)
+                ),
             )
             for i, value in enumerate(array_forecast):
                 combined[i] += value

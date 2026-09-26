@@ -19,7 +19,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from .thermal_optimizer import DEFAULT_OFFSET_MAX, DEFAULT_OFFSET_MIN
+from .const import DEFAULT_OFFSET_MAX, DEFAULT_OFFSET_MIN
 
 _LOGGER = logging.getLogger(__name__)
 
