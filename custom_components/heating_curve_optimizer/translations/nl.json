@@ -506,9 +506,6 @@
       }
     },
     "binary_sensor": {
-      "heat_pump_demand": {
-        "name": "Warmtevraag"
-      },
       "heat_pump_plan_active": {
         "name": "Warmtepomp planning actief"
       },

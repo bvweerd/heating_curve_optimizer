@@ -55,7 +55,6 @@ async def test_full_setup_produces_a_plan(
         state = _state(hass, "sensor", f"{prefix}_{key}")
         assert state.state not in ("unknown", "unavailable"), key
 
-    assert _state(hass, "binary_sensor", f"{prefix}_heat_pump_demand") is not None
     assert _state(hass, "number", f"{prefix}_target_indoor_temp").state == "20.0"
 
 

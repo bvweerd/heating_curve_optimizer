@@ -19,61 +19,10 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 PARALLEL_UPDATES = 0
 
 
-class CoordinatorHeatDemandBinarySensor(CoordinatorEntity, BinarySensorEntity):
-    """Binary sensor that indicates heat demand using coordinator."""
-
-    _attr_device_class = BinarySensorDeviceClass.RUNNING
-    _attr_has_entity_name = True
-    _attr_translation_key = "heat_pump_demand"
-    _attr_should_poll = False
-
-    def __init__(self, coordinator: Any, entry_id: str, device: DeviceInfo) -> None:
-        """Initialize the binary sensor."""
-        super().__init__(coordinator)
-        self._entry_id = entry_id
-        self._attr_unique_id = f"{entry_id}_heat_pump_demand"
-        self._attr_device_info = device
-
-    @property
-    def is_on(self) -> bool:
-        """Return True if heat pump should be ON based on temperature hysteresis."""
-        if not self.coordinator.data:
-            return False
-        return bool(self.coordinator.data.get("heat_pump_on", False))
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return (
-            self.coordinator.last_update_success and self.coordinator.data is not None
-        )
-
-    @property
-    def extra_state_attributes(self) -> dict[str, float | bool]:
-        """Return extra state attributes."""
-        if not self.coordinator.data:
-            return {}
-        data = self.coordinator.data
-        attrs = {
-            "net_heat_kW": round(data.get("net_heat_loss", 0.0), 3),
-            "heat_demand_factor": data.get("heat_demand_factor", 0.0),
-            "indoor_temperature": data.get("indoor_temperature"),
-            "indoor_temperature_source": data.get("indoor_temperature_source"),
-            "target_temperature": data.get("target_temperature"),
-        }
-        # Add hysteresis bounds if available
-        if "lower_bound" in data:
-            attrs["lower_bound"] = data["lower_bound"]
-        if "upper_bound" in data:
-            attrs["upper_bound"] = data["upper_bound"]
-        return attrs
-
-
 class HeatPumpPlanActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Advisory: does the price-optimized plan call for heat right now.
 
-    Unlike heat_pump_demand (reactive hysteresis on the current indoor
-    temperature), this follows the DP plan: off while the building can
+    Off while the building can
     coast on its thermal buffer, solar and internal gains without leaving
     the comfort band, on when the plan schedules heat output. Because the
     plan is computed over the whole horizon, this switches well ahead of a
@@ -191,11 +140,7 @@ async def async_setup_entry(
     if runtime_data is None or runtime_data.heat_coordinator is None:
         return
 
-    primary_entities: list[Any] = [
-        CoordinatorHeatDemandBinarySensor(
-            runtime_data.heat_coordinator, entry.entry_id, runtime_data.device
-        )
-    ]
+    primary_entities: list[Any] = []
     if runtime_data.optimization_coordinator is not None:
         primary_entities.append(
             HeatPumpPlanActiveBinarySensor(
@@ -204,14 +149,12 @@ async def async_setup_entry(
                 runtime_data.device,
             )
         )
-    async_add_entities(primary_entities)
+    if primary_entities:
+        async_add_entities(primary_entities)
 
     for subentry_id, zone_data in runtime_data.zones.items():
         zone_id = f"{entry.entry_id}_{subentry_id}"
         zone_entities: list[Any] = [
-            CoordinatorHeatDemandBinarySensor(
-                zone_data["heat_coordinator"], zone_id, zone_data["device"]
-            ),
             HeatPumpPlanActiveBinarySensor(
                 zone_data["optimization_coordinator"], zone_id, zone_data["device"]
             ),

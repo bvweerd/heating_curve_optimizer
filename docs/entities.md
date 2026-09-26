@@ -23,7 +23,6 @@ and English entity names.
 | `sensor.…_real_time_heating_curve_offset` | °C | Only with grid sensors: plan + PV-surplus adjustment. | `planned_offset`, `adjustment`, `current_grid_w` |
 | `sensor.…_heat_pump_thermal_power` | kW | Only with a power sensor: electrical power × COP. | `cop`, `supply_temperature` |
 | `sensor.…_heat_pump_thermal_energy` | kWh | Only with a power sensor: cumulative heat delivered. | |
-| `binary_sensor.…_heat_demand` | | On while the indoor temperature is below the upper comfort bound. | `heat_demand_factor`, bounds |
 | `binary_sensor.…_heat_pump_plan_active` | | On while the optimized plan calls for heat now; off while it plans to coast on buffer, solar or internal gains. Switches ahead of the event, since the plan covers the whole horizon - see [Algorithm](algorithm.md#run-advice). | `changes_at`, `changes_in_minutes`, `planned_supply_temperature`, `buffer_kwh` |
 | `number.…_target_indoor_temperature` | °C | Primary zone setpoint (15–25). | |
 | `number.…_comfort_band_below_target` / `…_above_target` | °C | Comfort band (0.1–2). | |
