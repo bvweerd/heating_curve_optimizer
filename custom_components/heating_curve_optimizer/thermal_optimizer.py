@@ -229,11 +229,15 @@ def optimize_thermal_schedule(
             supply_temp=supply_temp, indoor_temp=t_in
         )
         q_hp = max(0.0, min(q_available, heatpump.max_thermal_power_kw))
-        # Thermostat: heat pump is off when indoor temp is at or above the
-        # comfort ceiling (matches the real warmtevraag binary sensor that
-        # cuts demand at comfort_max).
+        # Thermostat: heat pump output ramps down between target and
+        # comfort_max, off above comfort_max.  This models realistic
+        # thermostatic control where the emitter is fully available below
+        # the target but tapers off as the room overshoots.
         if t_in >= building.comfort_max:
             q_hp = 0.0
+        elif t_in > building.target_temp:
+            band = building.comfort_max - building.target_temp
+            q_hp *= (building.comfort_max - t_in) / band if band > 0 else 0.0
         cop = heatpump.cop_at(
             supply_temp=supply_temp, outdoor_temp=outdoor[t], humidity=humidity[t]
         )

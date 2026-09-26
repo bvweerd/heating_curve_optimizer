@@ -80,9 +80,6 @@
       }
     },
     "binary_sensor": {
-      "heat_pump_demand": {
-        "default": "mdi:radiator"
-      },
       "heat_pump_plan_active": {
         "default": "mdi:calendar-clock",
         "state": {

@@ -60,6 +60,7 @@ class BuildingConfig:
 
     comfort_min: float = 19.0
     comfort_max: float = 20.5
+    target_temp: float = 20.0
     # Continuous internal heat gains (people, appliances, lighting), in kW.
     internal_gain_kw: float = 0.0
     # Correction on the modelled window solar gain (learned by calibration).
@@ -132,6 +133,7 @@ class BuildingConfig:
             ),
             comfort_min=target - hysteresis_lower,
             comfort_max=target + hysteresis_upper,
+            target_temp=target,
             internal_gain_kw=area_m2 * internal_w_per_m2 / 1000.0,
         )
 

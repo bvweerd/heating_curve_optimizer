@@ -258,9 +258,7 @@ class HeatCalculationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "hysteresis_lower": hysteresis_lower,
             "hysteresis_upper": hysteresis_upper,
             "lower_bound": round(lower_bound, 2),
-            "upper_bound": round(upper_bound, 2),
-            "heat_demand_factor": round(heat_demand_factor, 3),
-            "heat_pump_on": heat_demand_factor > 0.0,
+            "heat_pump_on": indoor_temp <= target_temp and heat_demand_factor > 0.0,
             "htc_w_per_k": round(building.ua_w_per_k, 1),
             "timestamp": dt_util.utcnow(),
         }
