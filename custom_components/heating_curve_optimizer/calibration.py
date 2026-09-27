@@ -532,7 +532,7 @@ EMITTER_EXPONENT_BOUNDS = (
 class EmitterSample:
     """Delivered heat at one supply-minus-indoor temperature difference."""
 
-    delta_t: float  # supply - indoor, K
+    delta_t: float  # mean water temp - indoor, K
     heat_kw: float
 
     def as_list(self) -> list[float]:

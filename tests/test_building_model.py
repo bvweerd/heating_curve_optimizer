@@ -152,7 +152,8 @@ def test_emitter_available_power_zero_below_indoor_temp():
 
 
 def test_emitter_available_power_matches_nominal_at_design_point():
-    emitter = EmitterConfig(exponent=1.3, nominal_delta_t=25.0, nominal_power_kw=6.0)
+    # nominal_delta_t is mean water temp minus indoor: (45 - 2.5) - 20 = 22.5
+    emitter = EmitterConfig(exponent=1.3, nominal_delta_t=22.5, nominal_power_kw=6.0)
     available = emitter.available_power_kw(supply_temp=45.0, indoor_temp=20.0)
     assert available == pytest.approx(6.0, rel=1e-6)
 

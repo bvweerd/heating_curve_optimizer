@@ -625,6 +625,13 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         plan_on, plan_change_at = _plan_run_advice(
             opt.thermal_power_kw, step_starts, self._idle_power_threshold_kw
         )
+        # When the room is already above target the optimizer may still
+        # model a small residual heat output (the ramp region allows
+        # pre-heating within the comfort band), but the physical thermostat
+        # would not call for heat.  Override the plan to "off" so the
+        # binary sensor matches real-world behavior.
+        if plan_on and indoor_temp >= building.target_temp:
+            plan_on = False
         return {
             "offset": self._current_offset,
             "offsets": opt.offsets,
@@ -738,6 +745,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 exponent=fit.exponent,
                 nominal_delta_t=fit.nominal_delta_t,
                 nominal_power_kw=fit.nominal_power_kw * scale,
+                water_delta_t=5.0,
             )
         _min_supply, max_supply, min_outdoor, _max_outdoor = self._curve()
         return EmitterConfig.sized_to_building(
@@ -895,8 +903,13 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if heat is None or heat < self._min_running_power_kw:
             return
         prior = self._prior_emitter(self.heat_coordinator.effective_config())
+        # EN 442: use mean water temp, not supply.  water_delta_t / 2 is the
+        # correction from supply to mean (default 5 K spread → 2.5 K).
+        mean_water_correction = prior.water_delta_t / 2
         calibration.record_emitter_sample(
-            EmitterSample(delta_t=supply - indoor_temp, heat_kw=heat),
+            EmitterSample(
+                delta_t=supply - mean_water_correction - indoor_temp, heat_kw=heat
+            ),
             prior_nominal_kw=prior.nominal_power_kw,
             prior_exponent=prior.exponent,
             nominal_delta_t=prior.nominal_delta_t,
