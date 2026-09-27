@@ -199,18 +199,33 @@ class EmitterConfig:
     room at a given supply temperature. This is what makes the heating-curve
     offset a real decision instead of a free parameter: raising the offset
     raises the deliverable power (at a worse COP, see heatpump_model.py);
-    lowering it does the opposite. Follows the standard emitter power law
-        Q(T_sup) = Q_nominal * ((T_sup - T_in) / dT_nominal) ** exponent
-    (EN 442 for radiators, exponent ≈ 1.3; underfloor/fan-coil are flatter).
+    lowering it does the opposite. Follows the EN 442 emitter power law
+
+        Q = Q_nominal × ((T_mean - T_room) / ΔT_nominal)^n
+
+    where ``T_mean = T_supply - water_delta_t / 2`` is the mean water
+    temperature in the emitter (the average of supply and return).
+    EN 442 uses the mean (not supply) temperature because the heat
+    exchange surface sees the average, not the inlet temperature.
+
+    ``water_delta_t`` is the supply-return spread. For heat pumps this is
+    typically 5 K; for gas boilers 10-20 K.
     """
 
     exponent: float = 1.3
     nominal_delta_t: float = 25.0
     nominal_power_kw: float = 6.0
+    water_delta_t: float = 5.0
 
     def available_power_kw(self, *, supply_temp: float, indoor_temp: float) -> float:
-        """Maximum thermal power (kW) the emitter can deliver at this ΔT."""
-        delta_t = supply_temp - indoor_temp
+        """Maximum thermal power (kW) the emitter can deliver at this ΔT.
+
+        Uses the mean water temperature (EN 442) rather than the supply
+        temperature, so the model is physically accurate at the low ΔT
+        values typical of heat-pump operation.
+        """
+        mean_water_temp = supply_temp - self.water_delta_t / 2
+        delta_t = mean_water_temp - indoor_temp
         if delta_t <= 0 or self.nominal_delta_t <= 0:
             return 0.0
         ratio = delta_t / self.nominal_delta_t
@@ -225,6 +240,7 @@ class EmitterConfig:
         design_supply_temp: float,
         design_indoor_temp: float | None = None,
         emitter_type: str = DEFAULT_EMITTER_TYPE,
+        water_delta_t: float = 5.0,
     ) -> EmitterConfig:
         """Derive an emitter sized to exactly cover the building's peak loss.
 
@@ -232,9 +248,8 @@ class EmitterConfig:
         chosen so that at the heating curve's coldest design point
         (`design_outdoor_temp` -> `design_supply_temp`, i.e.
         CONF_HEAT_CURVE_MIN_OUTDOOR -> CONF_HEAT_CURVE_MAX), the emitter's
-        nominal output exactly matches the building's peak heat loss. This
-        gives a physically grounded emitter curve from config that already
-        exists, without asking the user for a radiator schedule.
+        nominal output exactly matches the building's peak heat loss. Uses
+        the EN 442 mean water temperature convention.
         """
         indoor = (
             design_indoor_temp
@@ -242,7 +257,8 @@ class EmitterConfig:
             else building.comfort_max
         )
         nominal_power_kw = building.heat_loss_kw(indoor, design_outdoor_temp)
-        nominal_delta_t = design_supply_temp - indoor
+        mean_water_at_design = design_supply_temp - water_delta_t / 2
+        nominal_delta_t = mean_water_at_design - indoor
         exponent = EMITTER_EXPONENT_MAP.get(
             emitter_type, EMITTER_EXPONENT_MAP[DEFAULT_EMITTER_TYPE]
         )
@@ -250,4 +266,5 @@ class EmitterConfig:
             exponent=exponent,
             nominal_delta_t=max(nominal_delta_t, 1.0),
             nominal_power_kw=max(nominal_power_kw, 0.1),
+            water_delta_t=water_delta_t,
         )
