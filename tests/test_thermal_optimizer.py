@@ -27,11 +27,14 @@ from custom_components.heating_curve_optimizer.thermal_optimizer import (
 
 
 def _make_system(**overrides):
+    comfort_min = overrides.pop("comfort_min", 19.5)
+    comfort_max = overrides.pop("comfort_max", 20.5)
     building = BuildingConfig(
         area_m2=overrides.pop("area_m2", 150),
         energy_label=overrides.pop("energy_label", "C"),
-        comfort_min=overrides.pop("comfort_min", 19.5),
-        comfort_max=overrides.pop("comfort_max", 20.5),
+        comfort_min=comfort_min,
+        comfort_max=comfort_max,
+        target_temp=overrides.pop("target_temp", (comfort_min + comfort_max) / 2),
     )
     emitter = EmitterConfig.sized_to_building(
         building, design_outdoor_temp=-10.0, design_supply_temp=45.0
