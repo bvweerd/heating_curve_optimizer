@@ -48,12 +48,14 @@ from .const import (
     CONF_HEAT_CURVE_MAX_OUTDOOR,
     CONF_HEAT_CURVE_MIN,
     CONF_HEAT_CURVE_MIN_OUTDOOR,
+    CONF_IDLE_POWER_THRESHOLD_KW,
     CONF_POWER_CONSUMPTION,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
     DEFAULT_HEAT_CURVE_MAX,
     DEFAULT_HEAT_CURVE_MAX_OUTDOOR,
     DEFAULT_HEAT_CURVE_MIN,
     DEFAULT_HEAT_CURVE_MIN_OUTDOOR,
+    DEFAULT_IDLE_POWER_THRESHOLD_KW,
 )
 from .heatpump_model import HeatPumpConfig
 from .helpers import calculate_supply_temperature, get_sensor_value, read_power_kw
@@ -527,10 +529,19 @@ def _heat_pump_thermal_power(
 
     The supply temperature is the measured one when a supply sensor is
     configured, otherwise the one the optimizer planned for this step.
+
+    Electrical power at or below the idle threshold (standby consumption
+    of the controller, circulation pump, etc.) is treated as zero thermal
+    output — the compressor is not running.
     """
     power_kw = read_power_kw(hass, config.get(CONF_POWER_CONSUMPTION))
     if power_kw is None or not weather_coordinator.data:
         return None
+    idle_threshold = float(
+        config.get(CONF_IDLE_POWER_THRESHOLD_KW, DEFAULT_IDLE_POWER_THRESHOLD_KW)
+    )
+    if power_kw <= idle_threshold:
+        return 0.0, 0.0, 0.0
     supply = get_sensor_value(hass, config.get(CONF_SUPPLY_TEMPERATURE_SENSOR), None)
     if supply is None and optimization_coordinator.data:
         supply = _first(optimization_coordinator.data, "supply_temps")
