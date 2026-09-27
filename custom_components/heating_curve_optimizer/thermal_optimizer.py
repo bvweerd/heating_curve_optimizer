@@ -226,15 +226,20 @@ def optimize_thermal_schedule(
             supply_temp=supply_temp, indoor_temp=t_in
         )
         q_hp = max(0.0, min(q_available, heatpump.max_thermal_power_kw))
-        # Thermostat: heat pump output ramps down between target and
-        # comfort_max, off above comfort_max.  This models realistic
-        # thermostatic control where the emitter is fully available below
-        # the target but tapers off as the room overshoots.
-        if t_in >= building.comfort_max:
+        # Thermostat model: full power up to target_temp, then a steep
+        # linear ramp-down from target_temp to target_temp + 0.3 K.  The
+        # narrow 0.3 K band keeps the value function smooth (preventing
+        # DP oscillation at a hard cutoff) while ensuring that the
+        # optimizer delivers negligible heat once the room is above its
+        # setpoint.  At 0.1 K above target the output is already only 67%
+        # of available; at 0.2 K it is 33%; at 0.3 K it is zero.
+        ramp_width = 0.3  # K above target_temp where output tapers to zero
+        ramp_start = building.target_temp
+        ramp_end = building.target_temp + ramp_width
+        if t_in >= ramp_end:
             q_hp = 0.0
-        elif t_in > building.target_temp:
-            band = building.comfort_max - building.target_temp
-            q_hp *= (building.comfort_max - t_in) / band if band > 0 else 0.0
+        elif t_in > ramp_start:
+            q_hp *= (ramp_end - t_in) / ramp_width
         cop = heatpump.cop_at(
             supply_temp=supply_temp, outdoor_temp=outdoor[t], humidity=humidity[t]
         )
