@@ -687,18 +687,28 @@ class HeatPumpThermalEnergySensor(RestoreSensor):
 
     @callback
     def integrate(self, now: datetime) -> None:
-        """Add the energy since the previous reading and store the new power."""
+        """Add the energy since the previous reading and store the new power.
+
+        Uses trapezoidal integration (average of previous and current power)
+        so that a transition to zero thermal output does not leak the full
+        previous reading into the interval.
+        """
         result = _heat_pump_thermal_power(
             self.hass, self._config, self._weather, self._optimization
         )
-        if self._last_time is not None and self._last_kw is not None:
+        current_kw = result[0] if result is not None else None
+        if (
+            self._last_time is not None
+            and self._last_kw is not None
+            and current_kw is not None
+        ):
             hours = (now - self._last_time).total_seconds() / 3600.0
             if 0 < hours <= self.MAX_GAP_HOURS:
-                self._total_kwh += self._last_kw * hours
+                self._total_kwh += (self._last_kw + current_kw) / 2 * hours
                 self._attr_native_value = round(self._total_kwh, 3)
                 self.async_write_ha_state()
         self._last_time = now
-        self._last_kw = result[0] if result is not None else None
+        self._last_kw = current_kw
 
 
 class TotalCostSavingsSensor(
