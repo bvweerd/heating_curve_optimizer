@@ -399,7 +399,7 @@ DEFAULT_HEATPUMP_HEADROOM = 1.3  # ratio: HP capacity / emitter design power
 # --- Expert: Detection thresholds -------------------------------------------
 
 CONF_IDLE_POWER_THRESHOLD_KW = "idle_power_threshold_kw"
-DEFAULT_IDLE_POWER_THRESHOLD_KW = 0.1
+DEFAULT_IDLE_POWER_THRESHOLD_KW = 0.15
 
 CONF_PRICE_CHANGE_REL = "price_change_rel"
 DEFAULT_PRICE_CHANGE_REL = 0.10
