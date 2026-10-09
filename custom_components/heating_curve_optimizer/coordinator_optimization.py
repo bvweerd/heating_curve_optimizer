@@ -625,13 +625,6 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         plan_on, plan_change_at = _plan_run_advice(
             opt.thermal_power_kw, step_starts, self._idle_power_threshold_kw
         )
-        # When the room is already above target the optimizer may still
-        # model a small residual heat output (the ramp region allows
-        # pre-heating within the comfort band), but the physical thermostat
-        # would not call for heat.  Override the plan to "off" so the
-        # binary sensor matches real-world behavior.
-        if plan_on and indoor_temp >= building.target_temp:
-            plan_on = False
         return {
             "offset": self._current_offset,
             "offsets": opt.offsets,
