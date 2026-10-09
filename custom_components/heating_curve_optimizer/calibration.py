@@ -34,7 +34,7 @@ import itertools
 import logging
 import math
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any
 
 from homeassistant.helpers import storage
@@ -664,6 +664,22 @@ def fit_passes_quality_gates(
     )
 
 
+def _restore[T: (Sample, CopSample, EmitterSample)](
+    cls: type[T], stored: dict[str, Any], key: str
+) -> list[T]:
+    """Stored rows of one sample type; rows in another layout are dropped."""
+    width = len(fields(cls))
+    rows = stored.get(key) or []
+    restored = [cls(*row) for row in rows if len(row) == width]
+    if len(restored) < len(rows):
+        _LOGGER.info(
+            "Dropped %d stored %s in an outdated layout",
+            len(rows) - len(restored),
+            key.replace("_", " "),
+        )
+    return restored
+
+
 @dataclass
 class ThermalCalibrationState:
     """Samples, fits and exclusion statistics for one zone, persisted."""
@@ -771,17 +787,12 @@ class ThermalCalibrationState:
         if not stored:
             return
         maxlen = self.settings.calibration_window
-        self.samples = deque(
-            (Sample(*values) for values in stored.get("samples", [])),
-            maxlen=maxlen,
-        )
+        self.samples = deque(_restore(Sample, stored, "samples"), maxlen=maxlen)
         self.cop_samples = deque(
-            (CopSample(*values) for values in stored.get("cop_samples", [])),
-            maxlen=maxlen,
+            _restore(CopSample, stored, "cop_samples"), maxlen=maxlen
         )
         self.emitter_samples = deque(
-            (EmitterSample(*values) for values in stored.get("emitter_samples", [])),
-            maxlen=maxlen,
+            _restore(EmitterSample, stored, "emitter_samples"), maxlen=maxlen
         )
         for key, value in (stored.get("exclusions") or {}).items():
             if key in self.exclusions:

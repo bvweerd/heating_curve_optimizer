@@ -172,3 +172,13 @@ async def test_state_persists_and_resets() -> None:
 
     await restored.async_reset()
     assert restored.sample_count == 0 and restored.fit is None
+
+
+async def test_load_drops_rows_in_an_outdated_layout() -> None:
+    store = MagicMock()
+    store.async_load = AsyncMock(
+        return_value={"emitter_samples": [[12.0, 3.0], [12.0, 3.0, 6.0]]}
+    )
+    state = ThermalCalibrationState(store=store)
+    await state.async_load()
+    assert list(state.emitter_samples) == [EmitterSample(12.0, 3.0, 6.0)]
