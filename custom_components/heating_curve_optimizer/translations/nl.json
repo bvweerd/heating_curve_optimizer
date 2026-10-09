@@ -24,6 +24,7 @@
               "power_consumption": "Elektrisch vermogen warmtepomp",
               "heat_pump_thermal_power_sensor": "Thermisch vermogen warmtepomp",
               "supply_temperature_sensor": "Gemeten aanvoertemperatuur",
+              "return_temperature_sensor": "Gemeten retourtemperatuur",
               "dhw_active_sensor": "Tapwaterbedrijf actief",
               "grid_import_sensor": "Netafname vermogen",
               "grid_export_sensor": "Netteruglevering vermogen"
@@ -33,6 +34,7 @@
               "heat_pump_thermal_power_sensor": "Optionele warmtemeter of door de warmtepomp gerapporteerd afgegeven vermogen (W of kW). Maakt de kalibratie onafhankelijk van het COP-model en maakt het leren van de COP-curve mogelijk.",
               "dhw_active_sensor": "Binaire sensor die aan is terwijl de warmtepomp tapwater verwarmt. Die periodes worden buiten de kalibratie gehouden. Leeg laten als er geen tapwaterbedrijf is.",
               "supply_temperature_sensor": "Gebruikt voor de COP van het gemeten werkpunt; anders wordt de geplande aanvoertemperatuur gebruikt.",
+              "return_temperature_sensor": "Aanvoer min retour geeft de werkelijke spreiding voor de kalibratie van de afgiftecurve (gemiddelde watertemperatuur); anders wordt 5 K spreiding aangenomen.",
               "grid_import_sensor": "Actueel vermogen (W of kW). Met afname en/of teruglevering ingesteld verhoogt de realtime-offsetsensor de offset zolang er PV-overschot wordt teruggeleverd.",
               "grid_export_sensor": "Actueel vermogen (W of kW), positief tijdens teruglevering."
             }
@@ -230,6 +232,7 @@
               "power_consumption": "Elektrisch vermogen warmtepomp",
               "heat_pump_thermal_power_sensor": "Thermisch vermogen warmtepomp",
               "supply_temperature_sensor": "Gemeten aanvoertemperatuur",
+              "return_temperature_sensor": "Gemeten retourtemperatuur",
               "dhw_active_sensor": "Tapwaterbedrijf actief",
               "grid_import_sensor": "Netafname vermogen",
               "grid_export_sensor": "Netteruglevering vermogen"
@@ -239,6 +242,7 @@
               "heat_pump_thermal_power_sensor": "Optionele warmtemeter of door de warmtepomp gerapporteerd afgegeven vermogen (W of kW). Maakt de kalibratie onafhankelijk van het COP-model en maakt het leren van de COP-curve mogelijk.",
               "dhw_active_sensor": "Binaire sensor die aan is terwijl de warmtepomp tapwater verwarmt. Die periodes worden buiten de kalibratie gehouden. Leeg laten als er geen tapwaterbedrijf is.",
               "supply_temperature_sensor": "Gebruikt voor de COP van het gemeten werkpunt; anders wordt de geplande aanvoertemperatuur gebruikt.",
+              "return_temperature_sensor": "Aanvoer min retour geeft de werkelijke spreiding voor de kalibratie van de afgiftecurve (gemiddelde watertemperatuur); anders wordt 5 K spreiding aangenomen.",
               "grid_import_sensor": "Actueel vermogen (W of kW). Met afname en/of teruglevering ingesteld verhoogt de realtime-offsetsensor de offset zolang er PV-overschot wordt teruggeleverd.",
               "grid_export_sensor": "Actueel vermogen (W of kW), positief tijdens teruglevering."
             }

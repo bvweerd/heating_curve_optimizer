@@ -39,6 +39,7 @@ DEFAULT_GLASS_U_VALUE = 1.2
 CONF_POWER_CONSUMPTION = "power_consumption"
 CONF_INDOOR_TEMPERATURE_SENSOR = "indoor_temperature_sensor"
 CONF_SUPPLY_TEMPERATURE_SENSOR = "supply_temperature_sensor"
+CONF_RETURN_TEMPERATURE_SENSOR = "return_temperature_sensor"
 # Heating zones (config subentries). Each zone is one heating circuit with
 # its own building envelope, emitters, thermostat and - optionally - its
 # own heating curve; price sensors and heat pump parameters are shared from

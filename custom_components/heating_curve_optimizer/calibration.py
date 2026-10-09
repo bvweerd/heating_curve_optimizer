@@ -530,22 +530,29 @@ EMITTER_EXPONENT_BOUNDS = (
 
 @dataclass(frozen=True)
 class EmitterSample:
-    """Delivered heat at one supply-minus-indoor temperature difference."""
+    """Delivered heat at one mean-water-minus-indoor temperature difference."""
 
     delta_t: float  # mean water temp - indoor, K
     heat_kw: float
+    water_delta_t: float  # supply - return, measured or assumed, K
 
     def as_list(self) -> list[float]:
-        return [self.delta_t, self.heat_kw]
+        return [self.delta_t, self.heat_kw, self.water_delta_t]
 
 
 @dataclass(frozen=True)
 class EmitterFit:
-    """Learned emitter curve: Q = nominal · (ΔT / nominal_delta_t) ^ exponent."""
+    """Learned emitter curve: Q = nominal · (ΔT / nominal_delta_t) ^ exponent.
+
+    ``water_delta_t`` is the mean supply-return spread of the samples, so the
+    model maps a supply temperature to the same mean water temperature the
+    curve was fitted on.
+    """
 
     nominal_power_kw: float
     nominal_delta_t: float
     exponent: float
+    water_delta_t: float
     sample_count: int
     r_squared: float
 
@@ -593,6 +600,7 @@ def fit_emitter(
         nominal_power_kw=math.exp(x[0]),
         nominal_delta_t=nominal_delta_t,
         exponent=x[1],
+        water_delta_t=sum(s.water_delta_t for s in usable) / len(usable),
         sample_count=len(usable),
         r_squared=1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0,
     )

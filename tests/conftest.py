@@ -38,6 +38,7 @@ def main_config(**overrides: Any) -> dict[str, Any]:
         "production_price_sensor": None,
         "power_consumption": None,
         "supply_temperature_sensor": None,
+        "return_temperature_sensor": None,
         "grid_import_sensor": None,
         "grid_export_sensor": None,
         "base_cop": 4.2,

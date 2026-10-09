@@ -13,6 +13,7 @@ from your own measurements.
 | Indoor temperature | Everything | Heating zone |
 | Heat pump electrical power **or** thermal power | Building model | Main entry |
 | Measured supply temperature | Emitter curve | Main entry |
+| Measured return temperature | Real water spread for the emitter curve (otherwise 5 K) | Main entry, optional |
 | Heat pump thermal power (heat meter, or output reported by the heat pump) | COP curve; makes all results independent of the COP model | Main entry, optional |
 | Gas meter of the hybrid boiler (m³ or kWh) | COP level without a heat meter | Gas boiler, optional |
 | Tap water heating active (binary) | Leaving tap water runs out | Main entry, optional |
@@ -71,9 +72,15 @@ the base COP, the outdoor coefficient and the k-factor.
 ### Emitter curve (phase 3)
 
 With a measured supply temperature, each run with the heat pump running
-gives heat output versus `T_supply − T_indoor`. A log-linear fit gives the
+gives heat output versus `T_mean − T_indoor`, where `T_mean` is the mean
+water temperature (EN 442). With a measured return temperature that is
+`(T_supply + T_return) / 2`; without one a 5 K spread is assumed, so
+`T_supply − 2.5`. A spread above 20 K or of zero or less is treated as a
+lagging sensor and falls back to the assumed 5 K. A log-linear fit gives the
 **nominal output** of the radiators or floor heating at the design point
-and the **exponent**. This determines how much heat an offset of +1 °C
+and the **exponent**. The applied model uses the mean measured spread
+(`learned_water_delta_t`) to convert a supply temperature into a mean
+water temperature. This determines how much heat an offset of +1 °C
 really adds.
 
 ### One or two thermal masses (phase 4)
@@ -128,7 +135,7 @@ explain the result:
 | `learned_solar_factor`, `learned_internal_gain_w` | Window gain and internal gains. |
 | `learned_cop_at_a0_w35`, `cop_vs_configured_pct`, `learned_k_factor` | Measured COP curve (heat meter). |
 | `learned_cop_scale`, `gas_windows` | COP level from the gas meter. |
-| `learned_emitter_power_kw`, `assumed_emitter_power_kw`, `learned_emitter_exponent` | Emitter curve. |
+| `learned_emitter_power_kw`, `assumed_emitter_power_kw`, `learned_emitter_exponent`, `learned_water_delta_t` | Emitter curve; `learned_water_delta_t` is the mean supply-return spread of its samples. |
 | `r_squared`, `plausible` | Quality of the building fit. |
 | `*_in_use` | The values the optimizer is using right now. |
 

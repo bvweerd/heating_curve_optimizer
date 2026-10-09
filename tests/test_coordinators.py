@@ -283,11 +283,40 @@ def _ready_calibration(coordinator: OptimizationCoordinator) -> None:
             coordinator.cop_prior(),
         )
         calibration.record_emitter_sample(
-            EmitterSample(6.0 + i % 18, 8.0 * ((6.0 + i % 18) / 25.0) ** 1.2),
+            EmitterSample(6.0 + i % 18, 8.0 * ((6.0 + i % 18) / 25.0) ** 1.2, 7.0),
             prior_nominal_kw=10.0,
             prior_exponent=1.3,
             nominal_delta_t=25.0,
         )
+
+
+@pytest.mark.parametrize(
+    ("return_temp", "expected_spread"),
+    [("31.0", 7.0), ("unavailable", 5.0), ("39.0", 5.0)],
+)
+def test_emitter_sample_uses_measured_return_temperature(
+    hass: HomeAssistant, return_temp: str, expected_spread: float
+) -> None:
+    coordinator = _calibrating_coordinator(
+        hass,
+        heat_pump_thermal_power_sensor="sensor.heat",
+        supply_temperature_sensor="sensor.supply",
+        return_temperature_sensor="sensor.return",
+    )
+    hass.states.async_set("sensor.heat", "5.0", {"unit_of_measurement": "kW"})
+    hass.states.async_set("sensor.supply", "38.0")
+    hass.states.async_set("sensor.return", return_temp)
+    coordinator._record_operating_point(
+        indoor_temp=20.0,
+        indoor_is_measured=True,
+        outdoor_temp=5.0,
+        humidity=80.0,
+        power_kw=1.5,
+        planned_supply=None,
+    )
+    (sample,) = coordinator.thermal_calibration.emitter_samples
+    assert sample.water_delta_t == pytest.approx(expected_spread)
+    assert sample.delta_t == pytest.approx(38.0 - expected_spread / 2 - 20.0)
 
 
 def test_applied_calibration_replaces_the_models(hass: HomeAssistant) -> None:
@@ -307,6 +336,7 @@ def test_applied_calibration_replaces_the_models(hass: HomeAssistant) -> None:
     assert emitter.exponent == pytest.approx(
         coordinator.thermal_calibration.emitter_fit.exponent
     )
+    assert emitter.water_delta_t == pytest.approx(7.0)
     heatpump = coordinator.heatpump_config(config, emitter)
     assert heatpump.cop_compensation_factor == 1.0
     assert heatpump.base_cop_at_35 == pytest.approx(

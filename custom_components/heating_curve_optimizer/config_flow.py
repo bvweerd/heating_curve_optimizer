@@ -130,6 +130,7 @@ from .const import (
     CONF_PV_TILT,
     CONF_RATIO_BOUNDS_LOWER,
     CONF_RATIO_BOUNDS_UPPER,
+    CONF_RETURN_TEMPERATURE_SENSOR,
     CONF_SOLAR_FACTOR_BOUNDS_UPPER,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
     CONF_TARGET_INDOOR_TEMP,
@@ -293,6 +294,7 @@ _MAIN_SECTIONS: dict[str, tuple[str, ...]] = {
         CONF_POWER_CONSUMPTION,
         CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
         CONF_SUPPLY_TEMPERATURE_SENSOR,
+        CONF_RETURN_TEMPERATURE_SENSOR,
         CONF_DHW_ACTIVE_SENSOR,
         CONF_GRID_IMPORT_SENSOR,
         CONF_GRID_EXPORT_SENSOR,
@@ -439,6 +441,7 @@ def build_main_schema(defaults: dict[str, Any]) -> vol.Schema:
             opt(CONF_POWER_CONSUMPTION): _sensor("power"),
             opt(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR): _sensor("power"),
             opt(CONF_SUPPLY_TEMPERATURE_SENSOR): _sensor("temperature"),
+            opt(CONF_RETURN_TEMPERATURE_SENSOR): _sensor("temperature"),
             opt(CONF_DHW_ACTIVE_SENSOR): EntitySelector(
                 EntitySelectorConfig(domain="binary_sensor")
             ),

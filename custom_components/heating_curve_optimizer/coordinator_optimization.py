@@ -94,6 +94,7 @@ from .const import (
     CONF_PRICE_CHANGE_MIN_ABS,
     CONF_PRICE_CHANGE_REL,
     CONF_PRODUCTION_PRICE_SENSOR,
+    CONF_RETURN_TEMPERATURE_SENSOR,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
     CONF_VENTILATION_TYPE,
     CONF_WINDOW_SENSORS,
@@ -155,6 +156,8 @@ _LOGGER = logging.getLogger(__name__)
 # Model accuracy match tolerance and window (not user-configurable).
 ACCURACY_MATCH_TOLERANCE = timedelta(minutes=30)
 ACCURACY_WINDOW = timedelta(hours=24)
+# A larger supply-return spread means a lagging sensor, not a steady state.
+MAX_WATER_DELTA_T = 20.0
 
 
 def _plan_run_advice(
@@ -685,6 +688,16 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.hass, self.config.get(CONF_SUPPLY_TEMPERATURE_SENSOR), None
         )
 
+    def _measured_water_delta_t(self, supply: float) -> float | None:
+        """Measured supply-return spread, if a return sensor gives a plausible one."""
+        return_temp = get_sensor_value(
+            self.hass, self.config.get(CONF_RETURN_TEMPERATURE_SENSOR), None
+        )
+        if return_temp is None:
+            return None
+        spread = supply - return_temp
+        return spread if 0.0 < spread <= MAX_WATER_DELTA_T else None
+
     def building_config(self, config: dict[str, Any]) -> BuildingConfig:
         """Label-based building model, replaced by the calibration when applied."""
         building = BuildingConfig.from_config(config)
@@ -738,7 +751,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 exponent=fit.exponent,
                 nominal_delta_t=fit.nominal_delta_t,
                 nominal_power_kw=fit.nominal_power_kw * scale,
-                water_delta_t=5.0,
+                water_delta_t=fit.water_delta_t,
             )
         _min_supply, max_supply, min_outdoor, _max_outdoor = self._curve()
         return EmitterConfig.sized_to_building(
@@ -896,12 +909,13 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if heat is None or heat < self._min_running_power_kw:
             return
         prior = self._prior_emitter(self.heat_coordinator.effective_config())
-        # EN 442: use mean water temp, not supply.  water_delta_t / 2 is the
-        # correction from supply to mean (default 5 K spread → 2.5 K).
-        mean_water_correction = prior.water_delta_t / 2
+        # EN 442: the emitter sees the mean water temperature, not the supply.
+        water_delta_t = self._measured_water_delta_t(supply) or prior.water_delta_t
         calibration.record_emitter_sample(
             EmitterSample(
-                delta_t=supply - mean_water_correction - indoor_temp, heat_kw=heat
+                delta_t=supply - water_delta_t / 2 - indoor_temp,
+                heat_kw=heat,
+                water_delta_t=water_delta_t,
             ),
             prior_nominal_kw=prior.nominal_power_kw,
             prior_exponent=prior.exponent,
@@ -1102,6 +1116,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "emitter_usable": emitter_fit.usable,
                 "learned_emitter_power_kw": round(emitter_fit.nominal_power_kw, 1),
                 "learned_emitter_exponent": round(emitter_fit.exponent, 2),
+                "learned_water_delta_t": round(emitter_fit.water_delta_t, 1),
                 "emitter_fit_r_squared": round(emitter_fit.r_squared, 3),
             }
         return result
