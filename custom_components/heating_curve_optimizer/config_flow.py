@@ -8,11 +8,10 @@ subentries, added from the integration page after setup.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 
 import aiohttp
-import voluptuous as vol
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -218,6 +217,14 @@ from .const import (
     VENTILATION_TYPES,
     ZONE_SUBENTRY_TYPE,
 )
+
+if TYPE_CHECKING:
+    # Home Assistant 2026.10+ validates with probatio and aliases voluptuous to it
+    # at runtime, so Core's signatures expect probatio types. Older releases still
+    # ship voluptuous, which is why the runtime import stays as it is.
+    import probatio as vol
+else:
+    import voluptuous as vol
 
 # --- selector helpers -------------------------------------------------------
 

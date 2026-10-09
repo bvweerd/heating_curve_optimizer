@@ -137,9 +137,11 @@ def test_detect_interval_with_from_key():
 
 def test_extract_price_forecast_from_forecast_prices():
     """Test extracting forecast from forecast_prices attribute."""
-    state = MagicMock(spec=State)
-    state.attributes = {"forecast_prices": [0.20, 0.25, 0.30]}
-    state.state = "0.25"
+    state = State(
+        "sensor.price",
+        "0.25",
+        {"forecast_prices": [0.20, 0.25, 0.30]},
+    )
 
     prices, interval = extract_price_forecast_with_interval(state)
     assert prices == [0.20, 0.25, 0.30]
@@ -148,17 +150,19 @@ def test_extract_price_forecast_from_forecast_prices():
 
 def test_extract_price_forecast_from_net_prices():
     """Test extracting forecast from net_prices_today/tomorrow."""
-    state = MagicMock(spec=State)
-    state.attributes = {
-        "net_prices_today": [
-            {"start": "2024-01-01T12:00:00+00:00", "value": 0.20},
-            {"start": "2024-01-01T13:00:00+00:00", "value": 0.25},
-        ],
-        "net_prices_tomorrow": [
-            {"start": "2024-01-02T00:00:00+00:00", "value": 0.30},
-        ],
-    }
-    state.state = "0.25"
+    state = State(
+        "sensor.price",
+        "0.25",
+        {
+            "net_prices_today": [
+                {"start": "2024-01-01T12:00:00+00:00", "value": 0.20},
+                {"start": "2024-01-01T13:00:00+00:00", "value": 0.25},
+            ],
+            "net_prices_tomorrow": [
+                {"start": "2024-01-02T00:00:00+00:00", "value": 0.30},
+            ],
+        },
+    )
 
     with patch("homeassistant.util.dt.utcnow") as mock_now:
         mock_now.return_value = datetime(2024, 1, 1, 11, 0, 0, tzinfo=UTC)
@@ -169,12 +173,14 @@ def test_extract_price_forecast_from_net_prices():
 
 def test_extract_price_forecast_from_raw_today_tomorrow():
     """Test extracting forecast from raw_today/raw_tomorrow."""
-    state = MagicMock(spec=State)
-    state.attributes = {
-        "raw_today": [0.20, 0.21, 0.22, 0.23, 0.24, 0.25, 0.26],
-        "raw_tomorrow": [0.27, 0.28],
-    }
-    state.state = "0.25"
+    state = State(
+        "sensor.price",
+        "0.25",
+        {
+            "raw_today": [0.20, 0.21, 0.22, 0.23, 0.24, 0.25, 0.26],
+            "raw_tomorrow": [0.27, 0.28],
+        },
+    )
 
     # Test with raw_today/raw_tomorrow
     # The function uses now.hour to slice raw_today
@@ -187,9 +193,11 @@ def test_extract_price_forecast_from_raw_today_tomorrow():
 
 def test_extract_price_forecast_fallback_to_state():
     """Test fallback to current state when no forecast available."""
-    state = MagicMock(spec=State)
-    state.attributes = {}
-    state.state = "0.25"
+    state = State(
+        "sensor.price",
+        "0.25",
+        {},
+    )
 
     prices, interval = extract_price_forecast_with_interval(state)
     assert prices == [0.25]
@@ -198,9 +206,11 @@ def test_extract_price_forecast_fallback_to_state():
 
 def test_extract_price_forecast_invalid_state():
     """Test handling invalid state value."""
-    state = MagicMock(spec=State)
-    state.attributes = {}
-    state.state = "unavailable"
+    state = State(
+        "sensor.price",
+        "unavailable",
+        {},
+    )
 
     prices, interval = extract_price_forecast_with_interval(state)
     assert prices == []
@@ -209,9 +219,11 @@ def test_extract_price_forecast_invalid_state():
 
 def test_extract_price_forecast_wrapper():
     """Test extract_price_forecast wrapper function."""
-    state = MagicMock(spec=State)
-    state.attributes = {"forecast_prices": [0.20, 0.25, 0.30]}
-    state.state = "0.25"
+    state = State(
+        "sensor.price",
+        "0.25",
+        {"forecast_prices": [0.20, 0.25, 0.30]},
+    )
 
     prices, _ = extract_price_forecast_with_interval(state)
     assert prices == [0.20, 0.25, 0.30]
@@ -224,12 +236,14 @@ def test_extract_price_forecast_from_today_tomorrow():
     already elapsed, using DST-aware index arithmetic. We mock the local
     clock to midnight so that all today entries are still in the future.
     """
-    state = MagicMock(spec=State)
-    state.attributes = {
-        "today": [0.20, 0.21, 0.22],
-        "tomorrow": [0.23, 0.24],
-    }
-    state.state = "0.25"
+    state = State(
+        "sensor.price",
+        "0.25",
+        {
+            "today": [0.20, 0.21, 0.22],
+            "tomorrow": [0.23, 0.24],
+        },
+    )
 
     midnight = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
     with (
@@ -373,15 +387,17 @@ def test_defrost_factor_range_check():
 
 def test_extract_price_forecast_with_dict_values():
     """Test extracting forecast with dict-wrapped values."""
-    state = MagicMock(spec=State)
-    state.attributes = {
-        "forecast_prices": [
-            {"value": 0.20},
-            {"value": 0.25},
-            {"value": 0.30},
-        ]
-    }
-    state.state = "0.25"
+    state = State(
+        "sensor.price",
+        "0.25",
+        {
+            "forecast_prices": [
+                {"value": 0.20},
+                {"value": 0.25},
+                {"value": 0.30},
+            ]
+        },
+    )
 
     prices, _interval = extract_price_forecast_with_interval(state)
     assert prices == [0.20, 0.25, 0.30]
@@ -389,9 +405,11 @@ def test_extract_price_forecast_with_dict_values():
 
 def test_extract_price_forecast_mixed_types():
     """Test extracting forecast with mixed value types."""
-    state = MagicMock(spec=State)
-    state.attributes = {"forecast_prices": [0.20, "0.25", {"value": 0.30}]}
-    state.state = "0.25"
+    state = State(
+        "sensor.price",
+        "0.25",
+        {"forecast_prices": [0.20, "0.25", {"value": 0.30}]},
+    )
 
     prices, _interval = extract_price_forecast_with_interval(state)
     assert prices == [0.20, 0.25, 0.30]
@@ -399,9 +417,11 @@ def test_extract_price_forecast_mixed_types():
 
 def test_extract_price_forecast_skips_invalid_values():
     """Test extracting forecast skips invalid values."""
-    state = MagicMock(spec=State)
-    state.attributes = {"forecast_prices": [0.20, "invalid", 0.30, None, 0.35]}
-    state.state = "0.25"
+    state = State(
+        "sensor.price",
+        "0.25",
+        {"forecast_prices": [0.20, "invalid", 0.30, None, 0.35]},
+    )
 
     prices, _interval = extract_price_forecast_with_interval(state)
     assert prices == [0.20, 0.30, 0.35]
@@ -450,16 +470,14 @@ def test_defrost_factor_worst_near_zero():
 
 def test_state_has_value_valid():
     """Test state_has_value with a valid state."""
-    state = MagicMock(spec=State)
-    state.state = "21.5"
+    state = State("sensor.temperature", "21.5")
     assert state_has_value(state) is True
 
 
 def test_state_has_value_unavailable():
     """Test state_has_value with unavailable states."""
     for bad_state in UNAVAILABLE_STATES:
-        state = MagicMock(spec=State)
-        state.state = bad_state
+        state = State("sensor.temperature", bad_state)
         assert state_has_value(state) is False
 
 
@@ -473,22 +491,19 @@ def test_state_has_value_none():
 
 def test_price_unit_scale_eur_kwh():
     """Sensors with per-kWh unit should return scale 1.0."""
-    state = MagicMock(spec=State)
-    state.attributes = {"unit_of_measurement": "EUR/kWh"}
+    state = State("sensor.price", "0.25", {"unit_of_measurement": "EUR/kWh"})
     assert price_unit_scale(state) == 1.0
 
 
 def test_price_unit_scale_eur_mwh():
     """Sensors with per-MWh unit should return scale 0.001."""
-    state = MagicMock(spec=State)
-    state.attributes = {"unit_of_measurement": "EUR/MWh"}
+    state = State("sensor.price", "250", {"unit_of_measurement": "EUR/MWh"})
     assert price_unit_scale(state) == 0.001
 
 
 def test_price_unit_scale_magnitude_heuristic():
     """Without a unit, large magnitudes should indicate EUR/MWh."""
-    state = MagicMock(spec=State)
-    state.attributes = {}
+    state = State("sensor.price", "0.25", {})
     # Typical EUR/kWh prices (< 1.0) → scale 1.0
     assert price_unit_scale(state, samples=[0.20, 0.25, 0.30]) == 1.0
     # Typical EUR/MWh prices (> 5.0) → scale 0.001

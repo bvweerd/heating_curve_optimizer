@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import voluptuous as vol
-from homeassistant import data_entry_flow
 from homeassistant.components.repairs import RepairsFlow
 from homeassistant.core import HomeAssistant
 
 from .calibration import MODE_APPLY
 from .const import CONF_CALIBRATION_MODE
+
+if TYPE_CHECKING:
+    # Only annotations use this, and it does not exist before Home Assistant 2026.10.
+    # Home Assistant 2026.10+ validates with probatio and aliases voluptuous to it
+    # at runtime, so Core's signatures expect probatio types. Older releases still
+    # ship voluptuous, which is why the runtime import stays as it is.
+    import probatio as vol
+    from homeassistant.components.repairs import RepairsFlowResult
+else:
+    import voluptuous as vol
 
 
 class ApplyCalibrationRepairFlow(RepairsFlow):
@@ -23,13 +31,13 @@ class ApplyCalibrationRepairFlow(RepairsFlow):
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         """Start the flow."""
         return await self.async_step_confirm()
 
     async def async_step_confirm(
         self, user_input: dict[str, Any] | None = None
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         """Apply the learned model after confirmation."""
         if user_input is not None:
             entry = self.hass.config_entries.async_get_entry(self._entry_id)
