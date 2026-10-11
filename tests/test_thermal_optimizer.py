@@ -124,6 +124,79 @@ def test_out_of_range_current_offset_does_not_raise():
     assert len(result.offsets) == horizon
 
 
+def test_no_heat_delivery_above_target_plus_thermostat_ramp():
+    """The thermostat model must deliver zero heat once the room is more
+    than 0.3 K above the target temperature, even when the emitter curve
+    still has capacity to give. Without this, a warm house with a low
+    supply-temperature floor keeps being "trickle-heated" during expensive
+    hours (regression: wide target-to-comfort_max ramp)."""
+    building, heatpump, emitter = _make_system(comfort_min=19.5, comfort_max=20.5)
+    building.target_temp = 20.0
+
+    result = optimize_thermal_schedule(
+        building=building,
+        heatpump=heatpump,
+        emitter=emitter,
+        outdoor_temps=[5.0] * 4,
+        prices=[0.25] * 4,
+        initial_indoor_temp=20.4,  # > target + 0.3
+        water_min=25.0,
+        water_max=45.0,
+        outdoor_min=-20.0,
+        outdoor_max=15.0,
+        time_base=60,
+    )
+
+    assert result.thermal_power_kw[0] == pytest.approx(0.0)
+
+
+def test_pump_off_action_cycles_instead_of_trickling_at_curve_floor():
+    """With the curve floor above the room temperature, the emitter would
+    otherwise always deliver heat. The explicit "pump off" action must let
+    the optimizer switch the pump off while the room is at/above target, so
+    the plan cycles instead of trickling heat indefinitely."""
+    building = BuildingConfig(
+        area_m2=159,
+        energy_label="A+",
+        comfort_min=19.7,
+        comfort_max=20.5,
+        target_temp=20.0,
+    )
+    emitter = EmitterConfig.sized_to_building(
+        building,
+        design_outdoor_temp=-10.0,
+        design_supply_temp=37.0,
+        emitter_type="underfloor",
+    )
+    heatpump = HeatPumpConfig(max_thermal_power_kw=emitter.nominal_power_kw * 1.3)
+
+    result = optimize_thermal_schedule(
+        building=building,
+        heatpump=heatpump,
+        emitter=emitter,
+        outdoor_temps=[11.0] * 24,
+        prices=[0.25] * 24,
+        initial_indoor_temp=20.2,
+        water_min=27.0,
+        water_max=37.0,
+        outdoor_min=-10.0,
+        outdoor_max=18.0,
+        time_base=60,
+        offset_min=-4,
+        offset_max=4,
+        current_offset=-3,
+    )
+
+    assert any(p == 0.0 for p in result.thermal_power_kw)
+    assert any(p > 0.0 for p in result.thermal_power_kw)
+    assert any(not on for on in result.pump_on)
+    # The off action is only allowed at/above target.
+    for t in range(1, len(result.thermal_power_kw)):
+        if not result.pump_on[t]:
+            assert result.indoor_temps[t - 1] >= building.target_temp - 1e-9
+    assert min(result.indoor_temps) >= building.comfort_min - 0.05
+
+
 def test_undersized_heat_pump_heats_at_maximum():
     """When the heat pump cannot keep up with a cold snap, the plan must be
     to heat as hard as the curve allows every step - not give up."""
@@ -345,24 +418,44 @@ def test_dp_matches_brute_force_on_small_horizon():
         supply_temp=base_supply[-1], outdoor_temp=outdoor[-1]
     )
 
-    def objective(sequence: tuple[int, ...]) -> float:
+    def objective(sequence: tuple[int | None, ...]) -> float:
         t_in = initial_indoor_temp
         prev = 0
         total = 0.0
-        for t, offset in enumerate(sequence):
-            supply = min(
-                kwargs["water_max"], max(kwargs["water_min"], base_supply[t] + offset)
-            )
-            q = min(
-                emitter.available_power_kw(supply_temp=supply, indoor_temp=t_in),
-                heatpump.max_thermal_power_kw,
-            )
+        for t, action in enumerate(sequence):
+            if action is None:
+                # Explicit "pump off": only at/above target, offset unchanged.
+                if t_in < building.target_temp:
+                    return math.inf
+                offset = prev
+                q = 0.0
+                supply = min(
+                    kwargs["water_max"],
+                    max(kwargs["water_min"], base_supply[t] + offset),
+                )
+            else:
+                offset = action
+                supply = min(
+                    kwargs["water_max"],
+                    max(kwargs["water_min"], base_supply[t] + offset),
+                )
+                q = min(
+                    emitter.available_power_kw(supply_temp=supply, indoor_temp=t_in),
+                    heatpump.max_thermal_power_kw,
+                )
+                # Thermostat ramp mirrored from optimize_thermal_schedule.
+                ramp_width = 0.3
+                if t_in >= building.target_temp + ramp_width:
+                    q = 0.0
+                elif t_in > building.target_temp:
+                    q *= (building.target_temp + ramp_width - t_in) / ramp_width
             cop = heatpump.cop_at(supply_temp=supply, outdoor_temp=outdoor[t])
+            p_elec = q / cop if q > 0 else 0.0
             t_in = building.next_indoor_temp(
                 t_in, outdoor_temp=outdoor[t], heat_input_kw=q, step_hours=1.0
             )
             total += (
-                q / cop * prices[t]
+                p_elec * prices[t]
                 + comfort_penalty(
                     t_in,
                     comfort_min=building.comfort_min,
@@ -370,17 +463,34 @@ def test_dp_matches_brute_force_on_small_horizon():
                     weight=kwargs["comfort_penalty_weight"],
                     hard_floor=building.comfort_min - 1.5,
                 )
-                + kwargs["cycling_penalty_weight"] * (offset - prev) ** 2
+                + (
+                    0.0
+                    if action is None
+                    else kwargs["cycling_penalty_weight"] * (offset - prev) ** 2
+                )
             )
-            prev = offset
+            if action is not None:
+                prev = offset
         return total - max(0.0, t_in - building.comfort_min) * (
             building.thermal_mass_kwh_per_k * prices[-1] / terminal_cop
         )
 
+    actions = [None, -2, -1, 0, 1, 2]
     best = math.inf
-    for sequence in itertools.product(range(-2, 3), repeat=horizon):
-        steps = (0, *sequence)
-        if all(abs(b - a) <= 1 for a, b in itertools.pairwise(steps)):
+    for sequence in itertools.product(actions, repeat=horizon):
+        prev = 0
+        valid = True
+        for action in sequence:
+            if action is not None and abs(action - prev) > 1:
+                valid = False
+                break
+            if action is not None:
+                prev = action
+        if valid:
             best = min(best, objective(sequence))
 
-    assert objective(tuple(result.offsets)) <= best + 0.02
+    dp_sequence = tuple(
+        None if not result.pump_on[t] else result.offsets[t]
+        for t in range(horizon)
+    )
+    assert objective(dp_sequence) <= best + 0.02

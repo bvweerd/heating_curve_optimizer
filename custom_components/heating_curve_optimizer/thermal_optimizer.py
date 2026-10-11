@@ -101,6 +101,10 @@ class ThermalOptimizationResult:
     """
 
     offsets: list[int] = field(default_factory=list)
+    # True when the heat pump runs that step, False for the explicit
+    # "pump off" action (thermal_power_kw is 0 in both that case and when
+    # the thermostat ramp has already cut output).
+    pump_on: list[bool] = field(default_factory=list)
     supply_temps: list[float] = field(default_factory=list)
     indoor_temps: list[float] = field(default_factory=list)
     thermal_power_kw: list[float] = field(default_factory=list)
@@ -220,28 +224,42 @@ def optimize_thermal_schedule(
         frac = x - i
         return row[i] + (row[i + 1] - row[i]) * frac
 
-    def simulate_step(t: int, t_in: float, offset: int) -> _StepOutcome:
+    def simulate_step(
+        t: int, t_in: float, offset: int, *, pump_on: bool = True
+    ) -> _StepOutcome:
+        """Simulate one step.
+
+        ``pump_on=False`` is the explicit "heat pump off" action: the curve
+        offset stays where it was, but the compressor delivers no heat.  This
+        is how the DP expresses what a real heat pump does when the house
+        needs less than the minimum output its curve can deliver - it cycles
+        instead of trickling heat indefinitely.
+        """
         supply_temp = min(water_max, max(water_min, base_supply[t] + offset))
-        q_available = emitter.available_power_kw(
-            supply_temp=supply_temp, indoor_temp=t_in
-        )
-        q_hp = max(0.0, min(q_available, heatpump.max_thermal_power_kw))
-        # Thermostat model: full power below target, linear ramp-down from
-        # target to comfort_max, zero above comfort_max.  The ramp models
-        # the physical thermostat backing off as the room overshoots its
-        # setpoint.  The optimizer MAY pre-heat into the upper half of the
-        # comfort band during cheap-price periods (load shifting), but the
-        # ramp makes this progressively more expensive, preventing runaway
-        # overheating.  Note: the plan uses the full comfort band; the
-        # realtime controller separately enforces the target setpoint.
-        if t_in >= building.comfort_max:
-            q_hp = 0.0
-        elif t_in > building.target_temp:
-            band = building.comfort_max - building.target_temp
-            q_hp *= (building.comfort_max - t_in) / band if band > 0 else 0.0
         cop = heatpump.cop_at(
             supply_temp=supply_temp, outdoor_temp=outdoor[t], humidity=humidity[t]
         )
+        if pump_on:
+            q_available = emitter.available_power_kw(
+                supply_temp=supply_temp, indoor_temp=t_in
+            )
+            q_hp = max(0.0, min(q_available, heatpump.max_thermal_power_kw))
+            # Thermostat model: full power up to target_temp, then a steep
+            # linear ramp-down from target_temp to target_temp + 0.3 K.  The
+            # narrow 0.3 K band keeps the value function smooth (preventing
+            # DP oscillation at a hard cutoff) while ensuring that the
+            # optimizer delivers negligible heat once the room is above its
+            # setpoint.  At 0.1 K above target the output is already only 67%
+            # of available; at 0.2 K it is 33%; at 0.3 K it is zero.
+            ramp_width = 0.3  # K above target_temp where output tapers to zero
+            ramp_start = building.target_temp
+            ramp_end = building.target_temp + ramp_width
+            if t_in >= ramp_end:
+                q_hp = 0.0
+            elif t_in > ramp_start:
+                q_hp *= (ramp_end - t_in) / ramp_width
+        else:
+            q_hp = 0.0
         p_elec = q_hp / cop if q_hp > 0 else 0.0
         pv_covered = min(p_elec, pv[t])
         energy_cost = (
@@ -304,19 +322,37 @@ def optimize_thermal_schedule(
                 )
             q_values.append(row)
 
+        # Explicit "pump off" action: no heat, offset unchanged. Only
+        # available at or above the target temperature, mirroring a real
+        # thermostat that never switches off while the room is below its
+        # setpoint. The resulting cost-to-go continues from the same
+        # prev_offset row of V[t+1], so it is computed per prev_offset below.
+        off_stage: list[float] = []
+        off_next: list[float] = []
+        for t_in in states:
+            if t_in < building.target_temp:
+                off_stage.append(math.inf)
+                off_next.append(t_in)
+            else:
+                outcome = simulate_step(t, t_in, 0, pump_on=False)
+                off_stage.append(stage_cost(t, outcome))
+                off_next.append(outcome.next_t_in)
+
         v_cur: list[list[float]] = []
         for prev_offset in offsets_range:
             candidates = [offset - offset_min for offset in allowed(prev_offset)]
             row = []
             for s in range(n_states):
-                row.append(
-                    min(
-                        q_values[oi][s]
-                        + cycling_penalty_weight
-                        * (offsets_range[oi] - prev_offset) ** 2
-                        for oi in candidates
-                    )
+                best_on = min(
+                    q_values[oi][s]
+                    + cycling_penalty_weight
+                    * (offsets_range[oi] - prev_offset) ** 2
+                    for oi in candidates
                 )
+                best_off = off_stage[s] + interp(
+                    v_next[prev_offset - offset_min], off_next[s]
+                )
+                row.append(min(best_on, best_off))
             v_cur.append(row)
         v_tables[t] = v_cur
 
@@ -328,7 +364,7 @@ def optimize_thermal_schedule(
 
     for t in range(horizon):
         best_total = math.inf
-        best: tuple[int, _StepOutcome] | None = None
+        best: tuple[int, _StepOutcome, bool] | None = None
         for offset in allowed(prev_offset):
             outcome = simulate_step(t, t_in, offset)
             total = (
@@ -338,10 +374,21 @@ def optimize_thermal_schedule(
             )
             if total < best_total:
                 best_total = total
-                best = (offset, outcome)
+                best = (offset, outcome, True)
+        # Explicit "pump off" action: no heat, offset unchanged. Only
+        # available at or above target, like a real thermostat.
+        if t_in >= building.target_temp:
+            off_outcome = simulate_step(t, t_in, prev_offset, pump_on=False)
+            off_total = stage_cost(t, off_outcome) + interp(
+                v_tables[t + 1][prev_offset - offset_min], off_outcome.next_t_in
+            )
+            if off_total < best_total:
+                best_total = off_total
+                best = (prev_offset, off_outcome, False)
         assert best is not None
-        offset, outcome = best
+        offset, outcome, pump_on = best
         result.offsets.append(offset)
+        result.pump_on.append(pump_on)
         result.supply_temps.append(round(outcome.supply_temp, 2))
         result.indoor_temps.append(round(outcome.next_t_in, 3))
         result.thermal_power_kw.append(round(outcome.q_hp, 4))

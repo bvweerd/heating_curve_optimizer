@@ -631,6 +631,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return {
             "offset": self._current_offset,
             "offsets": opt.offsets,
+            "pump_on": opt.pump_on,
             "supply_temps": opt.supply_temps,
             "indoor_temps": opt.indoor_temps,
             "thermal_power_kw": opt.thermal_power_kw,

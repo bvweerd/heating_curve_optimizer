@@ -182,6 +182,7 @@ HEATING_CURVE_OFFSET = HcoSensorEntityDescription(
     value_fn=lambda d: d.get("offset"),
     attrs_fn=lambda d: {
         "offsets": d.get("offsets", []),
+        "pump_on": d.get("pump_on", []),
         "prices": d.get("prices", []),
         "outdoor_forecast": d.get("outdoor_forecast", []),
         **_step_attrs(d),
