@@ -805,6 +805,7 @@ async def async_setup_entry(
     runtime_data = entry.runtime_data
     config = runtime_data.config
     device = runtime_data.device
+    heatpump_device = runtime_data.heatpump_device or device
     prefix = entry.entry_id
     weather = runtime_data.weather_coordinator
     heat = runtime_data.heat_coordinator
@@ -847,12 +848,12 @@ async def async_setup_entry(
         if config.get(CONF_POWER_CONSUMPTION):
             entities.append(
                 HeatPumpThermalPowerSensor(
-                    config, weather, optimization, prefix, device
+                    config, weather, optimization, prefix, heatpump_device
                 )
             )
             entities.append(
                 HeatPumpThermalEnergySensor(
-                    config, weather, optimization, prefix, device
+                    config, weather, optimization, prefix, heatpump_device
                 )
             )
     async_add_entities(entities)

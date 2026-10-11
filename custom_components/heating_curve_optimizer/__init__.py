@@ -21,6 +21,7 @@ from .const import (
     CONF_GAS_BOILER_EFFICIENCY,
     CONF_GAS_CALORIFIC_VALUE,
     CONF_GAS_METER_SENSOR,
+    CONF_POWER_CONSUMPTION,
     DOMAIN,
     ENTITY_MANAGED_OPTIONS,
     GAS_SUBENTRY_TYPE,
@@ -74,6 +75,10 @@ class HeatingCurveOptimizerData:
     gas_boiler_coordinator: GasBoilerCoordinator | None = None
     gas_boiler_device: DeviceInfo | None = None
     gas_boiler_subentry_id: str | None = None
+    # Device for the measured heat-pump sensors (thermal power/energy).
+    # The heat-pump *settings* deliberately stay in the main entry options;
+    # this is only the device grouping in the UI.
+    heatpump_device: DeviceInfo | None = None
     # entry.options at setup, to tell structural changes from setpoint edits.
     options: dict[str, Any] = field(default_factory=dict)
 
@@ -310,6 +315,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             parent.id,
         )
 
+    # The heat pump gets its own child device for its measured sensors, so
+    # the device list mirrors the gas boiler and PV arrays. Its settings
+    # remain part of the main entry (the optimizer needs them everywhere).
+    heatpump_device: DeviceInfo | None = None
+    if config.get(CONF_POWER_CONSUMPTION):
+        heatpump_device = _child_device(
+            f"{entry.entry_id}_heat_pump",
+            "Warmtepomp",
+            "Heat pump",
+            sw_version,
+            entry,
+            parent.id,
+        )
+
     entry.runtime_data = HeatingCurveOptimizerData(
         weather_coordinator=weather_coordinator,
         heat_coordinator=heat_coordinator,
@@ -320,6 +339,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         gas_boiler_coordinator=gas_boiler_coordinator,
         gas_boiler_device=gas_boiler_device,
         gas_boiler_subentry_id=gas_boiler_subentry_id,
+        heatpump_device=heatpump_device,
         options=dict(entry.options),
     )
     _LOGGER.debug(

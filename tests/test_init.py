@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 
@@ -176,6 +177,19 @@ async def test_power_sensor_enables_thermal_sensors(
     assert float(thermal.state) > 1.2  # COP > 1
     energy = _state(hass, "sensor", f"{entry.entry_id}_heat_pump_thermal_energy")
     assert energy is not None
+
+    # The measured heat-pump sensors live on their own child device.
+    assert entry.runtime_data.heatpump_device is not None
+    dev_reg = dr.async_get(hass)
+    device = dev_reg.async_get_device_by_identifier(
+        (DOMAIN, f"{entry.entry_id}_heat_pump"), entry.entry_id
+    )
+    assert device is not None
+    thermal_id = _entity_id(
+        hass, "sensor", f"{entry.entry_id}_heat_pump_thermal_power"
+    )
+    registry_entity = er.async_get(hass).async_get(thermal_id)
+    assert registry_entity is not None and registry_entity.device_id == device.id
 
 
 async def test_structural_option_change_reloads(
