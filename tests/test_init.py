@@ -162,6 +162,33 @@ async def test_additional_zone_and_gas_boiler_get_their_own_devices(
     assert pv_state is not None
 
 
+async def test_hybrid_run_advice_and_cheaper_binary_sensors(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    hass.states.async_set("sensor.gas_price", "1.20")
+    hass.states.async_set(POWER_SENSOR, "1200", {"unit_of_measurement": "W"})
+    entry = make_entry(gas=True, power_consumption=POWER_SENSOR)
+    await setup_entry(hass, entry)
+
+    # Gas boiler: run advice + pure price comparison.
+    gas_advice = _state(
+        hass, "binary_sensor", f"{entry.entry_id}_gas_boiler_preferred"
+    )
+    assert gas_advice is not None and gas_advice.state in ("on", "off")
+    gas_cheaper = _state(
+        hass, "binary_sensor", f"{entry.entry_id}_gas_boiler_cheaper"
+    )
+    assert gas_cheaper is not None and gas_cheaper.state in ("on", "off")
+
+    # Heat pump: plan-active advice already exists; the price comparison is
+    # the exact mirror of the gas boiler's.
+    hp_cheaper = _state(
+        hass, "binary_sensor", f"{entry.entry_id}_heat_pump_cheaper"
+    )
+    assert hp_cheaper is not None and hp_cheaper.state in ("on", "off")
+    assert hp_cheaper.state != gas_cheaper.state
+
+
 async def test_power_sensor_enables_thermal_sensors(
     hass: HomeAssistant, mock_open_meteo, price_state
 ) -> None:

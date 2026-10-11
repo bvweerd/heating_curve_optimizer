@@ -76,11 +76,12 @@ class HeatPumpPlanActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
 
 
 class GasBoilerPreferredBinarySensor(CoordinatorEntity, BinarySensorEntity):
-    """Recommendation to heat with the gas boiler instead of the heat pump.
+    """Run advice for the gas boiler.
 
-    Heat pump first, gas as comfort backup: on when the heat pump cannot
-    restore the comfort band, or when comfort is at risk and gas is cheaper
-    per kWh of heat - see gas_boiler_coordinator.py. Advisory only.
+    Heat pump first, gas as comfort backup: on when the gas boiler should
+    actually heat - either the heat pump cannot restore the comfort band, or
+    comfort is at risk and gas is cheaper per kWh of heat. See
+    gas_boiler_coordinator.py. Advisory only.
     """
 
     _attr_has_entity_name = True
@@ -96,7 +97,7 @@ class GasBoilerPreferredBinarySensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool:
-        """Return True when the gas boiler is currently the cheaper choice."""
+        """Return True when the gas boiler should run."""
         if not self.coordinator.data:
             return False
         return bool(self.coordinator.data.get("prefer_gas_boiler", False))
@@ -123,6 +124,100 @@ class GasBoilerPreferredBinarySensor(CoordinatorEntity, BinarySensorEntity):
             "gas_cheaper": data.get("gas_cheaper"),
             "comfort_backup": data.get("comfort_backup"),
             "lowest_planned_indoor_temp": data.get("lowest_planned_indoor_temp"),
+            "heat_pump_cost_eur_per_kwh": data.get("heat_pump_cost_eur_per_kwh"),
+            "gas_cost_eur_per_kwh": data.get("gas_cost_eur_per_kwh"),
+            "savings_eur_per_kwh": data.get("savings_eur_per_kwh"),
+            "savings_pct": data.get("savings_pct"),
+        }
+
+
+class GasBoilerCheaperBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Pure price comparison: on when gas is cheaper per kWh of heat.
+
+    Unlike GasBoilerPreferredBinarySensor this does not include the comfort
+    backup policy; it only answers "which source is cheaper right now".
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "gas_boiler_cheaper"
+    _attr_should_poll = False
+
+    def __init__(self, coordinator: Any, entry_id: str, device: DeviceInfo) -> None:
+        """Initialize the binary sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry_id}_gas_boiler_cheaper"
+        self._attr_device_info = device
+
+    @property
+    def is_on(self) -> bool:
+        """Return True when gas is the cheaper heat source."""
+        if not self.coordinator.data:
+            return False
+        return bool(self.coordinator.data.get("gas_cheaper", False))
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return (
+            self.coordinator.last_update_success
+            and self.coordinator.data is not None
+            and bool(self.coordinator.data.get("available", False))
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the cost comparison behind the flag."""
+        if not self.coordinator.data:
+            return {}
+        data = self.coordinator.data
+        return {
+            "heat_pump_cost_eur_per_kwh": data.get("heat_pump_cost_eur_per_kwh"),
+            "gas_cost_eur_per_kwh": data.get("gas_cost_eur_per_kwh"),
+            "savings_eur_per_kwh": data.get("savings_eur_per_kwh"),
+            "savings_pct": data.get("savings_pct"),
+        }
+
+
+class HeatPumpCheaperBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Pure price comparison: on when the heat pump is cheaper per kWh of heat.
+
+    The mirror of GasBoilerCheaperBinarySensor, so the heat pump has the same
+    "voordeliger" signal as the gas boiler in a hybrid setup.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "heat_pump_cheaper"
+    _attr_should_poll = False
+
+    def __init__(self, coordinator: Any, entry_id: str, device: DeviceInfo) -> None:
+        """Initialize the binary sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry_id}_heat_pump_cheaper"
+        self._attr_device_info = device
+
+    @property
+    def is_on(self) -> bool:
+        """Return True when the heat pump is the cheaper heat source."""
+        if not self.coordinator.data:
+            return False
+        return not bool(self.coordinator.data.get("gas_cheaper", False))
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return (
+            self.coordinator.last_update_success
+            and self.coordinator.data is not None
+            and bool(self.coordinator.data.get("available", False))
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the cost comparison behind the flag."""
+        if not self.coordinator.data:
+            return {}
+        data = self.coordinator.data
+        return {
             "heat_pump_cost_eur_per_kwh": data.get("heat_pump_cost_eur_per_kwh"),
             "gas_cost_eur_per_kwh": data.get("gas_cost_eur_per_kwh"),
             "savings_eur_per_kwh": data.get("savings_eur_per_kwh"),
@@ -169,7 +264,23 @@ async def async_setup_entry(
                     runtime_data.gas_boiler_coordinator,
                     entry.entry_id,
                     runtime_data.gas_boiler_device,
-                )
+                ),
+                GasBoilerCheaperBinarySensor(
+                    runtime_data.gas_boiler_coordinator,
+                    entry.entry_id,
+                    runtime_data.gas_boiler_device,
+                ),
             ],
             config_subentry_id=runtime_data.gas_boiler_subentry_id,
+        )
+        # The heat pump's price flag lives on the heat-pump device, even
+        # though its data comes from the (optional) gas comparison.
+        async_add_entities(
+            [
+                HeatPumpCheaperBinarySensor(
+                    runtime_data.gas_boiler_coordinator,
+                    entry.entry_id,
+                    runtime_data.heatpump_device or runtime_data.device,
+                )
+            ]
         )
