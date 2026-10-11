@@ -718,7 +718,7 @@
         "name": "Thermische energie warmtepomp"
       },
       "gas_boiler_heat_pump_cost": {
-        "name": "Kosten warmtepomp per kWh warmte"
+        "name": "Kosten per kWh"
       },
       "gas_boiler_gas_cost": {
         "name": "Kosten gasketel per kWh warmte"
@@ -732,13 +732,13 @@
         "name": "Warmtepomp planning actief"
       },
       "heat_pump_cheaper": {
-        "name": "Warmtepomp voordeliger"
+        "name": "Voordeliger"
       },
       "gas_boiler_preferred": {
         "name": "Gasketel inzetten"
       },
       "gas_boiler_cheaper": {
-        "name": "Gasketel voordeliger"
+        "name": "Gasketel goedkoper"
       }
     },
     "number": {
