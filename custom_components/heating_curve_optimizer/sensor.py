@@ -902,10 +902,18 @@ async def async_setup_entry(
                     gas, description, gas_prefix, runtime_data.gas_boiler_device
                 )
                 for description in (
-                    GAS_BOILER_HEAT_PUMP_COST,
                     GAS_BOILER_GAS_COST,
                     GAS_BOILER_COST_SAVINGS,
                 )
             ],
             config_subentry_id=runtime_data.gas_boiler_subentry_id,
+        )
+        # The heat pump's own cost per kWh belongs on the heat-pump device,
+        # not on the gas boiler's.
+        async_add_entities(
+            [
+                HcoCoordinatorSensor(
+                    gas, GAS_BOILER_HEAT_PUMP_COST, prefix, heatpump_device
+                )
+            ]
         )

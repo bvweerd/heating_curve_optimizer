@@ -188,6 +188,27 @@ async def test_hybrid_run_advice_and_cheaper_binary_sensors(
     assert hp_cheaper is not None and hp_cheaper.state in ("on", "off")
     assert hp_cheaper.state != gas_cheaper.state
 
+    # The heat pump's own cost per kWh lives on the heat-pump device; the
+    # gas cost stays on the gas boiler's device.
+    dev_reg = dr.async_get(hass)
+    hp_device = dev_reg.async_get_device_by_identifier(
+        (DOMAIN, f"{entry.entry_id}_heat_pump"), entry.entry_id
+    )
+    assert hp_device is not None
+    hp_cost_id = _entity_id(hass, "sensor", f"{entry.entry_id}_heat_pump_cost")
+    hp_cost_entity = er.async_get(hass).async_get(hp_cost_id)
+    assert hp_cost_entity is not None and hp_cost_entity.device_id == hp_device.id
+
+    gas_device = dev_reg.async_get_device_by_identifier(
+        (DOMAIN, f"{entry.entry_id}_gas_boiler"), entry.entry_id
+    )
+    assert gas_device is not None
+    gas_cost_id = _entity_id(
+        hass, "sensor", f"{entry.entry_id}_gas_boiler_gas_cost"
+    )
+    gas_cost_entity = er.async_get(hass).async_get(gas_cost_id)
+    assert gas_cost_entity is not None and gas_cost_entity.device_id == gas_device.id
+
 
 async def test_power_sensor_enables_thermal_sensors(
     hass: HomeAssistant, mock_open_meteo, price_state
