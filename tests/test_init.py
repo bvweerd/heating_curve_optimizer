@@ -197,6 +197,11 @@ async def test_power_sensor_enables_thermal_sensors(
     plan_entity = er.async_get(hass).async_get(plan_id)
     assert plan_entity is not None and plan_entity.device_id == device.id
 
+    # The planned COP is a heat-pump property, so it lives there as well.
+    cop_id = _entity_id(hass, "sensor", f"{entry.entry_id}_planned_cop")
+    cop_entity = er.async_get(hass).async_get(cop_id)
+    assert cop_entity is not None and cop_entity.device_id == device.id
+
 
 async def test_savings_sensors_are_disabled_diagnostics_by_default(
     hass: HomeAssistant, mock_open_meteo, price_state

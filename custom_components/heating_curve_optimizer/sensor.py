@@ -834,7 +834,6 @@ async def async_setup_entry(
             OPTIMIZED_SUPPLY_TEMPERATURE,
             PLANNED_INDOOR_TEMPERATURE,
             HEAT_BUFFER,
-            PLANNED_COP,
             COST_SAVINGS_FORECAST,
             SHADOW_PRICE,
             CALIBRATION,
@@ -844,6 +843,11 @@ async def async_setup_entry(
             optimization_descriptions.append(REALTIME_OFFSET)
         entities += _optimization_entities(
             optimization, optimization_descriptions, prefix, device
+        )
+        # COP is a property of the heat pump itself, so its planned value
+        # belongs to the heat-pump device (fallback: the main device).
+        entities += _optimization_entities(
+            optimization, [PLANNED_COP], prefix, heatpump_device
         )
         entities.append(TotalCostSavingsSensor(optimization, prefix, device))
         entities.append(
