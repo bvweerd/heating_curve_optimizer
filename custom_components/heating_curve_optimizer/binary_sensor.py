@@ -147,7 +147,7 @@ async def async_setup_entry(
             HeatPumpPlanActiveBinarySensor(
                 runtime_data.optimization_coordinator,
                 entry.entry_id,
-                runtime_data.device,
+                runtime_data.heatpump_device or runtime_data.device,
             )
         )
     if primary_entities:

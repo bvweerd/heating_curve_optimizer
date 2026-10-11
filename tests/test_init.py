@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -50,8 +51,6 @@ async def test_full_setup_produces_a_plan(
         "optimized_supply_temperature",
         "heat_buffer",
         "planned_cop",
-        "cost_savings_forecast",
-        "total_cost_savings",
     ):
         state = _state(hass, "sensor", f"{prefix}_{key}")
         assert state.state not in ("unknown", "unavailable"), key
@@ -190,6 +189,29 @@ async def test_power_sensor_enables_thermal_sensors(
     )
     registry_entity = er.async_get(hass).async_get(thermal_id)
     assert registry_entity is not None and registry_entity.device_id == device.id
+
+    # The primary zone's plan-active advice also belongs to the heat pump.
+    plan_id = _entity_id(
+        hass, "binary_sensor", f"{entry.entry_id}_heat_pump_plan_active"
+    )
+    plan_entity = er.async_get(hass).async_get(plan_id)
+    assert plan_entity is not None and plan_entity.device_id == device.id
+
+
+async def test_savings_sensors_are_disabled_diagnostics_by_default(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    entry = make_entry()
+    await setup_entry(hass, entry)
+
+    registry = er.async_get(hass)
+    for key in ("cost_savings_forecast", "total_cost_savings"):
+        entity_id = _entity_id(hass, "sensor", f"{entry.entry_id}_{key}")
+        entity = registry.async_get(entity_id)
+        assert entity is not None
+        assert entity.entity_category == EntityCategory.DIAGNOSTIC
+        assert entity.disabled_by is not None
+        assert hass.states.get(entity_id) is None  # disabled by default
 
 
 async def test_structural_option_change_reloads(

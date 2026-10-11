@@ -106,6 +106,9 @@ class HcoSensorEntityDescription(SensorEntityDescription):
 
     value_fn: Callable[[dict[str, Any]], Any]
     attrs_fn: Callable[[dict[str, Any]], dict[str, Any]] | None = None
+    # Disabled-by-default entities are still created, but hidden until the
+    # user enables them (used for diagnostic/advanced sensors).
+    enabled_default: bool = True
 
 
 # --- Weather coordinator -----------------------------------------------------
@@ -255,6 +258,8 @@ COST_SAVINGS_FORECAST = HcoSensorEntityDescription(
     translation_key="cost_savings_forecast",
     device_class=SensorDeviceClass.MONETARY,
     native_unit_of_measurement=CURRENCY_EUR,
+    entity_category=EntityCategory.DIAGNOSTIC,
+    enabled_default=False,
     suggested_display_precision=2,
     value_fn=lambda d: d.get("cost_savings_eur"),
     attrs_fn=lambda d: {
@@ -380,6 +385,7 @@ class HcoCoordinatorSensor(
         self.entity_description = description
         self._attr_unique_id = f"{unique_id_prefix}_{description.key}"
         self._attr_device_info = device
+        self._attr_entity_registry_enabled_default = description.enabled_default
 
     @property
     def available(self) -> bool:
@@ -730,6 +736,8 @@ class TotalCostSavingsSensor(
     _attr_native_unit_of_measurement = CURRENCY_EUR
     _attr_state_class = SensorStateClass.TOTAL
     _attr_suggested_display_precision = 2
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
 
     MAX_GAP_HOURS = 1.0
 
