@@ -29,7 +29,7 @@ from .const import (
     PV_SUBENTRY_TYPE,
     ZONE_SUBENTRY_TYPE,
 )
-from .coordinator_heat import HeatCalculationCoordinator
+from .coordinator_heat import INDOOR_SOURCE_SENSOR, HeatCalculationCoordinator
 from .coordinator_optimization import OptimizationCoordinator
 from .coordinator_weather import WeatherDataCoordinator
 from .gas_boiler_coordinator import GasBoilerCoordinator
@@ -153,17 +153,49 @@ def _child_device(
 
 
 def _schedule_first_refresh(
-    hass: HomeAssistant, entry: ConfigEntry, coordinator: Any
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: Any,
+    *,
+    wait_for_indoor: HeatCalculationCoordinator | None = None,
 ) -> None:
-    """Run a coordinator's first refresh shortly after setup, off the setup path."""
+    """Run a coordinator's first refresh shortly after setup, off the setup path.
+
+    For the optimization coordinator, ``wait_for_indoor`` makes the first run
+    wait a little longer when a real indoor sensor is configured but not yet
+    reporting (common right after a restart), so the plan is not based on the
+    target-temperature fallback.
+    """
 
     async def _refresh() -> None:
         await asyncio.sleep(FIRST_REFRESH_DELAY_S)
+        if wait_for_indoor is not None:
+            await _wait_for_indoor_sensor(wait_for_indoor)
         await coordinator.async_request_refresh()
 
     entry.async_create_background_task(
         hass, _refresh(), f"{DOMAIN}_first_refresh_{coordinator.name}"
     )
+
+
+async def _wait_for_indoor_sensor(
+    heat_coordinator: HeatCalculationCoordinator, timeout_s: float = 30.0
+) -> None:
+    """Wait (briefly) for a configured indoor sensor to report a real value.
+
+    Returns immediately when no indoor sensor is configured or when a real
+    reading arrives; gives up after ``timeout_s`` so a broken sensor never
+    blocks the first plan indefinitely.
+    """
+    if not heat_coordinator.has_real_indoor_sensor:
+        return
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_s
+    while loop.time() < deadline:
+        data = heat_coordinator.data
+        if data and data.get("indoor_temperature_source") == INDOOR_SOURCE_SENSOR:
+            return
+        await asyncio.sleep(2)
 
 
 async def _async_setup_zone(
@@ -199,7 +231,9 @@ async def _async_setup_zone(
         calibration_allowed=calibration_allowed,
     )
     await optimization_coordinator.async_setup()
-    _schedule_first_refresh(hass, entry, optimization_coordinator)
+    _schedule_first_refresh(
+        hass, entry, optimization_coordinator, wait_for_indoor=heat_coordinator
+    )
     return heat_coordinator, optimization_coordinator
 
 

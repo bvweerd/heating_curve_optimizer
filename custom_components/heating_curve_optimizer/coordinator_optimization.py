@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import Event, EventStateChangedData, HomeAssistant
+from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers import storage
 from homeassistant.helpers.event import (
@@ -226,7 +226,10 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._price_sensor: str | None = config.get(CONF_CONSUMPTION_PRICE_SENSOR)
         self._unsub: Any = None
         self._unsub_realtime: Any = None
+        self._unsub_heat: Any = None
         self._last_price: float | None = None
+        self._last_heat_indoor: float | None = None
+        self._last_heat_source: str | None = None
         self._current_offset = 0
         self._calibration: ThermalCalibrationState | None = None
         self._calibration_snapshot: dict[str, Any] | None = None
@@ -296,6 +299,12 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._unsub = async_track_state_change_event(
                 self.hass, [self._price_sensor], self._handle_price_change
             )
+        # A new indoor reading (or the sensor recovering after a restart)
+        # changes the plan's starting point - re-optimize instead of waiting
+        # for the next 15-minute poll.
+        self._unsub_heat = self.heat_coordinator.async_add_listener(
+            self._handle_heat_update
+        )
 
         self._calibration = ThermalCalibrationState(
             store=storage.Store(
@@ -335,13 +344,47 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_shutdown(self) -> None:
         """Clean up event tracking."""
-        for unsub in (self._unsub, self._unsub_realtime, self._unsub_calibration):
+        for unsub in (
+            self._unsub,
+            self._unsub_realtime,
+            self._unsub_calibration,
+            self._unsub_heat,
+        ):
             if unsub:
                 unsub()
         self._unsub = None
         self._unsub_realtime = None
         self._unsub_calibration = None
+        self._unsub_heat = None
         await super().async_shutdown()
+
+    @callback
+    def _handle_heat_update(self) -> None:
+        """Re-optimize when the indoor reading recovers or changes ≥0.5 K.
+
+        After a restart the first plan may be based on the target fallback
+        because the indoor sensor was not available yet. Once the sensor
+        reports, this listener refreshes the plan within seconds instead of
+        leaving the stale "aan" advice until the next 15-minute poll.
+        """
+        if not self.data:
+            # The scheduled first refresh handles startup; heat updates
+            # before that will be picked up by it.
+            return
+        heat_data = self.heat_coordinator.data
+        if not heat_data:
+            return
+        indoor = heat_data.get("indoor_temperature")
+        source = heat_data.get("indoor_temperature_source")
+        if indoor is None:
+            return
+        if (
+            self._last_heat_indoor is not None
+            and source == self._last_heat_source
+            and abs(float(indoor) - self._last_heat_indoor) < 0.5
+        ):
+            return
+        self.hass.async_create_task(self.async_request_refresh())
 
     async def _handle_price_change(self, event: Event[EventStateChangedData]) -> None:
         """Re-optimize on a significant price change or when the sensor recovers."""
@@ -567,6 +610,8 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         config = self.heat_coordinator.effective_config()
         indoor_temp = float(heat_data["indoor_temperature"])
+        self._last_heat_indoor = indoor_temp
+        self._last_heat_source = heat_data.get("indoor_temperature_source")
         result = await self.hass.async_add_executor_job(
             self._optimize,
             config,
