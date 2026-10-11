@@ -38,10 +38,6 @@ async def test_full_setup_produces_a_plan(
     assert len(offsets) >= 20  # 24 h horizon, first step shortened
     assert all(-4 <= o <= 4 for o in offsets)
 
-    indoor = _state(hass, "sensor", f"{prefix}_planned_indoor_temperature")
-    assert 18.0 < float(indoor.state) < 22.0
-    assert indoor.attributes["comfort_min"] == 19.7
-
     for key in (
         "outdoor_temperature",
         "calculated_supply_temperature",
@@ -210,7 +206,11 @@ async def test_savings_sensors_are_disabled_diagnostics_by_default(
     await setup_entry(hass, entry)
 
     registry = er.async_get(hass)
-    for key in ("cost_savings_forecast", "total_cost_savings"):
+    for key in (
+        "cost_savings_forecast",
+        "total_cost_savings",
+        "planned_indoor_temperature",
+    ):
         entity_id = _entity_id(hass, "sensor", f"{entry.entry_id}_{key}")
         entity = registry.async_get(entity_id)
         assert entity is not None
