@@ -207,6 +207,8 @@ async def test_hybrid_run_advice_and_cheaper_binary_sensors(
     assert hp_cost_entity is not None and hp_cost_entity.device_id == hp_device.id
 
     gas_device = _device(hass, entry, f"{entry.entry_id}_gas_boiler")
+    assert gas_device.name == "Gas boiler"
+    assert gas_advice.attributes["friendly_name"] == "Gas boiler Advised"
     gas_cost_id = _entity_id(hass, "sensor", f"{entry.entry_id}_gas_boiler_gas_cost")
     gas_cost_entity = er.async_get(hass).async_get(gas_cost_id)
     assert gas_cost_entity is not None and gas_cost_entity.device_id == gas_device.id

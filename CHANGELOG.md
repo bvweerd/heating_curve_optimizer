@@ -11,6 +11,10 @@ First release of the redesigned integration. There are no earlier
 deployments to migrate from.
 
 ### Optimizer
+- The plan can switch the heat pump off anywhere inside the comfort band
+  (was: only at or above target), so it coasts through expensive hours
+  instead of staying on all day. Run advice compares the plan's
+  electrical power with the idle threshold.
 - Backward-induction DP over indoor temperature with a linearly
   interpolated value function and a continuous-state forward pass (slow
   temperature drift is no longer rounded away).
@@ -46,8 +50,8 @@ deployments to migrate from.
 - Diagnostics redact sensor IDs in the runtime config as well.
 - A *Heat pump* device groups plan-active advice, expected COP, cost per
   kWh, a "cheaper" flag and the measured thermal sensors. The gas boiler
-  gets separate run advice (*Gas boiler advised*) and price comparison
-  (*Gas boiler cheaper*) binary sensors. Savings and expected indoor
+  gets separate run advice (*Advised*) and price comparison (*Cheaper*)
+  binary sensors. Both devices have translated names. Savings and expected indoor
   temperature sensors are disabled diagnostics by default.
 - The first plan after a restart waits briefly for the indoor sensor, and
   an indoor change of 0.5 K or more re-optimizes right away.

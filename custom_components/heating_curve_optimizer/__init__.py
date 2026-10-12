@@ -346,13 +346,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         await gas_boiler_coordinator.async_setup()
         _schedule_first_refresh(hass, entry, gas_boiler_coordinator)
+        # Translated device name (the single gas subentry has a fixed title),
+        # so the short entity names read "Gas boiler Advised" / "Gasketel
+        # Inzetten" instead of doubling the device name.
         gas_boiler_device = _child_device(
             f"{entry.entry_id}_gas_boiler",
-            gas_subentry.title,
+            None,
             "Hybrid gas boiler",
             sw_version,
             entry,
             parent.id,
+            translation_key="gas_boiler",
         )
 
     # The heat pump always gets its own child device: its advice, planned COP

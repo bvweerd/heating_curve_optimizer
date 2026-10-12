@@ -54,10 +54,10 @@ heat pump plan active.
 
 | Entity | Unit | Description |
 |---|---|---|
-| `sensor.…_gas_boiler_cost_per_kwh_heat` | EUR/kWh | Gas price / calorific value / efficiency. |
-| `sensor.…_gas_boiler_advantage_per_kwh_heat` | EUR/kWh | Heat pump cost − gas cost (positive: gas cheaper). |
-| `binary_sensor.…_gas_boiler_advised` | | Run advice: on when the gas boiler should heat now. See [hybrid gas boiler](algorithm.md#hybrid-gas-boiler). |
-| `binary_sensor.…_gas_boiler_cheaper` | | Price comparison only: on while gas is cheaper per kWh of heat. |
+| `sensor.gas_boiler_cost_per_kwh` | EUR/kWh | Gas price / calorific value / efficiency. |
+| `sensor.gas_boiler_savings_per_kwh` | EUR/kWh | Heat pump cost − gas cost (positive: gas cheaper). |
+| `binary_sensor.gas_boiler_advised` | | Run advice: on when the gas boiler should heat now. See [hybrid gas boiler](algorithm.md#hybrid-gas-boiler). |
+| `binary_sensor.gas_boiler_cheaper` | | Price comparison only: on while gas is cheaper per kWh of heat. |
 
 ## Service
 

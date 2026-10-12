@@ -644,6 +644,9 @@
   "device": {
     "heat_pump": {
       "name": "Warmtepomp"
+    },
+    "gas_boiler": {
+      "name": "Gasketel"
     }
   },
   "entity": {
@@ -726,10 +729,10 @@
         "name": "Kosten per kWh"
       },
       "gas_boiler_gas_cost": {
-        "name": "Kosten gasketel per kWh warmte"
+        "name": "Kosten per kWh"
       },
       "gas_boiler_cost_savings": {
-        "name": "Besparing gasketel per kWh warmte"
+        "name": "Besparing per kWh"
       }
     },
     "binary_sensor": {
@@ -743,10 +746,10 @@
         "name": "Voordeliger"
       },
       "gas_boiler_preferred": {
-        "name": "Gasketel inzetten"
+        "name": "Inzetten"
       },
       "gas_boiler_cheaper": {
-        "name": "Gasketel goedkoper"
+        "name": "Goedkoper"
       }
     },
     "number": {

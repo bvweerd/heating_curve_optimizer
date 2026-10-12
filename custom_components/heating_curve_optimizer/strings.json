@@ -644,6 +644,9 @@
   "device": {
     "heat_pump": {
       "name": "Heat pump"
+    },
+    "gas_boiler": {
+      "name": "Gas boiler"
     }
   },
   "entity": {
@@ -726,10 +729,10 @@
         "name": "Cost per kWh"
       },
       "gas_boiler_gas_cost": {
-        "name": "Gas boiler cost per kWh heat"
+        "name": "Cost per kWh"
       },
       "gas_boiler_cost_savings": {
-        "name": "Gas boiler savings per kWh heat"
+        "name": "Savings per kWh"
       }
     },
     "binary_sensor": {
@@ -743,10 +746,10 @@
         "name": "Cheaper"
       },
       "gas_boiler_preferred": {
-        "name": "Gas boiler advised"
+        "name": "Advised"
       },
       "gas_boiler_cheaper": {
-        "name": "Gas boiler cheaper"
+        "name": "Cheaper"
       }
     },
     "number": {
