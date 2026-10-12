@@ -490,7 +490,6 @@ def test_dp_matches_brute_force_on_small_horizon():
             best = min(best, objective(sequence))
 
     dp_sequence = tuple(
-        None if not result.pump_on[t] else result.offsets[t]
-        for t in range(horizon)
+        None if not result.pump_on[t] else result.offsets[t] for t in range(horizon)
     )
     assert objective(dp_sequence) <= best + 0.02

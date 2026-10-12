@@ -345,8 +345,7 @@ def optimize_thermal_schedule(
             for s in range(n_states):
                 best_on = min(
                     q_values[oi][s]
-                    + cycling_penalty_weight
-                    * (offsets_range[oi] - prev_offset) ** 2
+                    + cycling_penalty_weight * (offsets_range[oi] - prev_offset) ** 2
                     for oi in candidates
                 )
                 best_off = off_stage[s] + interp(
