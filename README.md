@@ -79,8 +79,7 @@ for all settings, entities, the model and troubleshooting.
 
 ```bash
 pip install -r requirements.txt pre-commit mypy
-pre-commit run --all-files
-mypy custom_components/heating_curve_optimizer
+pre-commit run --all-files   # includes mypy
 pytest
 ```
 

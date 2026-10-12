@@ -85,8 +85,7 @@ docs/                         index, installation, quick-start, configuration, a
 ## Checks before pushing
 
 ```bash
-pre-commit run --all-files
-mypy custom_components/heating_curve_optimizer
+pre-commit run --all-files   # includes mypy (local hook, needs HA installed)
 pytest            # coverage floor 85%
 mkdocs build --strict   # when docs changed (requirements-docs.txt)
 ```

@@ -48,9 +48,6 @@ jobs:
       - name: Run pre-commit
         run: pre-commit run --all-files
 
-      - name: Run mypy
-        run: mypy custom_components/heating_curve_optimizer/
-
   test:
     # Home Assistant's supported Python floor decides which Home Assistant
     # version pip can install. Testing only on 3.13 validates against

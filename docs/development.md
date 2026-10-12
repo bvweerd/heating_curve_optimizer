@@ -11,9 +11,8 @@ pre-commit install
 ## Checks
 
 ```bash
-pre-commit run --all-files                   # pyupgrade, codespell, ruff
-mypy custom_components/heating_curve_optimizer   # strict
-pytest                                       # includes coverage floor
+pre-commit run --all-files   # pyupgrade, codespell, ruff, mypy (strict)
+pytest                       # includes coverage floor
 ```
 
 CI runs the same on Python 3.13 and 3.14 against the latest Home Assistant,
