@@ -24,6 +24,23 @@ def _state(hass: HomeAssistant, platform: str, unique_id: str):
     return hass.states.get(_entity_id(hass, platform, unique_id))
 
 
+def _device(hass: HomeAssistant, entry, identifier: str) -> dr.DeviceEntry:
+    """Look up one of the entry's devices on old and new Home Assistant.
+
+    ``async_get_device_by_identifier`` only exists since 2026.10, where the
+    older ``async_get_device(identifiers=...)`` is deprecated.
+    """
+    dev_reg = dr.async_get(hass)
+    if hasattr(dev_reg, "async_get_device_by_identifier"):
+        device = dev_reg.async_get_device_by_identifier(
+            (DOMAIN, identifier), entry.entry_id
+        )
+    else:
+        device = dev_reg.async_get_device(identifiers={(DOMAIN, identifier)})
+    assert device is not None, identifier
+    return device
+
+
 async def test_full_setup_produces_a_plan(
     hass: HomeAssistant, mock_open_meteo, price_state
 ) -> None:
@@ -171,41 +188,26 @@ async def test_hybrid_run_advice_and_cheaper_binary_sensors(
     await setup_entry(hass, entry)
 
     # Gas boiler: run advice + pure price comparison.
-    gas_advice = _state(
-        hass, "binary_sensor", f"{entry.entry_id}_gas_boiler_preferred"
-    )
+    gas_advice = _state(hass, "binary_sensor", f"{entry.entry_id}_gas_boiler_preferred")
     assert gas_advice is not None and gas_advice.state in ("on", "off")
-    gas_cheaper = _state(
-        hass, "binary_sensor", f"{entry.entry_id}_gas_boiler_cheaper"
-    )
+    gas_cheaper = _state(hass, "binary_sensor", f"{entry.entry_id}_gas_boiler_cheaper")
     assert gas_cheaper is not None and gas_cheaper.state in ("on", "off")
 
     # Heat pump: plan-active advice already exists; the price comparison is
     # the exact mirror of the gas boiler's.
-    hp_cheaper = _state(
-        hass, "binary_sensor", f"{entry.entry_id}_heat_pump_cheaper"
-    )
+    hp_cheaper = _state(hass, "binary_sensor", f"{entry.entry_id}_heat_pump_cheaper")
     assert hp_cheaper is not None and hp_cheaper.state in ("on", "off")
     assert hp_cheaper.state != gas_cheaper.state
 
     # The heat pump's own cost per kWh lives on the heat-pump device; the
     # gas cost stays on the gas boiler's device.
-    dev_reg = dr.async_get(hass)
-    hp_device = dev_reg.async_get_device_by_identifier(
-        (DOMAIN, f"{entry.entry_id}_heat_pump"), entry.entry_id
-    )
-    assert hp_device is not None
+    hp_device = _device(hass, entry, f"{entry.entry_id}_heat_pump")
     hp_cost_id = _entity_id(hass, "sensor", f"{entry.entry_id}_heat_pump_cost")
     hp_cost_entity = er.async_get(hass).async_get(hp_cost_id)
     assert hp_cost_entity is not None and hp_cost_entity.device_id == hp_device.id
 
-    gas_device = dev_reg.async_get_device_by_identifier(
-        (DOMAIN, f"{entry.entry_id}_gas_boiler"), entry.entry_id
-    )
-    assert gas_device is not None
-    gas_cost_id = _entity_id(
-        hass, "sensor", f"{entry.entry_id}_gas_boiler_gas_cost"
-    )
+    gas_device = _device(hass, entry, f"{entry.entry_id}_gas_boiler")
+    gas_cost_id = _entity_id(hass, "sensor", f"{entry.entry_id}_gas_boiler_gas_cost")
     gas_cost_entity = er.async_get(hass).async_get(gas_cost_id)
     assert gas_cost_entity is not None and gas_cost_entity.device_id == gas_device.id
 
@@ -222,15 +224,8 @@ async def test_power_sensor_enables_thermal_sensors(
     assert energy is not None
 
     # The measured heat-pump sensors live on their own child device.
-    assert entry.runtime_data.heatpump_device is not None
-    dev_reg = dr.async_get(hass)
-    device = dev_reg.async_get_device_by_identifier(
-        (DOMAIN, f"{entry.entry_id}_heat_pump"), entry.entry_id
-    )
-    assert device is not None
-    thermal_id = _entity_id(
-        hass, "sensor", f"{entry.entry_id}_heat_pump_thermal_power"
-    )
+    device = _device(hass, entry, f"{entry.entry_id}_heat_pump")
+    thermal_id = _entity_id(hass, "sensor", f"{entry.entry_id}_heat_pump_thermal_power")
     registry_entity = er.async_get(hass).async_get(thermal_id)
     assert registry_entity is not None and registry_entity.device_id == device.id
 
@@ -245,6 +240,47 @@ async def test_power_sensor_enables_thermal_sensors(
     cop_id = _entity_id(hass, "sensor", f"{entry.entry_id}_planned_cop")
     cop_entity = er.async_get(hass).async_get(cop_id)
     assert cop_entity is not None and cop_entity.device_id == device.id
+
+
+async def test_heat_pump_device_exists_without_power_sensor(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    """The heat-pump entities use short names, so they must never fall back
+    to the main device (where "Plan active" would be meaningless)."""
+    entry = make_entry()
+    await setup_entry(hass, entry)
+
+    device = _device(hass, entry, f"{entry.entry_id}_heat_pump")
+    assert device.name == "Heat pump"
+    plan_id = _entity_id(
+        hass, "binary_sensor", f"{entry.entry_id}_heat_pump_plan_active"
+    )
+    plan_entity = er.async_get(hass).async_get(plan_id)
+    assert plan_entity is not None and plan_entity.device_id == device.id
+    state = hass.states.get(plan_id)
+    assert state is not None
+    assert state.attributes["friendly_name"] == "Heat pump Plan active"
+
+
+async def test_indoor_change_reoptimizes_without_waiting_for_the_poll(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    entry = make_entry()
+    await setup_entry(hass, entry)
+    coordinator = entry.runtime_data.optimization_coordinator
+    heat = entry.runtime_data.heat_coordinator
+    before = coordinator.data["indoor_temps"]
+
+    # A small change is ignored ...
+    hass.states.async_set(INDOOR_SENSOR, "20.2", {"unit_of_measurement": "°C"})
+    await heat.async_refresh()
+    await hass.async_block_till_done()
+    assert coordinator.data["indoor_temps"] == before
+
+    # ... a change of 0.5 K or more re-plans from the new starting point.
+    hass.states.async_set(INDOOR_SENSOR, "21.5", {"unit_of_measurement": "°C"})
+    await hass.async_block_till_done()
+    assert coordinator.data["indoor_temps"] != before
 
 
 async def test_savings_sensors_are_disabled_diagnostics_by_default(

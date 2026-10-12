@@ -21,7 +21,6 @@ from .const import (
     CONF_GAS_BOILER_EFFICIENCY,
     CONF_GAS_CALORIFIC_VALUE,
     CONF_GAS_METER_SENSOR,
-    CONF_POWER_CONSUMPTION,
     DOMAIN,
     ENTITY_MANAGED_OPTIONS,
     GAS_SUBENTRY_TYPE,
@@ -69,16 +68,17 @@ class HeatingCurveOptimizerData:
     optimization_coordinator: OptimizationCoordinator | None
     config: dict[str, Any]
     device: DeviceInfo
+    # Device for everything that describes the heat pump itself (plan-active
+    # advice, planned COP, cost per kWh, measured thermal sensors). The
+    # heat-pump *settings* deliberately stay in the main entry options; this
+    # is only the device grouping in the UI.
+    heatpump_device: DeviceInfo
     # Additional (non-primary) zones keyed by subentry id: heat_coordinator,
     # optimization_coordinator, config, device, name.
     zones: dict[str, dict[str, Any]] = field(default_factory=dict)
     gas_boiler_coordinator: GasBoilerCoordinator | None = None
     gas_boiler_device: DeviceInfo | None = None
     gas_boiler_subentry_id: str | None = None
-    # Device for the measured heat-pump sensors (thermal power/energy).
-    # The heat-pump *settings* deliberately stay in the main entry options;
-    # this is only the device grouping in the UI.
-    heatpump_device: DeviceInfo | None = None
     # entry.options at setup, to tell structural changes from setpoint edits.
     options: dict[str, Any] = field(default_factory=dict)
 
@@ -127,24 +127,30 @@ def _zone_subentries(entry: ConfigEntry) -> list[tuple[str, Any]]:
 
 def _child_device(
     identifier: str,
-    name: str,
+    name: str | None,
     model: str,
     sw_version: str,
     entry: ConfigEntry,
     parent_device_id: str,
+    *,
+    translation_key: str | None = None,
 ) -> DeviceInfo:
     """DeviceInfo for a subentry device, linked to the main device.
 
+    Pass either a fixed ``name`` (a subentry title) or a ``translation_key``.
     Newer Home Assistant releases link by registry id (``via_device_id``);
     older ones only accept the parent's identifier tuple (``via_device``).
     """
     info: dict[str, Any] = {
         "identifiers": {(DOMAIN, identifier)},
-        "name": name,
         "manufacturer": "Heating Curve Optimizer",
         "model": model,
         "sw_version": sw_version,
     }
+    if translation_key is not None:
+        info["translation_key"] = translation_key
+    else:
+        info["name"] = name
     if "via_device_id" in DeviceInfo.__annotations__:
         info["via_device_id"] = parent_device_id
     else:
@@ -349,19 +355,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             parent.id,
         )
 
-    # The heat pump gets its own child device for its measured sensors, so
-    # the device list mirrors the gas boiler and PV arrays. Its settings
-    # remain part of the main entry (the optimizer needs them everywhere).
-    heatpump_device: DeviceInfo | None = None
-    if config.get(CONF_POWER_CONSUMPTION):
-        heatpump_device = _child_device(
-            f"{entry.entry_id}_heat_pump",
-            "Warmtepomp",
-            "Heat pump",
-            sw_version,
-            entry,
-            parent.id,
-        )
+    # The heat pump always gets its own child device: its advice, planned COP
+    # and cost live there, so the short entity names never land on the main
+    # device. The name is translated (``device.heat_pump`` in strings.json).
+    heatpump_device = _child_device(
+        f"{entry.entry_id}_heat_pump",
+        None,
+        "Heat pump",
+        sw_version,
+        entry,
+        parent.id,
+        translation_key="heat_pump",
+    )
 
     entry.runtime_data = HeatingCurveOptimizerData(
         weather_coordinator=weather_coordinator,

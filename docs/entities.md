@@ -15,15 +15,11 @@ and English entity names.
 | `sensor.…_pv_production_forecast` | kW | Only with PV arrays. | `forecast` |
 | `sensor.…_heating_curve_offset` | °C | **Offset to apply now.** | `offsets`, `prices`, `outdoor_forecast`, `step_start_times`, `step_minutes` |
 | `sensor.…_optimized_supply_temperature` | °C | Planned supply temperature now. | `supply_temps`, `baseline_supply_temps` |
-| `sensor.…_planned_indoor_temperature` | °C | Predicted indoor temperature at the end of the current step. | `indoor_temps`, `baseline_indoor_temps`, `comfort_min/max` |
+| `sensor.…_planned_indoor_temperature` | °C | Disabled diagnostic. Predicted indoor temperature at the end of the current step. | `indoor_temps`, `baseline_indoor_temps`, `comfort_min/max` |
 | `sensor.…_heat_buffer` | kWh | Heat stored above the comfort floor. | `forecast` |
-| `sensor.…_planned_cop` | | COP of the planned operating point now. | `cop`, `baseline_cop`, `cop_delta_now` |
-| `sensor.…_cost_savings_forecast` | EUR | Expected savings over the horizon vs. the plain curve. | `optimized_cost_eur`, `baseline_cost_eur`, `horizon_hours` |
-| `sensor.…_total_cost_savings` | EUR | Running total of realised modelled savings (can decrease). | |
+| `sensor.…_cost_savings_forecast` | EUR | Disabled diagnostic. Expected savings over the horizon vs. the plain curve. | `optimized_cost_eur`, `baseline_cost_eur`, `horizon_hours` |
+| `sensor.…_total_cost_savings` | EUR | Disabled diagnostic. Running total of realised modelled savings (can decrease). | |
 | `sensor.…_real_time_heating_curve_offset` | °C | Only with grid sensors: plan + PV-surplus adjustment. | `planned_offset`, `adjustment`, `current_grid_w` |
-| `sensor.…_heat_pump_thermal_power` | kW | Only with a power sensor: electrical power × COP. | `cop`, `supply_temperature` |
-| `sensor.…_heat_pump_thermal_energy` | kWh | Only with a power sensor: cumulative heat delivered. | |
-| `binary_sensor.…_heat_pump_plan_active` | | On while the optimized plan calls for heat now; off while it plans to coast on buffer, solar or internal gains. Switches ahead of the event, since the plan covers the whole horizon - see [Algorithm](algorithm.md#run-advice). | `changes_at`, `changes_in_minutes`, `planned_supply_temperature`, `buffer_kwh` |
 | `number.…_target_indoor_temperature` | °C | Primary zone setpoint (15–25). | |
 | `number.…_comfort_band_below_target` / `…_above_target` | °C | Comfort band (0.1–2). | |
 | `climate.…_heating` | | Disabled by default; the same setpoint as a thermostat card. | |
@@ -33,6 +29,20 @@ and English entity names.
 
 Diagnostic entities: *Value of stored heat* (shadow price, EUR/kWh) and
 *Status* (`ok`/`partial`/`initializing`/`error`, per coordinator).
+
+## Heat pump device
+
+A child device *Heat pump* for everything that describes the heat pump
+itself; its settings stay in the main entry.
+
+| Entity | Unit | Description | Key attributes |
+|---|---|---|---|
+| `binary_sensor.heat_pump_plan_active` | | On while the optimized plan calls for heat now; off while it plans to coast on buffer, solar or internal gains. Switches ahead of the event, since the plan covers the whole horizon - see [Algorithm](algorithm.md#run-advice). | `changes_at`, `changes_in_minutes`, `planned_supply_temperature`, `buffer_kwh` |
+| `sensor.heat_pump_expected_cop` | | COP of the planned operating point now. | `cop`, `baseline_cop`, `cop_delta_now` |
+| `sensor.heat_pump_thermal_power` | kW | Only with a power sensor: electrical power × COP. | `cop`, `supply_temperature` |
+| `sensor.heat_pump_thermal_energy` | kWh | Only with a power sensor: cumulative heat delivered. | |
+| `sensor.heat_pump_cost_per_kwh` | EUR/kWh | Only with a gas boiler: electricity price / COP. | |
+| `binary_sensor.heat_pump_cheaper` | | Only with a gas boiler: on while the heat pump is cheaper per kWh of heat (the inverse of *Gas boiler cheaper*). | `heat_pump_cost_eur_per_kwh`, `gas_cost_eur_per_kwh` |
 
 ## Additional zones
 
@@ -44,10 +54,10 @@ heat pump plan active.
 
 | Entity | Unit | Description |
 |---|---|---|
-| `sensor.…_heat_pump_cost_per_kwh_heat` | EUR/kWh | Electricity price / COP. |
 | `sensor.…_gas_boiler_cost_per_kwh_heat` | EUR/kWh | Gas price / calorific value / efficiency. |
 | `sensor.…_gas_boiler_advantage_per_kwh_heat` | EUR/kWh | Heat pump cost − gas cost (positive: gas cheaper). |
-| `binary_sensor.…_gas_boiler_preferred` | | See [hybrid gas boiler](algorithm.md#hybrid-gas-boiler). |
+| `binary_sensor.…_gas_boiler_advised` | | Run advice: on when the gas boiler should heat now. See [hybrid gas boiler](algorithm.md#hybrid-gas-boiler). |
+| `binary_sensor.…_gas_boiler_cheaper` | | Price comparison only: on while gas is cheaper per kWh of heat. |
 
 ## Service
 

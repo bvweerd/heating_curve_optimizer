@@ -44,6 +44,13 @@ deployments to migrate from.
 - Config flow with entity/number selectors, range and curve validation;
   unused settings (energy source sensors, curve offset, time base) removed.
 - Diagnostics redact sensor IDs in the runtime config as well.
+- A *Heat pump* device groups plan-active advice, expected COP, cost per
+  kWh, a "cheaper" flag and the measured thermal sensors. The gas boiler
+  gets separate run advice (*Gas boiler advised*) and price comparison
+  (*Gas boiler cheaper*) binary sensors. Savings and expected indoor
+  temperature sensors are disabled diagnostics by default.
+- The first plan after a restart waits briefly for the indoor sensor, and
+  an indoor change of 0.5 K or more re-optimizes right away.
 
 ### Calibration
 - Learns heat loss, thermal mass, solar factor and internal gains; the COP

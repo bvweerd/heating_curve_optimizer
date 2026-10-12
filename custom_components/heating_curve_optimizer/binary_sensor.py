@@ -35,12 +35,23 @@ class HeatPumpPlanActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
     _attr_translation_key = "heat_pump_plan_active"
     _attr_should_poll = False
 
-    def __init__(self, coordinator: Any, entry_id: str, device: DeviceInfo) -> None:
-        """Initialize the binary sensor."""
+    def __init__(
+        self,
+        coordinator: Any,
+        entry_id: str,
+        device: DeviceInfo,
+        translation_key: str = "heat_pump_plan_active",
+    ) -> None:
+        """Initialize the binary sensor.
+
+        On the heat-pump device the name drops "heat pump" (``plan_active``),
+        since Home Assistant prefixes the device name.
+        """
         super().__init__(coordinator)
         self._entry_id = entry_id
         self._attr_unique_id = f"{entry_id}_heat_pump_plan_active"
         self._attr_device_info = device
+        self._attr_translation_key = translation_key
 
     @property
     def is_on(self) -> bool | None:
@@ -242,7 +253,8 @@ async def async_setup_entry(
             HeatPumpPlanActiveBinarySensor(
                 runtime_data.optimization_coordinator,
                 entry.entry_id,
-                runtime_data.heatpump_device or runtime_data.device,
+                runtime_data.heatpump_device,
+                translation_key="plan_active",
             )
         )
     if primary_entities:
@@ -280,7 +292,7 @@ async def async_setup_entry(
                 HeatPumpCheaperBinarySensor(
                     runtime_data.gas_boiler_coordinator,
                     entry.entry_id,
-                    runtime_data.heatpump_device or runtime_data.device,
+                    runtime_data.heatpump_device,
                 )
             ]
         )

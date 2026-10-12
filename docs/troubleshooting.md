@@ -58,7 +58,7 @@ State *Provisional* with enough samples usually means too few cooling (or
 heating) windows, or a low `r_squared`: the building needs some variation.
 A wrong fit can be cleared with `heating_curve_optimizer.reset_thermal_calibration`.
 
-## Gas boiler preferred never turns on
+## Gas boiler advised never turns on
 
 That is the intended heat-pump-first behaviour while the house stays
 comfortable, or recovers within 3 hours while the heat pump is cheaper.

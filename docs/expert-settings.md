@@ -676,7 +676,7 @@ policy recommends the gas boiler as a backup to the heat pump.
 
 How many hours ahead the heat-pump-only plan is checked for comfort breaches.
 If the plan cannot restore the indoor temperature to within the comfort band
-within this window, the *Gas boiler preferred* sensor switches on (when *Gas
+within this window, the *Gas boiler advised* sensor switches on (when *Gas
 as comfort backup* is enabled).
 
 **Lower** (e.g., to 2 h) to give the gas boiler a shorter deadline before

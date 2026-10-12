@@ -641,6 +641,11 @@
       }
     }
   },
+  "device": {
+    "heat_pump": {
+      "name": "Heat pump"
+    }
+  },
   "entity": {
     "sensor": {
       "outdoor_temperature": {
@@ -712,10 +717,10 @@
         }
       },
       "heat_pump_thermal_power": {
-        "name": "Heat pump thermal power"
+        "name": "Thermal power"
       },
       "heat_pump_thermal_energy": {
-        "name": "Heat pump thermal energy"
+        "name": "Thermal energy"
       },
       "gas_boiler_heat_pump_cost": {
         "name": "Cost per kWh"
@@ -730,6 +735,9 @@
     "binary_sensor": {
       "heat_pump_plan_active": {
         "name": "Heat pump plan active"
+      },
+      "plan_active": {
+        "name": "Plan active"
       },
       "heat_pump_cheaper": {
         "name": "Cheaper"

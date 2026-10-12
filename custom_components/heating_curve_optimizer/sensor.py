@@ -815,7 +815,7 @@ async def async_setup_entry(
     runtime_data = entry.runtime_data
     config = runtime_data.config
     device = runtime_data.device
-    heatpump_device = runtime_data.heatpump_device or device
+    heatpump_device = runtime_data.heatpump_device
     prefix = entry.entry_id
     weather = runtime_data.weather_coordinator
     heat = runtime_data.heat_coordinator
@@ -847,7 +847,7 @@ async def async_setup_entry(
             optimization, optimization_descriptions, prefix, device
         )
         # COP is a property of the heat pump itself, so its planned value
-        # belongs to the heat-pump device (fallback: the main device).
+        # belongs to the heat-pump device.
         entities += _optimization_entities(
             optimization, [PLANNED_COP], prefix, heatpump_device
         )
