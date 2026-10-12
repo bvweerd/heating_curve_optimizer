@@ -57,10 +57,10 @@ V_t(T, o_prev) = min over o of  cost_t(T, o) + comfort_t(T') + λ·(o − o_prev
 
 - **Decision**: offset `o` ∈ {−4 … +4}, with at most
   `step_minutes / offset_delta_t` degrees change per step; or **pump off**
-  (no heat, offset unchanged), available only at or above the target
-  temperature. The off action is how the plan cycles the heat pump when the
-  house needs less than the minimum output the curve floor can deliver,
-  instead of trickling heat indefinitely.
+  (no heat, offset unchanged), available anywhere at or above the bottom of the comfort band. The off
+  action is how the plan cycles the heat pump: it coasts through expensive
+  hours by letting the room drift down inside the band, and it stops
+  trickling heat when the house needs less than the curve floor delivers.
 - **Transition**: `T'` from the building model, computed exactly (not
   rounded to the grid).
 - **Value function**: stored on a 0.1 °C grid and interpolated linearly.

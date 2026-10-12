@@ -77,6 +77,16 @@ def test_plan_run_advice_currently_off_reports_when_heat_resumes() -> None:
     assert change_at == starts[2]
 
 
+def test_plan_run_advice_trickle_below_idle_threshold_is_off() -> None:
+    """The threshold is electrical: 0.1 kW electric (0.5 kW heat at COP 5)
+    is standby-level trickle, not a running heat pump."""
+    now = dt_util.utcnow()
+    starts = [now + timedelta(minutes=15 * i) for i in range(3)]
+    on, change_at = _plan_run_advice([0.1, 0.1, 0.8], starts, 0.15)
+    assert on is False
+    assert change_at == starts[2]
+
+
 def _optimization_coordinator(hass: HomeAssistant, **config) -> OptimizationCoordinator:
     heat = MagicMock()
     heat.effective_config.return_value = {**main_config(), **zone_data(), **config}

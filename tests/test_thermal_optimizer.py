@@ -77,8 +77,9 @@ def test_optimizer_conserves_energy_along_chosen_path():
 def test_comfort_band_never_breached_in_normal_conditions():
     """Under conditions the emitter/heat pump were sized for, the optimizer
     must keep indoor temperature within a tight tolerance of the comfort band.
-    A small excursion (~0.05 K) is acceptable — the quadratic comfort penalty
-    makes larger violations very expensive, but does not hard-forbid them."""
+    A small excursion (<0.1 K) is acceptable — the quadratic comfort penalty
+    makes larger violations very expensive, but does not hard-forbid them.
+    Here an off hour during an 8x price spike just touches the floor."""
     building, heatpump, emitter = _make_system(comfort_min=19.0, comfort_max=21.0)
     horizon = 24
     outdoor = [-5.0 + 3 * math.sin(t / 12 * math.pi) for t in range(horizon)]
@@ -94,7 +95,7 @@ def test_comfort_band_never_breached_in_normal_conditions():
         time_base=60,
     )
 
-    assert all(19.0 - 0.05 <= t <= 21.0 + 0.05 for t in result.indoor_temps)
+    assert all(19.0 - 0.1 <= t <= 21.0 + 0.1 for t in result.indoor_temps)
 
 
 def test_out_of_range_current_offset_does_not_raise():
@@ -153,7 +154,7 @@ def test_no_heat_delivery_above_target_plus_thermostat_ramp():
 def test_pump_off_action_cycles_instead_of_trickling_at_curve_floor():
     """With the curve floor above the room temperature, the emitter would
     otherwise always deliver heat. The explicit "pump off" action must let
-    the optimizer switch the pump off while the room is at/above target, so
+    the optimizer switch the pump off while the room is inside the band, so
     the plan cycles instead of trickling heat indefinitely."""
     building = BuildingConfig(
         area_m2=159,
@@ -190,10 +191,55 @@ def test_pump_off_action_cycles_instead_of_trickling_at_curve_floor():
     assert any(p == 0.0 for p in result.thermal_power_kw)
     assert any(p > 0.0 for p in result.thermal_power_kw)
     assert any(not on for on in result.pump_on)
-    # The off action is only allowed at/above target.
+    # The off action is only allowed inside the comfort band.
     for t in range(1, len(result.thermal_power_kw)):
         if not result.pump_on[t]:
-            assert result.indoor_temps[t - 1] >= building.target_temp - 1e-9
+            assert result.indoor_temps[t - 1] >= building.comfort_min - 1e-9
+    assert min(result.indoor_temps) >= building.comfort_min - 0.05
+
+
+def test_pump_off_coasts_below_target_through_expensive_hours():
+    """Regression: with the off action gated at target the plan stayed "on"
+    nearly all day, because any room below target had to be heated. The band
+    below target must be usable for coasting through a price peak."""
+    building = BuildingConfig(
+        area_m2=159,
+        energy_label="A+",
+        comfort_min=19.7,
+        comfort_max=20.5,
+        target_temp=20.0,
+    )
+    emitter = EmitterConfig.sized_to_building(
+        building,
+        design_outdoor_temp=-10.0,
+        design_supply_temp=37.0,
+        emitter_type="underfloor",
+    )
+    heatpump = HeatPumpConfig(max_thermal_power_kw=emitter.nominal_power_kw * 1.3)
+    peak = range(7, 10)
+    prices = [0.35 if h in peak else 0.15 for h in range(24)]
+
+    result = optimize_thermal_schedule(
+        building=building,
+        heatpump=heatpump,
+        emitter=emitter,
+        outdoor_temps=[11.0] * 24,
+        prices=prices,
+        initial_indoor_temp=20.0,
+        water_min=27.0,
+        water_max=37.0,
+        outdoor_min=-10.0,
+        outdoor_max=18.0,
+        time_base=60,
+        offset_min=-4,
+        offset_max=4,
+    )
+
+    assert all(not result.pump_on[h] for h in peak)
+    assert any(
+        not result.pump_on[t] and result.indoor_temps[t - 1] < building.target_temp
+        for t in range(1, 24)
+    )
     assert min(result.indoor_temps) >= building.comfort_min - 0.05
 
 
@@ -424,8 +470,8 @@ def test_dp_matches_brute_force_on_small_horizon():
         total = 0.0
         for t, action in enumerate(sequence):
             if action is None:
-                # Explicit "pump off": only at/above target, offset unchanged.
-                if t_in < building.target_temp:
+                # Explicit "pump off": only inside the band, offset unchanged.
+                if t_in < building.comfort_min:
                     return math.inf
                 offset = prev
                 q = 0.0

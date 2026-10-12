@@ -322,15 +322,15 @@ def optimize_thermal_schedule(
                 )
             q_values.append(row)
 
-        # Explicit "pump off" action: no heat, offset unchanged. Only
-        # available at or above the target temperature, mirroring a real
-        # thermostat that never switches off while the room is below its
-        # setpoint. The resulting cost-to-go continues from the same
+        # Explicit "pump off" action: no heat, offset unchanged. Available
+        # anywhere inside the comfort band: the band below target is the
+        # user's permission to coast, so the plan may switch off through
+        # expensive hours (the comfort penalty guards the floor). The resulting cost-to-go continues from the same
         # prev_offset row of V[t+1], so it is computed per prev_offset below.
         off_stage: list[float] = []
         off_next: list[float] = []
         for t_in in states:
-            if t_in < building.target_temp:
+            if t_in < building.comfort_min:
                 off_stage.append(math.inf)
                 off_next.append(t_in)
             else:
@@ -374,9 +374,9 @@ def optimize_thermal_schedule(
             if total < best_total:
                 best_total = total
                 best = (offset, outcome, True)
-        # Explicit "pump off" action: no heat, offset unchanged. Only
-        # available at or above target, like a real thermostat.
-        if t_in >= building.target_temp:
+        # Explicit "pump off" action: no heat, offset unchanged. Available
+        # at or above comfort_min.
+        if t_in >= building.comfort_min:
             off_outcome = simulate_step(t, t_in, prev_offset, pump_on=False)
             off_total = stage_cost(t, off_outcome) + interp(
                 v_tables[t + 1][prev_offset - offset_min], off_outcome.next_t_in

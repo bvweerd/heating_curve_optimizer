@@ -161,7 +161,7 @@ MAX_WATER_DELTA_T = 20.0
 
 
 def _plan_run_advice(
-    thermal_power_kw: list[float],
+    electrical_power_kw: list[float],
     step_starts: list[datetime],
     idle_power_threshold_kw: float = DEFAULT_IDLE_POWER_THRESHOLD_KW,
 ) -> tuple[bool | None, datetime | None]:
@@ -172,11 +172,15 @@ def _plan_run_advice(
     the DP trajectory over the whole horizon (comfort_penalty is symmetric
     around the band), so a sunny afternoon or a cold snap shows up here as
     soon as the plan accounts for it - not only once it happens.
+
+    Compared on electrical power, like the measured idle detection: the
+    threshold is a standby level, and a thermal trickle at a high COP would
+    otherwise always read as "on".
     """
-    if not thermal_power_kw:
+    if not electrical_power_kw:
         return None, None
-    current_on = thermal_power_kw[0] > idle_power_threshold_kw
-    for power, start in zip(thermal_power_kw[1:], step_starts[1:], strict=False):
+    current_on = electrical_power_kw[0] > idle_power_threshold_kw
+    for power, start in zip(electrical_power_kw[1:], step_starts[1:], strict=False):
         if (power > idle_power_threshold_kw) != current_on:
             return current_on, start
     return current_on, None
@@ -671,7 +675,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self._update_calibration_issue()
         plan_on, plan_change_at = _plan_run_advice(
-            opt.thermal_power_kw, step_starts, self._idle_power_threshold_kw
+            opt.electrical_power_kw, step_starts, self._idle_power_threshold_kw
         )
         return {
             "offset": self._current_offset,
