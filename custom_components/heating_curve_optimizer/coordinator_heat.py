@@ -160,6 +160,10 @@ class HeatCalculationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             else:
                 ir.async_delete_issue(self.hass, DOMAIN, issue_id)
                 return value, INDOOR_SOURCE_SENSOR
+        # During startup the sensor's integration may not be loaded yet;
+        # the issue is raised on the first refresh after Home Assistant runs.
+        if not self.hass.is_running:
+            return target_temp, INDOOR_SOURCE_TARGET
         ir.async_create_issue(
             self.hass,
             DOMAIN,

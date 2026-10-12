@@ -5,17 +5,19 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.start import async_at_started
 
 from .const import (
     CONF_GAS_BOILER_EFFICIENCY,
@@ -28,7 +30,7 @@ from .const import (
     PV_SUBENTRY_TYPE,
     ZONE_SUBENTRY_TYPE,
 )
-from .coordinator_heat import INDOOR_SOURCE_SENSOR, HeatCalculationCoordinator
+from .coordinator_heat import HeatCalculationCoordinator
 from .coordinator_optimization import OptimizationCoordinator
 from .coordinator_weather import WeatherDataCoordinator
 from .gas_boiler_coordinator import GasBoilerCoordinator
@@ -56,6 +58,8 @@ _SERVICE_RESET_SCHEMA = vol.Schema({vol.Optional(SERVICE_ENTRY_ID): cv.string})
 # Delay before the first optimization run, so entities exist before the
 # (comparatively slow) DP result arrives.
 FIRST_REFRESH_DELAY_S = 5
+FIRST_REFRESH_TIMEOUT_S = 120
+FIRST_REFRESH_POLL_S = 2
 
 
 @dataclass
@@ -163,20 +167,26 @@ def _schedule_first_refresh(
     entry: ConfigEntry,
     coordinator: Any,
     *,
-    wait_for_indoor: HeatCalculationCoordinator | None = None,
+    ready: Callable[[], bool] | None = None,
 ) -> None:
-    """Run a coordinator's first refresh shortly after setup, off the setup path.
+    """Run a coordinator's first refresh off the setup path, once its inputs exist.
 
-    For the optimization coordinator, ``wait_for_indoor`` makes the first run
-    wait a little longer when a real indoor sensor is configured but not yet
-    reporting (common right after a restart), so the plan is not based on the
-    target-temperature fallback.
+    After a restart the source sensors (prices, indoor temperature) usually
+    belong to integrations that are still loading. Refreshing right away
+    logs an error, raises a repair issue and - for the plan - starts from
+    the target-temperature fallback. So wait until Home Assistant has
+    started, then until ``ready()`` holds (bounded by
+    ``FIRST_REFRESH_TIMEOUT_S``, so a broken sensor still surfaces).
     """
 
     async def _refresh() -> None:
+        await _async_wait_started(hass)
         await asyncio.sleep(FIRST_REFRESH_DELAY_S)
-        if wait_for_indoor is not None:
-            await _wait_for_indoor_sensor(wait_for_indoor)
+        if ready is not None:
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + FIRST_REFRESH_TIMEOUT_S
+            while not ready() and loop.time() < deadline:
+                await asyncio.sleep(FIRST_REFRESH_POLL_S)
         await coordinator.async_request_refresh()
 
     entry.async_create_background_task(
@@ -184,24 +194,19 @@ def _schedule_first_refresh(
     )
 
 
-async def _wait_for_indoor_sensor(
-    heat_coordinator: HeatCalculationCoordinator, timeout_s: float = 30.0
-) -> None:
-    """Wait (briefly) for a configured indoor sensor to report a real value.
+async def _async_wait_started(hass: HomeAssistant) -> None:
+    """Return once Home Assistant has started (immediately when it has)."""
+    started = asyncio.Event()
 
-    Returns immediately when no indoor sensor is configured or when a real
-    reading arrives; gives up after ``timeout_s`` so a broken sensor never
-    blocks the first plan indefinitely.
-    """
-    if not heat_coordinator.has_real_indoor_sensor:
-        return
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + timeout_s
-    while loop.time() < deadline:
-        data = heat_coordinator.data
-        if data and data.get("indoor_temperature_source") == INDOOR_SOURCE_SENSOR:
-            return
-        await asyncio.sleep(2)
+    @callback
+    def _set(_hass: HomeAssistant) -> None:
+        started.set()
+
+    unsub = async_at_started(hass, _set)
+    try:
+        await started.wait()
+    finally:
+        unsub()
 
 
 async def _async_setup_zone(
@@ -238,7 +243,10 @@ async def _async_setup_zone(
     )
     await optimization_coordinator.async_setup()
     _schedule_first_refresh(
-        hass, entry, optimization_coordinator, wait_for_indoor=heat_coordinator
+        hass,
+        entry,
+        optimization_coordinator,
+        ready=optimization_coordinator.inputs_ready,
     )
     return heat_coordinator, optimization_coordinator
 
@@ -345,7 +353,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entry.entry_id,
         )
         await gas_boiler_coordinator.async_setup()
-        _schedule_first_refresh(hass, entry, gas_boiler_coordinator)
+        _schedule_first_refresh(
+            hass,
+            entry,
+            gas_boiler_coordinator,
+            ready=gas_boiler_coordinator.inputs_ready,
+        )
         # Translated device name (the single gas subentry has a fixed title),
         # so the short entity names read "Gas boiler Advised" / "Gasketel
         # Inzetten" instead of doubling the device name.

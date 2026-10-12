@@ -45,6 +45,7 @@ from .coordinator_optimization import OptimizationCoordinator
 from .coordinator_weather import _update_failed
 from .gas_boiler_model import GasBoilerConfig, compare_heat_pump_and_gas
 from .heatpump_model import HeatPumpConfig
+from .helpers import usable_state
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -144,13 +145,31 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._handle_plan_update
         )
 
+    def inputs_ready(self) -> bool:
+        """Whether both prices report and the heat-pump plan exists.
+
+        Holds back the first comparison after a restart: it needs the plan's
+        operating point, and the price sensors' integrations may still load.
+        """
+        return (
+            usable_state(self.hass, self._gas_price_sensor) is not None
+            and usable_state(self.hass, self._electricity_price_sensor) is not None
+            and self.optimization_coordinator.data is not None
+        )
+
     @callback
     def _handle_plan_update(self) -> None:
+        if self.data is None and not self.inputs_ready():
+            # Startup: the scheduled first refresh waits for the inputs;
+            # refreshing now would only log an error.
+            return
         self.hass.async_create_task(self.async_request_refresh())
 
     async def _handle_price_change(self, event: Event[EventStateChangedData]) -> None:
         """Refresh unconditionally - this computation is O(1), unlike the
         DP re-run the main optimizer's 10%-change gate exists to avoid."""
+        if self.data is None and not self.inputs_ready():
+            return  # startup: the scheduled first refresh waits for inputs
         await self.async_request_refresh()
 
     async def async_shutdown(self) -> None:
@@ -187,15 +206,16 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         gas_price = self._read_gas_price_eur_per_m3()
         if gas_price is None:
-            ir.async_create_issue(
-                self.hass,
-                DOMAIN,
-                f"gas_price_sensor_unavailable_{self._entry_id}",
-                is_fixable=False,
-                severity=ir.IssueSeverity.WARNING,
-                translation_key="gas_price_sensor_unavailable",
-                translation_placeholders={"sensor": self._gas_price_sensor},
-            )
+            if self.hass.is_running:
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    f"gas_price_sensor_unavailable_{self._entry_id}",
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key="gas_price_sensor_unavailable",
+                    translation_placeholders={"sensor": self._gas_price_sensor},
+                )
             raise _update_failed(
                 "gas_price_sensor_unavailable",
                 translation_placeholders={"sensor": self._gas_price_sensor},

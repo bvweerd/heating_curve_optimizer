@@ -2,16 +2,26 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EntityCategory
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 
 from custom_components.heating_curve_optimizer.const import DOMAIN
 
-from .conftest import INDOOR_SENSOR, POWER_SENSOR, make_entry, setup_entry
+from .conftest import (
+    GAS_PRICE_SENSOR,
+    INDOOR_SENSOR,
+    POWER_SENSOR,
+    PRICE_SENSOR,
+    make_entry,
+    price_attributes,
+    setup_entry,
+)
 
 
 def _entity_id(hass: HomeAssistant, platform: str, unique_id: str) -> str:
@@ -142,6 +152,48 @@ async def test_indoor_sensor_unavailable_falls_back_to_target_and_raises_issue(
         )
         is None
     )
+
+
+async def test_restart_waits_for_source_sensors_without_errors(
+    hass: HomeAssistant, mock_open_meteo, caplog, monkeypatch
+) -> None:
+    """After a restart the price/indoor/gas sensors belong to integrations
+    that are still loading. That must not log errors or raise repair issues;
+    the first plan and gas comparison run once the sensors report."""
+    import custom_components.heating_curve_optimizer as hco
+
+    monkeypatch.setattr(hco, "FIRST_REFRESH_DELAY_S", 0)
+    monkeypatch.setattr(hco, "FIRST_REFRESH_POLL_S", 0.01)
+    hass.set_state(CoreState.not_running)
+    entry = make_entry(gas=True)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    runtime = entry.runtime_data
+    assert runtime.optimization_coordinator.data is None
+    assert not ir.async_get(hass).issues
+
+    # Home Assistant finishes starting; the sources follow a moment later.
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+    assert runtime.optimization_coordinator.data is None
+
+    hass.states.async_set(INDOOR_SENSOR, "20.1", {"unit_of_measurement": "°C"})
+    hass.states.async_set(PRICE_SENSOR, "0.10", price_attributes())
+    hass.states.async_set(GAS_PRICE_SENSOR, "1.20")
+    for _ in range(50):
+        await asyncio.sleep(0.02)
+        await hass.async_block_till_done()
+        if runtime.gas_boiler_coordinator.data is not None:
+            break
+
+    assert runtime.optimization_coordinator.data is not None
+    assert runtime.optimization_coordinator.data["initial_indoor_temp"] == 20.1
+    assert runtime.gas_boiler_coordinator.data is not None
+    assert not ir.async_get(hass).issues
+    assert "Error fetching" not in caplog.text
 
 
 async def test_price_sensor_unavailable_raises_repair_issue(

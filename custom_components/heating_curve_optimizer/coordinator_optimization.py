@@ -144,6 +144,7 @@ from .helpers import (
     max_offset_change,
     read_power_kw,
     resample_to_steps,
+    usable_state,
 )
 from .realtime_controller import RealtimeController, create_realtime_controller
 from .thermal_optimizer import (
@@ -362,6 +363,22 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._unsub_heat = None
         await super().async_shutdown()
 
+    def inputs_ready(self) -> bool:
+        """Whether the price sensor and a configured indoor sensor report.
+
+        Used to hold back the first run after a restart until the source
+        integrations have loaded.
+        """
+        if usable_state(self.hass, self._price_sensor) is None:
+            return False
+        if not self.heat_coordinator.has_real_indoor_sensor:
+            return True
+        heat_data = self.heat_coordinator.data
+        return bool(
+            heat_data
+            and heat_data.get("indoor_temperature_source") == INDOOR_SOURCE_SENSOR
+        )
+
     @callback
     def _handle_heat_update(self) -> None:
         """Re-optimize when the indoor reading recovers or changes ≥0.5 K.
@@ -401,6 +418,10 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (ValueError, TypeError):
             return
         recovered = old_state is None or old_state.state in ("unknown", "unavailable")
+        if self.data is None and not self.inputs_ready():
+            # Startup: the scheduled first refresh waits for the inputs.
+            self._last_price = new_price
+            return
         if recovered or price_change_is_significant(
             self._last_price,
             new_price,
@@ -504,15 +525,18 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         issue_id = f"price_sensor_unavailable_{self.zone_id}"
         state = self.hass.states.get(self._price_sensor)
         if not state or state.state in ("unknown", "unavailable"):
-            ir.async_create_issue(
-                self.hass,
-                DOMAIN,
-                issue_id,
-                is_fixable=False,
-                severity=ir.IssueSeverity.WARNING,
-                translation_key="price_sensor_unavailable",
-                translation_placeholders={"sensor": self._price_sensor},
-            )
+            # While Home Assistant starts, the source integration may simply
+            # not be loaded yet: no repair issue for that.
+            if self.hass.is_running:
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    issue_id,
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key="price_sensor_unavailable",
+                    translation_placeholders={"sensor": self._price_sensor},
+                )
             raise _update_failed(
                 "price_sensor_unavailable",
                 translation_placeholders={"sensor": self._price_sensor},

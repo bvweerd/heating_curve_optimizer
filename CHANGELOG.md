@@ -53,8 +53,11 @@ deployments to migrate from.
   gets separate run advice (*Advised*) and price comparison (*Cheaper*)
   binary sensors. Both devices have translated names. Savings and expected indoor
   temperature sensors are disabled diagnostics by default.
-- The first plan after a restart waits briefly for the indoor sensor, and
-  an indoor change of 0.5 K or more re-optimizes right away.
+- After a restart the first plan and gas comparison wait until Home
+  Assistant has started and their source sensors (prices, indoor
+  temperature) report, instead of logging errors and raising repair issues
+  for sensors that are still loading. An indoor change of 0.5 K or more
+  re-optimizes right away.
 
 ### Calibration
 - Learns heat loss, thermal mass, solar factor and internal gains; the COP
