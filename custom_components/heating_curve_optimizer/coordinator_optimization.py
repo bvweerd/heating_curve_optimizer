@@ -490,7 +490,10 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             offset_min=self._offset_min,
             offset_max=self._offset_max,
         )
-        self.async_set_updated_data({**self.data, "realtime": action})
+        # Not async_set_updated_data: that reschedules the 15-minute poll,
+        # and with this 60 s loop the plan would never be re-optimized.
+        self.data = {**self.data, "realtime": action}
+        self.async_update_listeners()
 
     # ------------------------------------------------------------------
     # Optimization cycle

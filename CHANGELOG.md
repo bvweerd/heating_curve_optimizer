@@ -15,6 +15,10 @@ deployments to migrate from.
   (was: only at or above target), so it coasts through expensive hours
   instead of staying on all day. Run advice compares the plan's
   electrical power with the idle threshold.
+- The plan is re-optimized every 15 minutes again when grid sensors are
+  configured: the 60 s PV-surplus loop kept pushing the scheduled run
+  back, so the plan (and the heat buffer) froze until a large price or
+  indoor temperature change.
 - Backward-induction DP over indoor temperature with a linearly
   interpolated value function and a continuous-state forward pass (slow
   temperature drift is no longer rounded away).

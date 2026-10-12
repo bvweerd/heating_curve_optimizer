@@ -368,3 +368,27 @@ def test_observed_calibration_is_not_used(hass: HomeAssistant) -> None:
     assert building.ua_w_per_k == pytest.approx(
         coordinator.calibration_prior().ua_w_per_k
     )
+
+
+async def test_realtime_update_keeps_the_poll_scheduled(hass: HomeAssistant) -> None:
+    """The 60 s realtime loop must not push the 15-minute re-plan back:
+    async_set_updated_data reschedules the poll, so it never fired."""
+    from custom_components.heating_curve_optimizer.realtime_controller import (
+        create_realtime_controller,
+    )
+
+    coordinator = _optimization_coordinator(hass, grid_import_sensor="sensor.grid")
+    coordinator._realtime_controller = create_realtime_controller(coordinator.config)
+    hass.states.async_set("sensor.grid", "500", {"unit_of_measurement": "W"})
+    coordinator.data = {"offsets": [0], "shadow_price_eur_per_kwh": 0.1}
+    listener = MagicMock()
+    unsub = coordinator.async_add_listener(listener)
+    scheduled = coordinator._unsub_refresh
+    assert scheduled is not None
+
+    await coordinator._handle_realtime_update(dt_util.utcnow())
+
+    assert coordinator._unsub_refresh is scheduled
+    assert "realtime" in coordinator.data
+    listener.assert_called_once()
+    unsub()
