@@ -488,3 +488,21 @@ async def test_setpoints_are_text_boxes(
             _state(hass, "number", f"{entry.entry_id}_{key}").attributes["mode"]
             == "box"
         )
+
+
+async def test_replan_keeps_the_surplus_adjustment(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    """A new DP run must not drop the real-time offset back to the plan."""
+    hass.states.async_set("sensor.grid", "0", {"unit_of_measurement": "W"})
+    entry = make_entry(grid_import_sensor="sensor.grid")
+    await setup_entry(hass, entry)
+    coordinator = entry.runtime_data.optimization_coordinator
+    coordinator._realtime_controller.reset(1)
+
+    await coordinator.async_refresh()
+
+    realtime = coordinator.data["realtime"]
+    assert realtime["adjustment"] == 1
+    assert realtime["planned_offset"] == coordinator.data["offset"]
+    await hass.config_entries.async_unload(entry.entry_id)

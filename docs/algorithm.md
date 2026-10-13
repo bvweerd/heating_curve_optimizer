@@ -123,7 +123,8 @@ With grid sensors configured, every minute:
 - importing more than 300 W steps such an increase back down.
 
 The layer never goes below the plan and never beyond the ramp limit or the
-−4 … +4 range. The result is the *Real-time heating curve offset* sensor.
+−4 … +4 range, and it carries over when the plan is recomputed. The
+result is the *Real-time heating curve offset* sensor.
 
 ## Hybrid gas boiler
 

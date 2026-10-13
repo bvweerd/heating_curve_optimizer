@@ -54,7 +54,7 @@ class RealtimeController:
         return self._last_adjustment
 
     def reset(self, value: int = 0) -> None:
-        """Reset the adjustment memory (e.g. on a mode change or new DP run)."""
+        """Reset the adjustment memory."""
         self._last_adjustment = value
 
     def calculate_adjustment(

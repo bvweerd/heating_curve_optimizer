@@ -472,24 +472,32 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
         return ((import_kw or 0.0) - (export_kw or 0.0)) * 1000.0
 
-    async def _handle_realtime_update(self, now: datetime) -> None:
-        """Adjust the planned offset around live grid power."""
-        if self._realtime_controller is None or not self.data:
-            return
+    def _realtime_action(self, data: dict[str, Any]) -> dict[str, Any] | None:
+        """The PV-surplus adjustment on top of the plan in `data`, if enabled."""
+        if self._realtime_controller is None:
+            return None
         current_grid_w = self._get_realtime_grid_w()
         if current_grid_w is None:
-            return
-        offsets = self.data.get("offsets") or [0]
-        action = self._realtime_controller.get_control_action(
+            return None
+        offsets = data.get("offsets") or [0]
+        return self._realtime_controller.get_control_action(
             current_grid_w=current_grid_w,
-            shadow_price_eur_per_kwh=self.data.get("shadow_price_eur_per_kwh", 0.0),
+            shadow_price_eur_per_kwh=data.get("shadow_price_eur_per_kwh", 0.0),
             planned_offset=offsets[0],
             max_adjustment=max_offset_change(
-                self.data.get("step_minutes", 60), self._offset_delta_t()
+                data.get("step_minutes", 60), self._offset_delta_t()
             ),
             offset_min=self._offset_min,
             offset_max=self._offset_max,
         )
+
+    async def _handle_realtime_update(self, now: datetime) -> None:
+        """Adjust the planned offset around live grid power."""
+        if not self.data:
+            return
+        action = self._realtime_action(self.data)
+        if action is None:
+            return
         # Not async_set_updated_data: that reschedules the 15-minute poll,
         # and with this 60 s loop the plan would never be re-optimized.
         self.data = {**self.data, "realtime": action}
@@ -660,8 +668,6 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         building: BuildingConfig = result["building"]
 
         self._current_offset = opt.offsets[0] if opt.offsets else 0
-        if self._realtime_controller is not None:
-            self._realtime_controller.reset()
 
         power_kw = read_power_kw(self.hass, self.config.get(CONF_POWER_CONSUMPTION))
         indoor_is_measured = (
@@ -704,7 +710,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         plan_on, plan_change_at = _plan_run_advice(
             opt.electrical_power_kw, step_starts, self._idle_power_threshold_kw
         )
-        return {
+        data: dict[str, Any] = {
             "offset": self._current_offset,
             "offsets": opt.offsets,
             "pump_on": opt.pump_on,
@@ -758,6 +764,11 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ),
             "timestamp": now,
         }
+        # The surplus adjustment carries over to the new plan: resetting it
+        # here dropped the real-time offset to the plan every 15 minutes.
+        if (action := self._realtime_action(data)) is not None:
+            data["realtime"] = action
+        return data
 
     def _measured_supply_temp(self) -> float | None:
         """Measured supply temperature, if a sensor is configured and valid."""
