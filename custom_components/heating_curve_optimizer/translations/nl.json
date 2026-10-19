@@ -443,6 +443,8 @@
             "ceiling_height": "Plafondhoogte",
             "thermal_mass_class": "Bouwwijze (thermische massa)",
             "emitter_type": "Afgiftesysteem",
+            "building_model": "Gebouwmodel",
+            "air_coupling_kw_per_k": "Koppeling massa-lucht",
             "internal_gains_w_per_m2": "Interne warmtelast",
             "glass_south_m2": "Raamoppervlak zuid",
             "glass_east_m2": "Raamoppervlak oost",
@@ -462,6 +464,8 @@
           },
           "data_description": {
             "energy_label": "Gebruikt om de warmteverliescoëfficiënt te schatten totdat de kalibratie die heeft geleerd.",
+            "building_model": "Eén knoop: de ruimte is de warmtemassa. Massa + lucht (aanbevolen bij vloerverwarming in een zwaar huis): de warmtepomp verwarmt vloer en constructie, zon en interne warmte verwarmen de lucht direct. Vereist de binnentemperatuursensor.",
+            "air_coupling_kw_per_k": "Alleen bij Massa + lucht. Leeg: na enkele dagen geleerd uit de geschiedenis (tot dan 55 W/K per m² vloer).",
             "internal_gains_w_per_m2": "Bewoners, apparaten en verlichting. 2-4 W/m² voor een bewoonde woning.",
             "glass_u_value": "Dubbel glas ~2,8, HR++ ~1,2, triple ~0,8.",
             "indoor_temp_hysteresis_lower": "De optimizer houdt de binnentemperatuur tussen doel - onder en doel + boven.",
@@ -486,6 +490,8 @@
             "ceiling_height": "Plafondhoogte",
             "thermal_mass_class": "Bouwwijze (thermische massa)",
             "emitter_type": "Afgiftesysteem",
+            "building_model": "Gebouwmodel",
+            "air_coupling_kw_per_k": "Koppeling massa-lucht",
             "internal_gains_w_per_m2": "Interne warmtelast",
             "glass_south_m2": "Raamoppervlak zuid",
             "glass_east_m2": "Raamoppervlak oost",
@@ -505,6 +511,8 @@
           },
           "data_description": {
             "energy_label": "Gebruikt om de warmteverliescoëfficiënt te schatten totdat de kalibratie die heeft geleerd.",
+            "building_model": "Eén knoop: de ruimte is de warmtemassa. Massa + lucht (aanbevolen bij vloerverwarming in een zwaar huis): de warmtepomp verwarmt vloer en constructie, zon en interne warmte verwarmen de lucht direct. Vereist de binnentemperatuursensor.",
+            "air_coupling_kw_per_k": "Alleen bij Massa + lucht. Leeg: na enkele dagen geleerd uit de geschiedenis (tot dan 55 W/K per m² vloer).",
             "internal_gains_w_per_m2": "Bewoners, apparaten en verlichting. 2-4 W/m² voor een bewoonde woning.",
             "glass_u_value": "Dubbel glas ~2,8, HR++ ~1,2, triple ~0,8.",
             "indoor_temp_hysteresis_lower": "De optimizer houdt de binnentemperatuur tussen doel - onder en doel + boven.",
@@ -673,6 +681,12 @@
       "options": {
         "own_thermostat": "Eigen thermostaat",
         "follows_plan": "Volgt de planning (aan/uit via Planning actief)"
+      }
+    },
+    "building_model": {
+      "options": {
+        "one_node": "Eén knoop",
+        "mass_air": "Massa + lucht"
       }
     }
   },

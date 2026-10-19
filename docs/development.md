@@ -22,7 +22,8 @@ plus hassfest and HACS validation.
 
 | Module | Responsibility |
 |---|---|
-| `building_model.py` | 1R1C building and emitter model (pure Python). |
+| `building_model.py` | 1R1C / mass-air building and emitter model (pure Python). |
+| `mass_model.py` | Mass temperature observer, 5-minute history, coupling learning, measured COP check. |
 | `heatpump_model.py` | The single COP implementation. |
 | `thermal_optimizer.py` | DP optimizer and baseline (pure Python). |
 | `calibration.py` | Building, COP and emitter fits, quality gates, residual diagnosis; persisted. |
@@ -33,6 +34,9 @@ plus hassfest and HACS validation.
 | `helpers.py` | Price parsing, time alignment, solar geometry, sensor reading. |
 | `sensor.py` | Entity descriptions over coordinator data. |
 | `config_flow.py` | Main flow, options flow and subentry flows. |
+
+`scripts/validate_diagnostics.py` replays the validation history of a
+diagnostics download (see [Troubleshooting](troubleshooting.md#validating-the-models-after-a-few-days)).
 
 ## Tests
 

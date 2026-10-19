@@ -78,6 +78,8 @@ offset of −4 … +4 °C on top of it.
 | Ceiling height | 2.5 m | Volume for the ventilation loss. |
 | Construction | medium | Thermal mass: light 40, medium 90, heavy 165 Wh/(m²·K). |
 | Heat emitters | radiators | Emitter exponent: radiators 1.3, underfloor 1.1, fan coils 1.0. |
+| Building model | One node | *Mass + air*: the heat pump heats floor and structure, sun and internal gains warm the air directly. Recommended for underfloor heating in a heavy house; needs the indoor temperature sensor. See [Algorithm](algorithm.md#mass-air-opt-in-per-zone). |
+| Mass-air coupling | empty | Only with *Mass + air*. Empty: learned from the history after a few days (until then 55 W/K per m² floor). |
 | Internal heat gains | 3 W/m² | People, appliances, lighting. |
 | Window area south/east/west | 0 | m² glass; solar gain uses sun position and direct/diffuse irradiance. |
 | Glazing U-value | 1.2 | Determines the solar heat gain coefficient. |

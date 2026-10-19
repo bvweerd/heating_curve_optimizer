@@ -443,6 +443,8 @@
             "ceiling_height": "Ceiling height",
             "thermal_mass_class": "Construction (thermal mass)",
             "emitter_type": "Heat emitters",
+            "building_model": "Building model",
+            "air_coupling_kw_per_k": "Mass-air coupling",
             "internal_gains_w_per_m2": "Internal heat gains",
             "glass_south_m2": "Window area south",
             "glass_east_m2": "Window area east",
@@ -462,6 +464,8 @@
           },
           "data_description": {
             "energy_label": "Used to estimate the heat loss coefficient until calibration has learned it.",
+            "building_model": "One node: the room is the thermal mass. Mass + air (recommended for underfloor heating in a heavy house): the heat pump heats the floor and structure, sun and internal gains warm the air directly. Needs the indoor temperature sensor.",
+            "air_coupling_kw_per_k": "Only with Mass + air. Empty: learned from the history after a few days (until then 55 W/K per m² floor).",
             "internal_gains_w_per_m2": "People, appliances and lighting. 2-4 W/m² for an occupied home.",
             "glass_u_value": "Double glazing ~2.8, HR++ ~1.2, triple ~0.8.",
             "indoor_temp_hysteresis_lower": "The optimizer keeps the indoor temperature between target - lower and target + upper.",
@@ -486,6 +490,8 @@
             "ceiling_height": "Ceiling height",
             "thermal_mass_class": "Construction (thermal mass)",
             "emitter_type": "Heat emitters",
+            "building_model": "Building model",
+            "air_coupling_kw_per_k": "Mass-air coupling",
             "internal_gains_w_per_m2": "Internal heat gains",
             "glass_south_m2": "Window area south",
             "glass_east_m2": "Window area east",
@@ -505,6 +511,8 @@
           },
           "data_description": {
             "energy_label": "Used to estimate the heat loss coefficient until calibration has learned it.",
+            "building_model": "One node: the room is the thermal mass. Mass + air (recommended for underfloor heating in a heavy house): the heat pump heats the floor and structure, sun and internal gains warm the air directly. Needs the indoor temperature sensor.",
+            "air_coupling_kw_per_k": "Only with Mass + air. Empty: learned from the history after a few days (until then 55 W/K per m² floor).",
             "internal_gains_w_per_m2": "People, appliances and lighting. 2-4 W/m² for an occupied home.",
             "glass_u_value": "Double glazing ~2.8, HR++ ~1.2, triple ~0.8.",
             "indoor_temp_hysteresis_lower": "The optimizer keeps the indoor temperature between target - lower and target + upper.",
@@ -673,6 +681,12 @@
       "options": {
         "own_thermostat": "Own thermostat",
         "follows_plan": "Follows the plan (on/off via Plan active)"
+      }
+    },
+    "building_model": {
+      "options": {
+        "one_node": "One node",
+        "mass_air": "Mass + air"
       }
     }
   },

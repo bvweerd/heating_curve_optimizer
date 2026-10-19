@@ -65,6 +65,11 @@ class BuildingConfig:
     internal_gain_kw: float = 0.0
     # Correction on the modelled window solar gain (learned by calibration).
     solar_factor: float = 1.0
+    # Mass-air coupling in kW/K; 0 = one node. With it, the thermal mass is
+    # a separate node the heat pump heats (floor, structure), and the room
+    # air follows it quasi-steadily, also warmed directly by sun and
+    # internal gains - see `air_temp`.
+    air_coupling_kw_per_k: float = 0.0
 
     # Derived values (calculated in __post_init__)
     ua_w_per_k: float = field(init=False)
@@ -173,25 +178,115 @@ class BuildingConfig:
         delta_t = net_kw * step_hours / self.thermal_mass_kwh_per_k
         return indoor_temp + delta_t
 
+    def air_temp(
+        self,
+        mass_temp: float,
+        *,
+        outdoor_temp: float,
+        solar_gain_kw: float = 0.0,
+        internal_gain_kw: float | None = None,
+    ) -> float:
+        """Room air temperature for a mass temperature (mass-air model).
+
+        The air node holds little heat (minutes to settle, against steps of
+        15 minutes or more), so it is solved quasi-steadily from its balance
+        H (T_mass - T_air) + sun + gains = UA (T_air - T_out). With one node
+        the two temperatures are the same.
+        """
+        coupling = self.air_coupling_kw_per_k
+        if coupling <= 0:
+            return mass_temp
+        if internal_gain_kw is None:
+            internal_gain_kw = self.internal_gain_kw
+        ua = self.ua_w_per_k / 1000.0
+        return (
+            coupling * mass_temp + ua * outdoor_temp + solar_gain_kw + internal_gain_kw
+        ) / (coupling + ua)
+
+    def mass_temp_for_air(
+        self,
+        air_temp: float,
+        *,
+        outdoor_temp: float,
+        solar_gain_kw: float = 0.0,
+        internal_gain_kw: float | None = None,
+    ) -> float:
+        """The mass temperature at which the air settles at `air_temp`."""
+        coupling = self.air_coupling_kw_per_k
+        if coupling <= 0:
+            return air_temp
+        if internal_gain_kw is None:
+            internal_gain_kw = self.internal_gain_kw
+        ua = self.ua_w_per_k / 1000.0
+        return (
+            (coupling + ua) * air_temp
+            - ua * outdoor_temp
+            - solar_gain_kw
+            - internal_gain_kw
+        ) / coupling
+
+    def next_mass_temp(
+        self,
+        mass_temp: float,
+        *,
+        outdoor_temp: float,
+        heat_input_kw: float,
+        solar_gain_kw: float = 0.0,
+        internal_gain_kw: float | None = None,
+        step_hours: float,
+    ) -> float:
+        """Advance the mass temperature by one step.
+
+        The heat pump heats the mass; the mass loses H (T_mass - T_air) to
+        the quasi-steady air, which works out to the one-node balance with
+        loss and gains scaled by H / (H + UA). With one node this is
+        `next_indoor_temp`.
+        """
+        coupling = self.air_coupling_kw_per_k
+        if coupling <= 0:
+            return self.next_indoor_temp(
+                mass_temp,
+                outdoor_temp=outdoor_temp,
+                heat_input_kw=heat_input_kw,
+                solar_gain_kw=solar_gain_kw,
+                internal_gain_kw=internal_gain_kw,
+                step_hours=step_hours,
+            )
+        if self.thermal_mass_kwh_per_k <= 0:
+            return mass_temp
+        air = self.air_temp(
+            mass_temp,
+            outdoor_temp=outdoor_temp,
+            solar_gain_kw=solar_gain_kw,
+            internal_gain_kw=internal_gain_kw,
+        )
+        net_kw = heat_input_kw - coupling * (mass_temp - air)
+        return mass_temp + net_kw * step_hours / self.thermal_mass_kwh_per_k
+
     def discretize_states(
         self,
         resolution: float = 0.1,
         margin: float = 1.5,
         lowest_comfort_min: float | None = None,
+        highest_comfort_max: float | None = None,
     ) -> list[float]:
         """Return the T_in state ladder used by the optimizer's DP table.
 
         Spans [comfort_min - margin, comfort_max + margin]: the margin lets
         the DP represent brief excursions outside comfort (and penalize
         them, see thermal_optimizer.py) rather than making such states
-        simply unrepresentable. `lowest_comfort_min` extends the bottom for
-        a scheduled setback below the band.
+        simply unrepresentable. `lowest_comfort_min` / `highest_comfort_max`
+        widen it, for a scheduled setback below the band or for the band as
+        a separate thermal mass sees it.
         """
         floor = self.comfort_min
         if lowest_comfort_min is not None:
             floor = min(floor, lowest_comfort_min)
+        ceiling = self.comfort_max
+        if highest_comfort_max is not None:
+            ceiling = max(ceiling, highest_comfort_max)
         lo = floor - margin
-        hi = self.comfort_max + margin
+        hi = ceiling + margin
         if hi <= lo or resolution <= 0:
             return [self.comfort_min]
         n = max(1, round((hi - lo) / resolution))

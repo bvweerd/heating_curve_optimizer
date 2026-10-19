@@ -54,9 +54,12 @@ from .calibration import (
     STORAGE_VERSION as CALIBRATION_STORAGE_VERSION,
 )
 from .const import (
+    BUILDING_MODEL_MASS_AIR,
     CONF_ACCURACY_HORIZON_HOURS,
+    CONF_AIR_COUPLING,
     CONF_AWAY_SETBACK,
     CONF_BATTERY_POWER_SENSORS,
+    CONF_BUILDING_MODEL,
     CONF_CALIBRATION_MAX_HOURS,
     CONF_CALIBRATION_MAX_JUMP_C,
     CONF_CALIBRATION_MIN_HOURS,
@@ -161,6 +164,14 @@ from .helpers import (
     schedule_is_on,
     usable_state,
 )
+from .mass_model import (
+    COP_RATIO_PLAUSIBLE,
+    DEFAULT_AIR_COUPLING_W_PER_M2_K,
+    MassModelState,
+    fit_air_coupling,
+    measured_cop_ratio,
+)
+from .mass_model import STORAGE_VERSION as MASS_STORAGE_VERSION
 from .realtime_controller import RealtimeController, create_realtime_controller
 from .thermal_optimizer import (
     ThermalOptimizationResult,
@@ -172,6 +183,8 @@ _LOGGER = logging.getLogger(__name__)
 # Model accuracy match tolerance and window (not user-configurable).
 ACCURACY_MATCH_TOLERANCE = timedelta(minutes=30)
 ACCURACY_WINDOW = timedelta(hours=24)
+# How often the mass-air coupling is relearned from the history.
+MASS_LEARN_INTERVAL = timedelta(hours=6)
 # A larger supply-return spread means a lagging sensor, not a steady state.
 MAX_WATER_DELTA_T = 20.0
 
@@ -263,6 +276,14 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._pending_predictions: list[tuple[datetime, float, float]] = []
         self._accuracy: deque[tuple[datetime, float, float]] = deque(maxlen=500)
         self._realtime_controller: RealtimeController | None = None
+        # Changes of the published on/off advice and of the PV adjustment,
+        # as (time, value) - for validation in diagnostics.
+        self._advice_log: deque[tuple[str, bool | None]] = deque(maxlen=1000)
+        self._realtime_log: deque[tuple[str, int, float]] = deque(maxlen=2000)
+        # Mass-air building model (opt-in per zone): observer and learning.
+        self._mass: MassModelState | None = None
+        self._unsub_mass: Any = None
+        self._mass_learning = False
 
         # Config-driven thresholds (read once; updated on config reload).
         self._pump_follows_plan = (
@@ -365,6 +386,20 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.hass, list(watched), self._handle_exclusion_sensor
             )
 
+        # The history and learning run in every zone, so diagnostics can
+        # show whether the mass-air model would fit before it is switched on.
+        self._mass = MassModelState(
+            storage.Store(
+                self.hass,
+                MASS_STORAGE_VERSION,
+                f"{DOMAIN}_{self.zone_id}_mass_model",
+            )
+        )
+        await self._mass.async_load()
+        self._unsub_mass = async_track_time_interval(
+            self.hass, self._handle_mass_tick, timedelta(seconds=60)
+        )
+
         if self.config.get(CONF_GRID_IMPORT_SENSOR) or self.config.get(
             CONF_GRID_EXPORT_SENSOR
         ):
@@ -382,6 +417,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._unsub_realtime,
             self._unsub_calibration,
             self._unsub_heat,
+            self._unsub_mass,
         ):
             if unsub:
                 unsub()
@@ -389,6 +425,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._unsub_realtime = None
         self._unsub_calibration = None
         self._unsub_heat = None
+        self._unsub_mass = None
         await super().async_shutdown()
 
     def inputs_ready(self) -> bool:
@@ -544,6 +581,14 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             offset_max=self._offset_max,
         )
         action["battery_discharge_w"] = round(discharge_w, 1)
+        if not self._realtime_log or self._realtime_log[-1][1] != action["adjustment"]:
+            self._realtime_log.append(
+                (
+                    dt_util.utcnow().isoformat(),
+                    int(action["adjustment"]),
+                    round(grid_w + discharge_w, 1),
+                )
+            )
         return action
 
     async def _handle_realtime_update(self, now: datetime) -> None:
@@ -833,6 +878,10 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_heat_indoor = indoor_temp
         self._last_heat_source = heat_data.get("indoor_temperature_source")
         floors = await self._comfort_floors(config, step_starts, durations)
+        initial_mass: float | None = None
+        if self._mass is not None:
+            self._update_mass(now)
+            initial_mass = self._mass.mass_temp
         result = await self.hass.async_add_executor_job(
             self._optimize,
             config,
@@ -847,6 +896,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             interval,
             floors,
             self._pump_cycle(interval, now),
+            initial_mass,
         )
         opt: ThermalOptimizationResult = result["result"]
         building: BuildingConfig = result["building"]
@@ -886,11 +936,28 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         mass = building.thermal_mass_kwh_per_k
+        solar_kw = [v * building.solar_factor for v in solar]
 
-        def stored_kwh(temp: float) -> float:
-            return round((temp - building.comfort_min) * mass, 3)
+        def stored_kwh(mass_temp: float, i: int) -> float:
+            """Heat in the mass above what holds the air at comfort_min."""
+            floor = building.mass_temp_for_air(
+                building.comfort_min,
+                outdoor_temp=outdoor[min(i, len(outdoor) - 1)],
+                solar_gain_kw=solar_kw[i] if i < len(solar_kw) else 0.0,
+            )
+            return round((mass_temp - floor) * mass, 3)
+
+        if self._mass is not None and self._mass.mass_temp is not None:
+            mass_now = self._mass.mass_temp
+        else:
+            mass_now = building.mass_temp_for_air(
+                indoor_temp,
+                outdoor_temp=outdoor[0],
+                solar_gain_kw=solar_kw[0] if solar_kw else 0.0,
+            )
 
         self._update_calibration_issue()
+        self._update_heat_measurement_issue(self.measured_cop_ratio())
         hold_until: datetime | None = None
         if self._pump_follows_plan:
             plan_on, plan_change_at, hold_until = self._plan_on_advice(
@@ -900,6 +967,8 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             plan_on, plan_change_at = _plan_run_advice(
                 opt.electrical_power_kw, step_starts, self._idle_power_threshold_kw
             )
+        if not self._advice_log or self._advice_log[-1][1] != plan_on:
+            self._advice_log.append((now.isoformat(), plan_on))
         data: dict[str, Any] = {
             "offset": self._current_offset,
             "offsets": opt.offsets,
@@ -931,8 +1000,13 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if floors
                 else [building.comfort_min] * len(opt.indoor_temps)
             ),
-            "buffer_kwh": stored_kwh(indoor_temp),
-            "buffer_forecast_kwh": [stored_kwh(t) for t in opt.indoor_temps],
+            "buffer_kwh": stored_kwh(mass_now, 0),
+            "buffer_forecast_kwh": [
+                stored_kwh(t, i + 1) for i, t in enumerate(opt.mass_temps)
+            ],
+            "mass_temp": round(mass_now, 3),
+            "mass_temps": opt.mass_temps,
+            "mass_model": self.mass_model_summary(config),
             "building_ua_w_per_k": round(building.ua_w_per_k, 1),
             "building_thermal_mass_kwh_per_k": round(mass, 2),
             "building_time_constant_hours": round(building.time_constant_hours, 1),
@@ -1002,7 +1076,178 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             building.internal_gain_kw = fit.internal_gain_kw
             building.solar_factor = fit.solar_factor
             building.time_constant_hours = fit.time_constant_hours
+        if self._mass_model_enabled():
+            building.air_coupling_kw_per_k = self.air_coupling(config, building)[0]
         return building
+
+    # ------------------------------------------------------------------
+    # Mass-air building model
+    # ------------------------------------------------------------------
+
+    def _mass_model_enabled(self) -> bool:
+        return self.config.get(CONF_BUILDING_MODEL) == BUILDING_MODEL_MASS_AIR
+
+    def air_coupling(
+        self, config: dict[str, Any], building: BuildingConfig
+    ) -> tuple[float, str]:
+        """(mass-air coupling in kW/K, source): set > learned > default."""
+        configured = config.get(CONF_AIR_COUPLING)
+        if configured:
+            return float(configured), "configured"
+        fit = self._mass.fit if self._mass else None
+        if self._mass_model_enabled() and fit is not None and fit.accepted:
+            return fit.coupling_kw_per_k, "learned"
+        return building.area_m2 * DEFAULT_AIR_COUPLING_W_PER_M2_K / 1000.0, "default"
+
+    def _current_heat_kw(self, outdoor_temp: float, supply: float | None) -> float:
+        """Heat the heat pump delivers now: measured, else power x COP."""
+        heat = measured_heat_kw(self.hass, self.config)
+        if heat is not None:
+            return max(0.0, heat)
+        power_kw = read_power_kw(self.hass, self.config.get(CONF_POWER_CONSUMPTION))
+        if power_kw is None or power_kw <= self._idle_power_threshold_kw:
+            return 0.0
+        if supply is None:
+            return 0.0
+        cop = HeatPumpConfig.from_config(self.config).cop_at(
+            supply_temp=supply, outdoor_temp=outdoor_temp
+        )
+        return power_kw * cop * self._modelled_heat_scale()
+
+    @callback
+    def _handle_mass_tick(self, now: datetime) -> None:
+        self._update_mass(dt_util.utcnow())
+
+    def _update_mass(self, now: datetime) -> None:
+        """Advance the mass observer on the measured air; learn when due."""
+        mass = self._mass
+        heat_data = self.heat_coordinator.data
+        weather = self.heat_coordinator.weather_coordinator.data
+        if (
+            mass is None
+            or not heat_data
+            or not weather
+            or heat_data.get("indoor_temperature_source") != INDOOR_SOURCE_SENSOR
+        ):
+            return
+        outdoor = float(weather["current_temperature"])
+        supply = self._measured_supply_temp()
+        if supply is None and self.data and self.data.get("supply_temps"):
+            supply = float(self.data["supply_temps"][0])
+        building = self.building_config(self.heat_coordinator.effective_config())
+        mass.update(
+            now,
+            building,
+            air=float(heat_data["indoor_temperature"]),
+            outdoor=outdoor,
+            solar_kw=float(heat_data.get("solar_gain", 0.0)),
+            heat_kw=self._current_heat_kw(outdoor, supply),
+            power_kw=read_power_kw(self.hass, self.config.get(CONF_POWER_CONSUMPTION)),
+            supply=self._measured_supply_temp(),
+        )
+        due = mass.fitted_at is None or now - mass.fitted_at >= MASS_LEARN_INTERVAL
+        if due and not self._mass_learning:
+            self._mass_learning = True
+            self.hass.async_create_task(self._learn_air_coupling(now, building))
+
+    def measured_cop_ratio(self) -> float | None:
+        """Measured / modelled COP over the history (heat measured only)."""
+        if self._mass is None or not heat_is_measured(self.config):
+            return None
+        return measured_cop_ratio(
+            list(self._mass.history),
+            HeatPumpConfig.from_config(self.config),
+            self._min_running_power_kw,
+        )
+
+    def _update_heat_measurement_issue(self, ratio: float | None) -> None:
+        """Warn when measured heat and the COP model disagree strongly."""
+        issue_id = f"heat_measurement_implausible_{self.zone_id}"
+        low, high = COP_RATIO_PLAUSIBLE
+        if ratio is not None and not low <= ratio <= high:
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="heat_measurement_implausible",
+                translation_placeholders={"ratio": f"{ratio:.2f}"},
+            )
+        else:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+
+    def mass_validation(self) -> dict[str, Any] | None:
+        """History and logs to validate the models offline (diagnostics)."""
+        if self._mass is None:
+            return None
+        return {
+            "mass_temp": self._mass.mass_temp,
+            "history_interval_minutes": 5,
+            "history_columns": [
+                "air",
+                "outdoor",
+                "solar_kw",
+                "heat_kw",
+                "power_kw",
+                "supply",
+            ],
+            "history_end": (
+                self._mass.last_bucket_time.isoformat()
+                if self._mass.last_bucket_time
+                else None
+            ),
+            "history": self._mass.history_rows(),
+            "plan_advice_changes": list(self._advice_log),
+            "realtime_adjustments": list(self._realtime_log),
+        }
+
+    async def _learn_air_coupling(
+        self, now: datetime, building: BuildingConfig
+    ) -> None:
+        mass = self._mass
+        try:
+            if mass is None:
+                return
+            # Learn against the one-node parameters in use, without coupling.
+            building.air_coupling_kw_per_k = 0.0
+            fit = await self.hass.async_add_executor_job(
+                fit_air_coupling, list(mass.history), building
+            )
+            mass.set_fit(now, fit)
+        finally:
+            self._mass_learning = False
+
+    def mass_model_summary(self, config: dict[str, Any]) -> dict[str, Any] | None:
+        """What the mass-air model uses and has learned.
+
+        Learned in every zone, also while the one-node model is in use: the
+        accepted fit then says the mass-air model would predict better.
+        """
+        if self._mass is None:
+            return None
+        enabled = self._mass_model_enabled()
+        building = BuildingConfig.from_config(config)
+        coupling, source = self.air_coupling(config, building)
+        fit = self._mass.fit
+        return {
+            "enabled": enabled,
+            "air_coupling_kw_per_k": round(coupling, 2) if enabled else None,
+            "source": source if enabled else None,
+            "history_hours": round(len(self._mass.history) * 5 / 60, 1),
+            "learned_kw_per_k": fit.coupling_kw_per_k if fit else None,
+            "learned_mae_k": fit.mae_k if fit else None,
+            "one_node_mae_k": fit.one_node_mae_k if fit else None,
+            "learned_accepted": fit.accepted if fit else None,
+            "learned_at": (
+                self._mass.fitted_at.isoformat() if self._mass.fitted_at else None
+            ),
+            "measured_cop_ratio": (
+                None
+                if (ratio := self.measured_cop_ratio()) is None
+                else round(ratio, 2)
+            ),
+        }
 
     def _calibration_applied(self) -> bool:
         return (
@@ -1221,6 +1466,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         step_minutes: int,
         floors: list[float] | None = None,
         pump_cycle: dict[str, Any] | None = None,
+        initial_mass: float | None = None,
     ) -> dict[str, Any]:
         """Build the models and run the DP (blocking, executor)."""
         building = self.building_config(config)
@@ -1265,6 +1511,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             current_offset=self._current_offset,
             comfort_min_per_step=floors[:horizon] if floors else None,
             **(pump_cycle or {}),
+            initial_mass_temp=initial_mass,
         )
         return {
             "result": result,

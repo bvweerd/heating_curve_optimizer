@@ -17,6 +17,30 @@ The *Status* diagnostic sensor shows per coordinator whether it has data
 and the last error. **Download diagnostics** on the integration page gives
 the full state with sensor IDs redacted.
 
+## Measured heat does not match the COP model
+
+A repair issue appears when, over the stored history, the measured COP
+(heat from the flow and supply/return sensors, or the thermal power
+sensor, divided by electrical power) is below 0.7× or above 1.4× the COP
+model at the same temperatures. That is rarely the heat pump: check the
+flow sensor's unit (L/min, L/h, m³/h) and scaling, and that supply and
+return are the heat pump's own water temperatures, measured at the same
+moment. Calibration takes the measured heat as true.
+
+## Validating the models after a few days
+
+**Download diagnostics** on the integration page and run, in the
+development environment:
+
+```bash
+python scripts/validate_diagnostics.py config_entry-heating_curve_optimizer-....json
+```
+
+It replays the stored 5-minute history: the 6-hour-ahead error of the
+one-node model against *Mass + air* at every coupling, the measured COP
+against the COP model, run and pause durations of the on/off advice, and
+how often the PV-surplus adjustment changed.
+
 ## Only two sensors appear
 
 No heating zone has been added yet. Add one from the integration page.

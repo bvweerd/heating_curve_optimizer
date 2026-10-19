@@ -47,11 +47,14 @@ from .companion_integrations import (
     detect_pv_arrays,
 )
 from .const import (
+    BUILDING_MODELS,
     CONF_ACCURACY_HORIZON_HOURS,
+    CONF_AIR_COUPLING,
     CONF_AREA_M2,
     CONF_AWAY_SETBACK,
     CONF_BASE_COP,
     CONF_BATTERY_POWER_SENSORS,
+    CONF_BUILDING_MODEL,
     CONF_CALIBRATION_MAX_HOURS,
     CONF_CALIBRATION_MAX_JUMP_C,
     CONF_CALIBRATION_MIN_HOURS,
@@ -147,6 +150,7 @@ from .const import (
     CONF_WINDOW_SHGC,
     DEFAULT_ACCURACY_HORIZON_HOURS,
     DEFAULT_AWAY_SETBACK,
+    DEFAULT_BUILDING_MODEL,
     DEFAULT_CALIBRATION_MAX_HOURS,
     DEFAULT_CALIBRATION_MAX_JUMP_C,
     DEFAULT_CALIBRATION_MIN_HOURS,
@@ -793,6 +797,13 @@ def build_zone_schema(defaults: dict[str, Any]) -> vol.Schema:
                 description=d(CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE),
             ): _select(list(EMITTER_EXPONENT_MAP), "emitter_type"),
             vol.Required(
+                CONF_BUILDING_MODEL,
+                description=d(CONF_BUILDING_MODEL, DEFAULT_BUILDING_MODEL),
+            ): _select(BUILDING_MODELS, CONF_BUILDING_MODEL),
+            vol.Optional(CONF_AIR_COUPLING, description=d(CONF_AIR_COUPLING)): _number(
+                0.5, 100.0, 0.1, "kW/K"
+            ),
+            vol.Required(
                 CONF_INTERNAL_GAINS_W_PER_M2,
                 description=d(
                     CONF_INTERNAL_GAINS_W_PER_M2, DEFAULT_INTERNAL_GAINS_W_PER_M2
@@ -897,6 +908,11 @@ def validate_zone_input(
         CONF_EMITTER_TYPE,
     ):
         data[key] = user_input[key]
+    data[CONF_BUILDING_MODEL] = user_input.get(
+        CONF_BUILDING_MODEL, DEFAULT_BUILDING_MODEL
+    )
+    if (coupling := user_input.get(CONF_AIR_COUPLING)) is not None:
+        data[CONF_AIR_COUPLING] = float(coupling)
     if sensor := user_input.get(CONF_INDOOR_TEMPERATURE_SENSOR):
         data[CONF_INDOOR_TEMPERATURE_SENSOR] = sensor
     if windows := user_input.get(CONF_WINDOW_SENSORS):

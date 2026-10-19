@@ -371,6 +371,20 @@ async def async_get_config_entry_diagnostics(
             "zones": sorted(runtime_data.zones.keys()),
         }
 
+        validation: dict[str, Any] = {}
+        coordinators = {
+            "primary_zone": runtime_data.optimization_coordinator,
+            **{
+                zone_id: zone.get("optimization_coordinator")
+                for zone_id, zone in runtime_data.zones.items()
+            },
+        }
+        for zone_id, coordinator in coordinators.items():
+            mass_validation = getattr(coordinator, "mass_validation", None)
+            if callable(mass_validation) and (data := mass_validation()) is not None:
+                validation[zone_id] = data
+        stored_data["validation"] = validation
+
         primary_calibration = _serialize_calibration(
             runtime_data.optimization_coordinator
         )

@@ -106,6 +106,9 @@ class ThermalOptimizationResult:
     pump_on: list[bool] = field(default_factory=list)
     supply_temps: list[float] = field(default_factory=list)
     indoor_temps: list[float] = field(default_factory=list)
+    # Thermal mass temperature (the DP state); equals indoor_temps with one
+    # node.
+    mass_temps: list[float] = field(default_factory=list)
     thermal_power_kw: list[float] = field(default_factory=list)
     electrical_power_kw: list[float] = field(default_factory=list)
     cop: list[float] = field(default_factory=list)
@@ -131,7 +134,8 @@ class _StepOutcome:
     p_elec: float
     cop: float
     energy_cost: float
-    next_t_in: float
+    next_t_in: float  # mass temperature (the DP state) at the end of the step
+    next_air: float  # room air temperature at the end of the step
 
 
 def optimize_thermal_schedule(
@@ -168,6 +172,7 @@ def optimize_thermal_schedule(
     min_off_steps: int = 0,
     initial_pump_on: bool = True,
     initial_mode_steps: int | None = None,
+    initial_mass_temp: float | None = None,
 ) -> ThermalOptimizationResult:
     """Return a cost-optimal offset schedule over indoor temperature.
 
@@ -186,6 +191,12 @@ def optimize_thermal_schedule(
     enough to switch) describe the current command. False: the heat pump
     stops on its own room thermostat at the target temperature, and the
     plan only moves the offset.
+
+    With `building.air_coupling_kw_per_k` set, the DP state is the thermal
+    mass temperature (`initial_mass_temp`, default: the mass temperature
+    at which the air settles at `initial_indoor_temp`); comfort, the
+    thermostat and the emitter see the room air. Without it both are the
+    same single node.
     """
     horizon = min(len(outdoor_temps), len(prices))
     if horizon == 0:
@@ -223,10 +234,31 @@ def optimize_thermal_schedule(
         for t in range(horizon)
     ]
 
+    def air_at(t: int, mass_temp: float) -> float:
+        return building.air_temp(
+            mass_temp,
+            outdoor_temp=outdoor[t],
+            solar_gain_kw=solar[t],
+            internal_gain_kw=internal_gain,
+        )
+
+    def mass_at(t: int, air_temp: float) -> float:
+        return building.mass_temp_for_air(
+            air_temp,
+            outdoor_temp=outdoor[t],
+            solar_gain_kw=solar[t],
+            internal_gain_kw=internal_gain,
+        )
+
+    # The grid is in mass temperature: it spans the band as the mass sees
+    # it under every step's weather (the same band with one node).
     states = building.discretize_states(
         resolution=state_resolution,
         margin=state_margin,
-        lowest_comfort_min=min(floors),
+        lowest_comfort_min=min(mass_at(t, floors[t]) for t in range(horizon)),
+        highest_comfort_max=max(
+            mass_at(t, building.comfort_max) for t in range(horizon)
+        ),
     )
     n_states = len(states)
     state_lo, state_hi = states[0], states[-1]
@@ -272,17 +304,18 @@ def optimize_thermal_schedule(
             supply_temp=supply_temp, outdoor_temp=outdoor[t], humidity=humidity[t]
         )
         if pump_on:
+            air = air_at(t, t_in)
             q_available = emitter.available_power_kw(
-                supply_temp=supply_temp, indoor_temp=t_in
+                supply_temp=supply_temp, indoor_temp=air
             )
             q_hp = max(0.0, min(q_available, heatpump.max_thermal_power_kw))
             # Stopping *inside* the band is the explicit "pump off" action,
             # an economic choice of the DP; the taper (rather than a hard
             # cutoff) keeps the value function smooth.
-            if t_in >= cutoff:
+            if air >= cutoff:
                 q_hp = 0.0
-            elif t_in > cutoff - ramp_width:
-                q_hp *= (cutoff - t_in) / ramp_width
+            elif air > cutoff - ramp_width:
+                q_hp *= (cutoff - air) / ramp_width
         else:
             q_hp = 0.0
         p_elec = q_hp / cop if q_hp > 0 else 0.0
@@ -290,7 +323,7 @@ def optimize_thermal_schedule(
         energy_cost = (
             (p_elec - pv_covered) * price[t] + pv_covered * feed_in[t]
         ) * step_durations[t]
-        next_t_in = building.next_indoor_temp(
+        next_t_in = building.next_mass_temp(
             t_in,
             outdoor_temp=outdoor[t],
             heat_input_kw=q_hp,
@@ -298,11 +331,14 @@ def optimize_thermal_schedule(
             internal_gain_kw=internal_gain,
             step_hours=step_durations[t],
         )
-        return _StepOutcome(supply_temp, q_hp, p_elec, cop, energy_cost, next_t_in)
+        next_air = air_at(min(t + 1, horizon - 1), next_t_in)
+        return _StepOutcome(
+            supply_temp, q_hp, p_elec, cop, energy_cost, next_t_in, next_air
+        )
 
     def stage_cost(t: int, outcome: _StepOutcome) -> float:
         return outcome.energy_cost + comfort_penalty(
-            outcome.next_t_in,
+            outcome.next_air,
             comfort_min=floors[t],
             comfort_max=building.comfort_max,
             weight=comfort_penalty_weight,
@@ -319,11 +355,13 @@ def optimize_thermal_schedule(
     )
     terminal_eur_per_k = building.thermal_mass_kwh_per_k * price[-1] / terminal_cop
 
+    terminal_floor = mass_at(horizon - 1, building.comfort_min)
+
     def terminal_value(t_in: float) -> float:
         # Heat above the comfort floor is worth what it costs to produce;
         # a deficit (a setback running past the horizon) costs the same to
         # make up.
-        return -(t_in - building.comfort_min) * terminal_eur_per_k
+        return -(t_in - terminal_floor) * terminal_eur_per_k
 
     # Run/pause phases. A phase is (mode, steps already done in it, capped
     # at the minimum); switching is allowed once the minimum is reached.
@@ -435,7 +473,12 @@ def optimize_thermal_schedule(
     # --- forward pass on the continuous state --------------------------
     safe_current_offset = min(offset_max, max(offset_min, current_offset))
     result = ThermalOptimizationResult()
-    t_in = initial_indoor_temp
+    initial_mass = (
+        initial_mass_temp
+        if initial_mass_temp is not None
+        else mass_at(0, initial_indoor_temp)
+    )
+    t_in = initial_mass
     prev_offset = safe_current_offset
     phase = phase0
 
@@ -472,7 +515,8 @@ def optimize_thermal_schedule(
         # own thermostat only while that thermostat calls for heat.
         result.pump_on.append(pump_on if pump_follows_plan else outcome.q_hp > 0)
         result.supply_temps.append(round(outcome.supply_temp, 2))
-        result.indoor_temps.append(round(outcome.next_t_in, 3))
+        result.indoor_temps.append(round(outcome.next_air, 3))
+        result.mass_temps.append(round(outcome.next_t_in, 3))
         result.thermal_power_kw.append(round(outcome.q_hp, 4))
         result.electrical_power_kw.append(round(outcome.p_elec, 4))
         result.cop.append(round(outcome.cop, 3))
@@ -483,12 +527,12 @@ def optimize_thermal_schedule(
     result.total_cost_eur = round(sum(result.cost_eur), 5)
 
     # --- baseline: plain heating curve, same physics -------------------
-    t_in = initial_indoor_temp
+    t_in = initial_mass
     baseline_energy = 0.0
     for t in range(horizon):
         outcome = simulate_step(t, t_in, 0, cutoff=thermostat_cutoff)
         result.baseline_supply_temps.append(round(outcome.supply_temp, 2))
-        result.baseline_indoor_temps.append(round(outcome.next_t_in, 3))
+        result.baseline_indoor_temps.append(round(outcome.next_air, 3))
         result.baseline_cop.append(round(outcome.cop, 3))
         result.baseline_cost_eur.append(round(outcome.energy_cost, 5))
         baseline_energy += outcome.energy_cost
@@ -503,7 +547,7 @@ def optimize_thermal_schedule(
     # --- shadow price at t=0 -------------------------------------------
     if n_states > 1 and building.thermal_mass_kwh_per_k > 0:
         row = v_tables[0][safe_current_offset - offset_min][phase0]
-        t0 = min(max(initial_indoor_temp, state_lo + cell), state_hi - cell)
+        t0 = min(max(initial_mass, state_lo + cell), state_hi - cell)
         slope = (interp(row, t0 + cell) - interp(row, t0 - cell)) / (2 * cell)
         result.shadow_price_eur_per_kwh = round(
             -slope / building.thermal_mass_kwh_per_k, 5

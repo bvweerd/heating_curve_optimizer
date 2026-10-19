@@ -86,6 +86,15 @@ CONF_DHW_ACTIVE_SENSOR = "dhw_active_sensor"
 CONF_WINDOW_SENSORS = "window_sensors"  # zone
 CONF_CALIBRATION_MODE = "calibration_mode"  # zone
 DEFAULT_CALIBRATION_MODE = "observe"
+# Zone building model: one node (the room is the mass), or a thermal mass
+# the heat pump heats with the room air on top, warmed directly by sun and
+# internal gains (mass_model.py). The coupling is learned unless set.
+CONF_BUILDING_MODEL = "building_model"
+BUILDING_MODEL_ONE_NODE = "one_node"
+BUILDING_MODEL_MASS_AIR = "mass_air"
+BUILDING_MODELS = [BUILDING_MODEL_ONE_NODE, BUILDING_MODEL_MASS_AIR]
+DEFAULT_BUILDING_MODEL = BUILDING_MODEL_ONE_NODE
+CONF_AIR_COUPLING = "air_coupling_kw_per_k"
 # Zone: a `schedule` helper that is on while someone is home. While it is
 # off, the comfort floor drops by the away setback.
 CONF_COMFORT_SCHEDULE = "comfort_schedule"

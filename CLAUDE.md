@@ -14,7 +14,8 @@ with yet: remove obsolete code instead of keeping legacy paths.
 custom_components/heating_curve_optimizer/
   __init__.py                 setup/unload, zones, gas boiler, update listener, service
   const.py                    config keys, defaults, energy-label -> UA helpers
-  building_model.py           BuildingConfig (1R1C, internal gains), EmitterConfig   [pure]
+  building_model.py           BuildingConfig (1R1C or mass-air, internal gains), EmitterConfig [pure]
+  mass_model.py               mass observer, 5-min history, coupling grid search, measured COP check
   heatpump_model.py           HeatPumpConfig.cop_at: the ONLY COP implementation    [pure]
   thermal_optimizer.py        optimize_thermal_schedule: DP + baseline + shadow price [pure]
   calibration.py              ridge fits: building (C, UA, solar factor, internal gains, COP scale
@@ -58,6 +59,12 @@ docs/                         index, installation, quick-start, configuration, a
   offset; `follows_plan` = off action, no taper, run/pause phases in the DP
   state (`min_run_minutes`/`min_off_minutes`, default 60), published
   `heat_pump_plan_on` held until the minimum has passed.
+- **Mass + air** (`building_model` zone option, default `one_node`): DP state =
+  mass temp, air quasi-steady `(H Tm + UA To + S + G)/(H+UA)`; comfort,
+  thermostat and emitter on air. Observer every 60 s; coupling H learned
+  every 6 h (accepted only if ≥15 % better than one node), else zone
+  `air_coupling_kw_per_k` or 55 W/K·m². History is kept in every zone and
+  exported under diagnostics `stored_data.validation`.
 - **Away periods**: optional zone `comfort_schedule` (a `schedule` helper,
   on = home, read via `schedule.get_schedule` each run) lowers the floor by
   `away_setback` for steps that *end* while it is off (`comfort_mins`);
@@ -72,7 +79,7 @@ docs/                         index, installation, quick-start, configuration, a
   `offset, offsets, supply_temps, indoor_temps, cop, cost_eur,
   baseline_*, cost_savings_eur, shadow_price_eur_per_kwh,
   step_durations_hours, step_start_times, step_minutes, comfort_min/max,
-  comfort_mins (per-step floor),
+  comfort_mins (per-step floor), mass_temp, mass_temps, mass_model,
   buffer_kwh, calibration (summary dict), model_accuracy, realtime`.
 - **Calibration**: per zone mode off/observe/apply (`calibration_mode`); only
   with one zone. Windows close after 0.3 K movement; excluded on DHW, open

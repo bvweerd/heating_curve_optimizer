@@ -30,6 +30,42 @@ C · dT_in/dt = Q_heat_pump + Q_solar + Q_internal − UA · (T_in − T_out)
 - `Q_solar` is the irradiance on each vertical window (sun position, direct
   and diffuse radiation) × glass area × solar heat gain coefficient.
 
+### Mass + air (opt-in per zone)
+
+With *Building model: Mass + air* the heat pump heats the thermal mass
+(floor, structure) and the room air sits on top of it, warmed directly by
+sun and internal gains. The air holds so little heat that it is solved
+quasi-steadily:
+
+```
+T_air = (H · T_mass + UA · T_out + Q_solar + Q_internal) / (H + UA)
+C · dT_mass/dt = Q_heat_pump − H · (T_mass − T_air)
+```
+
+`H` (kW/K) is the mass-air coupling. The DP state becomes the mass
+temperature; comfort, the room thermostat and the emitter see the air.
+Sun now shows up in the room straight away and leaves it again after
+sunset, instead of being stored in the whole mass - which is what a one-node
+model gets wrong in a heavy house with underfloor heating: it predicts the
+afternoon too warm.
+
+No sensor measures the mass temperature. An observer integrates the
+delivered heat (measured, or electrical power × COP) against the measured
+room air every minute: `C · dT_mass/dt = Q − H · (T_mass − T_air,measured)`.
+
+`H` is learned: every zone keeps 14 days of 5-minute history (air, outdoor,
+solar, heat), and every 6 hours a grid search replays the observer and
+predicts the air 6 hours ahead from every hour, for each candidate `H`. The
+best `H` is used once there are 3 days of history with some heating and it
+beats the one-node model by at least 15 %. Until then `H` = 55 W/K per m²
+floor, or the value set in the zone. The history is collected in one-node
+zones too, so diagnostics show whether switching would pay off.
+
+On one house (159 m², heavy, underfloor heating, two weeks of October data,
+the last three days held out) the 6-hour-ahead error went from 0.24 K
+(one node, label parameters) to 0.13–0.15 K with the learned `H` of about
+8 kW/K.
+
 ## Emitters and heat pump
 
 The offset only matters because it changes how much heat the emitters can
@@ -83,6 +119,9 @@ V_t(T, o_prev) = min over o of  cost_t(T, o) + comfort_t(T') + λ·(o − o_prev
   below `comfort_min − 1.5 °C`. With a home schedule `comfort_min` is per
   step: lowered by the away setback for steps that end while the schedule
   is off (see [Away periods](configuration.md#away-periods)).
+- **Heat buffer**: `C · (T_mass − T_mass,floor)`, with `T_mass,floor` the mass
+  temperature at which the air settles at `comfort_min` under the current
+  weather (with one node: `C · (T_in − comfort_min)`).
 - **Terminal value**: heat stored above the comfort floor at the end of the
   horizon is worth what it would cost to produce then, so the plan does not
   empty the building just because the horizon ends; a deficit below the

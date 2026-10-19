@@ -11,6 +11,15 @@ First release of the redesigned integration. There are no earlier
 deployments to migrate from.
 
 ### Optimizer
+- Opt-in *Mass + air* building model per zone: the heat pump heats the
+  thermal mass, sun and internal gains warm the air directly; the DP runs
+  on the mass temperature (observer on measured air), the mass-air
+  coupling is learned from 14 days of 5-minute history. The heat buffer
+  is the heat in the mass above what holds the air at the comfort floor.
+- Diagnostics carry a validation section (5-minute history, on/off advice
+  changes, PV adjustment changes); `scripts/validate_diagnostics.py`
+  replays it. A repair issue flags measured heat that disagrees with the
+  COP model by more than 0.7–1.4×.
 - Optional water flow sensor: with supply and return temperature it
   measures the delivered heat (flow × spread × 4.16 kJ/(L·K)), used like
   a heat meter for calibration, the COP fit and the thermal power sensor

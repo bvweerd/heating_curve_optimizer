@@ -66,6 +66,7 @@ def zone_data(name: str = "Living room", **overrides: Any) -> dict[str, Any]:
         "ceiling_height": 2.5,
         "thermal_mass_class": "medium",
         "emitter_type": "radiator",
+        "building_model": "one_node",
         "internal_gains_w_per_m2": 3.0,
         "glass_south_m2": 8.0,
         "glass_east_m2": 2.0,
