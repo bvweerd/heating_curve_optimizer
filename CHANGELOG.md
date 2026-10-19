@@ -18,8 +18,9 @@ deployments to migrate from.
   is the heat in the mass above what holds the air at the comfort floor.
 - Diagnostics carry a validation section (5-minute history, on/off advice
   changes, PV adjustment changes); `scripts/validate_diagnostics.py`
-  replays it. A repair issue flags measured heat that disagrees with the
-  COP model by more than 0.7–1.4×.
+  replays it. A repair issue flags a COP model more than 0.7–1.4× off
+  the measured COP (datasheet curves are full-load; part load is often
+  more efficient).
 - Optional water flow sensor: with supply and return temperature it
   measures the delivered heat (flow × spread × 4.16 kJ/(L·K)), used like
   a heat meter for calibration, the COP fit and the thermal power sensor

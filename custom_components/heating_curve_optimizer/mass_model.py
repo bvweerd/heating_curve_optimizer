@@ -183,8 +183,9 @@ def _averages(
     return means
 
 
-# A measured COP this far from the COP model points at the heat measurement
-# (flow unit or scaling, spread) rather than at the heat pump.
+# A measured COP this far from the COP model means the model (often a
+# full-load datasheet curve) should be recalibrated, or, if implausible, that
+# the heat measurement is off.
 COP_RATIO_PLAUSIBLE = (0.7, 1.4)
 MIN_COP_RATIO_SAMPLES = 24  # two hours of running
 

@@ -957,7 +957,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
 
         self._update_calibration_issue()
-        self._update_heat_measurement_issue(self.measured_cop_ratio())
+        self._update_cop_model_issue(self.measured_cop_ratio())
         hold_until: datetime | None = None
         if self._pump_follows_plan:
             plan_on, plan_change_at, hold_until = self._plan_on_advice(
@@ -1160,9 +1160,9 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._min_running_power_kw,
         )
 
-    def _update_heat_measurement_issue(self, ratio: float | None) -> None:
-        """Warn when measured heat and the COP model disagree strongly."""
-        issue_id = f"heat_measurement_implausible_{self.zone_id}"
+    def _update_cop_model_issue(self, ratio: float | None) -> None:
+        """Point out a COP model far from the measured COP."""
+        issue_id = f"cop_model_mismatch_{self.zone_id}"
         low, high = COP_RATIO_PLAUSIBLE
         if ratio is not None and not low <= ratio <= high:
             ir.async_create_issue(
@@ -1171,7 +1171,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 issue_id,
                 is_fixable=False,
                 severity=ir.IssueSeverity.WARNING,
-                translation_key="heat_measurement_implausible",
+                translation_key="cop_model_mismatch",
                 translation_placeholders={"ratio": f"{ratio:.2f}"},
             )
         else:

@@ -282,7 +282,7 @@ def test_measured_cop_ratio_flags_a_scaled_heat_measurement():
     assert measured_cop_ratio(idle + samples[:5], heatpump) is None
 
 
-async def test_implausible_heat_measurement_raises_a_repair_issue(
+async def test_cop_model_far_from_measured_raises_a_repair_issue(
     hass: HomeAssistant, mock_open_meteo, price_state
 ) -> None:
     from homeassistant.helpers import issue_registry as ir
@@ -292,9 +292,9 @@ async def test_implausible_heat_measurement_raises_a_repair_issue(
     entry = make_entry()
     await setup_entry(hass, entry)
     coordinator = entry.runtime_data.optimization_coordinator
-    issue = (DOMAIN, f"heat_measurement_implausible_{entry.entry_id}")
+    issue = (DOMAIN, f"cop_model_mismatch_{entry.entry_id}")
 
-    coordinator._update_heat_measurement_issue(1.54)
+    coordinator._update_cop_model_issue(1.54)
     assert issue in ir.async_get(hass).issues
-    coordinator._update_heat_measurement_issue(1.05)
+    coordinator._update_cop_model_issue(1.05)
     assert issue not in ir.async_get(hass).issues

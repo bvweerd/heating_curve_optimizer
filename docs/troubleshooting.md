@@ -17,15 +17,23 @@ The *Status* diagnostic sensor shows per coordinator whether it has data
 and the last error. **Download diagnostics** on the integration page gives
 the full state with sensor IDs redacted.
 
-## Measured heat does not match the COP model
+## COP model does not match the measured COP
 
 A repair issue appears when, over the stored history, the measured COP
 (heat from the flow and supply/return sensors, or the thermal power
 sensor, divided by electrical power) is below 0.7× or above 1.4× the COP
-model at the same temperatures. That is rarely the heat pump: check the
-flow sensor's unit (L/min, L/h, m³/h) and scaling, and that supply and
-return are the heat pump's own water temperatures, measured at the same
-moment. Calibration takes the measured heat as true.
+model at the same temperatures. Datasheet curves are measured at full
+load; at part load a heat pump is often clearly more efficient (one LG
+Therma V measured 1.5× its full-load datasheet COP in mild weather, at
+about half the Carnot limit). Set the zone's calibration to *Apply* so the
+COP curve is learned from the measurements, or raise the base COP.
+
+Only when the measured COP is implausible - well above half the Carnot
+limit `(T_supply + 273) / (T_supply − T_outdoor)` - suspect the heat
+measurement: the flow sensor's unit (L/min, L/h, m³/h), or supply and
+return sensors that are not the heat pump's own water temperatures.
+Flow-based heat only counts while the heat pump draws more than its
+standby power, so a placeholder flow reported while it is off is ignored.
 
 ## Validating the models after a few days
 

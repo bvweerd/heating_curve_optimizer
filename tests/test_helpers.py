@@ -800,3 +800,26 @@ def test_flow_and_measured_heat():
     # A thermal power sensor takes precedence.
     meter = {**flow_config, "heat_pump_thermal_power_sensor": "sensor.heat"}
     assert measured_heat_kw(hass, meter) == 3.0
+
+
+def test_flow_heat_is_zero_while_the_heat_pump_is_idle():
+    """A placeholder flow reported while stopped must not become heat."""
+    from custom_components.heating_curve_optimizer.helpers import measured_heat_kw
+
+    states = {
+        "sensor.flow": State("sensor.flow", "5.0", {"unit_of_measurement": "L/min"}),
+        "sensor.supply": State("sensor.supply", "16.4", {}),
+        "sensor.return": State("sensor.return", "15.6", {}),
+        "sensor.power": State("sensor.power", "7", {"unit_of_measurement": "W"}),
+    }
+    hass = MagicMock()
+    hass.states.get = states.get
+    config = {
+        "flow_sensor": "sensor.flow",
+        "supply_temperature_sensor": "sensor.supply",
+        "return_temperature_sensor": "sensor.return",
+        "power_consumption": "sensor.power",
+    }
+    assert measured_heat_kw(hass, config) == 0.0
+    states["sensor.power"] = State("sensor.power", "900", {"unit_of_measurement": "W"})
+    assert measured_heat_kw(hass, config) == pytest.approx(5 / 60 * 4.163 * 0.8)

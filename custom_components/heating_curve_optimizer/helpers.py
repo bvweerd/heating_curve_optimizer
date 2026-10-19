@@ -14,8 +14,11 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_FLOW_SENSOR,
     CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
+    CONF_IDLE_POWER_THRESHOLD_KW,
+    CONF_POWER_CONSUMPTION,
     CONF_RETURN_TEMPERATURE_SENSOR,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
+    DEFAULT_IDLE_POWER_THRESHOLD_KW,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -715,9 +718,20 @@ def heat_is_measured(config: dict[str, Any]) -> bool:
 
 def measured_heat_kw(hass: Any, config: dict[str, Any]) -> float | None:
     """Delivered heat in kW: the thermal power sensor, else flow x (supply -
-    return) x water heat capacity. None when not measured or unavailable."""
+    return) x water heat capacity. None when not measured or unavailable.
+
+    Flow-based heat is zero while the heat pump draws no more than its
+    standby power: some heat pumps report a placeholder flow when stopped,
+    and the supply and return water then still differ by a few tenths.
+    """
     if config.get(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR):
         return read_power_kw(hass, config.get(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR))
+    power_kw = read_power_kw(hass, config.get(CONF_POWER_CONSUMPTION))
+    idle_kw = float(
+        config.get(CONF_IDLE_POWER_THRESHOLD_KW, DEFAULT_IDLE_POWER_THRESHOLD_KW)
+    )
+    if power_kw is not None and power_kw <= idle_kw:
+        return 0.0
     flow = read_flow_l_per_min(hass, config.get(CONF_FLOW_SENSOR))
     supply = get_sensor_value(hass, config.get(CONF_SUPPLY_TEMPERATURE_SENSOR), None)
     return_temp = get_sensor_value(
