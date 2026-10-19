@@ -125,9 +125,10 @@ def test_out_of_range_current_offset_does_not_raise():
     assert len(result.offsets) == horizon
 
 
-def test_no_heat_delivery_at_comfort_ceiling():
-    """The comfort ceiling must cut heat delivery to zero at comfort_max,
-    even when the emitter curve still has capacity to give."""
+def test_own_thermostat_stops_heat_above_target():
+    """A heat pump with its own room thermostat delivers no heat once the
+    room is 0.3 K above the target, whatever the curve could still give,
+    and the plan has no "pump off" of its own."""
     building, heatpump, emitter = _make_system(comfort_min=19.5, comfort_max=20.5)
     building.target_temp = 20.0
 
@@ -137,17 +138,23 @@ def test_no_heat_delivery_at_comfort_ceiling():
         emitter=emitter,
         outdoor_temps=[5.0] * 4,
         prices=[0.25] * 4,
-        initial_indoor_temp=20.5,  # = comfort_max
+        initial_indoor_temp=20.4,  # > target + 0.3
         water_min=25.0,
         water_max=45.0,
         outdoor_min=-20.0,
         outdoor_max=15.0,
         time_base=60,
+        pump_follows_plan=False,
     )
 
     assert result.thermal_power_kw[0] == pytest.approx(0.0)
     # No heat delivered means the plan does not report the pump as on.
     assert not result.pump_on[0]
+    # Without a plan-driven off, coasting is the thermostat's doing only.
+    assert all(
+        on == (power > 0)
+        for on, power in zip(result.pump_on, result.thermal_power_kw, strict=True)
+    )
 
 
 def _a_plus_underfloor() -> tuple[BuildingConfig, HeatPumpConfig, EmitterConfig]:
@@ -639,3 +646,60 @@ def test_away_setback_coasts_and_is_back_in_band_on_return():
         **common, comfort_min_per_step=[building.comfort_min] * horizon
     )
     assert same.offsets == home.offsets
+
+
+def _runs(pump_on: list[bool]) -> list[tuple[bool, int]]:
+    runs: list[tuple[bool, int]] = []
+    for on in pump_on:
+        if runs and runs[-1][0] == on:
+            runs[-1] = (on, runs[-1][1] + 1)
+        else:
+            runs.append((on, 1))
+    return runs
+
+
+def _cycling_case(**kwargs):
+    """15-minute steps with prices alternating every step: an unconstrained
+    plan chases them with short runs."""
+    building, heatpump, emitter = _a_plus_underfloor()
+    horizon = 32
+    kwargs.setdefault("prices", [0.15 if t % 2 else 0.45 for t in range(horizon)])
+    return optimize_thermal_schedule(
+        building=building,
+        heatpump=heatpump,
+        emitter=emitter,
+        outdoor_temps=[10.0] * horizon,
+        initial_indoor_temp=20.2,
+        water_min=27.0,
+        water_max=33.0,
+        outdoor_min=-10.0,
+        outdoor_max=18.0,
+        time_base=15,
+        offset_delta_t=7,
+        **kwargs,
+    )
+
+
+def test_minimum_run_and_pause_time():
+    free = _cycling_case()
+    assert min(length for _, length in _runs(free.pump_on)) == 1
+
+    held = _cycling_case(min_on_steps=4, min_off_steps=4, initial_pump_on=False)
+    runs = _runs(held.pump_on)
+    # Every run and pause lasts at least an hour, except the one cut off
+    # by the end of the horizon (the first may continue a long pause).
+    assert all(length >= 4 for _, length in runs[1:-1])
+
+
+def test_current_run_is_held_until_its_minimum():
+    expensive = [1.00] * 32
+    free = _cycling_case(prices=expensive, initial_pump_on=True)
+    assert free.pump_on[0] is False
+    held = _cycling_case(
+        min_on_steps=4,
+        min_off_steps=4,
+        initial_pump_on=True,
+        initial_mode_steps=1,
+        prices=expensive,  # the plan would rather stop at once
+    )
+    assert held.pump_on[:3] == [True, True, True]

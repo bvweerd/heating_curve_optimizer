@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections import deque
 from datetime import datetime, timedelta
 from typing import Any
@@ -84,10 +85,13 @@ from .const import (
     CONF_HEAT_CURVE_MAX_OUTDOOR,
     CONF_HEAT_CURVE_MIN,
     CONF_HEAT_CURVE_MIN_OUTDOOR,
+    CONF_HEAT_PUMP_CONTROL,
     CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
     CONF_HEATPUMP_HEADROOM,
     CONF_IDLE_POWER_THRESHOLD_KW,
     CONF_INDOOR_TEMPERATURE_SENSOR,
+    CONF_MIN_OFF_MINUTES,
+    CONF_MIN_RUN_MINUTES,
     CONF_MIN_RUNNING_POWER_KW,
     CONF_MWH_MAGNITUDE_THRESHOLD,
     CONF_OFFSET_DELTA_T,
@@ -125,8 +129,11 @@ from .const import (
     DEFAULT_HEAT_CURVE_MAX_OUTDOOR,
     DEFAULT_HEAT_CURVE_MIN,
     DEFAULT_HEAT_CURVE_MIN_OUTDOOR,
+    DEFAULT_HEAT_PUMP_CONTROL,
     DEFAULT_HEATPUMP_HEADROOM,
     DEFAULT_IDLE_POWER_THRESHOLD_KW,
+    DEFAULT_MIN_OFF_MINUTES,
+    DEFAULT_MIN_RUN_MINUTES,
     DEFAULT_MIN_RUNNING_POWER_KW,
     DEFAULT_MWH_MAGNITUDE_THRESHOLD,
     DEFAULT_OFFSET_DELTA_T,
@@ -138,6 +145,7 @@ from .const import (
     DEFAULT_REALTIME_INTERVAL_S,
     DEFAULT_VENTILATION_TYPE,
     DOMAIN,
+    HEAT_PUMP_CONTROL_FOLLOWS_PLAN,
 )
 from .coordinator_heat import INDOOR_SOURCE_SENSOR, HeatCalculationCoordinator
 from .coordinator_weather import _update_failed
@@ -242,6 +250,9 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_heat_indoor: float | None = None
         self._last_heat_source: str | None = None
         self._current_offset = 0
+        # The published on/off advice and since when (plan-driven pump).
+        self._plan_on: bool | None = None
+        self._plan_on_since: datetime | None = None
         self._calibration: ThermalCalibrationState | None = None
         self._calibration_snapshot: dict[str, Any] | None = None
         self._calibration_allowed = calibration_allowed
@@ -253,6 +264,16 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._realtime_controller: RealtimeController | None = None
 
         # Config-driven thresholds (read once; updated on config reload).
+        self._pump_follows_plan = (
+            config.get(CONF_HEAT_PUMP_CONTROL, DEFAULT_HEAT_PUMP_CONTROL)
+            == HEAT_PUMP_CONTROL_FOLLOWS_PLAN
+        )
+        self._min_run_minutes = float(
+            config.get(CONF_MIN_RUN_MINUTES, DEFAULT_MIN_RUN_MINUTES)
+        )
+        self._min_off_minutes = float(
+            config.get(CONF_MIN_OFF_MINUTES, DEFAULT_MIN_OFF_MINUTES)
+        )
         self._idle_power_threshold_kw = float(
             config.get(CONF_IDLE_POWER_THRESHOLD_KW, DEFAULT_IDLE_POWER_THRESHOLD_KW)
         )
@@ -700,6 +721,71 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             for start, hours in zip(step_starts, durations, strict=True)
         ]
 
+    def _pump_cycle(self, interval: int, now: datetime) -> dict[str, Any]:
+        """Optimizer arguments for the run/pause minimums.
+
+        A plan-driven pump starts from the advice it was last given and how
+        long that has held; after a restart from the measured heat pump,
+        assumed to have been in that state long enough to switch.
+        """
+        if not self._pump_follows_plan:
+            return {"pump_follows_plan": False}
+        n_on = math.ceil(self._min_run_minutes / interval)
+        n_off = math.ceil(self._min_off_minutes / interval)
+        cycle: dict[str, Any] = {
+            "pump_follows_plan": True,
+            "min_on_steps": n_on,
+            "min_off_steps": n_off,
+        }
+        if self._plan_on is None or self._plan_on_since is None:
+            power_kw = read_power_kw(self.hass, self.config.get(CONF_POWER_CONSUMPTION))
+            cycle["initial_pump_on"] = (
+                power_kw is None or power_kw > self._idle_power_threshold_kw
+            )
+            return cycle
+        minimum = self._min_run_minutes if self._plan_on else self._min_off_minutes
+        elapsed = (now - self._plan_on_since).total_seconds() / 60
+        remaining = math.ceil(max(0.0, minimum - elapsed) / interval)
+        cycle["initial_pump_on"] = self._plan_on
+        cycle["initial_mode_steps"] = max(
+            0, (n_on if self._plan_on else n_off) - remaining
+        )
+        return cycle
+
+    def _plan_on_advice(
+        self, pump_on: list[bool], step_starts: list[datetime], now: datetime
+    ) -> tuple[bool | None, datetime | None, datetime | None]:
+        """(advice now, when the plan next changes it, held until).
+
+        The published advice for a plan-driven pump never changes before
+        the run or pause minimum has passed, even when a re-plan within a
+        step (a first step shorter than a full period) would allow it.
+        """
+        if not pump_on:
+            return None, None, None
+        advice = pump_on[0]
+        hold_until: datetime | None = None
+        if self._plan_on is not None and self._plan_on_since is not None:
+            minimum = self._min_run_minutes if self._plan_on else self._min_off_minutes
+            until = self._plan_on_since + timedelta(minutes=minimum)
+            if now < until:
+                advice = self._plan_on
+                hold_until = until
+        if advice != self._plan_on:
+            self._plan_on = advice
+            self._plan_on_since = now
+            minimum = self._min_run_minutes if advice else self._min_off_minutes
+            hold_until = now + timedelta(minutes=minimum) if minimum > 0 else None
+        change_at = next(
+            (
+                start
+                for on, start in zip(pump_on[1:], step_starts[1:], strict=False)
+                if on != advice
+            ),
+            None,
+        )
+        return advice, change_at, hold_until
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Run one optimization cycle."""
         heat_data = self.heat_coordinator.data
@@ -759,6 +845,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             durations,
             interval,
             floors,
+            self._pump_cycle(interval, now),
         )
         opt: ThermalOptimizationResult = result["result"]
         building: BuildingConfig = result["building"]
@@ -803,9 +890,15 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return round((temp - building.comfort_min) * mass, 3)
 
         self._update_calibration_issue()
-        plan_on, plan_change_at = _plan_run_advice(
-            opt.electrical_power_kw, step_starts, self._idle_power_threshold_kw
-        )
+        hold_until: datetime | None = None
+        if self._pump_follows_plan:
+            plan_on, plan_change_at, hold_until = self._plan_on_advice(
+                opt.pump_on, step_starts, now
+            )
+        else:
+            plan_on, plan_change_at = _plan_run_advice(
+                opt.electrical_power_kw, step_starts, self._idle_power_threshold_kw
+            )
         data: dict[str, Any] = {
             "offset": self._current_offset,
             "offsets": opt.offsets,
@@ -855,6 +948,10 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 else None
             ),
             "heat_pump_plan_on": plan_on,
+            "heat_pump_control_follows_plan": self._pump_follows_plan,
+            "heat_pump_plan_hold_until": (
+                hold_until.isoformat() if hold_until else None
+            ),
             "heat_pump_plan_change_at": (
                 plan_change_at.isoformat() if plan_change_at else None
             ),
@@ -1124,6 +1221,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         durations: list[float],
         step_minutes: int,
         floors: list[float] | None = None,
+        pump_cycle: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Build the models and run the DP (blocking, executor)."""
         building = self.building_config(config)
@@ -1167,6 +1265,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ),
             current_offset=self._current_offset,
             comfort_min_per_step=floors[:horizon] if floors else None,
+            **(pump_cycle or {}),
         )
         return {
             "result": result,

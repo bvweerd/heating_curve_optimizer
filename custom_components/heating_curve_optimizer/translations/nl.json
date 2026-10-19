@@ -49,14 +49,20 @@
               "k_factor": "k-factor (COP-verlies per °C aanvoer)",
               "outdoor_temp_coefficient": "Buitentemperatuurcoëfficiënt (COP-winst per °C)",
               "cop_compensation_factor": "COP-compensatiefactor",
-              "heat_pump_max_thermal_power_kw": "Maximaal thermisch vermogen"
+              "heat_pump_max_thermal_power_kw": "Maximaal thermisch vermogen",
+              "heat_pump_control": "Aansturing",
+              "min_run_minutes": "Minimale draaitijd",
+              "min_off_minutes": "Minimale rusttijd"
             },
             "data_description": {
               "base_cop": "Uit het datablad (bijv. A2/W35). Typisch 3,5-4,5 voor lucht-water.",
               "k_factor": "Typisch 0,08-0,12: hoe snel de COP daalt bij hogere aanvoertemperatuur.",
               "outdoor_temp_coefficient": "Typisch 0,05-0,10.",
               "cop_compensation_factor": "Schaalt de gemodelleerde COP naar je gemeten COP (1,0 = datablad).",
-              "heat_pump_max_thermal_power_kw": "Optioneel. Nominaal verwarmingsvermogen. Leeg: 1,3x het warmteverlies bij de ontwerp-buitentemperatuur."
+              "heat_pump_max_thermal_power_kw": "Optioneel. Nominaal verwarmingsvermogen. Leeg: 1,3x het warmteverlies bij de ontwerp-buitentemperatuur.",
+              "heat_pump_control": "Eigen thermostaat: de warmtepomp stopt op zijn eigen ruimtethermostaat bij de doeltemperatuur; het plan zet alleen de offset. Volgt de planning: een automatisering schakelt de warmtepomp met de binaire sensor *Planning actief*; het plan bepaalt dan ook wanneer hij draait.",
+              "min_run_minutes": "Bij *Volgt de planning*: elke run duurt minstens zo lang, om de compressor te sparen.",
+              "min_off_minutes": "Bij *Volgt de planning*: elke pauze duurt minstens zo lang."
             }
           },
           "heating_curve": {
@@ -259,14 +265,20 @@
               "k_factor": "k-factor (COP-verlies per °C aanvoer)",
               "outdoor_temp_coefficient": "Buitentemperatuurcoëfficiënt (COP-winst per °C)",
               "cop_compensation_factor": "COP-compensatiefactor",
-              "heat_pump_max_thermal_power_kw": "Maximaal thermisch vermogen"
+              "heat_pump_max_thermal_power_kw": "Maximaal thermisch vermogen",
+              "heat_pump_control": "Aansturing",
+              "min_run_minutes": "Minimale draaitijd",
+              "min_off_minutes": "Minimale rusttijd"
             },
             "data_description": {
               "base_cop": "Uit het datablad (bijv. A2/W35). Typisch 3,5-4,5 voor lucht-water.",
               "k_factor": "Typisch 0,08-0,12: hoe snel de COP daalt bij hogere aanvoertemperatuur.",
               "outdoor_temp_coefficient": "Typisch 0,05-0,10.",
               "cop_compensation_factor": "Schaalt de gemodelleerde COP naar je gemeten COP (1,0 = datablad).",
-              "heat_pump_max_thermal_power_kw": "Optioneel. Nominaal verwarmingsvermogen. Leeg: 1,3x het warmteverlies bij de ontwerp-buitentemperatuur."
+              "heat_pump_max_thermal_power_kw": "Optioneel. Nominaal verwarmingsvermogen. Leeg: 1,3x het warmteverlies bij de ontwerp-buitentemperatuur.",
+              "heat_pump_control": "Eigen thermostaat: de warmtepomp stopt op zijn eigen ruimtethermostaat bij de doeltemperatuur; het plan zet alleen de offset. Volgt de planning: een automatisering schakelt de warmtepomp met de binaire sensor *Planning actief*; het plan bepaalt dan ook wanneer hij draait.",
+              "min_run_minutes": "Bij *Volgt de planning*: elke run duurt minstens zo lang, om de compressor te sparen.",
+              "min_off_minutes": "Bij *Volgt de planning*: elke pauze duurt minstens zo lang."
             }
           },
           "heating_curve": {
@@ -651,6 +663,12 @@
         "radiator": "Radiatoren",
         "underfloor": "Vloerverwarming",
         "fan_coil": "Ventilatorconvectoren"
+      }
+    },
+    "heat_pump_control": {
+      "options": {
+        "own_thermostat": "Eigen thermostaat",
+        "follows_plan": "Volgt de planning (aan/uit via Planning actief)"
       }
     }
   },

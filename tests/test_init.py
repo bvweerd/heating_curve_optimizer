@@ -583,3 +583,86 @@ async def test_battery_discharge_counts_as_grid_import(
     # Without the heat pump (and the battery covering it) nothing would be
     # exported: no surplus, the adjustment steps down.
     assert realtime["adjustment"] == 0
+
+
+async def test_plan_driven_pump_holds_its_advice_for_the_minimum(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    """With "follows the plan" the published on/off advice never changes
+    within the minimum run or pause time, whatever a re-plan says."""
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+
+    entry = make_entry(
+        heat_pump_control="follows_plan", min_run_minutes=60, min_off_minutes=60
+    )
+    await setup_entry(hass, entry)
+    coordinator = entry.runtime_data.optimization_coordinator
+    data = coordinator.data
+    assert data["heat_pump_control_follows_plan"] is True
+    assert data["heat_pump_plan_on"] is not None
+    assert data["heat_pump_plan_hold_until"] is not None
+
+    # Pretend the advice flipped to "off" ten minutes ago: a re-plan must
+    # keep it off until the hour is over.
+    since = dt_util.utcnow() - timedelta(minutes=10)
+    coordinator._plan_on = False
+    coordinator._plan_on_since = since
+    await coordinator.async_refresh()
+    assert coordinator.data["heat_pump_plan_on"] is False
+    assert (
+        coordinator.data["heat_pump_plan_hold_until"]
+        == (since + timedelta(minutes=60)).isoformat()
+    )
+    state = _state(hass, "binary_sensor", f"{entry.entry_id}_heat_pump_plan_active")
+    assert state.state == "off"
+    assert state.attributes["hold_until"] is not None
+
+
+async def test_pump_cycle_starts_from_the_published_advice(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+
+    hass.states.async_set(POWER_SENSOR, "0.05", {"unit_of_measurement": "kW"})
+    entry = make_entry(
+        heat_pump_control="follows_plan",
+        min_run_minutes=60,
+        min_off_minutes=30,
+        power_consumption=POWER_SENSOR,
+    )
+    await setup_entry(hass, entry)
+    coordinator = entry.runtime_data.optimization_coordinator
+    now = dt_util.utcnow()
+
+    # After a restart: the measured (idle) heat pump, free to switch.
+    coordinator._plan_on = None
+    cycle = coordinator._pump_cycle(15, now)
+    assert cycle == {
+        "pump_follows_plan": True,
+        "min_on_steps": 4,
+        "min_off_steps": 2,
+        "initial_pump_on": False,
+    }
+    # On for 20 minutes: 40 more minutes = 3 steps, so 1 step counts as done.
+    coordinator._plan_on = True
+    coordinator._plan_on_since = now - timedelta(minutes=20)
+    cycle = coordinator._pump_cycle(15, now)
+    assert cycle["initial_pump_on"] is True
+    assert cycle["initial_mode_steps"] == 1
+
+
+async def test_own_thermostat_is_the_default(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    entry = make_entry()
+    await setup_entry(hass, entry)
+    coordinator = entry.runtime_data.optimization_coordinator
+    assert coordinator.data["heat_pump_control_follows_plan"] is False
+    assert coordinator.data["heat_pump_plan_hold_until"] is None
+    assert coordinator._pump_cycle(15, coordinator.data["timestamp"]) == {
+        "pump_follows_plan": False
+    }

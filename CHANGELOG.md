@@ -11,17 +11,24 @@ First release of the redesigned integration. There are no earlier
 deployments to migrate from.
 
 ### Optimizer
+- Heat pump *Switching* setting. *Own thermostat* (default): the model
+  stops the heat pump at the target like its room thermostat does, and the
+  plan only sets the offset. *Follows the plan*: the plan also switches the
+  pump off, with a minimum run time and pause (default 60 minutes each)
+  carried in the DP state; the *Plan active* advice holds for those
+  minimums.
 - Away periods: an optional home schedule (schedule helper) per zone lowers
   the comfort floor by the away setback while nobody is home. The plan
   knows the return time and reheats in the cheapest hours before it; gas
   advice treats the planned dip as intended.
-- Pre-heating can use the whole comfort band: heat output is cut at the
-  top of the band (was: 0.3 °C above target). The baseline keeps a room
-  thermostat at the target, so savings are not inflated.
-- The plan can also switch the heat pump off just below the comfort band;
-  the comfort penalty decides, so a room 0.05 °C too cold is no longer
-  heated at the day's peak price just before the sun comes in.
-- `pump_on` is only true for steps that deliver heat.
+- With *Follows the plan*, pre-heating can use the whole comfort band (no
+  thermostat cut-off at target + 0.3 °C), and the plan can switch the heat
+  pump off just below the band: the comfort penalty decides, so a room
+  0.05 °C too cold is no longer heated at the day's peak price just before
+  the sun comes in. The baseline keeps a room thermostat at the target, so
+  savings are not inflated.
+- `pump_on` is the plan's on/off command with *Follows the plan*, and
+  "the thermostat lets it deliver heat" with *Own thermostat*.
 - The PV-surplus adjustment steps back down while the heat pump is idle
   and nothing is exported, instead of waiting for the next start.
 - The PV-surplus adjustment no longer flaps: each change holds for 15

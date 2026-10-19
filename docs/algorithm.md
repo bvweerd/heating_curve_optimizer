@@ -56,16 +56,21 @@ V_t(T, o_prev) = min over o of  cost_t(T, o) + comfort_t(T') + λ·(o − o_prev
 ```
 
 - **Decision**: offset `o` ∈ {−4 … +4}, with at most
-  `step_minutes / offset_delta_t` degrees change per step; or **pump off**
-  (no heat, offset unchanged), available at any temperature. The off
-  action is how the plan cycles the heat pump: it coasts through expensive
-  hours by letting the room drift down inside the band, and it stops
-  trickling heat when the house needs less than the curve floor delivers.
-  Below the band no rule forces heating: the comfort penalty decides, so
-  a short, shallow dip just before free solar gain can beat heating at a
-  price peak.
-- **Comfort ceiling**: heat output tapers to zero over the top 0.3 °C of
-  the band, so the whole band can store heat ahead of expensive hours.
+  `step_minutes / offset_delta_t` degrees change per step. What else the
+  plan controls depends on the *Switching* setting:
+    - **Own thermostat**: the heat pump stops on its own room thermostat;
+      the model tapers its output to zero over 0.3 °C above the target.
+      The plan only moves the offset.
+    - **Follows the plan**: there is no thermostat in the model, and the
+      plan also chooses **pump off** (no heat, offset unchanged), at any
+      temperature. That is how it coasts through expensive hours by letting
+      the room drift down inside the band, and stops when the house needs
+      less than the curve floor delivers. Below the band no rule forces
+      heating: the comfort penalty decides, so a short, shallow dip just
+      before free solar gain can beat heating at a price peak. Every run
+      and every pause lasts at least the minimum run time / pause: the DP
+      state also carries how long the current run or pause has lasted, and
+      starts from the advice last published.
 - **Transition**: `T'` from the building model, computed exactly (not
   rounded to the grid).
 - **Value function**: stored on a 0.1 °C grid and interpolated linearly.
@@ -105,6 +110,12 @@ runs, the baseline cost minus the optimized cost of the step being executed
 
 The integration never turns hardware on or off; the *Heat pump plan
 active* binary sensor is advisory only, for the user's own automation.
+
+With *Follows the plan* the sensor is the plan's on/off decision for the
+current step, and it never changes before the minimum run time or pause
+has passed (attribute `hold_until`), not even when a re-plan within a step
+would allow it. After a restart the measured heat pump state is the
+starting point. The rest of this section applies to *Own thermostat*.
 
 `comfort_penalty` is symmetric around the comfort band, so overshooting
 `comfort_max` is priced too - the optimizer has no incentive to heat past

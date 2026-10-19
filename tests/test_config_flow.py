@@ -34,6 +34,9 @@ def _sectioned(**overrides) -> dict:
             "k_factor": 0.1,
             "outdoor_temp_coefficient": 0.08,
             "cop_compensation_factor": 0.95,
+            "heat_pump_control": "follows_plan",
+            "min_run_minutes": 45,
+            "min_off_minutes": 60,
         },
         "heating_curve": {
             "heat_curve_min": 25.0,
@@ -127,6 +130,8 @@ async def test_user_flow_creates_entry(hass: HomeAssistant) -> None:
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"]["base_cop"] == 4.0
     assert result["data"]["planning_window"] == 24
+    assert result["data"]["heat_pump_control"] == "follows_plan"
+    assert result["data"]["min_run_minutes"] == 45
 
 
 async def test_user_flow_reports_unreachable_api(hass: HomeAssistant) -> None:

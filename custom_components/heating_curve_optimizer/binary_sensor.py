@@ -83,6 +83,7 @@ class HeatPumpPlanActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
             "buffer_kwh": data.get("buffer_kwh"),
             "changes_at": data.get("heat_pump_plan_change_at"),
             "changes_in_minutes": data.get("heat_pump_plan_change_minutes"),
+            "hold_until": data.get("heat_pump_plan_hold_until"),
         }
 
 

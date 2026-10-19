@@ -53,6 +53,11 @@ docs/                         index, installation, quick-start, configuration, a
   pass. Comfort: 50 €/K²/h outside the band + 1000 € below
   `comfort_min - 1.5`. Terminal value prices stored heat above
   `comfort_min`. Baseline = offset 0 through the same model.
+- **Switching** (`heat_pump_control`): `own_thermostat` (default) =
+  thermostat taper at target + 0.3, no off action, plan only sets the
+  offset; `follows_plan` = off action, no taper, run/pause phases in the DP
+  state (`min_run_minutes`/`min_off_minutes`, default 60), published
+  `heat_pump_plan_on` held until the minimum has passed.
 - **Away periods**: optional zone `comfort_schedule` (a `schedule` helper,
   on = home, read via `schedule.get_schedule` each run) lowers the floor by
   `away_setback` for steps that *end* while it is off (`comfort_mins`);

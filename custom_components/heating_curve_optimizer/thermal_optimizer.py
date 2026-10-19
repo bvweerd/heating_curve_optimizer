@@ -101,9 +101,8 @@ class ThermalOptimizationResult:
     """
 
     offsets: list[int] = field(default_factory=list)
-    # True when the heat pump delivers heat that step; False for the
-    # explicit "pump off" action and for steps where the comfort ceiling
-    # has already cut the output to zero.
+    # Plan-driven pump: the plan's on/off command for the step. Pump with
+    # its own thermostat: whether that thermostat lets it deliver heat.
     pump_on: list[bool] = field(default_factory=list)
     supply_temps: list[float] = field(default_factory=list)
     indoor_temps: list[float] = field(default_factory=list)
@@ -164,6 +163,11 @@ def optimize_thermal_schedule(
     hard_floor_penalty: float = DEFAULT_HARD_FLOOR_PENALTY,
     current_offset: int = 0,
     comfort_min_per_step: list[float] | None = None,
+    pump_follows_plan: bool = True,
+    min_on_steps: int = 0,
+    min_off_steps: int = 0,
+    initial_pump_on: bool = True,
+    initial_mode_steps: int | None = None,
 ) -> ThermalOptimizationResult:
     """Return a cost-optimal offset schedule over indoor temperature.
 
@@ -173,6 +177,15 @@ def optimize_thermal_schedule(
     `comfort_min_per_step[t]` is the comfort floor at the *end* of step t
     (e.g. lowered while nobody is home); default `building.comfort_min`.
     The ceiling and the terminal value keep the building's own band.
+
+    `pump_follows_plan`: True when the heat pump is switched on and off by
+    the plan (and has no room thermostat of its own): the plan has an
+    explicit "pump off" action and every run and every pause lasts at least
+    `min_on_steps` / `min_off_steps` steps. `initial_pump_on` and
+    `initial_mode_steps` (steps already spent in that mode, None = long
+    enough to switch) describe the current command. False: the heat pump
+    stops on its own room thermostat at the target temperature, and the
+    plan only moves the offset.
     """
     horizon = min(len(outdoor_temps), len(prices))
     if horizon == 0:
@@ -218,12 +231,13 @@ def optimize_thermal_schedule(
     n_states = len(states)
     state_lo, state_hi = states[0], states[-1]
     cell = (state_hi - state_lo) / (n_states - 1) if n_states > 1 else 1.0
-    # Output tapers to zero over the last 0.3 K below a cutoff. The plan
-    # cuts at comfort_max, so the whole band can store heat; the baseline
-    # models a plain curve with a room thermostat at the target.
+    # A room thermostat: output tapers to zero over 0.3 K above the target
+    # (the taper keeps the value function smooth). The baseline always has
+    # one; the plan only when the heat pump keeps its own thermostat - one
+    # that follows the plan heats on the curve until the plan stops it.
     ramp_width = 0.3
-    plan_cutoff = building.comfort_max
-    baseline_cutoff = building.target_temp + ramp_width
+    thermostat_cutoff = building.target_temp + ramp_width
+    plan_cutoff = math.inf if pump_follows_plan else thermostat_cutoff
 
     offsets_range = list(range(offset_min, offset_max + 1))
     n_offsets = len(offsets_range)
@@ -311,10 +325,45 @@ def optimize_thermal_schedule(
         # make up.
         return -(t_in - building.comfort_min) * terminal_eur_per_k
 
-    # v_tables[t][offset_idx][state_idx] = V[t](state, prev_offset=offset).
+    # Run/pause phases. A phase is (mode, steps already done in it, capped
+    # at the minimum); switching is allowed once the minimum is reached.
+    # Without a plan-driven pump, or without minimums, one free phase.
+    n_on = max(0, min_on_steps) if pump_follows_plan else 0
+    n_off = max(0, min_off_steps) if pump_follows_plan else 0
+    constrained = n_on > 0 or n_off > 0
+
+    def on_phase(done: int) -> int:
+        return min(done, n_on)
+
+    def off_phase(done: int) -> int:
+        return n_on + 1 + min(done, n_off)
+
+    if constrained:
+        n_phases = n_on + n_off + 2
+        # (next phase after "on", next phase after "off"); -1 = not allowed.
+        transitions = [
+            (on_phase(c + 1), off_phase(1) if c >= n_on else -1)
+            for c in range(n_on + 1)
+        ] + [
+            (on_phase(1) if c >= n_off else -1, off_phase(c + 1))
+            for c in range(n_off + 1)
+        ]
+        if initial_mode_steps is None:
+            phase0 = on_phase(n_on) if initial_pump_on else off_phase(n_off)
+        elif initial_pump_on:
+            phase0 = on_phase(max(0, initial_mode_steps))
+        else:
+            phase0 = off_phase(max(0, initial_mode_steps))
+    else:
+        n_phases = 1
+        transitions = [(0, 0 if pump_follows_plan else -1)]
+        phase0 = 0
+
+    # v_tables[t][offset_idx][phase][state_idx]
+    #   = V[t](state, prev_offset=offset, run/pause phase).
     terminal_row = [terminal_value(s) for s in states]
-    v_tables: list[list[list[float]]] = [[] for _ in range(horizon + 1)]
-    v_tables[horizon] = [terminal_row] * n_offsets
+    v_tables: list[list[list[list[float]]]] = [[] for _ in range(horizon + 1)]
+    v_tables[horizon] = [[terminal_row] * n_phases for _ in range(n_offsets)]
 
     def allowed(prev_offset: int) -> range:
         return range(
@@ -322,48 +371,65 @@ def optimize_thermal_schedule(
             min(offset_max, prev_offset + max_change) + 1,
         )
 
+    on_targets = sorted({nxt for nxt, _ in transitions if nxt >= 0})
+    off_targets = sorted({nxt for _, nxt in transitions if nxt >= 0})
+
     for t in reversed(range(horizon)):
         v_next = v_tables[t + 1]
-        # Cost-to-go of choosing `offset` from each grid state; independent
-        # of prev_offset, so computed once and shared by every prev row.
-        q_values: list[list[float]] = []
-        for oi, offset in enumerate(offsets_range):
-            row = []
-            for t_in in states:
-                outcome = simulate_step(t, t_in, offset)
-                row.append(
-                    stage_cost(t, outcome) + interp(v_next[oi], outcome.next_t_in)
-                )
-            q_values.append(row)
-
+        # Running with `offset` from each grid state: the outcome does not
+        # depend on prev_offset or the phase, only the continuation does.
+        on_outcomes = [
+            [simulate_step(t, t_in, offset) for t_in in states]
+            for offset in offsets_range
+        ]
+        on_cont = {
+            q: [
+                [
+                    stage_cost(t, out) + interp(v_next[oi][q], out.next_t_in)
+                    for out in on_outcomes[oi]
+                ]
+                for oi in range(n_offsets)
+            ]
+            for q in on_targets
+        }
         # Explicit "pump off" action: no heat, offset unchanged. Available
         # at any temperature: the comfort penalty, not a hard rule, decides
         # whether a short dip below the band is cheaper than heating at a
         # price peak (e.g. just before the sun warms the house for free).
-        # The resulting cost-to-go continues from the same prev_offset row
-        # of V[t+1], so it is computed per prev_offset below.
-        off_stage: list[float] = []
-        off_next: list[float] = []
-        for t_in in states:
-            outcome = simulate_step(t, t_in, 0, pump_on=False)
-            off_stage.append(stage_cost(t, outcome))
-            off_next.append(outcome.next_t_in)
+        off_outcomes = [simulate_step(t, t_in, 0, pump_on=False) for t_in in states]
+        off_cont = {
+            q: [
+                [
+                    stage_cost(t, out) + interp(v_next[pi][q], out.next_t_in)
+                    for out in off_outcomes
+                ]
+                for pi in range(n_offsets)
+            ]
+            for q in off_targets
+        }
 
-        v_cur: list[list[float]] = []
-        for prev_offset in offsets_range:
-            candidates = [offset - offset_min for offset in allowed(prev_offset)]
-            row = []
-            for s in range(n_states):
-                best_on = min(
-                    q_values[oi][s]
-                    + cycling_penalty_weight * (offsets_range[oi] - prev_offset) ** 2
-                    for oi in candidates
+        v_cur: list[list[list[float]]] = []
+        for pi, prev_offset in enumerate(offsets_range):
+            candidates = [
+                (
+                    offset - offset_min,
+                    cycling_penalty_weight * (offset - prev_offset) ** 2,
                 )
-                best_off = off_stage[s] + interp(
-                    v_next[prev_offset - offset_min], off_next[s]
-                )
-                row.append(min(best_on, best_off))
-            v_cur.append(row)
+                for offset in allowed(prev_offset)
+            ]
+            phase_rows = []
+            for on_next, off_next in transitions:
+                on_rows = on_cont[on_next] if on_next >= 0 else None
+                off_row = off_cont[off_next][pi] if off_next >= 0 else None
+                row = []
+                for s in range(n_states):
+                    lowest = off_row[s] if off_row is not None else math.inf
+                    if on_rows is not None:
+                        for oi, penalty in candidates:
+                            lowest = min(lowest, on_rows[oi][s] + penalty)
+                    row.append(lowest)
+                phase_rows.append(row)
+            v_cur.append(phase_rows)
         v_tables[t] = v_cur
 
     # --- forward pass on the continuous state --------------------------
@@ -371,32 +437,40 @@ def optimize_thermal_schedule(
     result = ThermalOptimizationResult()
     t_in = initial_indoor_temp
     prev_offset = safe_current_offset
+    phase = phase0
 
     for t in range(horizon):
+        on_next, off_next = transitions[phase]
         best_total = math.inf
-        best: tuple[int, _StepOutcome, bool] | None = None
-        for offset in allowed(prev_offset):
-            outcome = simulate_step(t, t_in, offset)
-            total = (
-                stage_cost(t, outcome)
-                + cycling_penalty_weight * (offset - prev_offset) ** 2
-                + interp(v_tables[t + 1][offset - offset_min], outcome.next_t_in)
+        best: tuple[int, _StepOutcome, bool, int] | None = None
+        # "Off" first: on equal cost the pump stays off.
+        if off_next >= 0:
+            off_outcome = simulate_step(t, t_in, prev_offset, pump_on=False)
+            best_total = stage_cost(t, off_outcome) + interp(
+                v_tables[t + 1][prev_offset - offset_min][off_next],
+                off_outcome.next_t_in,
             )
-            if total < best_total:
-                best_total = total
-                best = (offset, outcome, True)
-        # Explicit "pump off" action: no heat, offset unchanged.
-        off_outcome = simulate_step(t, t_in, prev_offset, pump_on=False)
-        off_total = stage_cost(t, off_outcome) + interp(
-            v_tables[t + 1][prev_offset - offset_min], off_outcome.next_t_in
-        )
-        if off_total < best_total:
-            best_total = off_total
-            best = (prev_offset, off_outcome, False)
+            best = (prev_offset, off_outcome, False, off_next)
+        if on_next >= 0:
+            for offset in allowed(prev_offset):
+                outcome = simulate_step(t, t_in, offset)
+                total = (
+                    stage_cost(t, outcome)
+                    + cycling_penalty_weight * (offset - prev_offset) ** 2
+                    + interp(
+                        v_tables[t + 1][offset - offset_min][on_next],
+                        outcome.next_t_in,
+                    )
+                )
+                if total < best_total:
+                    best_total = total
+                    best = (offset, outcome, True, on_next)
         assert best is not None
-        offset, outcome, pump_on = best
+        offset, outcome, pump_on, phase = best
         result.offsets.append(offset)
-        result.pump_on.append(pump_on and outcome.q_hp > 0)
+        # A plan-driven pump runs whenever the plan says so; one with its
+        # own thermostat only while that thermostat calls for heat.
+        result.pump_on.append(pump_on if pump_follows_plan else outcome.q_hp > 0)
         result.supply_temps.append(round(outcome.supply_temp, 2))
         result.indoor_temps.append(round(outcome.next_t_in, 3))
         result.thermal_power_kw.append(round(outcome.q_hp, 4))
@@ -412,7 +486,7 @@ def optimize_thermal_schedule(
     t_in = initial_indoor_temp
     baseline_energy = 0.0
     for t in range(horizon):
-        outcome = simulate_step(t, t_in, 0, cutoff=baseline_cutoff)
+        outcome = simulate_step(t, t_in, 0, cutoff=thermostat_cutoff)
         result.baseline_supply_temps.append(round(outcome.supply_temp, 2))
         result.baseline_indoor_temps.append(round(outcome.next_t_in, 3))
         result.baseline_cop.append(round(outcome.cop, 3))
@@ -428,7 +502,7 @@ def optimize_thermal_schedule(
 
     # --- shadow price at t=0 -------------------------------------------
     if n_states > 1 and building.thermal_mass_kwh_per_k > 0:
-        row = v_tables[0][safe_current_offset - offset_min]
+        row = v_tables[0][safe_current_offset - offset_min][phase0]
         t0 = min(max(initial_indoor_temp, state_lo + cell), state_hi - cell)
         slope = (interp(row, t0 + cell) - interp(row, t0 - cell)) / (2 * cell)
         result.shadow_price_eur_per_kwh = round(

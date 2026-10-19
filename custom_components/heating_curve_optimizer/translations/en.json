@@ -49,14 +49,20 @@
               "k_factor": "k-factor (COP loss per °C supply)",
               "outdoor_temp_coefficient": "Outdoor temperature coefficient (COP gain per °C)",
               "cop_compensation_factor": "COP compensation factor",
-              "heat_pump_max_thermal_power_kw": "Maximum thermal power"
+              "heat_pump_max_thermal_power_kw": "Maximum thermal power",
+              "heat_pump_control": "Switching",
+              "min_run_minutes": "Minimum run time",
+              "min_off_minutes": "Minimum pause"
             },
             "data_description": {
               "base_cop": "From the datasheet (e.g. A2/W35). Typical 3.5-4.5 for air-to-water.",
               "k_factor": "Typically 0.08-0.12: how fast COP drops with higher supply temperature.",
               "outdoor_temp_coefficient": "Typically 0.05-0.10.",
               "cop_compensation_factor": "Scales the modelled COP to your measured COP (1.0 = datasheet).",
-              "heat_pump_max_thermal_power_kw": "Optional. Rated heating capacity. Empty: 1.3x the heat loss at the design outdoor temperature."
+              "heat_pump_max_thermal_power_kw": "Optional. Rated heating capacity. Empty: 1.3x the heat loss at the design outdoor temperature.",
+              "heat_pump_control": "Own thermostat: the heat pump stops on its own room thermostat at the target; the plan only sets the offset. Follows the plan: an automation switches the heat pump with the *Plan active* binary sensor; the plan then also decides when it runs.",
+              "min_run_minutes": "With *Follows the plan*: every run lasts at least this long, to spare the compressor.",
+              "min_off_minutes": "With *Follows the plan*: every pause lasts at least this long."
             }
           },
           "heating_curve": {
@@ -259,14 +265,20 @@
               "k_factor": "k-factor (COP loss per °C supply)",
               "outdoor_temp_coefficient": "Outdoor temperature coefficient (COP gain per °C)",
               "cop_compensation_factor": "COP compensation factor",
-              "heat_pump_max_thermal_power_kw": "Maximum thermal power"
+              "heat_pump_max_thermal_power_kw": "Maximum thermal power",
+              "heat_pump_control": "Switching",
+              "min_run_minutes": "Minimum run time",
+              "min_off_minutes": "Minimum pause"
             },
             "data_description": {
               "base_cop": "From the datasheet (e.g. A2/W35). Typical 3.5-4.5 for air-to-water.",
               "k_factor": "Typically 0.08-0.12: how fast COP drops with higher supply temperature.",
               "outdoor_temp_coefficient": "Typically 0.05-0.10.",
               "cop_compensation_factor": "Scales the modelled COP to your measured COP (1.0 = datasheet).",
-              "heat_pump_max_thermal_power_kw": "Optional. Rated heating capacity. Empty: 1.3x the heat loss at the design outdoor temperature."
+              "heat_pump_max_thermal_power_kw": "Optional. Rated heating capacity. Empty: 1.3x the heat loss at the design outdoor temperature.",
+              "heat_pump_control": "Own thermostat: the heat pump stops on its own room thermostat at the target; the plan only sets the offset. Follows the plan: an automation switches the heat pump with the *Plan active* binary sensor; the plan then also decides when it runs.",
+              "min_run_minutes": "With *Follows the plan*: every run lasts at least this long, to spare the compressor.",
+              "min_off_minutes": "With *Follows the plan*: every pause lasts at least this long."
             }
           },
           "heating_curve": {
@@ -651,6 +663,12 @@
         "radiator": "Radiators",
         "underfloor": "Underfloor heating",
         "fan_coil": "Fan coil units"
+      }
+    },
+    "heat_pump_control": {
+      "options": {
+        "own_thermostat": "Own thermostat",
+        "follows_plan": "Follows the plan (on/off via Plan active)"
       }
     }
   },

@@ -94,6 +94,21 @@ CONF_GRID_EXPORT_SENSOR = "grid_export_sensor"
 # layer: a battery covering the heat pump is not surplus.
 CONF_BATTERY_POWER_SENSORS = "battery_power_sensors"
 CONF_HEAT_PUMP_MAX_THERMAL_POWER = "heat_pump_max_thermal_power_kw"
+# How the heat pump is switched: by its own room thermostat (the plan only
+# moves the offset), or by the plan's on/off advice. Then every run and
+# every pause lasts at least the minimum, to spare the compressor.
+CONF_HEAT_PUMP_CONTROL = "heat_pump_control"
+HEAT_PUMP_CONTROL_OWN_THERMOSTAT = "own_thermostat"
+HEAT_PUMP_CONTROL_FOLLOWS_PLAN = "follows_plan"
+HEAT_PUMP_CONTROL_MODES = [
+    HEAT_PUMP_CONTROL_OWN_THERMOSTAT,
+    HEAT_PUMP_CONTROL_FOLLOWS_PLAN,
+]
+DEFAULT_HEAT_PUMP_CONTROL = HEAT_PUMP_CONTROL_OWN_THERMOSTAT
+CONF_MIN_RUN_MINUTES = "min_run_minutes"
+DEFAULT_MIN_RUN_MINUTES = 60
+CONF_MIN_OFF_MINUTES = "min_off_minutes"
+DEFAULT_MIN_OFF_MINUTES = 60
 CONF_K_FACTOR = "k_factor"
 CONF_BASE_COP = "base_cop"
 CONF_COP_COMPENSATION_FACTOR = "cop_compensation_factor"
