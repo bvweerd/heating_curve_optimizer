@@ -823,3 +823,66 @@ def test_flow_heat_is_zero_while_the_heat_pump_is_idle():
     assert measured_heat_kw(hass, config) == 0.0
     states["sensor.power"] = State("sensor.power", "900", {"unit_of_measurement": "W"})
     assert measured_heat_kw(hass, config) == pytest.approx(5 / 60 * 4.163 * 0.8)
+
+
+def test_energy_counter_rate():
+    from datetime import timedelta
+
+    from custom_components.heating_curve_optimizer.helpers import EnergyCounterRate
+
+    rate = EnergyCounterRate(window=timedelta(minutes=10))
+    t0 = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
+    assert rate.update(t0, 100.0) is None  # no span yet
+    assert rate.update(t0 + timedelta(minutes=1), 100.0) is None  # < 2 minutes
+    # 1.5 kWh in 15 minutes, the window keeps the last 10 (+ the reading before).
+    for minute in range(2, 16):
+        value = rate.update(t0 + timedelta(minutes=minute), 100.0 + 0.1 * minute)
+    assert value == pytest.approx(6.0)
+    assert rate.update(t0 + timedelta(minutes=16), None) is None
+    # A counter reset starts over.
+    assert rate.update(t0 + timedelta(minutes=17), 0.0) is None
+
+
+def test_heat_meter_takes_precedence_over_flow():
+    from datetime import timedelta
+
+    from custom_components.heating_curve_optimizer.helpers import (
+        EnergyCounterRate,
+        heat_is_measured,
+        measured_heat_kw,
+    )
+
+    states = {
+        "sensor.counter": State(
+            "sensor.counter", "1000.0", {"unit_of_measurement": "kWh"}
+        ),
+        "sensor.flow": State("sensor.flow", "12", {"unit_of_measurement": "L/min"}),
+        "sensor.supply": State("sensor.supply", "35", {}),
+        "sensor.return": State("sensor.return", "25", {}),
+        "sensor.power": State("sensor.power", "1.0", {"unit_of_measurement": "kW"}),
+    }
+    hass = MagicMock()
+    hass.states.get = states.get
+    config = {
+        "heat_pump_thermal_energy_sensor": "sensor.counter",
+        "flow_sensor": "sensor.flow",
+        "supply_temperature_sensor": "sensor.supply",
+        "return_temperature_sensor": "sensor.return",
+        "power_consumption": "sensor.power",
+    }
+    assert heat_is_measured({"heat_pump_thermal_energy_sensor": "sensor.counter"})
+    counter = EnergyCounterRate()
+    t0 = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
+    assert measured_heat_kw(hass, config, counter, t0) is None
+    states["sensor.counter"] = State(
+        "sensor.counter", "1001.0", {"unit_of_measurement": "kWh"}
+    )
+    # 1 kWh in 12 minutes = 5 kW, not the flow's 8.3 kW.
+    assert measured_heat_kw(
+        hass, config, counter, t0 + timedelta(minutes=12)
+    ) == pytest.approx(5.0)
+    # Without a rate tracker the meter cannot be read.
+    assert measured_heat_kw(hass, config) is None
+    # Idle: zero, whatever the counter did.
+    states["sensor.power"] = State("sensor.power", "5", {"unit_of_measurement": "W"})
+    assert measured_heat_kw(hass, config, counter, t0 + timedelta(minutes=13)) == 0.0

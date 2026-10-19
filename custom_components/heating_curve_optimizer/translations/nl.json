@@ -23,6 +23,7 @@
             "data": {
               "power_consumption": "Elektrisch vermogen warmtepomp",
               "heat_pump_thermal_power_sensor": "Thermisch vermogen warmtepomp",
+              "heat_pump_thermal_energy_sensor": "Warmtemeter (energie)",
               "supply_temperature_sensor": "Gemeten aanvoertemperatuur",
               "return_temperature_sensor": "Gemeten retourtemperatuur",
               "flow_sensor": "Waterdebiet",
@@ -34,6 +35,7 @@
             "data_description": {
               "power_consumption": "Vermogenssensor (W of kW) van de warmtepomp. Activeert de thermisch vermogen/energie-sensoren en thermische kalibratie.",
               "heat_pump_thermal_power_sensor": "Optionele warmtemeter of door de warmtepomp gerapporteerd afgegeven vermogen (W of kW). Maakt de kalibratie onafhankelijk van het COP-model en maakt het leren van de COP-curve mogelijk.",
+              "heat_pump_thermal_energy_sensor": "Optioneel: cumulatieve warmte in kWh, bijvoorbeeld de eigen warmteteller van de warmtepomp. De geleverde warmte is de toename over de laatste 10 minuten. Gaat voor het waterdebiet; een thermisch-vermogensensor gaat voor.",
               "dhw_active_sensor": "Binaire sensor die aan is terwijl de warmtepomp tapwater verwarmt. Die periodes worden buiten de kalibratie gehouden. Leeg laten als er geen tapwaterbedrijf is.",
               "supply_temperature_sensor": "Gebruikt voor de COP van het gemeten werkpunt; anders wordt de geplande aanvoertemperatuur gebruikt.",
               "return_temperature_sensor": "Aanvoer min retour geeft de werkelijke spreiding voor de kalibratie van de afgiftecurve (gemiddelde watertemperatuur); anders wordt 5 K spreiding aangenomen.",
@@ -241,6 +243,7 @@
             "data": {
               "power_consumption": "Elektrisch vermogen warmtepomp",
               "heat_pump_thermal_power_sensor": "Thermisch vermogen warmtepomp",
+              "heat_pump_thermal_energy_sensor": "Warmtemeter (energie)",
               "supply_temperature_sensor": "Gemeten aanvoertemperatuur",
               "return_temperature_sensor": "Gemeten retourtemperatuur",
               "flow_sensor": "Waterdebiet",
@@ -252,6 +255,7 @@
             "data_description": {
               "power_consumption": "Vermogenssensor (W of kW) van de warmtepomp. Activeert de thermisch vermogen/energie-sensoren en thermische kalibratie.",
               "heat_pump_thermal_power_sensor": "Optionele warmtemeter of door de warmtepomp gerapporteerd afgegeven vermogen (W of kW). Maakt de kalibratie onafhankelijk van het COP-model en maakt het leren van de COP-curve mogelijk.",
+              "heat_pump_thermal_energy_sensor": "Optioneel: cumulatieve warmte in kWh, bijvoorbeeld de eigen warmteteller van de warmtepomp. De geleverde warmte is de toename over de laatste 10 minuten. Gaat voor het waterdebiet; een thermisch-vermogensensor gaat voor.",
               "dhw_active_sensor": "Binaire sensor die aan is terwijl de warmtepomp tapwater verwarmt. Die periodes worden buiten de kalibratie gehouden. Leeg laten als er geen tapwaterbedrijf is.",
               "supply_temperature_sensor": "Gebruikt voor de COP van het gemeten werkpunt; anders wordt de geplande aanvoertemperatuur gebruikt.",
               "return_temperature_sensor": "Aanvoer min retour geeft de werkelijke spreiding voor de kalibratie van de afgiftecurve (gemiddelde watertemperatuur); anders wordt 5 K spreiding aangenomen.",
@@ -893,6 +897,10 @@
     "gas_price_sensor_unavailable": {
       "title": "Gasprijssensor niet beschikbaar",
       "description": "De gasprijssensor **{sensor}** is niet beschikbaar. De gasketelvergelijking kan zonder deze sensor niet draaien."
+    },
+    "cop_model_mismatch": {
+      "title": "COP-model past niet bij de gemeten COP",
+      "description": "De afgelopen dagen is de gemeten COP (gemeten warmte gedeeld door elektrisch vermogen) **{ratio}×** wat het ingestelde COP-model bij dezelfde temperaturen geeft. Controleer eerst de warmtemeting: de eigen warmteteller van de warmtepomp is de betrouwbaarste bron; debiet × aanvoer-retourverschil is zo goed als de twee temperatuursensoren (een retour onder de kamertemperatuur, of een COP boven de helft van de Carnot-grens, wijst op de sensoren). Klopt de meting, zet dan de kalibratie van de zone op *Toepassen* zodat de COP-curve eruit wordt geleerd, of pas de COP-instellingen aan."
     }
   },
   "services": {

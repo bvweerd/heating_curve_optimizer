@@ -24,6 +24,7 @@ number/climate entities re-runs the optimizer immediately without a reload.
 | Tap water heating active | Binary sensor, on while the heat pump heats tap water; those periods are left out of calibration. Empty: no tap water operation. |
 | Measured supply temperature | COP of the actual operating point (thermal power sensor, calibration). Without it the planned supply temperature is used. |
 | Measured return temperature | Supply minus return is the real water spread, used for the mean water temperature in the emitter calibration. Without it a 5 K spread is assumed. |
+| Heat meter (energy) | Cumulative thermal energy in kWh (Wh/MWh converted), e.g. the heat pump's own heat counter. Delivered heat = its increase over the last 10 minutes. The best heat source after a thermal power sensor; used for calibration, the COP curve and the *Thermal power* sensor. |
 | Water flow | L/min, L/h or m³/h. With supply and return temperature it measures the delivered heat: flow × spread × 4.16 kJ/(L·K), counted only while the heat pump draws more than its standby power. Used like a heat meter (calibration, COP curve, *Thermal power* sensor); a thermal power sensor takes precedence. |
 | Grid import / export power | Enables the real-time PV-surplus layer. W or kW; a sensor without unit is read as W. |
 | Home battery power | One sensor per battery, positive while charging (the Battery Controller convention; the setup wizard offers its batteries). Discharge counts as grid import for the PV-surplus layer. |

@@ -153,6 +153,7 @@ from .coordinator_heat import INDOOR_SOURCE_SENSOR, HeatCalculationCoordinator
 from .coordinator_weather import _update_failed
 from .heatpump_model import HeatPumpConfig
 from .helpers import (
+    EnergyCounterRate,
     calculate_defrost_factor,
     extract_price_forecast_with_timestamps,
     get_sensor_value,
@@ -280,6 +281,8 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # as (time, value) - for validation in diagnostics.
         self._advice_log: deque[tuple[str, bool | None]] = deque(maxlen=1000)
         self._realtime_log: deque[tuple[str, int, float]] = deque(maxlen=2000)
+        # Rate of a configured heat meter (energy counter).
+        self._heat_counter = EnergyCounterRate()
         # Mass-air building model (opt-in per zone): observer and learning.
         self._mass: MassModelState | None = None
         self._unsub_mass: Any = None
@@ -1099,9 +1102,15 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return fit.coupling_kw_per_k, "learned"
         return building.area_m2 * DEFAULT_AIR_COUPLING_W_PER_M2_K / 1000.0, "default"
 
+    def _measured_heat_kw(self) -> float | None:
+        """Measured heat now (thermal power, heat meter rate, or flow)."""
+        return measured_heat_kw(
+            self.hass, self.config, self._heat_counter, dt_util.utcnow()
+        )
+
     def _current_heat_kw(self, outdoor_temp: float, supply: float | None) -> float:
         """Heat the heat pump delivers now: measured, else power x COP."""
-        heat = measured_heat_kw(self.hass, self.config)
+        heat = self._measured_heat_kw()
         if heat is not None:
             return max(0.0, heat)
         power_kw = read_power_kw(self.hass, self.config.get(CONF_POWER_CONSUMPTION))
@@ -1383,7 +1392,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             or self._active_exclusion() is not None
         ):
             return
-        measured_heat = measured_heat_kw(self.hass, self.config)
+        measured_heat = self._measured_heat_kw()
         supply = self._measured_supply_temp()
         if (
             measured_heat is not None
@@ -1722,7 +1731,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             calibration.last_result = RESULT_MISSING_BUILDING_CONFIG
             return
 
-        heat_kw = measured_heat_kw(self.hass, self.config)
+        heat_kw = self._measured_heat_kw()
         if heat_kw is None and power_kw is not None and supply_temp is not None:
             heat_kw = power_kw * HeatPumpConfig.from_config(self.config).cop_at(
                 supply_temp=supply_temp, outdoor_temp=outdoor_temp

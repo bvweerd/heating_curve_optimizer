@@ -20,20 +20,22 @@ the full state with sensor IDs redacted.
 ## COP model does not match the measured COP
 
 A repair issue appears when, over the stored history, the measured COP
-(heat from the flow and supply/return sensors, or the thermal power
-sensor, divided by electrical power) is below 0.7× or above 1.4× the COP
-model at the same temperatures. Datasheet curves are measured at full
-load; at part load a heat pump is often clearly more efficient (one LG
-Therma V measured 1.5× its full-load datasheet COP in mild weather, at
-about half the Carnot limit). Set the zone's calibration to *Apply* so the
-COP curve is learned from the measurements, or raise the base COP.
+(measured heat divided by electrical power) is below 0.7× or above 1.4×
+the COP model at the same temperatures.
 
-Only when the measured COP is implausible - well above half the Carnot
-limit `(T_supply + 273) / (T_supply − T_outdoor)` - suspect the heat
-measurement: the flow sensor's unit (L/min, L/h, m³/h), or supply and
-return sensors that are not the heat pump's own water temperatures.
-Flow-based heat only counts while the heat pump draws more than its
-standby power, so a placeholder flow reported while it is off is ignored.
+First make sure the heat measurement is right. A heat meter or the heat
+pump's own heat counter is the best source. Flow × supply-return spread is
+only as good as the two temperature sensors: a return sensor reading a
+little low inflates the spread, and with it the heat. Physics gives a
+check: a measured COP above about half the Carnot limit
+`(T_supply + 273) / (T_supply − T_outdoor)` is implausible, and so is a
+return temperature below the room temperature.
+
+When the measurement is right, set the zone's calibration to *Apply* so
+the COP curve is learned from it, or adjust the COP settings. Datasheet
+curves are lab values; in real operation cycling, defrost and circulation
+pump usually cost some efficiency (one LG Therma V ran at about 0.8× its
+datasheet COP in mild weather, measured with its own heat counter).
 
 ## Validating the models after a few days
 

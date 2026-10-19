@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections import deque
 from collections.abc import Sequence
 from datetime import datetime, time, timedelta
 from typing import Any
@@ -13,6 +14,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_FLOW_SENSOR,
+    CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR,
     CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
     CONF_IDLE_POWER_THRESHOLD_KW,
     CONF_POWER_CONSUMPTION,
@@ -703,26 +705,82 @@ def read_flow_l_per_min(hass: Any, entity_id: str | None) -> float | None:
     return value * factor if factor is not None else None
 
 
+def read_energy_kwh(hass: Any, entity_id: str | None) -> float | None:
+    """Read a cumulative energy sensor in kWh (Wh and MWh converted)."""
+    state = usable_state(hass, entity_id)
+    if state is None:
+        return None
+    try:
+        value = float(state.state)
+    except (TypeError, ValueError):
+        return None
+    factor = {"kWh": 1.0, "Wh": 0.001, "MWh": 1000.0}.get(
+        str(state.attributes.get("unit_of_measurement"))
+    )
+    return value * factor if factor is not None else None
+
+
+class EnergyCounterRate:
+    """Average power (kW) from a cumulative energy counter (kWh).
+
+    Counters step in coarse increments, so the rate is taken over the
+    readings of the last `window` (default 10 minutes): heat delivered in
+    that window divided by its length. A counter that goes backwards (a
+    reset or a replaced meter) starts over.
+    """
+
+    def __init__(self, window: timedelta = timedelta(minutes=10)) -> None:
+        """Initialize an empty reading window."""
+        self._window = window
+        self._readings: deque[tuple[datetime, float]] = deque()
+
+    def update(self, now: datetime, kwh: float | None) -> float | None:
+        """Add a reading; the average kW over the window, None until known."""
+        if kwh is None:
+            return None
+        if self._readings and kwh < self._readings[-1][1]:
+            self._readings.clear()
+        self._readings.append((now, kwh))
+        while len(self._readings) > 2 and now - self._readings[1][0] >= self._window:
+            self._readings.popleft()
+        first_time, first_kwh = self._readings[0]
+        hours = (now - first_time).total_seconds() / 3600
+        if hours < 2 / 60:
+            return None
+        return (kwh - first_kwh) / hours
+
+
 def heat_is_measured(config: dict[str, Any]) -> bool:
-    """Whether delivered heat is measured: a thermal power sensor, or flow
-    with supply and return temperature."""
-    return bool(config.get(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR)) or all(
-        config.get(key)
-        for key in (
-            CONF_FLOW_SENSOR,
-            CONF_SUPPLY_TEMPERATURE_SENSOR,
-            CONF_RETURN_TEMPERATURE_SENSOR,
+    """Whether delivered heat is measured: a thermal power sensor, a heat
+    meter (energy counter), or flow with supply and return temperature."""
+    return (
+        bool(config.get(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR))
+        or bool(config.get(CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR))
+        or all(
+            config.get(key)
+            for key in (
+                CONF_FLOW_SENSOR,
+                CONF_SUPPLY_TEMPERATURE_SENSOR,
+                CONF_RETURN_TEMPERATURE_SENSOR,
+            )
         )
     )
 
 
-def measured_heat_kw(hass: Any, config: dict[str, Any]) -> float | None:
-    """Delivered heat in kW: the thermal power sensor, else flow x (supply -
-    return) x water heat capacity. None when not measured or unavailable.
+def measured_heat_kw(
+    hass: Any,
+    config: dict[str, Any],
+    counter: EnergyCounterRate | None = None,
+    now: datetime | None = None,
+) -> float | None:
+    """Delivered heat in kW, by precedence: thermal power sensor; heat meter
+    (energy counter, rate via `counter`); flow x (supply - return) x water
+    heat capacity. None when not measured or unavailable.
 
-    Flow-based heat is zero while the heat pump draws no more than its
-    standby power: some heat pumps report a placeholder flow when stopped,
-    and the supply and return water then still differ by a few tenths.
+    Heat from the meter or the flow is zero while the heat pump draws no
+    more than its standby power: some heat pumps report a placeholder flow
+    when stopped, and the supply and return water then still differ by a
+    few tenths.
     """
     if config.get(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR):
         return read_power_kw(hass, config.get(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR))
@@ -730,7 +788,16 @@ def measured_heat_kw(hass: Any, config: dict[str, Any]) -> float | None:
     idle_kw = float(
         config.get(CONF_IDLE_POWER_THRESHOLD_KW, DEFAULT_IDLE_POWER_THRESHOLD_KW)
     )
-    if power_kw is not None and power_kw <= idle_kw:
+    idle = power_kw is not None and power_kw <= idle_kw
+    if config.get(CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR):
+        if counter is None:
+            return None
+        rate = counter.update(
+            now or dt_util.utcnow(),
+            read_energy_kwh(hass, config.get(CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR)),
+        )
+        return 0.0 if idle else rate
+    if idle:
         return 0.0
     flow = read_flow_l_per_min(hass, config.get(CONF_FLOW_SENSOR))
     supply = get_sensor_value(hass, config.get(CONF_SUPPLY_TEMPERATURE_SENSOR), None)

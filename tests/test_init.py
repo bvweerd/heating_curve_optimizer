@@ -698,3 +698,22 @@ async def test_flow_sensor_measures_the_delivered_heat(
     await hass.async_block_till_done()
     thermal = _state(hass, "sensor", f"{entry.entry_id}_heat_pump_thermal_power")
     assert float(thermal.state) == 5.204
+
+
+async def test_heat_meter_feeds_the_thermal_power_sensor(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    hass.states.async_set(POWER_SENSOR, "1000", {"unit_of_measurement": "W"})
+    hass.states.async_set(
+        "sensor.heat_counter", "500.0", {"unit_of_measurement": "kWh"}
+    )
+    entry = make_entry(
+        power_consumption=POWER_SENSOR,
+        heat_pump_thermal_energy_sensor="sensor.heat_counter",
+    )
+    await setup_entry(hass, entry)
+    calibration = entry.runtime_data.optimization_coordinator.data["calibration"]
+    assert calibration["heat_source"] == "measured"
+    thermal_id = _entity_id(hass, "sensor", f"{entry.entry_id}_heat_pump_thermal_power")
+    # A single reading gives no rate yet: the sensor waits.
+    assert hass.states.get(thermal_id).state == "unavailable"

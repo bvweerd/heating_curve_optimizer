@@ -101,6 +101,7 @@ from .const import (
     CONF_HEAT_CURVE_MIN_OUTDOOR,
     CONF_HEAT_PUMP_CONTROL,
     CONF_HEAT_PUMP_MAX_THERMAL_POWER,
+    CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR,
     CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
     CONF_HEATPUMP_HEADROOM,
     CONF_IDLE_POWER_THRESHOLD_KW,
@@ -316,6 +317,7 @@ _MAIN_SECTIONS: dict[str, tuple[str, ...]] = {
     SECTION_SENSORS: (
         CONF_POWER_CONSUMPTION,
         CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
+        CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR,
         CONF_SUPPLY_TEMPERATURE_SENSOR,
         CONF_RETURN_TEMPERATURE_SENSOR,
         CONF_FLOW_SENSOR,
@@ -471,6 +473,7 @@ def build_main_schema(defaults: dict[str, Any]) -> vol.Schema:
         {
             opt(CONF_POWER_CONSUMPTION): _sensor("power"),
             opt(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR): _sensor("power"),
+            opt(CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR): _sensor("energy"),
             opt(CONF_SUPPLY_TEMPERATURE_SENSOR): _sensor("temperature"),
             opt(CONF_RETURN_TEMPERATURE_SENSOR): _sensor("temperature"),
             opt(CONF_FLOW_SENSOR): _sensor("volume_flow_rate"),

@@ -49,6 +49,7 @@ from .const import (
     CONF_HEAT_CURVE_MAX_OUTDOOR,
     CONF_HEAT_CURVE_MIN,
     CONF_HEAT_CURVE_MIN_OUTDOOR,
+    CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR,
     CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
     CONF_IDLE_POWER_THRESHOLD_KW,
     CONF_POWER_CONSUMPTION,
@@ -62,6 +63,7 @@ from .const import (
 )
 from .heatpump_model import HeatPumpConfig
 from .helpers import (
+    EnergyCounterRate,
     calculate_supply_temperature,
     get_sensor_value,
     heat_is_measured,
@@ -544,6 +546,7 @@ def _heat_pump_thermal_power(
     config: dict[str, Any],
     weather_coordinator: DataUpdateCoordinator[dict[str, Any]],
     optimization_coordinator: DataUpdateCoordinator[dict[str, Any]],
+    counter: EnergyCounterRate | None = None,
 ) -> tuple[float, float, float | None, str] | None:
     """(thermal kW, COP, supply °C, source) of the heat pump.
 
@@ -559,7 +562,7 @@ def _heat_pump_thermal_power(
     power_kw = read_power_kw(hass, config.get(CONF_POWER_CONSUMPTION))
     supply = get_sensor_value(hass, config.get(CONF_SUPPLY_TEMPERATURE_SENSOR), None)
     if heat_is_measured(config):
-        heat_kw = measured_heat_kw(hass, config)
+        heat_kw = measured_heat_kw(hass, config, counter)
         if heat_kw is None:
             return None
         heat_kw = max(0.0, heat_kw)
@@ -610,6 +613,7 @@ class HeatPumpThermalPowerSensor(SensorEntity):
         self._attr_unique_id = f"{unique_id_prefix}_heat_pump_thermal_power"
         self._attr_device_info = device
         self._attr_available = False
+        self._counter = EnergyCounterRate()
 
     async def async_added_to_hass(self) -> None:
         """Recompute on meter/supply sensor changes and coordinator updates."""
@@ -621,6 +625,7 @@ class HeatPumpThermalPowerSensor(SensorEntity):
                 self._config.get(CONF_RETURN_TEMPERATURE_SENSOR),
                 self._config.get(CONF_FLOW_SENSOR),
                 self._config.get(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR),
+                self._config.get(CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR),
             )
             if s
         ]
@@ -638,7 +643,7 @@ class HeatPumpThermalPowerSensor(SensorEntity):
     @callback
     def _recompute(self) -> None:
         result = _heat_pump_thermal_power(
-            self.hass, self._config, self._weather, self._optimization
+            self.hass, self._config, self._weather, self._optimization, self._counter
         )
         if result is None:
             self._attr_available = False
@@ -682,6 +687,7 @@ class HeatPumpThermalEnergySensor(RestoreSensor):
         self._optimization = optimization_coordinator
         self._attr_unique_id = f"{unique_id_prefix}_heat_pump_thermal_energy"
         self._attr_device_info = device
+        self._counter = EnergyCounterRate()
         self._total_kwh = 0.0
         self._last_time: datetime | None = None
         self._last_kw: float | None = None
@@ -728,7 +734,7 @@ class HeatPumpThermalEnergySensor(RestoreSensor):
         previous reading into the interval.
         """
         result = _heat_pump_thermal_power(
-            self.hass, self._config, self._weather, self._optimization
+            self.hass, self._config, self._weather, self._optimization, self._counter
         )
         current_kw = result[0] if result is not None else None
         if (

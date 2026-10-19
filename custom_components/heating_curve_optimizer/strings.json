@@ -23,6 +23,7 @@
             "data": {
               "power_consumption": "Heat pump electrical power",
               "heat_pump_thermal_power_sensor": "Heat pump thermal power",
+              "heat_pump_thermal_energy_sensor": "Heat meter (energy)",
               "supply_temperature_sensor": "Measured supply temperature",
               "return_temperature_sensor": "Measured return temperature",
               "flow_sensor": "Water flow",
@@ -34,6 +35,7 @@
             "data_description": {
               "power_consumption": "Power sensor (W or kW) of the heat pump. Enables thermal power/energy sensors and thermal calibration.",
               "heat_pump_thermal_power_sensor": "Optional heat meter or heat output reported by the heat pump (W or kW). Makes calibration independent of the COP model and enables learning the COP curve.",
+              "heat_pump_thermal_energy_sensor": "Optional cumulative thermal energy in kWh, e.g. the heat pump's own heat counter. The delivered heat is its increase over the last 10 minutes. Preferred over water flow; a thermal power sensor takes precedence.",
               "dhw_active_sensor": "Binary sensor that is on while the heat pump heats tap water. Those periods are left out of the calibration. Leave empty if there is no tap water operation.",
               "supply_temperature_sensor": "Used for the COP of the measured operating point; otherwise the planned supply temperature is used.",
               "return_temperature_sensor": "Supply minus return gives the real water spread for the emitter calibration (mean water temperature); otherwise a 5 K spread is assumed.",
@@ -241,6 +243,7 @@
             "data": {
               "power_consumption": "Heat pump electrical power",
               "heat_pump_thermal_power_sensor": "Heat pump thermal power",
+              "heat_pump_thermal_energy_sensor": "Heat meter (energy)",
               "supply_temperature_sensor": "Measured supply temperature",
               "return_temperature_sensor": "Measured return temperature",
               "flow_sensor": "Water flow",
@@ -252,6 +255,7 @@
             "data_description": {
               "power_consumption": "Power sensor (W or kW) of the heat pump. Enables thermal power/energy sensors and thermal calibration.",
               "heat_pump_thermal_power_sensor": "Optional heat meter or heat output reported by the heat pump (W or kW). Makes calibration independent of the COP model and enables learning the COP curve.",
+              "heat_pump_thermal_energy_sensor": "Optional cumulative thermal energy in kWh, e.g. the heat pump's own heat counter. The delivered heat is its increase over the last 10 minutes. Preferred over water flow; a thermal power sensor takes precedence.",
               "dhw_active_sensor": "Binary sensor that is on while the heat pump heats tap water. Those periods are left out of the calibration. Leave empty if there is no tap water operation.",
               "supply_temperature_sensor": "Used for the COP of the measured operating point; otherwise the planned supply temperature is used.",
               "return_temperature_sensor": "Supply minus return gives the real water spread for the emitter calibration (mean water temperature); otherwise a 5 K spread is assumed.",
@@ -893,6 +897,10 @@
     "gas_price_sensor_unavailable": {
       "title": "Gas price sensor unavailable",
       "description": "The gas price sensor **{sensor}** is unavailable. The gas boiler comparison cannot run without it."
+    },
+    "cop_model_mismatch": {
+      "title": "COP model does not match the measured COP",
+      "description": "Over the last days the measured COP (measured heat divided by electrical power) is **{ratio}×** what the configured COP model gives at the same temperatures. First check the heat measurement: the heat pump's own heat counter is the most reliable source; flow × supply-return spread is only as good as the two temperature sensors (a return reading below the room temperature, or a COP above half the Carnot limit, points at the sensors). When the measurement is right, set the zone's calibration to *Apply* so the COP curve is learned from it, or adjust the COP settings."
     }
   },
   "services": {

@@ -64,7 +64,15 @@ zones too, so diagnostics show whether switching would pay off.
 On one house (159 m², heavy, underfloor heating, two weeks of October data,
 the last three days held out) the 6-hour-ahead error went from 0.24 K
 (one node, label parameters) to 0.13–0.15 K with the learned `H` of about
-8 kW/K.
+8 kW/K, with the same `H` whether the heat came from the heat pump's own
+heat counter or from flow × spread.
+
+Temperature sensors on the floor manifold of that house show the screed
+near the pipes holding a separate buffer: up to 5 K above the room after a
+run, fading with a time constant of about 1.7 hours. A third (screed) node
+fitted to those curves reproduced them, but did not predict the room air
+better, so the model keeps two. The screed's heat is still counted: it is
+part of the mass's energy balance and of the heat buffer.
 
 ## Emitters and heat pump
 
