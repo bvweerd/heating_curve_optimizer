@@ -24,6 +24,9 @@ deployments to migrate from.
 - `pump_on` is only true for steps that deliver heat.
 - The PV-surplus adjustment steps back down while the heat pump is idle
   and nothing is exported, instead of waiting for the next start.
+- The PV-surplus adjustment no longer flaps: each change holds for 15
+  minutes, and the surplus is judged without the heat pump's own draw, so
+  the import caused by running on the surplus does not undo the increase.
 - The plan can switch the heat pump off anywhere inside the comfort band
   (was: only at or above target), so it coasts through expensive hours
   instead of staying on all day. Run advice compares the plan's

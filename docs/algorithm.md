@@ -130,10 +130,20 @@ With grid sensors configured, every minute:
 
 - exporting more than 300 W while the shadow price is positive raises the
   offset one degree above the plan;
-- importing more than 300 W, or no export while the heat pump is idle,
-  steps such an increase back down (an idle compressor absorbs no surplus,
-  and the extra degree would otherwise wait for the next start at the full
-  grid price).
+- the increase is stepped back down once the surplus is gone, judged on the
+  grid power *without* the heat pump (grid power minus the heat pump power
+  sensor): import caused by the heat pump running on the surplus keeps the
+  increase. Without a power sensor, importing more than 300 W counts as no
+  surplus;
+- an idle heat pump with no export, or a shadow price of zero or less (the
+  building is full), also steps it down;
+- every change holds for at least 15 minutes, so the heat pump's own
+  response to a new offset settles before it is judged.
+
+A home battery that keeps the grid at zero hides the surplus from this
+layer (and covers the heat pump's draw, which then looks like surplus).
+With such a battery, leave the grid sensors empty and let the plan's PV
+forecast do the work.
 
 The layer never goes below the plan and never beyond the ramp limit or the
 −4 … +4 range, and it carries over when the plan is recomputed. The

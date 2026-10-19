@@ -498,6 +498,8 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if power_kw is not None
                 else None
             ),
+            heat_pump_power_w=power_kw * 1000.0 if power_kw is not None else None,
+            now=dt_util.utcnow(),
             offset_min=self._offset_min,
             offset_max=self._offset_max,
         )

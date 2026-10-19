@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import itertools
+
 from custom_components.heating_curve_optimizer.realtime_controller import (
     RealtimeController,
     RealtimeControllerConfig,
@@ -191,3 +193,91 @@ def test_running_heat_pump_holds_within_deadband():
         heat_pump_running=True,
     )
     assert adjustment == 2
+
+
+def test_heat_pump_soaking_up_surplus_holds_the_adjustment():
+    """Regression for the flapping offset: the import the heat pump itself
+    causes while running on surplus must not step the adjustment down."""
+    controller = _controller(deadband_w=300.0)
+    controller.reset(2)
+    # 500 W surplus without the heat pump, which draws 1400 W -> 900 W import.
+    adjustment = controller.calculate_adjustment(
+        current_grid_w=900.0,
+        shadow_price_eur_per_kwh=0.05,
+        max_adjustment=2,
+        heat_pump_running=True,
+        heat_pump_power_w=1400.0,
+    )
+    assert adjustment == 2
+
+
+def test_import_beyond_the_heat_pump_steps_down():
+    """Without the heat pump the house would still import: surplus gone."""
+    controller = _controller(deadband_w=300.0)
+    controller.reset(2)
+    adjustment = controller.calculate_adjustment(
+        current_grid_w=1200.0,
+        shadow_price_eur_per_kwh=0.05,
+        max_adjustment=2,
+        heat_pump_running=True,
+        heat_pump_power_w=1000.0,
+    )
+    assert adjustment == 1
+
+
+def test_full_building_steps_down():
+    controller = _controller(deadband_w=300.0)
+    controller.reset(2)
+    adjustment = controller.calculate_adjustment(
+        current_grid_w=0.0, shadow_price_eur_per_kwh=0.0, max_adjustment=2
+    )
+    assert adjustment == 1
+
+
+def test_changes_hold_for_the_minimum_hold_time():
+    from datetime import UTC, datetime, timedelta
+
+    controller = RealtimeController(
+        RealtimeControllerConfig(deadband_w=300.0, min_hold_s=900)
+    )
+    t0 = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
+
+    def step(minutes: float, grid_w: float) -> int:
+        return controller.calculate_adjustment(
+            current_grid_w=grid_w,
+            shadow_price_eur_per_kwh=0.05,
+            max_adjustment=2,
+            now=t0 + timedelta(minutes=minutes),
+        )
+
+    assert step(0, -500.0) == 1
+    assert step(1, -500.0) == 1  # held
+    assert step(14, 500.0) == 1  # held, also downward
+    assert step(15, -500.0) == 2
+    assert step(31, 500.0) == 1
+
+
+def test_export_import_cycle_with_heat_pump_does_not_flap():
+    """The minute-by-minute pattern behind the 0/-2 dips: export raises,
+    the heat pump starts on the surplus and the grid swings to import."""
+    from datetime import UTC, datetime, timedelta
+
+    controller = _controller(deadband_w=300.0)
+    t0 = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
+    results = []
+    for minute in range(60):
+        running = minute % 4 >= 1
+        results.append(
+            controller.calculate_adjustment(
+                current_grid_w=900.0 if running else -500.0,
+                shadow_price_eur_per_kwh=0.05,
+                max_adjustment=2,
+                heat_pump_running=running,
+                heat_pump_power_w=1400.0 if running else 0.0,
+                now=t0 + timedelta(minutes=minute),
+            )
+        )
+    assert results[0] == 1
+    # Never steps back down while the heat pump runs on surplus.
+    assert all(b >= a for a, b in itertools.pairwise(results))
+    assert results[-1] == 2

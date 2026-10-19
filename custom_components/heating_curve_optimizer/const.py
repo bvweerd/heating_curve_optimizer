@@ -375,6 +375,10 @@ CONF_REALTIME_DEADBAND_W = "realtime_deadband_w"
 DEFAULT_REALTIME_DEADBAND_W = 300.0  # W - looser than a battery's ~50 W:
 # heating's actuator is a whole-degree curve offset, not a continuous power
 # setpoint, so chasing small fluctuations only adds wear for no benefit.
+# An adjustment holds at least one 15-minute step before it moves again:
+# the heat pump's own response to an offset change shifts grid power, and
+# reacting to that within minutes made the offset flap.
+DEFAULT_REALTIME_MIN_HOLD_S = 900
 DEFAULT_REALTIME_INTERVAL_S = 60  # much slower than battery_controller's
 # ~10 s: a heat pump's weather-compensation curve has nothing to gain from
 # being re-commanded faster than its own control loop settles.
