@@ -150,3 +150,44 @@ def test_no_oscillation_across_a_steady_export_sequence():
         for _ in range(6)
     ]
     assert results == [1, 2, 3, 3, 3, 3]
+
+
+def test_idle_heat_pump_unwinds_adjustment_without_export():
+    """An adjustment the compressor is not absorbing must not linger until
+    the next start, when it would be applied at the full grid price."""
+    controller = _controller(deadband_w=300.0)
+    controller.reset(2)
+    results = [
+        controller.calculate_adjustment(
+            current_grid_w=-72.0,
+            shadow_price_eur_per_kwh=0.05,
+            max_adjustment=2,
+            heat_pump_running=False,
+        )
+        for _ in range(3)
+    ]
+    assert results == [1, 0, 0]
+
+
+def test_idle_heat_pump_still_raises_on_export():
+    """Export beyond the deadband is what should start the heat pump."""
+    controller = _controller(deadband_w=300.0)
+    adjustment = controller.calculate_adjustment(
+        current_grid_w=-500.0,
+        shadow_price_eur_per_kwh=0.05,
+        max_adjustment=2,
+        heat_pump_running=False,
+    )
+    assert adjustment == 1
+
+
+def test_running_heat_pump_holds_within_deadband():
+    controller = _controller(deadband_w=300.0)
+    controller.reset(2)
+    adjustment = controller.calculate_adjustment(
+        current_grid_w=-72.0,
+        shadow_price_eur_per_kwh=0.05,
+        max_adjustment=2,
+        heat_pump_running=True,
+    )
+    assert adjustment == 2

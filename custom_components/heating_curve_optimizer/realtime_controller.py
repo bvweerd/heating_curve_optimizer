@@ -5,7 +5,9 @@ plan. The heat pump only accepts whole-degree curve offsets, so this is a
 deadbanded step controller rather than a continuous integrator: exporting
 more than the deadband (while the DP says stored heat is worth something)
 raises the offset one degree above the plan; once the export is gone,
-importing more than the deadband steps that extra back down.
+importing more than the deadband steps that extra back down, and so does an
+idle compressor (the extra offset is not absorbing anything and would
+otherwise wait to be applied at the next start, at the full grid price).
 
 The adjustment is only ever *upward* from the plan, bounded to
 ``[0, max_adjustment]``. Importing from the grid is the normal state of a
@@ -63,6 +65,7 @@ class RealtimeController:
         current_grid_w: float,
         shadow_price_eur_per_kwh: float,
         max_adjustment: int,
+        heat_pump_running: bool | None = None,
     ) -> int:
         """Return the offset adjustment (whole degrees) to layer on the DP plan.
 
@@ -73,6 +76,8 @@ class RealtimeController:
         acting on surplus is only worthwhile when this is positive; zero or
         negative means the building is already at (or past) the comfort
         ceiling, where more heat is wasted, not stored.
+        `heat_pump_running`: False steps the adjustment down when no
+        surplus is exported; None (unknown) leaves that to the import rule.
         """
         if max_adjustment <= 0:
             self._last_adjustment = 0
@@ -80,7 +85,7 @@ class RealtimeController:
 
         if current_grid_w <= -self.config.deadband_w and shadow_price_eur_per_kwh > 0:
             target = self._last_adjustment + 1
-        elif current_grid_w >= self.config.deadband_w:
+        elif current_grid_w >= self.config.deadband_w or heat_pump_running is False:
             target = self._last_adjustment - 1
         else:
             target = self._last_adjustment
@@ -95,6 +100,7 @@ class RealtimeController:
         shadow_price_eur_per_kwh: float,
         planned_offset: int,
         max_adjustment: int,
+        heat_pump_running: bool | None = None,
         offset_min: int = DEFAULT_OFFSET_MIN,
         offset_max: int = DEFAULT_OFFSET_MAX,
     ) -> dict[str, Any]:
@@ -112,6 +118,7 @@ class RealtimeController:
             current_grid_w=current_grid_w,
             shadow_price_eur_per_kwh=shadow_price_eur_per_kwh,
             max_adjustment=max_adjustment,
+            heat_pump_running=heat_pump_running,
         )
         effective_offset = int(
             _clamp(planned_offset + adjustment, offset_min, offset_max)

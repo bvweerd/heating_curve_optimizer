@@ -480,12 +480,18 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if current_grid_w is None:
             return None
         offsets = data.get("offsets") or [0]
+        power_kw = read_power_kw(self.hass, self.config.get(CONF_POWER_CONSUMPTION))
         return self._realtime_controller.get_control_action(
             current_grid_w=current_grid_w,
             shadow_price_eur_per_kwh=data.get("shadow_price_eur_per_kwh", 0.0),
             planned_offset=offsets[0],
             max_adjustment=max_offset_change(
                 data.get("step_minutes", 60), self._offset_delta_t()
+            ),
+            heat_pump_running=(
+                power_kw > self._idle_power_threshold_kw
+                if power_kw is not None
+                else None
             ),
             offset_min=self._offset_min,
             offset_max=self._offset_max,

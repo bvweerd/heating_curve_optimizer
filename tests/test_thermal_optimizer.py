@@ -125,12 +125,9 @@ def test_out_of_range_current_offset_does_not_raise():
     assert len(result.offsets) == horizon
 
 
-def test_no_heat_delivery_above_target_plus_thermostat_ramp():
-    """The thermostat model must deliver zero heat once the room is more
-    than 0.3 K above the target temperature, even when the emitter curve
-    still has capacity to give. Without this, a warm house with a low
-    supply-temperature floor keeps being "trickle-heated" during expensive
-    hours (regression: wide target-to-comfort_max ramp)."""
+def test_no_heat_delivery_at_comfort_ceiling():
+    """The comfort ceiling must cut heat delivery to zero at comfort_max,
+    even when the emitter curve still has capacity to give."""
     building, heatpump, emitter = _make_system(comfort_min=19.5, comfort_max=20.5)
     building.target_temp = 20.0
 
@@ -140,7 +137,7 @@ def test_no_heat_delivery_above_target_plus_thermostat_ramp():
         emitter=emitter,
         outdoor_temps=[5.0] * 4,
         prices=[0.25] * 4,
-        initial_indoor_temp=20.4,  # > target + 0.3
+        initial_indoor_temp=20.5,  # = comfort_max
         water_min=25.0,
         water_max=45.0,
         outdoor_min=-20.0,
@@ -149,6 +146,79 @@ def test_no_heat_delivery_above_target_plus_thermostat_ramp():
     )
 
     assert result.thermal_power_kw[0] == pytest.approx(0.0)
+    # No heat delivered means the plan does not report the pump as on.
+    assert not result.pump_on[0]
+
+
+def _a_plus_underfloor() -> tuple[BuildingConfig, HeatPumpConfig, EmitterConfig]:
+    building = BuildingConfig(
+        area_m2=159,
+        energy_label="A+",
+        comfort_min=19.7,
+        comfort_max=20.7,
+        target_temp=20.0,
+    )
+    emitter = EmitterConfig.sized_to_building(
+        building,
+        design_outdoor_temp=-10.0,
+        design_supply_temp=33.0,
+        emitter_type="underfloor",
+    )
+    return building, HeatPumpConfig(max_thermal_power_kw=9.0), emitter
+
+
+def test_preheat_uses_the_whole_comfort_band():
+    """Regression: output was cut at target + 0.3 K, so heat could only be
+    stored in the lower part of the band ahead of a price peak."""
+    building, heatpump, emitter = _a_plus_underfloor()
+    prices = [0.15] * 8 + [0.45] * 8 + [0.15] * 8
+
+    result = optimize_thermal_schedule(
+        building=building,
+        heatpump=heatpump,
+        emitter=emitter,
+        outdoor_temps=[2.0] * 24,
+        prices=prices,
+        initial_indoor_temp=20.0,
+        water_min=27.0,
+        water_max=33.0,
+        outdoor_min=-10.0,
+        outdoor_max=18.0,
+        time_base=60,
+    )
+
+    assert max(result.indoor_temps[:8]) > building.target_temp + 0.4
+    assert max(result.indoor_temps) <= building.comfort_max + 0.05
+
+
+def test_pump_off_allowed_just_below_band_at_a_price_peak():
+    """Regression: below comfort_min the off action was forbidden, so a room
+    just under the band was heated at the day's peak price, although the
+    price drops and the sun warms the house from the next step on. The
+    comfort penalty decides instead."""
+    building, heatpump, emitter = _a_plus_underfloor()
+    horizon = 16
+
+    result = optimize_thermal_schedule(
+        building=building,
+        heatpump=heatpump,
+        emitter=emitter,
+        outdoor_temps=[10.0] * horizon,
+        prices=[0.60] + [0.20] * (horizon - 1),
+        solar_gain_kw=[0.5] + [4.0] * 8 + [0.0] * (horizon - 9),
+        initial_indoor_temp=19.68,
+        water_min=27.0,
+        water_max=33.0,
+        outdoor_min=-10.0,
+        outdoor_max=18.0,
+        time_base=15,
+        offset_delta_t=7,
+    )
+
+    assert not result.pump_on[0]
+    assert result.thermal_power_kw[0] == 0.0
+    assert any(result.pump_on[1:])
+    assert min(result.indoor_temps) >= building.comfort_min - 0.1
 
 
 def test_pump_off_action_cycles_instead_of_trickling_at_curve_floor():
@@ -191,10 +261,6 @@ def test_pump_off_action_cycles_instead_of_trickling_at_curve_floor():
     assert any(p == 0.0 for p in result.thermal_power_kw)
     assert any(p > 0.0 for p in result.thermal_power_kw)
     assert any(not on for on in result.pump_on)
-    # The off action is only allowed inside the comfort band.
-    for t in range(1, len(result.thermal_power_kw)):
-        if not result.pump_on[t]:
-            assert result.indoor_temps[t - 1] >= building.comfort_min - 1e-9
     assert min(result.indoor_temps) >= building.comfort_min - 0.05
 
 
@@ -470,9 +536,7 @@ def test_dp_matches_brute_force_on_small_horizon():
         total = 0.0
         for t, action in enumerate(sequence):
             if action is None:
-                # Explicit "pump off": only inside the band, offset unchanged.
-                if t_in < building.comfort_min:
-                    return math.inf
+                # Explicit "pump off": offset unchanged.
                 offset = prev
                 q = 0.0
                 supply = min(
@@ -489,12 +553,11 @@ def test_dp_matches_brute_force_on_small_horizon():
                     emitter.available_power_kw(supply_temp=supply, indoor_temp=t_in),
                     heatpump.max_thermal_power_kw,
                 )
-                # Thermostat ramp mirrored from optimize_thermal_schedule.
-                ramp_width = 0.3
-                if t_in >= building.target_temp + ramp_width:
+                # Comfort ceiling mirrored from optimize_thermal_schedule.
+                if t_in >= building.comfort_max:
                     q = 0.0
-                elif t_in > building.target_temp:
-                    q *= (building.target_temp + ramp_width - t_in) / ramp_width
+                elif t_in > building.comfort_max - 0.3:
+                    q *= (building.comfort_max - t_in) / 0.3
             cop = heatpump.cop_at(supply_temp=supply, outdoor_temp=outdoor[t])
             p_elec = q / cop if q > 0 else 0.0
             t_in = building.next_indoor_temp(

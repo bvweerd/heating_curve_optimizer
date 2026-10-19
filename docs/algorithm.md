@@ -57,10 +57,15 @@ V_t(T, o_prev) = min over o of  cost_t(T, o) + comfort_t(T') + λ·(o − o_prev
 
 - **Decision**: offset `o` ∈ {−4 … +4}, with at most
   `step_minutes / offset_delta_t` degrees change per step; or **pump off**
-  (no heat, offset unchanged), available anywhere at or above the bottom of the comfort band. The off
+  (no heat, offset unchanged), available at any temperature. The off
   action is how the plan cycles the heat pump: it coasts through expensive
   hours by letting the room drift down inside the band, and it stops
   trickling heat when the house needs less than the curve floor delivers.
+  Below the band no rule forces heating: the comfort penalty decides, so
+  a short, shallow dip just before free solar gain can beat heating at a
+  price peak.
+- **Comfort ceiling**: heat output tapers to zero over the top 0.3 °C of
+  the band, so the whole band can store heat ahead of expensive hours.
 - **Transition**: `T'` from the building model, computed exactly (not
   rounded to the grid).
 - **Value function**: stored on a 0.1 °C grid and interpolated linearly.
@@ -84,7 +89,8 @@ value of one extra kWh stored now (−∂V/∂T / C).
 
 ### Baseline and savings
 
-The same model is run with offset 0 (the plain curve). The savings forecast
+The same model is run with offset 0 (the plain curve), with a room
+thermostat that stops the heat pump 0.3 °C above the target. The savings forecast
 is the difference in energy cost over the horizon, corrected for the value
 of the heat left in the building at the end, so pre-heating is not counted
 as a loss. The **total savings** sensor books, between two optimization
@@ -120,7 +126,10 @@ With grid sensors configured, every minute:
 
 - exporting more than 300 W while the shadow price is positive raises the
   offset one degree above the plan;
-- importing more than 300 W steps such an increase back down.
+- importing more than 300 W, or no export while the heat pump is idle,
+  steps such an increase back down (an idle compressor absorbs no surplus,
+  and the extra degree would otherwise wait for the next start at the full
+  grid price).
 
 The layer never goes below the plan and never beyond the ramp limit or the
 −4 … +4 range, and it carries over when the plan is recomputed. The

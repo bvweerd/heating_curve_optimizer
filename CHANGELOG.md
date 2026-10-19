@@ -11,6 +11,15 @@ First release of the redesigned integration. There are no earlier
 deployments to migrate from.
 
 ### Optimizer
+- Pre-heating can use the whole comfort band: heat output is cut at the
+  top of the band (was: 0.3 °C above target). The baseline keeps a room
+  thermostat at the target, so savings are not inflated.
+- The plan can also switch the heat pump off just below the comfort band;
+  the comfort penalty decides, so a room 0.05 °C too cold is no longer
+  heated at the day's peak price just before the sun comes in.
+- `pump_on` is only true for steps that deliver heat.
+- The PV-surplus adjustment steps back down while the heat pump is idle
+  and nothing is exported, instead of waiting for the next start.
 - The plan can switch the heat pump off anywhere inside the comfort band
   (was: only at or above target), so it coasts through expensive hours
   instead of staying on all day. Run advice compares the plan's
