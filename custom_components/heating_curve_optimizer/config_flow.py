@@ -77,6 +77,7 @@ from .const import (
     CONF_EMITTER_TYPE,
     CONF_ENERGY_LABEL,
     CONF_FEED_IN_PRICE_FALLBACK,
+    CONF_FLOW_SENSOR,
     CONF_GAS_BOILER_EFFICIENCY,
     CONF_GAS_CALORIFIC_VALUE,
     CONF_GAS_COMFORT_BACKUP,
@@ -313,6 +314,7 @@ _MAIN_SECTIONS: dict[str, tuple[str, ...]] = {
         CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
         CONF_SUPPLY_TEMPERATURE_SENSOR,
         CONF_RETURN_TEMPERATURE_SENSOR,
+        CONF_FLOW_SENSOR,
         CONF_DHW_ACTIVE_SENSOR,
         CONF_GRID_IMPORT_SENSOR,
         CONF_GRID_EXPORT_SENSOR,
@@ -467,6 +469,7 @@ def build_main_schema(defaults: dict[str, Any]) -> vol.Schema:
             opt(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR): _sensor("power"),
             opt(CONF_SUPPLY_TEMPERATURE_SENSOR): _sensor("temperature"),
             opt(CONF_RETURN_TEMPERATURE_SENSOR): _sensor("temperature"),
+            opt(CONF_FLOW_SENSOR): _sensor("volume_flow_rate"),
             opt(CONF_DHW_ACTIVE_SENSOR): EntitySelector(
                 EntitySelectorConfig(domain="binary_sensor")
             ),

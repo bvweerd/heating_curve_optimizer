@@ -666,3 +666,35 @@ async def test_own_thermostat_is_the_default(
     assert coordinator._pump_cycle(15, coordinator.data["timestamp"]) == {
         "pump_follows_plan": False
     }
+
+
+async def test_flow_sensor_measures_the_delivered_heat(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    """Flow x supply-return spread replaces the COP model: for the thermal
+    power sensor (with a measured COP) and as the calibration heat source."""
+    hass.states.async_set(POWER_SENSOR, "1000", {"unit_of_measurement": "W"})
+    hass.states.async_set("sensor.supply", "33.0", {"unit_of_measurement": "°C"})
+    hass.states.async_set("sensor.return", "28.0", {"unit_of_measurement": "°C"})
+    hass.states.async_set("sensor.flow", "15", {"unit_of_measurement": "L/min"})
+    entry = make_entry(
+        power_consumption=POWER_SENSOR,
+        supply_temperature_sensor="sensor.supply",
+        return_temperature_sensor="sensor.return",
+        flow_sensor="sensor.flow",
+    )
+    await setup_entry(hass, entry)
+
+    thermal = _state(hass, "sensor", f"{entry.entry_id}_heat_pump_thermal_power")
+    # 15 L/min = 0.25 L/s x 4.163 kJ/(L K) x 5 K = 5.20 kW
+    assert float(thermal.state) == 5.204
+    assert thermal.attributes["source"] == "measured"
+    assert thermal.attributes["cop"] == 5.204
+    calibration = entry.runtime_data.optimization_coordinator.data["calibration"]
+    assert calibration["heat_source"] == "measured"
+
+    # Flow in m³/h converts too; the sensor follows the flow sensor.
+    hass.states.async_set("sensor.flow", "0.9", {"unit_of_measurement": "m³/h"})
+    await hass.async_block_till_done()
+    thermal = _state(hass, "sensor", f"{entry.entry_id}_heat_pump_thermal_power")
+    assert float(thermal.state) == 5.204

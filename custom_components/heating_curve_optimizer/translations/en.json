@@ -25,6 +25,7 @@
               "heat_pump_thermal_power_sensor": "Heat pump thermal power",
               "supply_temperature_sensor": "Measured supply temperature",
               "return_temperature_sensor": "Measured return temperature",
+              "flow_sensor": "Water flow",
               "dhw_active_sensor": "Tap water heating active",
               "grid_import_sensor": "Grid import power",
               "grid_export_sensor": "Grid export power",
@@ -36,6 +37,7 @@
               "dhw_active_sensor": "Binary sensor that is on while the heat pump heats tap water. Those periods are left out of the calibration. Leave empty if there is no tap water operation.",
               "supply_temperature_sensor": "Used for the COP of the measured operating point; otherwise the planned supply temperature is used.",
               "return_temperature_sensor": "Supply minus return gives the real water spread for the emitter calibration (mean water temperature); otherwise a 5 K spread is assumed.",
+              "flow_sensor": "Optional (L/min, L/h or m³/h). With the supply and return temperature it gives the delivered heat: flow × spread × 4.16 kJ/(L·K). Used instead of the COP model for calibration, the COP fit and the thermal power sensor; a thermal power sensor takes precedence.",
               "grid_import_sensor": "Live power (W or kW). With import and/or export configured, the real-time offset sensor raises the offset while PV surplus is exported.",
               "grid_export_sensor": "Live power (W or kW), positive while exporting.",
               "battery_power_sensors": "Optional, one sensor per battery (W or kW), positive while charging, as in Battery Controller. Battery discharge counts as grid import for the PV-surplus layer, so a battery covering the heat pump is not mistaken for surplus."
@@ -241,6 +243,7 @@
               "heat_pump_thermal_power_sensor": "Heat pump thermal power",
               "supply_temperature_sensor": "Measured supply temperature",
               "return_temperature_sensor": "Measured return temperature",
+              "flow_sensor": "Water flow",
               "dhw_active_sensor": "Tap water heating active",
               "grid_import_sensor": "Grid import power",
               "grid_export_sensor": "Grid export power",
@@ -252,6 +255,7 @@
               "dhw_active_sensor": "Binary sensor that is on while the heat pump heats tap water. Those periods are left out of the calibration. Leave empty if there is no tap water operation.",
               "supply_temperature_sensor": "Used for the COP of the measured operating point; otherwise the planned supply temperature is used.",
               "return_temperature_sensor": "Supply minus return gives the real water spread for the emitter calibration (mean water temperature); otherwise a 5 K spread is assumed.",
+              "flow_sensor": "Optional (L/min, L/h or m³/h). With the supply and return temperature it gives the delivered heat: flow × spread × 4.16 kJ/(L·K). Used instead of the COP model for calibration, the COP fit and the thermal power sensor; a thermal power sensor takes precedence.",
               "grid_import_sensor": "Live power (W or kW). With import and/or export configured, the real-time offset sensor raises the offset while PV surplus is exported.",
               "grid_export_sensor": "Live power (W or kW), positive while exporting.",
               "battery_power_sensors": "Optional, one sensor per battery (W or kW), positive while charging, as in Battery Controller. Battery discharge counts as grid import for the PV-surplus layer, so a battery covering the heat pump is not mistaken for surplus."

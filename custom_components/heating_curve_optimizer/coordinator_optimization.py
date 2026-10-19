@@ -86,7 +86,6 @@ from .const import (
     CONF_HEAT_CURVE_MIN,
     CONF_HEAT_CURVE_MIN_OUTDOOR,
     CONF_HEAT_PUMP_CONTROL,
-    CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
     CONF_HEATPUMP_HEADROOM,
     CONF_IDLE_POWER_THRESHOLD_KW,
     CONF_INDOOR_TEMPERATURE_SENSOR,
@@ -154,7 +153,9 @@ from .helpers import (
     calculate_defrost_factor,
     extract_price_forecast_with_timestamps,
     get_sensor_value,
+    heat_is_measured,
     max_offset_change,
+    measured_heat_kw,
     read_power_kw,
     resample_to_steps,
     schedule_is_on,
@@ -1054,7 +1055,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         the building fit learned from gas-meter periods (1 without them).
         """
         calibration = self._calibration
-        if self.config.get(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR):
+        if heat_is_measured(self.config):
             return 1.0
         if (
             self._calibration_applied()
@@ -1137,9 +1138,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             or self._active_exclusion() is not None
         ):
             return
-        measured_heat = read_power_kw(
-            self.hass, self.config.get(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR)
-        )
+        measured_heat = measured_heat_kw(self.hass, self.config)
         supply = self._measured_supply_temp()
         if (
             measured_heat is not None
@@ -1294,8 +1293,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _calibration_inputs_available(self) -> bool:
         return bool(self.config.get(CONF_INDOOR_TEMPERATURE_SENSOR)) and bool(
-            self.config.get(CONF_POWER_CONSUMPTION)
-            or self.config.get(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR)
+            self.config.get(CONF_POWER_CONSUMPTION) or heat_is_measured(self.config)
         )
 
     def calibration_status(self) -> str:
@@ -1336,9 +1334,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "last_result": calibration.last_result if calibration else None,
             "excluded_windows": dict(calibration.exclusions) if calibration else {},
             "heat_source": (
-                "measured"
-                if self.config.get(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR)
-                else "cop_model"
+                "measured" if heat_is_measured(self.config) else "cop_model"
             ),
             "configured_energy_label": config.get(CONF_ENERGY_LABEL),
             "label_ua_w_per_k": round(prior.ua_w_per_k, 1),
@@ -1479,9 +1475,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             calibration.last_result = RESULT_MISSING_BUILDING_CONFIG
             return
 
-        heat_kw = read_power_kw(
-            self.hass, self.config.get(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR)
-        )
+        heat_kw = measured_heat_kw(self.hass, self.config)
         if heat_kw is None and power_kw is not None and supply_temp is not None:
             heat_kw = power_kw * HeatPumpConfig.from_config(self.config).cop_at(
                 supply_temp=supply_temp, outdoor_temp=outdoor_temp

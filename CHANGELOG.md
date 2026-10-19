@@ -11,6 +11,10 @@ First release of the redesigned integration. There are no earlier
 deployments to migrate from.
 
 ### Optimizer
+- Optional water flow sensor: with supply and return temperature it
+  measures the delivered heat (flow × spread × 4.16 kJ/(L·K)), used like
+  a heat meter for calibration, the COP fit and the thermal power sensor
+  (which now also shows measured heat and the measured COP).
 - Heat pump *Switching* setting. *Own thermostat* (default): the model
   stops the heat pump at the target like its room thermostat does, and the
   plan only sets the offset. *Follows the plan*: the plan also switches the

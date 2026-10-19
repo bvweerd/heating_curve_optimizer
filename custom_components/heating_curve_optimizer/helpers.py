@@ -11,6 +11,13 @@ from typing import Any
 from homeassistant.core import State
 from homeassistant.util import dt as dt_util
 
+from .const import (
+    CONF_FLOW_SENSOR,
+    CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
+    CONF_RETURN_TEMPERATURE_SENSOR,
+    CONF_SUPPLY_TEMPERATURE_SENSOR,
+)
+
 _LOGGER = logging.getLogger(__name__)
 
 # The two state strings Home Assistant uses for "this entity has no reading".
@@ -658,6 +665,67 @@ def schedule_is_on(week: dict[str, Any], when: datetime) -> bool:
         if start <= now and (now < end or end == time.max):
             return True
     return False
+
+
+# Volumetric heat capacity of water around 30 °C: 4.18 kJ/(kg·K) x 0.996 kg/L.
+WATER_KJ_PER_L_K = 4.163
+
+_FLOW_TO_L_PER_MIN = {
+    "L/min": 1.0,
+    "l/min": 1.0,
+    "L/h": 1.0 / 60.0,
+    "l/h": 1.0 / 60.0,
+    "L/s": 60.0,
+    "l/s": 60.0,
+    "mL/s": 0.06,
+    "m³/h": 1000.0 / 60.0,
+    "m3/h": 1000.0 / 60.0,
+}
+
+
+def read_flow_l_per_min(hass: Any, entity_id: str | None) -> float | None:
+    """Read a volume flow sensor in L/min, honouring its unit.
+
+    A reading without a recognised unit is rejected rather than guessed,
+    like read_power_kw: a factor-60 error is worse than no reading.
+    """
+    state = usable_state(hass, entity_id)
+    if state is None:
+        return None
+    try:
+        value = float(state.state)
+    except (TypeError, ValueError):
+        return None
+    factor = _FLOW_TO_L_PER_MIN.get(str(state.attributes.get("unit_of_measurement")))
+    return value * factor if factor is not None else None
+
+
+def heat_is_measured(config: dict[str, Any]) -> bool:
+    """Whether delivered heat is measured: a thermal power sensor, or flow
+    with supply and return temperature."""
+    return bool(config.get(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR)) or all(
+        config.get(key)
+        for key in (
+            CONF_FLOW_SENSOR,
+            CONF_SUPPLY_TEMPERATURE_SENSOR,
+            CONF_RETURN_TEMPERATURE_SENSOR,
+        )
+    )
+
+
+def measured_heat_kw(hass: Any, config: dict[str, Any]) -> float | None:
+    """Delivered heat in kW: the thermal power sensor, else flow x (supply -
+    return) x water heat capacity. None when not measured or unavailable."""
+    if config.get(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR):
+        return read_power_kw(hass, config.get(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR))
+    flow = read_flow_l_per_min(hass, config.get(CONF_FLOW_SENSOR))
+    supply = get_sensor_value(hass, config.get(CONF_SUPPLY_TEMPERATURE_SENSOR), None)
+    return_temp = get_sensor_value(
+        hass, config.get(CONF_RETURN_TEMPERATURE_SENSOR), None
+    )
+    if flow is None or supply is None or return_temp is None:
+        return None
+    return flow / 60.0 * WATER_KJ_PER_L_K * (supply - return_temp)
 
 
 def calculate_supply_temperature(

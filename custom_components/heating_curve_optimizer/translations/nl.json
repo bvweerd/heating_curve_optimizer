@@ -25,6 +25,7 @@
               "heat_pump_thermal_power_sensor": "Thermisch vermogen warmtepomp",
               "supply_temperature_sensor": "Gemeten aanvoertemperatuur",
               "return_temperature_sensor": "Gemeten retourtemperatuur",
+              "flow_sensor": "Waterdebiet",
               "dhw_active_sensor": "Tapwaterbedrijf actief",
               "grid_import_sensor": "Netafname vermogen",
               "grid_export_sensor": "Netteruglevering vermogen",
@@ -36,6 +37,7 @@
               "dhw_active_sensor": "Binaire sensor die aan is terwijl de warmtepomp tapwater verwarmt. Die periodes worden buiten de kalibratie gehouden. Leeg laten als er geen tapwaterbedrijf is.",
               "supply_temperature_sensor": "Gebruikt voor de COP van het gemeten werkpunt; anders wordt de geplande aanvoertemperatuur gebruikt.",
               "return_temperature_sensor": "Aanvoer min retour geeft de werkelijke spreiding voor de kalibratie van de afgiftecurve (gemiddelde watertemperatuur); anders wordt 5 K spreiding aangenomen.",
+              "flow_sensor": "Optioneel (L/min, L/h of m³/h). Samen met aanvoer- en retourtemperatuur geeft dit de geleverde warmte: debiet × temperatuurverschil × 4,16 kJ/(L·K). Gebruikt in plaats van het COP-model voor de kalibratie, de COP-fit en de sensor voor thermisch vermogen; een thermisch-vermogensensor gaat voor.",
               "grid_import_sensor": "Actueel vermogen (W of kW). Met afname en/of teruglevering ingesteld verhoogt de realtime-offsetsensor de offset zolang er PV-overschot wordt teruggeleverd.",
               "grid_export_sensor": "Actueel vermogen (W of kW), positief tijdens teruglevering.",
               "battery_power_sensors": "Optioneel, één sensor per batterij (W of kW), positief bij laden, zoals in Battery Controller. Ontladen telt voor de PV-overschotlaag als netafname, zodat een batterij die de warmtepomp voedt niet voor overschot wordt aangezien."
@@ -241,6 +243,7 @@
               "heat_pump_thermal_power_sensor": "Thermisch vermogen warmtepomp",
               "supply_temperature_sensor": "Gemeten aanvoertemperatuur",
               "return_temperature_sensor": "Gemeten retourtemperatuur",
+              "flow_sensor": "Waterdebiet",
               "dhw_active_sensor": "Tapwaterbedrijf actief",
               "grid_import_sensor": "Netafname vermogen",
               "grid_export_sensor": "Netteruglevering vermogen",
@@ -252,6 +255,7 @@
               "dhw_active_sensor": "Binaire sensor die aan is terwijl de warmtepomp tapwater verwarmt. Die periodes worden buiten de kalibratie gehouden. Leeg laten als er geen tapwaterbedrijf is.",
               "supply_temperature_sensor": "Gebruikt voor de COP van het gemeten werkpunt; anders wordt de geplande aanvoertemperatuur gebruikt.",
               "return_temperature_sensor": "Aanvoer min retour geeft de werkelijke spreiding voor de kalibratie van de afgiftecurve (gemiddelde watertemperatuur); anders wordt 5 K spreiding aangenomen.",
+              "flow_sensor": "Optioneel (L/min, L/h of m³/h). Samen met aanvoer- en retourtemperatuur geeft dit de geleverde warmte: debiet × temperatuurverschil × 4,16 kJ/(L·K). Gebruikt in plaats van het COP-model voor de kalibratie, de COP-fit en de sensor voor thermisch vermogen; een thermisch-vermogensensor gaat voor.",
               "grid_import_sensor": "Actueel vermogen (W of kW). Met afname en/of teruglevering ingesteld verhoogt de realtime-offsetsensor de offset zolang er PV-overschot wordt teruggeleverd.",
               "grid_export_sensor": "Actueel vermogen (W of kW), positief tijdens teruglevering.",
               "battery_power_sensors": "Optioneel, één sensor per batterij (W of kW), positief bij laden, zoals in Battery Controller. Ontladen telt voor de PV-overschotlaag als netafname, zodat een batterij die de warmtepomp voedt niet voor overschot wordt aangezien."

@@ -762,3 +762,41 @@ def test_schedule_is_on_ignores_malformed_blocks():
     week = {"monday": [{"from": "noon", "to": "18:00"}, {"to": "18:00"}]}
     monday = datetime(2026, 10, 19, 12, tzinfo=dt_util.get_default_time_zone())
     assert not schedule_is_on(week, monday)
+
+
+def test_flow_and_measured_heat():
+    from custom_components.heating_curve_optimizer.helpers import (
+        heat_is_measured,
+        measured_heat_kw,
+        read_flow_l_per_min,
+    )
+
+    states = {
+        "sensor.flow": State("sensor.flow", "12", {"unit_of_measurement": "L/min"}),
+        "sensor.flow_h": State("sensor.flow_h", "720", {"unit_of_measurement": "L/h"}),
+        "sensor.flow_nounit": State("sensor.flow_nounit", "12", {}),
+        "sensor.supply": State("sensor.supply", "35", {}),
+        "sensor.return": State("sensor.return", "30", {}),
+        "sensor.heat": State("sensor.heat", "3.0", {"unit_of_measurement": "kW"}),
+    }
+    hass = MagicMock()
+    hass.states.get = states.get
+
+    assert read_flow_l_per_min(hass, "sensor.flow") == 12.0
+    assert read_flow_l_per_min(hass, "sensor.flow_h") == 12.0
+    assert read_flow_l_per_min(hass, "sensor.flow_nounit") is None
+
+    flow_config = {
+        "flow_sensor": "sensor.flow",
+        "supply_temperature_sensor": "sensor.supply",
+        "return_temperature_sensor": "sensor.return",
+    }
+    assert heat_is_measured(flow_config)
+    assert measured_heat_kw(hass, flow_config) == pytest.approx(12 / 60 * 4.163 * 5)
+    # Without the return sensor the flow alone measures nothing.
+    partial = {**flow_config, "return_temperature_sensor": None}
+    assert not heat_is_measured(partial)
+    assert measured_heat_kw(hass, partial) is None
+    # A thermal power sensor takes precedence.
+    meter = {**flow_config, "heat_pump_thermal_power_sensor": "sensor.heat"}
+    assert measured_heat_kw(hass, meter) == 3.0

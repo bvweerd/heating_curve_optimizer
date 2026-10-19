@@ -42,14 +42,17 @@ from homeassistant.util import dt as dt_util
 
 from .calibration import CALIBRATION_STATUSES
 from .const import (
+    CONF_FLOW_SENSOR,
     CONF_GRID_EXPORT_SENSOR,
     CONF_GRID_IMPORT_SENSOR,
     CONF_HEAT_CURVE_MAX,
     CONF_HEAT_CURVE_MAX_OUTDOOR,
     CONF_HEAT_CURVE_MIN,
     CONF_HEAT_CURVE_MIN_OUTDOOR,
+    CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
     CONF_IDLE_POWER_THRESHOLD_KW,
     CONF_POWER_CONSUMPTION,
+    CONF_RETURN_TEMPERATURE_SENSOR,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
     DEFAULT_HEAT_CURVE_MAX,
     DEFAULT_HEAT_CURVE_MAX_OUTDOOR,
@@ -58,7 +61,13 @@ from .const import (
     DEFAULT_IDLE_POWER_THRESHOLD_KW,
 )
 from .heatpump_model import HeatPumpConfig
-from .helpers import calculate_supply_temperature, get_sensor_value, read_power_kw
+from .helpers import (
+    calculate_supply_temperature,
+    get_sensor_value,
+    heat_is_measured,
+    measured_heat_kw,
+    read_power_kw,
+)
 
 PARALLEL_UPDATES = 0
 
@@ -535,25 +544,34 @@ def _heat_pump_thermal_power(
     config: dict[str, Any],
     weather_coordinator: DataUpdateCoordinator[dict[str, Any]],
     optimization_coordinator: DataUpdateCoordinator[dict[str, Any]],
-) -> tuple[float, float, float] | None:
-    """(thermal kW, COP, supply °C) from the heat pump's electricity meter.
+) -> tuple[float, float, float | None, str] | None:
+    """(thermal kW, COP, supply °C, source) of the heat pump.
 
-    The supply temperature is the measured one when a supply sensor is
-    configured, otherwise the one the optimizer planned for this step.
+    Measured heat (a thermal power sensor, or flow x supply-return spread)
+    when configured; the COP is then measured heat / electrical power.
+    Otherwise the electricity meter x the modelled COP, with the measured
+    supply temperature or, without a supply sensor, the planned one.
 
     Electrical power at or below the idle threshold (standby consumption
     of the controller, circulation pump, etc.) is treated as zero thermal
     output — the compressor is not running.
     """
     power_kw = read_power_kw(hass, config.get(CONF_POWER_CONSUMPTION))
+    supply = get_sensor_value(hass, config.get(CONF_SUPPLY_TEMPERATURE_SENSOR), None)
+    if heat_is_measured(config):
+        heat_kw = measured_heat_kw(hass, config)
+        if heat_kw is None:
+            return None
+        heat_kw = max(0.0, heat_kw)
+        cop = heat_kw / power_kw if power_kw and power_kw > 0 else 0.0
+        return heat_kw, cop, supply, "measured"
     if power_kw is None or not weather_coordinator.data:
         return None
     idle_threshold = float(
         config.get(CONF_IDLE_POWER_THRESHOLD_KW, DEFAULT_IDLE_POWER_THRESHOLD_KW)
     )
     if power_kw <= idle_threshold:
-        return 0.0, 0.0, 0.0
-    supply = get_sensor_value(hass, config.get(CONF_SUPPLY_TEMPERATURE_SENSOR), None)
+        return 0.0, 0.0, 0.0, "cop_model"
     if supply is None and optimization_coordinator.data:
         supply = _first(optimization_coordinator.data, "supply_temps")
     if supply is None:
@@ -562,11 +580,12 @@ def _heat_pump_thermal_power(
         supply_temp=float(supply),
         outdoor_temp=float(weather_coordinator.data["current_temperature"]),
     )
-    return max(0.0, power_kw) * cop, cop, float(supply)
+    return max(0.0, power_kw) * cop, cop, float(supply), "cop_model"
 
 
 class HeatPumpThermalPowerSensor(SensorEntity):
-    """Thermal output of the heat pump: metered electrical power x modelled COP."""
+    """Thermal output of the heat pump: measured, or metered electrical power
+    x modelled COP."""
 
     _attr_has_entity_name = True
     _attr_translation_key = "heat_pump_thermal_power"
@@ -599,6 +618,9 @@ class HeatPumpThermalPowerSensor(SensorEntity):
             for s in (
                 self._config.get(CONF_POWER_CONSUMPTION),
                 self._config.get(CONF_SUPPLY_TEMPERATURE_SENSOR),
+                self._config.get(CONF_RETURN_TEMPERATURE_SENSOR),
+                self._config.get(CONF_FLOW_SENSOR),
+                self._config.get(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR),
             )
             if s
         ]
@@ -621,12 +643,13 @@ class HeatPumpThermalPowerSensor(SensorEntity):
         if result is None:
             self._attr_available = False
         else:
-            thermal_kw, cop, supply = result
+            thermal_kw, cop, supply, source = result
             self._attr_available = True
             self._attr_native_value = round(thermal_kw, 3)
             self._attr_extra_state_attributes = {
                 "cop": round(cop, 3),
                 "supply_temperature": supply,
+                "source": source,
             }
         self.async_write_ha_state()
 
