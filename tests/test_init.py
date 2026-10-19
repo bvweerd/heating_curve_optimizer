@@ -548,3 +548,38 @@ async def test_unreadable_home_schedule_keeps_the_full_band_and_raises_issue(
     assert set(data["comfort_mins"]) == {data["comfort_min"]}
     issue_id = f"comfort_schedule_unavailable_{entry.entry_id}"
     assert (DOMAIN, issue_id) in ir.async_get(hass).issues
+
+
+async def test_battery_discharge_counts_as_grid_import(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    """A zero-grid battery covering the heat pump is not surplus: its
+    discharge is added to the grid power the surplus layer judges."""
+    hass.states.async_set("sensor.grid", "0", {"unit_of_measurement": "W"})
+    hass.states.async_set(POWER_SENSOR, "1.2", {"unit_of_measurement": "kW"})
+    # Batteries (positive = charging): one discharging 1200 W - covering
+    # the heat pump - one charging, one unavailable.
+    hass.states.async_set("sensor.battery_a", "-1200", {"unit_of_measurement": "W"})
+    hass.states.async_set("sensor.battery_b", "0.2", {"unit_of_measurement": "kW"})
+    hass.states.async_set("sensor.battery_c", "unavailable")
+    entry = make_entry(
+        grid_import_sensor="sensor.grid",
+        power_consumption=POWER_SENSOR,
+        battery_power_sensors=[
+            "sensor.battery_a",
+            "sensor.battery_b",
+            "sensor.battery_c",
+        ],
+    )
+    await setup_entry(hass, entry)
+    coordinator = entry.runtime_data.optimization_coordinator
+    coordinator._realtime_controller.reset(1)
+
+    await coordinator.async_refresh()
+
+    realtime = coordinator.data["realtime"]
+    assert realtime["battery_discharge_w"] == 1200.0
+    assert realtime["current_grid_w"] == 1200.0
+    # Without the heat pump (and the battery covering it) nothing would be
+    # exported: no surplus, the adjustment steps down.
+    assert realtime["adjustment"] == 0

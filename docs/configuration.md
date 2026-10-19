@@ -25,6 +25,7 @@ number/climate entities re-runs the optimizer immediately without a reload.
 | Measured supply temperature | COP of the actual operating point (thermal power sensor, calibration). Without it the planned supply temperature is used. |
 | Measured return temperature | Supply minus return is the real water spread, used for the mean water temperature in the emitter calibration. Without it a 5 K spread is assumed. |
 | Grid import / export power | Enables the real-time PV-surplus layer. W or kW; a sensor without unit is read as W. |
+| Home battery power | One sensor per battery, positive while charging (the Battery Controller convention; the setup wizard offers its batteries). Discharge counts as grid import for the PV-surplus layer. |
 
 ### Heat pump
 

@@ -27,7 +27,8 @@
               "return_temperature_sensor": "Measured return temperature",
               "dhw_active_sensor": "Tap water heating active",
               "grid_import_sensor": "Grid import power",
-              "grid_export_sensor": "Grid export power"
+              "grid_export_sensor": "Grid export power",
+              "battery_power_sensors": "Home battery power"
             },
             "data_description": {
               "power_consumption": "Power sensor (W or kW) of the heat pump. Enables thermal power/energy sensors and thermal calibration.",
@@ -36,7 +37,8 @@
               "supply_temperature_sensor": "Used for the COP of the measured operating point; otherwise the planned supply temperature is used.",
               "return_temperature_sensor": "Supply minus return gives the real water spread for the emitter calibration (mean water temperature); otherwise a 5 K spread is assumed.",
               "grid_import_sensor": "Live power (W or kW). With import and/or export configured, the real-time offset sensor raises the offset while PV surplus is exported.",
-              "grid_export_sensor": "Live power (W or kW), positive while exporting."
+              "grid_export_sensor": "Live power (W or kW), positive while exporting.",
+              "battery_power_sensors": "Optional, one sensor per battery (W or kW), positive while charging, as in Battery Controller. Battery discharge counts as grid import for the PV-surplus layer, so a battery covering the heat pump is not mistaken for surplus."
             }
           },
           "heat_pump": {
@@ -235,7 +237,8 @@
               "return_temperature_sensor": "Measured return temperature",
               "dhw_active_sensor": "Tap water heating active",
               "grid_import_sensor": "Grid import power",
-              "grid_export_sensor": "Grid export power"
+              "grid_export_sensor": "Grid export power",
+              "battery_power_sensors": "Home battery power"
             },
             "data_description": {
               "power_consumption": "Power sensor (W or kW) of the heat pump. Enables thermal power/energy sensors and thermal calibration.",
@@ -244,7 +247,8 @@
               "supply_temperature_sensor": "Used for the COP of the measured operating point; otherwise the planned supply temperature is used.",
               "return_temperature_sensor": "Supply minus return gives the real water spread for the emitter calibration (mean water temperature); otherwise a 5 K spread is assumed.",
               "grid_import_sensor": "Live power (W or kW). With import and/or export configured, the real-time offset sensor raises the offset while PV surplus is exported.",
-              "grid_export_sensor": "Live power (W or kW), positive while exporting."
+              "grid_export_sensor": "Live power (W or kW), positive while exporting.",
+              "battery_power_sensors": "Optional, one sensor per battery (W or kW), positive while charging, as in Battery Controller. Battery discharge counts as grid import for the PV-surplus layer, so a battery covering the heat pump is not mistaken for surplus."
             }
           },
           "heat_pump": {
@@ -611,7 +615,8 @@
         "production_price_sensor": "Feed-in price",
         "power_consumption": "Heat pump power",
         "grid_import_sensor": "Grid import",
-        "grid_export_sensor": "Grid export"
+        "grid_export_sensor": "Grid export",
+        "battery_power_sensors": "Home battery power"
       }
     },
     "calibration_mode": {

@@ -89,6 +89,10 @@ CONF_COMFORT_SCHEDULE = "comfort_schedule"
 CONF_AWAY_SETBACK = "away_setback"
 DEFAULT_AWAY_SETBACK = 2.0  # K
 CONF_GRID_EXPORT_SENSOR = "grid_export_sensor"
+# Home batteries, one signed power sensor each (positive = charging, as in
+# battery_controller). Discharge counts as grid import for the PV-surplus
+# layer: a battery covering the heat pump is not surplus.
+CONF_BATTERY_POWER_SENSORS = "battery_power_sensors"
 CONF_HEAT_PUMP_MAX_THERMAL_POWER = "heat_pump_max_thermal_power_kw"
 CONF_K_FACTOR = "k_factor"
 CONF_BASE_COP = "base_cop"

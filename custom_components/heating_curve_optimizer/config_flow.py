@@ -51,6 +51,7 @@ from .const import (
     CONF_AREA_M2,
     CONF_AWAY_SETBACK,
     CONF_BASE_COP,
+    CONF_BATTERY_POWER_SENSORS,
     CONF_CALIBRATION_MAX_HOURS,
     CONF_CALIBRATION_MAX_JUMP_C,
     CONF_CALIBRATION_MIN_HOURS,
@@ -308,6 +309,7 @@ _MAIN_SECTIONS: dict[str, tuple[str, ...]] = {
         CONF_DHW_ACTIVE_SENSOR,
         CONF_GRID_IMPORT_SENSOR,
         CONF_GRID_EXPORT_SENSOR,
+        CONF_BATTERY_POWER_SENSORS,
     ),
     SECTION_HEAT_PUMP: (
         CONF_BASE_COP,
@@ -457,6 +459,11 @@ def build_main_schema(defaults: dict[str, Any]) -> vol.Schema:
             ),
             opt(CONF_GRID_IMPORT_SENSOR): _sensor("power"),
             opt(CONF_GRID_EXPORT_SENSOR): _sensor("power"),
+            opt(CONF_BATTERY_POWER_SENSORS): EntitySelector(
+                EntitySelectorConfig(
+                    domain="sensor", device_class="power", multiple=True
+                )
+            ),
         }
     )
     heat_pump = vol.Schema(
@@ -564,6 +571,9 @@ def flatten_main_input(user_input: dict[str, Any]) -> dict[str, Any]:
         values = user_input.get(section_key) or {}
         for key in keys:
             flat[key] = values.get(key)
+    flat[CONF_BATTERY_POWER_SENSORS] = (
+        list(flat.get(CONF_BATTERY_POWER_SENSORS) or []) or None
+    )
     for key in (
         CONF_OFFSET_DELTA_T,
         CONF_PLANNING_WINDOW,
@@ -678,7 +688,7 @@ class HeatingCurveOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
             SelectOptionDict(
                 value=field,
                 label=f"{translations.get(prefix + field, field)}: "
-                f"{detected.entity_id} ({detected.source})",
+                f"{detected.label} ({detected.source})",
             )
             for field, detected in self._detected.items()
         ]

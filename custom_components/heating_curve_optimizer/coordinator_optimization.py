@@ -55,6 +55,7 @@ from .calibration import (
 from .const import (
     CONF_ACCURACY_HORIZON_HOURS,
     CONF_AWAY_SETBACK,
+    CONF_BATTERY_POWER_SENSORS,
     CONF_CALIBRATION_MAX_HOURS,
     CONF_CALIBRATION_MAX_JUMP_C,
     CONF_CALIBRATION_MIN_HOURS,
@@ -477,17 +478,34 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
         return ((import_kw or 0.0) - (export_kw or 0.0)) * 1000.0
 
+    def _battery_discharge_w(self) -> float:
+        """Total home-battery discharge in W (charging counts as zero).
+
+        The battery comes first: what it charges is its surplus, what it
+        discharges is covering a load. An unavailable sensor counts as
+        idle.
+        """
+        total_kw = 0.0
+        for entity_id in self.config.get(CONF_BATTERY_POWER_SENSORS) or []:
+            power_kw = read_power_kw(self.hass, entity_id, default_unit="W")
+            if power_kw is not None:
+                total_kw += max(0.0, -power_kw)
+        return total_kw * 1000.0
+
     def _realtime_action(self, data: dict[str, Any]) -> dict[str, Any] | None:
         """The PV-surplus adjustment on top of the plan in `data`, if enabled."""
         if self._realtime_controller is None:
             return None
-        current_grid_w = self._get_realtime_grid_w()
-        if current_grid_w is None:
+        grid_w = self._get_realtime_grid_w()
+        if grid_w is None:
             return None
+        # A battery holding the grid at zero hides import: count its
+        # discharge as the import it replaces.
+        discharge_w = self._battery_discharge_w()
         offsets = data.get("offsets") or [0]
         power_kw = read_power_kw(self.hass, self.config.get(CONF_POWER_CONSUMPTION))
-        return self._realtime_controller.get_control_action(
-            current_grid_w=current_grid_w,
+        action = self._realtime_controller.get_control_action(
+            current_grid_w=grid_w + discharge_w,
             shadow_price_eur_per_kwh=data.get("shadow_price_eur_per_kwh", 0.0),
             planned_offset=offsets[0],
             max_adjustment=max_offset_change(
@@ -503,6 +521,8 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             offset_min=self._offset_min,
             offset_max=self._offset_max,
         )
+        action["battery_discharge_w"] = round(discharge_w, 1)
+        return action
 
     async def _handle_realtime_update(self, now: datetime) -> None:
         """Adjust the planned offset around live grid power."""

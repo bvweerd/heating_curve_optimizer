@@ -140,10 +140,13 @@ With grid sensors configured, every minute:
 - every change holds for at least 15 minutes, so the heat pump's own
   response to a new offset settles before it is judged.
 
-A home battery that keeps the grid at zero hides the surplus from this
-layer (and covers the heat pump's draw, which then looks like surplus).
-With such a battery, leave the grid sensors empty and let the plan's PV
-forecast do the work.
+Home batteries come first. What a battery charges is its own surplus: the
+heat pump only gets the export left over (a full battery, or one charging
+at its limit). What a battery discharges is added to the grid power, as
+the import it replaces, so a battery holding the grid at zero while it
+powers the heat pump is not mistaken for surplus. Without battery power
+sensors, a zero-grid battery hides both, and the layer is better switched
+off by leaving the grid sensors empty.
 
 The layer never goes below the plan and never beyond the ramp limit or the
 −4 … +4 range, and it carries over when the plan is recomputed. The

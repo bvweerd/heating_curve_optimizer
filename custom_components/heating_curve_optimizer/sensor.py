@@ -322,6 +322,7 @@ REALTIME_OFFSET = HcoSensorEntityDescription(
         "planned_offset": d.get("offset"),
         "adjustment": (d.get("realtime") or {}).get("adjustment", 0),
         "current_grid_w": (d.get("realtime") or {}).get("current_grid_w"),
+        "battery_discharge_w": (d.get("realtime") or {}).get("battery_discharge_w"),
         "shadow_price_eur_per_kwh": d.get("shadow_price_eur_per_kwh"),
     },
 )
