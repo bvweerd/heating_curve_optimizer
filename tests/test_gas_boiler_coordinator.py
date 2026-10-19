@@ -146,6 +146,28 @@ COMFORTABLE_PLAN = {
             False,
             "below_comfort_band",
         ),
+        # A dip inside a scheduled away setback is planned, not a shortfall.
+        (
+            {"indoor_temperature": 19.4},
+            {
+                "indoor_temps": [19.3, 19.1, 19.0, 18.9],
+                "comfort_mins": [17.7, 17.7, 17.7, 17.7],
+            },
+            "0.10",
+            False,
+            None,
+        ),
+        # Back home: the plan below the home floor at the end still counts.
+        (
+            {},
+            {
+                "indoor_temps": [19.3, 19.1, 19.0, 18.9],
+                "comfort_mins": [17.7, 17.7, 19.7, 19.7],
+            },
+            "3.00",
+            True,
+            "heat_pump_cannot_keep_up",
+        ),
         # A predicted dip beyond the lookahead does not count yet.
         (
             {},

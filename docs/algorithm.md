@@ -75,10 +75,14 @@ V_t(T, o_prev) = min over o of  cost_t(T, o) + comfort_t(T') + λ·(o − o_prev
 - **Energy cost**: grid electricity × price, PV-covered electricity × feed-in
   price.
 - **Comfort**: 50 €/K²/h below or above the band, plus a 1000 € penalty
-  below `comfort_min − 1.5 °C`.
+  below `comfort_min − 1.5 °C`. With a home schedule `comfort_min` is per
+  step: lowered by the away setback for steps that end while the schedule
+  is off (see [Away periods](configuration.md#away-periods)).
 - **Terminal value**: heat stored above the comfort floor at the end of the
   horizon is worth what it would cost to produce then, so the plan does not
-  empty the building just because the horizon ends.
+  empty the building just because the horizon ends; a deficit below the
+  floor (an away setback running past the horizon) costs the same to make
+  up.
 
 The forward pass simulates the continuous temperature and re-evaluates the
 best offset at the actual state every step.
@@ -146,6 +150,9 @@ next 3 hours:
 | Indoor temperature inside the comfort band and the plan stays there | Off, even when gas is cheaper. |
 | Below the band now (measured, > 0.1 °C) or a planned dip, but the plan is back in the band within 3 hours | On only if gas is cheaper per kWh of heat. |
 | The plan is still below the band after 3 hours: the heat pump cannot restore comfort | On, regardless of price (setting *Gas as comfort backup*, default on). With the setting off: only if gas is cheaper. |
+
+"The band" is the per-step band: a planned dip during an away setback does
+not count.
 
 Cost per kWh of heat: gas = `gas price / calorific value / efficiency`,
 heat pump = `electricity price / COP` at the planned operating point.

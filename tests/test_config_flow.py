@@ -182,6 +182,18 @@ def test_zone_validation() -> None:
     assert error == "name_required"
 
 
+def test_zone_validation_stores_the_home_schedule() -> None:
+    data, error = validate_zone_input(
+        zone_data(comfort_schedule="schedule.home", away_setback=1.5)
+    )
+    assert error is None
+    assert data["comfort_schedule"] == "schedule.home"
+    assert data["away_setback"] == 1.5
+
+    data, _ = validate_zone_input(zone_data())
+    assert "comfort_schedule" not in data
+
+
 async def _start_subentry_flow(hass: HomeAssistant, entry, subentry_type: str):
     return await hass.config_entries.subentries.async_init(
         (entry.entry_id, subentry_type),

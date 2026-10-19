@@ -433,6 +433,8 @@
             "indoor_temp_hysteresis_upper": "Comfortband boven doel",
             "indoor_temperature_sensor": "Binnentemperatuursensor",
             "window_sensors": "Raam- en deurcontacten",
+            "comfort_schedule": "Thuis-schema",
+            "away_setback": "Afwezigheidsverlaging",
             "calibration_mode": "Kalibratie",
             "heat_curve_min": "Eigen stooklijn: aanvoertemperatuur warme kant",
             "heat_curve_max": "Eigen stooklijn: aanvoertemperatuur koude kant",
@@ -445,6 +447,8 @@
             "indoor_temp_hysteresis_lower": "De optimizer houdt de binnentemperatuur tussen doel - onder en doel + boven.",
             "indoor_temperature_sensor": "Sterk aanbevolen. Zonder sensor neemt de optimizer aan dat de ruimte op de doeltemperatuur is en is kalibratie niet mogelijk.",
             "window_sensors": "Optioneel. Periodes met een open raam of deur worden buiten de kalibratie gehouden.",
+            "comfort_schedule": "Optionele schema-helper: aan zolang er iemand thuis is. Staat het schema uit, dan zakt de ondergrens van de comfortband met de afwezigheidsverlaging, en warmt het plan op in de goedkoopste uren voordat het schema weer aangaat.",
+            "away_setback": "Hoeveel de ondergrens van de comfortband mag zakken zolang het thuis-schema uit staat.",
             "calibration_mode": "Leer het gebouw uit metingen. Observeren: leren en resultaten tonen, vragen voordat ze gebruikt worden. Toepassen: het geleerde model gebruiken zodra het de kwaliteitscontroles doorstaat.",
             "heat_curve_min": "Alleen voor een aparte verwarmingsgroep met een eigen stooklijn; laat beide leeg om de hoofdstooklijn te gebruiken.",
             "heat_curve_max": "Vul beide of geen van beide in.",
@@ -472,6 +476,8 @@
             "indoor_temp_hysteresis_upper": "Comfortband boven doel",
             "indoor_temperature_sensor": "Binnentemperatuursensor",
             "window_sensors": "Raam- en deurcontacten",
+            "comfort_schedule": "Thuis-schema",
+            "away_setback": "Afwezigheidsverlaging",
             "calibration_mode": "Kalibratie",
             "heat_curve_min": "Eigen stooklijn: aanvoertemperatuur warme kant",
             "heat_curve_max": "Eigen stooklijn: aanvoertemperatuur koude kant",
@@ -484,6 +490,8 @@
             "indoor_temp_hysteresis_lower": "De optimizer houdt de binnentemperatuur tussen doel - onder en doel + boven.",
             "indoor_temperature_sensor": "Sterk aanbevolen. Zonder sensor neemt de optimizer aan dat de ruimte op de doeltemperatuur is en is kalibratie niet mogelijk.",
             "window_sensors": "Optioneel. Periodes met een open raam of deur worden buiten de kalibratie gehouden.",
+            "comfort_schedule": "Optionele schema-helper: aan zolang er iemand thuis is. Staat het schema uit, dan zakt de ondergrens van de comfortband met de afwezigheidsverlaging, en warmt het plan op in de goedkoopste uren voordat het schema weer aangaat.",
+            "away_setback": "Hoeveel de ondergrens van de comfortband mag zakken zolang het thuis-schema uit staat.",
             "calibration_mode": "Leer het gebouw uit metingen. Observeren: leren en resultaten tonen, vragen voordat ze gebruikt worden. Toepassen: het geleerde model gebruiken zodra het de kwaliteitscontroles doorstaat.",
             "heat_curve_min": "Alleen voor een aparte verwarmingsgroep met een eigen stooklijn; laat beide leeg om de hoofdstooklijn te gebruiken.",
             "heat_curve_max": "Vul beide of geen van beide in.",
@@ -825,6 +833,10 @@
     "indoor_sensor_unavailable": {
       "title": "Binnentemperatuursensor niet beschikbaar",
       "description": "De binnentemperatuursensor **{sensor}** is niet beschikbaar. Tot hij weer meet, neemt de optimizer aan dat de ruimte op de doeltemperatuur is en staat de kalibratie stil."
+    },
+    "comfort_schedule_unavailable": {
+      "title": "Thuis-schema niet beschikbaar",
+      "description": "Het thuis-schema **{entity}** kon niet worden gelezen. Tot dat weer lukt, houdt de optimizer de hele tijd de volledige comfortband aan."
     },
     "calibration_ready": {
       "title": "Kalibratie van {zone} is klaar",

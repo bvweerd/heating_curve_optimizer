@@ -9,6 +9,7 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers import storage
 from homeassistant.helpers.event import (
@@ -53,12 +54,14 @@ from .calibration import (
 )
 from .const import (
     CONF_ACCURACY_HORIZON_HOURS,
+    CONF_AWAY_SETBACK,
     CONF_CALIBRATION_MAX_HOURS,
     CONF_CALIBRATION_MAX_JUMP_C,
     CONF_CALIBRATION_MIN_HOURS,
     CONF_CALIBRATION_MODE,
     CONF_CEILING_HEIGHT,
     CONF_COMFORT_PENALTY_WEIGHT,
+    CONF_COMFORT_SCHEDULE,
     CONF_CONSUMPTION_PRICE_SENSOR,
     CONF_CYCLING_PENALTY_WEIGHT,
     CONF_DEFROST_BASE_PENALTY,
@@ -99,6 +102,7 @@ from .const import (
     CONF_VENTILATION_TYPE,
     CONF_WINDOW_SENSORS,
     DEFAULT_ACCURACY_HORIZON_HOURS,
+    DEFAULT_AWAY_SETBACK,
     DEFAULT_CALIBRATION_MAX_HOURS,
     DEFAULT_CALIBRATION_MAX_JUMP_C,
     DEFAULT_CALIBRATION_MIN_HOURS,
@@ -144,6 +148,7 @@ from .helpers import (
     max_offset_change,
     read_power_kw,
     resample_to_steps,
+    schedule_is_on,
     usable_state,
 )
 from .realtime_controller import RealtimeController, create_realtime_controller
@@ -612,6 +617,67 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             durations.append((end - step_start).total_seconds() / 3600)
         return step_starts, durations
 
+    async def _read_comfort_schedule(self, entity_id: str) -> dict[str, Any] | None:
+        """The weekly configuration of a `schedule` helper, or None."""
+        issue_id = f"comfort_schedule_unavailable_{self.zone_id}"
+        week: Any = None
+        try:
+            response = await self.hass.services.async_call(
+                "schedule",
+                "get_schedule",
+                target={"entity_id": entity_id},
+                blocking=True,
+                return_response=True,
+            )
+            week = (response or {}).get(entity_id)
+        except HomeAssistantError as err:
+            _LOGGER.debug("Reading schedule %s failed: %s", entity_id, err)
+        if isinstance(week, dict):
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return week
+        # While Home Assistant starts, the schedule may not be loaded yet.
+        if self.hass.is_running:
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="comfort_schedule_unavailable",
+                translation_placeholders={"entity": entity_id},
+            )
+        return None
+
+    async def _comfort_floors(
+        self,
+        config: dict[str, Any],
+        step_starts: list[datetime],
+        durations: list[float],
+    ) -> list[float] | None:
+        """Comfort floor at the end of each step, lowered while away.
+
+        None without a schedule (or when it cannot be read: then the plan
+        keeps the full band, the safe side).
+        """
+        entity_id = config.get(CONF_COMFORT_SCHEDULE)
+        if not entity_id:
+            return None
+        week = await self._read_comfort_schedule(str(entity_id))
+        if week is None:
+            return None
+        home_floor = BuildingConfig.from_config(config).comfort_min
+        away_floor = home_floor - float(
+            config.get(CONF_AWAY_SETBACK, DEFAULT_AWAY_SETBACK)
+        )
+        # The penalty applies to the temperature at the end of a step, so
+        # the room is back in the band when the schedule switches on.
+        return [
+            home_floor
+            if schedule_is_on(week, start + timedelta(hours=hours))
+            else away_floor
+            for start, hours in zip(step_starts, durations, strict=True)
+        ]
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Run one optimization cycle."""
         heat_data = self.heat_coordinator.data
@@ -657,6 +723,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         indoor_temp = float(heat_data["indoor_temperature"])
         self._last_heat_indoor = indoor_temp
         self._last_heat_source = heat_data.get("indoor_temperature_source")
+        floors = await self._comfort_floors(config, step_starts, durations)
         result = await self.hass.async_add_executor_job(
             self._optimize,
             config,
@@ -669,6 +736,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             humidity,
             durations,
             interval,
+            floors,
         )
         opt: ThermalOptimizationResult = result["result"]
         building: BuildingConfig = result["building"]
@@ -742,6 +810,11 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "initial_indoor_temp": indoor_temp,
             "comfort_min": building.comfort_min,
             "comfort_max": building.comfort_max,
+            "comfort_mins": (
+                floors[: len(opt.indoor_temps)]
+                if floors
+                else [building.comfort_min] * len(opt.indoor_temps)
+            ),
             "buffer_kwh": stored_kwh(indoor_temp),
             "buffer_forecast_kwh": [stored_kwh(t) for t in opt.indoor_temps],
             "building_ua_w_per_k": round(building.ua_w_per_k, 1),
@@ -1028,6 +1101,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         humidity: list[float],
         durations: list[float],
         step_minutes: int,
+        floors: list[float] | None = None,
     ) -> dict[str, Any]:
         """Build the models and run the DP (blocking, executor)."""
         building = self.building_config(config)
@@ -1070,6 +1144,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 config.get(CONF_HARD_FLOOR_PENALTY, DEFAULT_HARD_FLOOR_PENALTY)
             ),
             current_offset=self._current_offset,
+            comfort_min_per_step=floors[:horizon] if floors else None,
         )
         return {
             "result": result,

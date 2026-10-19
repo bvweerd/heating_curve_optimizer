@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from homeassistant.core import State
+from homeassistant.util import dt as dt_util
 
 from custom_components.heating_curve_optimizer.helpers import (
     UNAVAILABLE_STATES,
@@ -22,6 +23,7 @@ from custom_components.heating_curve_optimizer.helpers import (
     price_unit_scale,
     read_power_kw,
     resample_to_steps,
+    schedule_is_on,
     state_has_value,
 )
 
@@ -730,3 +732,33 @@ def test_window_solar_gain_south_beats_north_facing_side_in_winter_noon():
 
 def test_window_solar_gain_zero_without_glass():
     assert calculate_window_solar_gain([500.0, 0.0], {}, 1.2) == [0.0, 0.0]
+
+
+def test_schedule_is_on_follows_the_schedule_entity_rules():
+    """`from` inclusive, `to` exclusive, 24:00 to midnight; local time."""
+    from datetime import time
+
+    week = {
+        "monday": [
+            {"from": time(6, 0), "to": time(8, 0)},
+            {"from": "17:00:00", "to": "24:00:00"},
+        ],
+        "tuesday": [{"from": "00:00:00", "to": time.max}],
+    }
+    tz = dt_util.get_default_time_zone()
+    monday = datetime(2026, 10, 19, tzinfo=tz)  # a Monday
+    assert schedule_is_on(week, monday.replace(hour=6))
+    assert schedule_is_on(week, monday.replace(hour=7, minute=59))
+    assert not schedule_is_on(week, monday.replace(hour=8))
+    assert not schedule_is_on(week, monday.replace(hour=12))
+    assert schedule_is_on(week, monday.replace(hour=23, minute=59))
+    assert schedule_is_on(week, monday.replace(day=20, hour=3))  # Tuesday
+    assert not schedule_is_on(week, monday.replace(day=21, hour=3))  # no blocks
+    # UTC input is converted to local time first.
+    assert schedule_is_on(week, dt_util.as_utc(monday.replace(hour=6, minute=30)))
+
+
+def test_schedule_is_on_ignores_malformed_blocks():
+    week = {"monday": [{"from": "noon", "to": "18:00"}, {"to": "18:00"}]}
+    monday = datetime(2026, 10, 19, 12, tzinfo=dt_util.get_default_time_zone())
+    assert not schedule_is_on(week, monday)

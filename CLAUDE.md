@@ -53,6 +53,10 @@ docs/                         index, installation, quick-start, configuration, a
   pass. Comfort: 50 €/K²/h outside the band + 1000 € below
   `comfort_min - 1.5`. Terminal value prices stored heat above
   `comfort_min`. Baseline = offset 0 through the same model.
+- **Away periods**: optional zone `comfort_schedule` (a `schedule` helper,
+  on = home, read via `schedule.get_schedule` each run) lowers the floor by
+  `away_setback` for steps that *end* while it is off (`comfort_mins`);
+  unreadable → full band + repair issue `comfort_schedule_unavailable_*`.
 - **Indoor temperature fallback** is the target temperature; a configured
   but unavailable sensor raises repair issue `indoor_sensor_unavailable_*`.
 - **Hybrid** (heat pump first, gas as comfort backup): gas when the plan
@@ -63,6 +67,7 @@ docs/                         index, installation, quick-start, configuration, a
   `offset, offsets, supply_temps, indoor_temps, cop, cost_eur,
   baseline_*, cost_savings_eur, shadow_price_eur_per_kwh,
   step_durations_hours, step_start_times, step_minutes, comfort_min/max,
+  comfort_mins (per-step floor),
   buffer_kwh, calibration (summary dict), model_accuracy, realtime`.
 - **Calibration**: per zone mode off/observe/apply (`calibration_mode`); only
   with one zone. Windows close after 0.3 K movement; excluded on DHW, open

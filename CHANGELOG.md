@@ -11,6 +11,10 @@ First release of the redesigned integration. There are no earlier
 deployments to migrate from.
 
 ### Optimizer
+- Away periods: an optional home schedule (schedule helper) per zone lowers
+  the comfort floor by the away setback while nobody is home. The plan
+  knows the return time and reheats in the cheapest hours before it; gas
+  advice treats the planned dip as intended.
 - Pre-heating can use the whole comfort band: heat output is cut at the
   top of the band (was: 0.3 °C above target). The baseline keeps a room
   thermostat at the target, so savings are not inflated.

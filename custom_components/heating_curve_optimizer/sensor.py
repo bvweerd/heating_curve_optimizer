@@ -218,6 +218,7 @@ PLANNED_INDOOR_TEMPERATURE = HcoSensorEntityDescription(
         "initial_indoor_temp": d.get("initial_indoor_temp"),
         "comfort_min": d.get("comfort_min"),
         "comfort_max": d.get("comfort_max"),
+        "comfort_mins": d.get("comfort_mins", []),
         "indoor_temps": d.get("indoor_temps", []),
         "baseline_indoor_temps": d.get("baseline_indoor_temps", []),
         **_step_attrs(d),

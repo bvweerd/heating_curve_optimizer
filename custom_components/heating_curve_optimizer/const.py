@@ -83,6 +83,11 @@ CONF_DHW_ACTIVE_SENSOR = "dhw_active_sensor"
 CONF_WINDOW_SENSORS = "window_sensors"  # zone
 CONF_CALIBRATION_MODE = "calibration_mode"  # zone
 DEFAULT_CALIBRATION_MODE = "observe"
+# Zone: a `schedule` helper that is on while someone is home. While it is
+# off, the comfort floor drops by the away setback.
+CONF_COMFORT_SCHEDULE = "comfort_schedule"
+CONF_AWAY_SETBACK = "away_setback"
+DEFAULT_AWAY_SETBACK = 2.0  # K
 CONF_GRID_EXPORT_SENSOR = "grid_export_sensor"
 CONF_HEAT_PUMP_MAX_THERMAL_POWER = "heat_pump_max_thermal_power_kw"
 CONF_K_FACTOR = "k_factor"

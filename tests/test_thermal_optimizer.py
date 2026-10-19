@@ -580,7 +580,7 @@ def test_dp_matches_brute_force_on_small_horizon():
             )
             if action is not None:
                 prev = offset
-        return total - max(0.0, t_in - building.comfort_min) * (
+        return total - (t_in - building.comfort_min) * (
             building.thermal_mass_kwh_per_k * prices[-1] / terminal_cop
         )
 
@@ -602,3 +602,40 @@ def test_dp_matches_brute_force_on_small_horizon():
         None if not result.pump_on[t] else result.offsets[t] for t in range(horizon)
     )
     assert objective(dp_sequence) <= best + 0.02
+
+
+def test_away_setback_coasts_and_is_back_in_band_on_return():
+    """A lower floor while away lets the plan coast through expensive away
+    hours and reheat in the cheap hours before the return, cheaper than
+    holding the full band."""
+    building, heatpump, emitter = _a_plus_underfloor()
+    horizon = 24
+    away = range(2, 11)
+    floors = [17.7 if t in away else building.comfort_min for t in range(horizon)]
+    prices = [0.40 if 2 <= t < 9 else 0.20 for t in range(horizon)]
+    common = {
+        "building": building,
+        "heatpump": heatpump,
+        "emitter": emitter,
+        "outdoor_temps": [0.0] * horizon,
+        "prices": prices,
+        "initial_indoor_temp": 20.0,
+        "water_min": 27.0,
+        "water_max": 33.0,
+        "outdoor_min": -10.0,
+        "outdoor_max": 18.0,
+        "time_base": 60,
+    }
+
+    home = optimize_thermal_schedule(**common)
+    setback = optimize_thermal_schedule(**common, comfort_min_per_step=floors)
+
+    assert min(setback.indoor_temps[2:11]) < building.comfort_min - 0.3
+    assert min(setback.indoor_temps[2:11]) >= 17.7 - 0.05
+    assert setback.indoor_temps[11] >= building.comfort_min - 0.05
+    assert setback.total_cost_eur < home.total_cost_eur
+    # A floor equal to the band is the same as no schedule.
+    same = optimize_thermal_schedule(
+        **common, comfort_min_per_step=[building.comfort_min] * horizon
+    )
+    assert same.offsets == home.offsets

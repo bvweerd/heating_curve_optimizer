@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import math
 from collections.abc import Sequence
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from typing import Any
 
 from homeassistant.core import State
@@ -614,6 +614,50 @@ def read_power_kw(
     if unit == "W":
         return value / 1000.0
     return None
+
+
+_WEEKDAYS = (
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+)
+
+
+def _schedule_time(value: Any) -> time | None:
+    """A `schedule.get_schedule` boundary as a time (24:00 -> time.max)."""
+    if isinstance(value, time):
+        return value
+    if isinstance(value, str):
+        if value.startswith("24:00"):
+            return time.max
+        try:
+            return time.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
+def schedule_is_on(week: dict[str, Any], when: datetime) -> bool:
+    """Whether a weekly schedule (the `schedule.get_schedule` response for
+    one entity) is on at `when`, in Home Assistant's local time.
+
+    Same rule as the schedule entity: `from` inclusive, `to` exclusive, a
+    `to` of 24:00 runs to midnight.
+    """
+    local = dt_util.as_local(when)
+    now = local.time().replace(tzinfo=None)
+    for block in week.get(_WEEKDAYS[local.weekday()]) or []:
+        start = _schedule_time(block.get("from"))
+        end = _schedule_time(block.get("to"))
+        if start is None or end is None:
+            continue
+        if start <= now and (now < end or end == time.max):
+            return True
+    return False
 
 
 def calculate_supply_temperature(

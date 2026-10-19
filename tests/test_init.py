@@ -10,6 +10,7 @@ from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.setup import async_setup_component
 
 from custom_components.heating_curve_optimizer.const import DOMAIN
 
@@ -506,3 +507,44 @@ async def test_replan_keeps_the_surplus_adjustment(
     assert realtime["adjustment"] == 1
     assert realtime["planned_offset"] == coordinator.data["offset"]
     await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_home_schedule_lowers_the_floor_while_away(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    """Steps that end while the home schedule is off get the away floor."""
+    days = ("monday", "tuesday", "wednesday", "thursday", "friday")
+    weekend = ("saturday", "sunday")
+    block = [{"from": "18:00:00", "to": "22:00:00"}]
+    assert await async_setup_component(
+        hass,
+        "schedule",
+        {
+            "schedule": {
+                "home": {"name": "Home", **dict.fromkeys(days + weekend, block)}
+            }
+        },
+    )
+    entry = make_entry(
+        zone_overrides={"comfort_schedule": "schedule.home", "away_setback": 2.5}
+    )
+    await setup_entry(hass, entry)
+    data = entry.runtime_data.optimization_coordinator.data
+
+    assert data["comfort_min"] == 19.7
+    assert set(data["comfort_mins"]) == {19.7, 17.2}
+    assert len(data["comfort_mins"]) == len(data["indoor_temps"])
+    issues = ir.async_get(hass).issues
+    assert (DOMAIN, f"comfort_schedule_unavailable_{entry.entry_id}") not in issues
+
+
+async def test_unreadable_home_schedule_keeps_the_full_band_and_raises_issue(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    entry = make_entry(zone_overrides={"comfort_schedule": "schedule.missing"})
+    await setup_entry(hass, entry)
+    data = entry.runtime_data.optimization_coordinator.data
+
+    assert set(data["comfort_mins"]) == {data["comfort_min"]}
+    issue_id = f"comfort_schedule_unavailable_{entry.entry_id}"
+    assert (DOMAIN, issue_id) in ir.async_get(hass).issues

@@ -433,6 +433,8 @@
             "indoor_temp_hysteresis_upper": "Comfort band above target",
             "indoor_temperature_sensor": "Indoor temperature sensor",
             "window_sensors": "Window and door contacts",
+            "comfort_schedule": "Home schedule",
+            "away_setback": "Away setback",
             "calibration_mode": "Calibration",
             "heat_curve_min": "Own curve: supply temperature at the warm end",
             "heat_curve_max": "Own curve: supply temperature at the cold end",
@@ -445,6 +447,8 @@
             "indoor_temp_hysteresis_lower": "The optimizer keeps the indoor temperature between target - lower and target + upper.",
             "indoor_temperature_sensor": "Strongly recommended. Without it the optimizer assumes the room is at the target temperature and calibration is not possible.",
             "window_sensors": "Optional. Periods with an open window or door are left out of the calibration.",
+            "comfort_schedule": "Optional schedule helper: on while someone is home. While it is off the comfort floor drops by the away setback, and the plan reheats in the cheapest hours before the schedule switches on again.",
+            "away_setback": "How far the bottom of the comfort band may drop while the home schedule is off.",
             "calibration_mode": "Learn the building from measurements. Observe: learn and show results, ask before using them. Apply: use the learned model as soon as it passes the quality checks.",
             "heat_curve_min": "Only for a separate heating circuit with its own curve; leave both empty to use the main curve.",
             "heat_curve_max": "Fill both or neither.",
@@ -472,6 +476,8 @@
             "indoor_temp_hysteresis_upper": "Comfort band above target",
             "indoor_temperature_sensor": "Indoor temperature sensor",
             "window_sensors": "Window and door contacts",
+            "comfort_schedule": "Home schedule",
+            "away_setback": "Away setback",
             "calibration_mode": "Calibration",
             "heat_curve_min": "Own curve: supply temperature at the warm end",
             "heat_curve_max": "Own curve: supply temperature at the cold end",
@@ -484,6 +490,8 @@
             "indoor_temp_hysteresis_lower": "The optimizer keeps the indoor temperature between target - lower and target + upper.",
             "indoor_temperature_sensor": "Strongly recommended. Without it the optimizer assumes the room is at the target temperature and calibration is not possible.",
             "window_sensors": "Optional. Periods with an open window or door are left out of the calibration.",
+            "comfort_schedule": "Optional schedule helper: on while someone is home. While it is off the comfort floor drops by the away setback, and the plan reheats in the cheapest hours before the schedule switches on again.",
+            "away_setback": "How far the bottom of the comfort band may drop while the home schedule is off.",
             "calibration_mode": "Learn the building from measurements. Observe: learn and show results, ask before using them. Apply: use the learned model as soon as it passes the quality checks.",
             "heat_curve_min": "Only for a separate heating circuit with its own curve; leave both empty to use the main curve.",
             "heat_curve_max": "Fill both or neither.",
@@ -825,6 +833,10 @@
     "indoor_sensor_unavailable": {
       "title": "Indoor temperature sensor unavailable",
       "description": "The indoor temperature sensor **{sensor}** is unavailable. Until it reports again, the optimizer assumes the room is at its target temperature and calibration is paused."
+    },
+    "comfort_schedule_unavailable": {
+      "title": "Home schedule unavailable",
+      "description": "The home schedule **{entity}** could not be read. Until it can, the optimizer keeps the full comfort band all the time."
     },
     "calibration_ready": {
       "title": "Calibration of {zone} is ready",

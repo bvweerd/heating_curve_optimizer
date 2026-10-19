@@ -49,6 +49,7 @@ from .companion_integrations import (
 from .const import (
     CONF_ACCURACY_HORIZON_HOURS,
     CONF_AREA_M2,
+    CONF_AWAY_SETBACK,
     CONF_BASE_COP,
     CONF_CALIBRATION_MAX_HOURS,
     CONF_CALIBRATION_MAX_JUMP_C,
@@ -58,6 +59,7 @@ from .const import (
     CONF_CEILING_HEIGHT,
     CONF_COMFORT_LOOKAHEAD_HOURS,
     CONF_COMFORT_PENALTY_WEIGHT,
+    CONF_COMFORT_SCHEDULE,
     CONF_COMFORT_TOLERANCE_C,
     CONF_CONSUMPTION_PRICE_SENSOR,
     CONF_COP_COMPENSATION_FACTOR,
@@ -139,6 +141,7 @@ from .const import (
     CONF_WINDOW_SENSORS,
     CONF_WINDOW_SHGC,
     DEFAULT_ACCURACY_HORIZON_HOURS,
+    DEFAULT_AWAY_SETBACK,
     DEFAULT_CALIBRATION_MAX_HOURS,
     DEFAULT_CALIBRATION_MAX_JUMP_C,
     DEFAULT_CALIBRATION_MIN_HOURS,
@@ -802,6 +805,13 @@ def build_zone_schema(defaults: dict[str, Any]) -> vol.Schema:
             ): EntitySelector(
                 EntitySelectorConfig(domain="binary_sensor", multiple=True)
             ),
+            vol.Optional(
+                CONF_COMFORT_SCHEDULE, description=d(CONF_COMFORT_SCHEDULE)
+            ): EntitySelector(EntitySelectorConfig(domain="schedule")),
+            vol.Required(
+                CONF_AWAY_SETBACK,
+                description=d(CONF_AWAY_SETBACK, DEFAULT_AWAY_SETBACK),
+            ): _number(0.0, 5.0, 0.5, "°C"),
             vol.Required(
                 CONF_CALIBRATION_MODE,
                 description=d(CONF_CALIBRATION_MODE, DEFAULT_CALIBRATION_MODE),
@@ -858,6 +868,11 @@ def validate_zone_input(
         data[CONF_INDOOR_TEMPERATURE_SENSOR] = sensor
     if windows := user_input.get(CONF_WINDOW_SENSORS):
         data[CONF_WINDOW_SENSORS] = list(windows)
+    if schedule := user_input.get(CONF_COMFORT_SCHEDULE):
+        data[CONF_COMFORT_SCHEDULE] = schedule
+    data[CONF_AWAY_SETBACK] = float(
+        user_input.get(CONF_AWAY_SETBACK, DEFAULT_AWAY_SETBACK)
+    )
     data[CONF_CALIBRATION_MODE] = user_input.get(
         CONF_CALIBRATION_MODE, DEFAULT_CALIBRATION_MODE
     )

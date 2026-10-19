@@ -174,16 +174,23 @@ class BuildingConfig:
         return indoor_temp + delta_t
 
     def discretize_states(
-        self, resolution: float = 0.1, margin: float = 1.5
+        self,
+        resolution: float = 0.1,
+        margin: float = 1.5,
+        lowest_comfort_min: float | None = None,
     ) -> list[float]:
         """Return the T_in state ladder used by the optimizer's DP table.
 
         Spans [comfort_min - margin, comfort_max + margin]: the margin lets
         the DP represent brief excursions outside comfort (and penalize
         them, see thermal_optimizer.py) rather than making such states
-        simply unrepresentable.
+        simply unrepresentable. `lowest_comfort_min` extends the bottom for
+        a scheduled setback below the band.
         """
-        lo = self.comfort_min - margin
+        floor = self.comfort_min
+        if lowest_comfort_min is not None:
+            floor = min(floor, lowest_comfort_min)
+        lo = floor - margin
         hi = self.comfort_max + margin
         if hi <= lo or resolution <= 0:
             return [self.comfort_min]

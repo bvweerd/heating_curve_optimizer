@@ -163,11 +163,16 @@ def optimize_thermal_schedule(
     cycling_penalty_weight: float = DEFAULT_CYCLING_PENALTY_WEIGHT,
     hard_floor_penalty: float = DEFAULT_HARD_FLOOR_PENALTY,
     current_offset: int = 0,
+    comfort_min_per_step: list[float] | None = None,
 ) -> ThermalOptimizationResult:
     """Return a cost-optimal offset schedule over indoor temperature.
 
     Units: power in kW, prices in currency per kWh, `time_base` in minutes
     per step, temperatures in °C.
+
+    `comfort_min_per_step[t]` is the comfort floor at the *end* of step t
+    (e.g. lowered while nobody is home); default `building.comfort_min`.
+    The ceiling and the terminal value keep the building's own band.
     """
     horizon = min(len(outdoor_temps), len(prices))
     if horizon == 0:
@@ -191,6 +196,7 @@ def optimize_thermal_schedule(
     pv = [max(0.0, v) for v in _pad(pv_surplus_kw, horizon, 0.0)]
     feed_in = _pad(feed_in_prices, horizon, feed_in_price_fallback)
     humidity = _pad(humidity_forecast, horizon, 80.0)
+    floors = _pad(comfort_min_per_step, horizon, building.comfort_min)
     internal_gain = building.internal_gain_kw
 
     base_supply = [
@@ -205,12 +211,13 @@ def optimize_thermal_schedule(
     ]
 
     states = building.discretize_states(
-        resolution=state_resolution, margin=state_margin
+        resolution=state_resolution,
+        margin=state_margin,
+        lowest_comfort_min=min(floors),
     )
     n_states = len(states)
     state_lo, state_hi = states[0], states[-1]
     cell = (state_hi - state_lo) / (n_states - 1) if n_states > 1 else 1.0
-    hard_floor = building.comfort_min - state_margin
     # Output tapers to zero over the last 0.3 K below a cutoff. The plan
     # cuts at comfort_max, so the whole band can store heat; the baseline
     # models a plain curve with a room thermostat at the target.
@@ -282,10 +289,10 @@ def optimize_thermal_schedule(
     def stage_cost(t: int, outcome: _StepOutcome) -> float:
         return outcome.energy_cost + comfort_penalty(
             outcome.next_t_in,
-            comfort_min=building.comfort_min,
+            comfort_min=floors[t],
             comfort_max=building.comfort_max,
             weight=comfort_penalty_weight,
-            hard_floor=hard_floor,
+            hard_floor=floors[t] - state_margin,
             hard_floor_penalty=hard_floor_penalty,
             step_hours=step_durations[t],
         )
@@ -299,7 +306,10 @@ def optimize_thermal_schedule(
     terminal_eur_per_k = building.thermal_mass_kwh_per_k * price[-1] / terminal_cop
 
     def terminal_value(t_in: float) -> float:
-        return -max(0.0, t_in - building.comfort_min) * terminal_eur_per_k
+        # Heat above the comfort floor is worth what it costs to produce;
+        # a deficit (a setback running past the horizon) costs the same to
+        # make up.
+        return -(t_in - building.comfort_min) * terminal_eur_per_k
 
     # v_tables[t][offset_idx][state_idx] = V[t](state, prev_offset=offset).
     terminal_row = [terminal_value(s) for s in states]

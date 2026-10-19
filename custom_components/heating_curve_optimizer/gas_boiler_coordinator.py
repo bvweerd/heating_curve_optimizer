@@ -67,29 +67,37 @@ def _comfort_at_risk(
     house is (or dips) below the band but the plan recovers in time.
     """
     comfort_min = optimization_data.get("comfort_min", heat_data.get("lower_bound"))
+    # Per step: a scheduled setback is a planned dip, not a shortfall.
+    step_floors = optimization_data.get("comfort_mins") or []
     planned: list[float] = []
+    floors: list[float] = []
     elapsed = 0.0
-    for temp, hours in zip(
-        optimization_data.get("indoor_temps") or [],
-        optimization_data.get("step_durations_hours") or [],
-        strict=False,
+    for i, (temp, hours) in enumerate(
+        zip(
+            optimization_data.get("indoor_temps") or [],
+            optimization_data.get("step_durations_hours") or [],
+            strict=False,
+        )
     ):
         if elapsed >= comfort_lookahead_hours:
             break
         planned.append(temp)
+        if comfort_min is not None:
+            step_floor = step_floors[i] if i < len(step_floors) else comfort_min
+            floors.append(step_floor - comfort_tolerance_c)
         elapsed += hours
     lowest = min(planned) if planned else None
     if comfort_min is None:
         return False, None, lowest
-    floor = comfort_min - comfort_tolerance_c
+    floor_now = floors[0] if floors else comfort_min - comfort_tolerance_c
     indoor = heat_data.get("indoor_temperature")
     below_now = (
         heat_data.get("indoor_temperature_source") == "sensor"
         and indoor is not None
-        and indoor < floor
+        and indoor < floor_now
     )
-    dips = lowest is not None and lowest < floor
-    if planned and planned[-1] < floor and (below_now or dips):
+    dips = any(temp < floor for temp, floor in zip(planned, floors, strict=True))
+    if planned and planned[-1] < floors[-1] and (below_now or dips):
         return True, REASON_CANNOT_KEEP_UP, lowest
     if below_now or dips:
         return True, REASON_BELOW_BAND, lowest

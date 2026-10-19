@@ -80,12 +80,32 @@ offset of −4 … +4 °C on top of it.
 | Target temperature, comfort band below/above | 20 °C, 0.3, 0.5 | The optimizer keeps the indoor temperature between target − below and target + above. Deviations are penalised quadratically (50 €/K²/h). |
 | Indoor temperature sensor | — | Strongly recommended. Without it the optimizer assumes the room is at its target temperature and calibration is disabled. An unavailable sensor raises a repair issue. |
 | Window and door contacts | — | Optional binary sensors; periods with an open window are left out of calibration. |
+| Home schedule | — | Optional [schedule helper](https://www.home-assistant.io/integrations/schedule/), on while someone is home. See [Away periods](#away-periods). |
+| Away setback | 2 °C | How far the bottom of the comfort band drops while the home schedule is off. |
 | Calibration | Observe | Off / Observe / Apply, see [Calibration](calibration.md). |
 | Own heating curve (warm/cold end) | empty | Only for a separate heating circuit with its own curve. Fill both or neither. |
 
 The first zone is the primary zone; its setpoints are exposed as number and
 climate entities. Additional zones each get their own device with offset,
 supply temperature, planned indoor temperature, savings and heat demand.
+
+### Away periods
+
+With a home schedule the comfort floor follows the schedule: every planning
+step that ends while the schedule is off may drop to `target − below −
+away setback`. The top of the band stays where it is. Because the optimizer
+reads the whole weekly schedule, it knows when you come back and reheats in
+the cheapest hours before the schedule switches on, instead of heating hard
+at whatever price the moment you return.
+
+Lowering the target with an automation when you leave does not do this:
+the optimizer then only learns about the return when the target goes back
+up, with the room already below the band.
+
+In a heavy, well-insulated house the room cools slowly, so an away period
+mostly gives the optimizer freedom to skip expensive hours; the energy
+saved by the lower temperature itself is small. If the schedule cannot be
+read, a repair issue appears and the full band applies all the time.
 
 !!! note "Several zones on one heat pump"
     Each zone is optimized independently, as its own heating circuit. The
