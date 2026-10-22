@@ -10,6 +10,7 @@ from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.entity_component import DATA_INSTANCES
 from homeassistant.setup import async_setup_component
 
 from custom_components.heating_curve_optimizer.const import DOMAIN
@@ -536,6 +537,12 @@ async def test_home_schedule_lowers_the_floor_while_away(
     assert len(data["comfort_mins"]) == len(data["indoor_temps"])
     issues = ir.async_get(hass).issues
     assert (DOMAIN, f"comfort_schedule_unavailable_{entry.entry_id}") not in issues
+
+    # The schedule helper's timer for its next switch outlives the test
+    # unless the entity is removed.
+    schedule = hass.data[DATA_INSTANCES]["schedule"].get_entity("schedule.home")
+    assert schedule is not None
+    await schedule.async_remove()
 
 
 async def test_unreadable_home_schedule_keeps_the_full_band_and_raises_issue(
