@@ -85,12 +85,18 @@ really adds.
 
 ### One or two thermal masses (phase 4)
 
-The model uses one thermal mass. The *Model accuracy* sensor checks whether
-that is enough: if its prediction errors are strongly correlated from hour
-to hour (`two_mass_suspected: true`, typically with floor heating in a
-heavy screed), the building responds with a fast and a slow part that one
-mass cannot describe. This is a diagnosis only; the optimizer keeps the
-single-mass model.
+The building fit is a one-node model of the room air. The *Model accuracy*
+sensor checks whether that is enough: if its prediction errors are strongly
+correlated from hour to hour (`two_mass_suspected: true`, typically with
+floor heating in a heavy screed), the building responds with a fast and a
+slow part that one mass cannot describe. The remedy is the zone's
+*Building model: Mass + air* (see [How it works](algorithm.md#mass-air-opt-in-per-zone)).
+
+With the mass-air model the building fit is shown but not used: the
+thermal mass the air appears to have is not the mass the heat pump heats.
+The zone keeps the label-based `UA`, `C`, solar factor and internal gains
+(attribute `building_fit_used: false`); the COP curve, the COP scale and
+the emitter curve still apply.
 
 ## Quality checks
 

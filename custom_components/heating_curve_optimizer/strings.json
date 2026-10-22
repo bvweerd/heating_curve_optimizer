@@ -63,7 +63,7 @@
               "k_factor": "Typically 0.08-0.12: how fast COP drops with higher supply temperature.",
               "outdoor_temp_coefficient": "Typically 0.05-0.10.",
               "cop_compensation_factor": "Scales the modelled COP to your measured COP (1.0 = datasheet).",
-              "heat_pump_max_thermal_power_kw": "Optional. Rated heating capacity. Empty: 1.3x the heat loss at the design outdoor temperature.",
+              "heat_pump_max_thermal_power_kw": "Optional. Rated heating capacity at 7 °C outdoor (A7/W35); lower in colder air. Empty: 1.3x the heat loss at the design outdoor temperature.",
               "heat_pump_control": "Own thermostat: the heat pump stops on its own room thermostat at the target; the plan only sets the offset. Follows the plan: an automation switches the heat pump with the *Plan active* binary sensor; the plan then also decides when it runs.",
               "min_run_minutes": "With *Follows the plan*: every run lasts at least this long, to spare the compressor.",
               "min_off_minutes": "With *Follows the plan*: every pause lasts at least this long."
@@ -104,6 +104,7 @@
               "cycling_penalty_weight": "Cycling penalty weight",
               "hard_floor_penalty": "Hard floor penalty",
               "feed_in_price_fallback": "Feed-in price fallback",
+              "house_base_load_w": "House base load",
               "offset_min": "Minimum offset",
               "offset_max": "Maximum offset",
               "heatpump_headroom": "Heat pump headroom"
@@ -113,6 +114,7 @@
               "cycling_penalty_weight": "Penalty for offset changes between steps. Higher values produce more stable plans with less switching.",
               "hard_floor_penalty": "Penalty in EUR when indoor temperature falls far below comfort minimum. Prevents deep undershoot.",
               "feed_in_price_fallback": "Fallback feed-in price when no production price sensor is configured.",
+              "house_base_load_w": "Average household consumption besides the heat pump. It is taken off the PV forecast before the rest counts as surplus for heating.",
               "offset_min": "Lowest heating curve offset the optimizer may use.",
               "offset_max": "Highest heating curve offset the optimizer may use.",
               "heatpump_headroom": "Assumed heat pump capacity as a ratio of emitter design-point output. 1.3 means 30% overcapacity."
@@ -283,7 +285,7 @@
               "k_factor": "Typically 0.08-0.12: how fast COP drops with higher supply temperature.",
               "outdoor_temp_coefficient": "Typically 0.05-0.10.",
               "cop_compensation_factor": "Scales the modelled COP to your measured COP (1.0 = datasheet).",
-              "heat_pump_max_thermal_power_kw": "Optional. Rated heating capacity. Empty: 1.3x the heat loss at the design outdoor temperature.",
+              "heat_pump_max_thermal_power_kw": "Optional. Rated heating capacity at 7 °C outdoor (A7/W35); lower in colder air. Empty: 1.3x the heat loss at the design outdoor temperature.",
               "heat_pump_control": "Own thermostat: the heat pump stops on its own room thermostat at the target; the plan only sets the offset. Follows the plan: an automation switches the heat pump with the *Plan active* binary sensor; the plan then also decides when it runs.",
               "min_run_minutes": "With *Follows the plan*: every run lasts at least this long, to spare the compressor.",
               "min_off_minutes": "With *Follows the plan*: every pause lasts at least this long."
@@ -324,6 +326,7 @@
               "cycling_penalty_weight": "Cycling penalty weight",
               "hard_floor_penalty": "Hard floor penalty",
               "feed_in_price_fallback": "Feed-in price fallback",
+              "house_base_load_w": "House base load",
               "offset_min": "Minimum offset",
               "offset_max": "Maximum offset",
               "heatpump_headroom": "Heat pump headroom"
@@ -333,6 +336,7 @@
               "cycling_penalty_weight": "Penalty for offset changes between steps. Higher values produce more stable plans with less switching.",
               "hard_floor_penalty": "Penalty in EUR when indoor temperature falls far below comfort minimum. Prevents deep undershoot.",
               "feed_in_price_fallback": "Fallback feed-in price when no production price sensor is configured.",
+              "house_base_load_w": "Average household consumption besides the heat pump. It is taken off the PV forecast before the rest counts as surplus for heating.",
               "offset_min": "Lowest heating curve offset the optimizer may use.",
               "offset_max": "Highest heating curve offset the optimizer may use.",
               "heatpump_headroom": "Assumed heat pump capacity as a ratio of emitter design-point output. 1.3 means 30% overcapacity."

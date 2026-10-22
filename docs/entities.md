@@ -17,7 +17,7 @@ and English entity names.
 | `sensor.…_optimized_supply_temperature` | °C | Planned supply temperature now. | `supply_temps`, `baseline_supply_temps` |
 | `sensor.…_planned_indoor_temperature` | °C | Disabled diagnostic. Predicted indoor temperature at the end of the current step. | `indoor_temps`, `baseline_indoor_temps`, `comfort_min/max` |
 | `sensor.…_heat_buffer` | kWh | Heat stored above the comfort floor (with *Mass + air*: in the thermal mass, above what holds the air at the floor). | `forecast` |
-| `sensor.…_cost_savings_forecast` | EUR | Disabled diagnostic. Expected savings over the horizon vs. the plain curve. | `optimized_cost_eur`, `baseline_cost_eur`, `horizon_hours` |
+| `sensor.…_cost_savings_forecast` | EUR | Disabled diagnostic. Expected savings over the horizon vs. the plain curve. | `optimized_cost_eur`, `baseline_cost_eur`, `horizon_hours`, `comfort_deficit_kh`, `baseline_comfort_deficit_kh` |
 | `sensor.…_total_cost_savings` | EUR | Disabled diagnostic. Running total of realised modelled savings (can decrease). | |
 | `sensor.…_real_time_heating_curve_offset` | °C | Only with grid sensors: plan + PV-surplus adjustment. | `planned_offset`, `adjustment`, `current_grid_w` |
 | `number.…_target_indoor_temperature` | °C | Primary zone setpoint (15–25). | |

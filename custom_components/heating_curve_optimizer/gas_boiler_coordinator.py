@@ -267,8 +267,15 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if outdoor_temp is None or supply_temp is None:
             raise _update_failed("gas_boiler_operating_point_unavailable")
 
-        heatpump = HeatPumpConfig.from_config(self.config)
-        cop = heatpump.cop_at(supply_temp=supply_temp, outdoor_temp=outdoor_temp)
+        # The optimizer's own COP for this step: the same (possibly
+        # calibrated) model, at the planned supply and forecast weather.
+        planned_cops = optimization_data.get("cop") or []
+        if planned_cops and planned_cops[0] > 0:
+            cop = float(planned_cops[0])
+        else:
+            cop = HeatPumpConfig.from_config(self.config).cop_at(
+                supply_temp=supply_temp, outdoor_temp=outdoor_temp
+            )
         heat_pump_cost_eur_per_kwh = electricity_price / cop
 
         boiler = GasBoilerConfig.from_config(self.config)

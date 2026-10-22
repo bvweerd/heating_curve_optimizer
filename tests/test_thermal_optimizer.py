@@ -17,11 +17,9 @@ from custom_components.heating_curve_optimizer.building_model import (
     EmitterConfig,
 )
 from custom_components.heating_curve_optimizer.heatpump_model import HeatPumpConfig
-from custom_components.heating_curve_optimizer.helpers import (
-    calculate_supply_temperature,
-)
+from custom_components.heating_curve_optimizer.helpers import offset_ramp
 from custom_components.heating_curve_optimizer.thermal_optimizer import (
-    comfort_penalty,
+    ThermalModel,
     optimize_thermal_schedule,
 )
 
@@ -64,12 +62,15 @@ def test_optimizer_conserves_energy_along_chosen_path():
 
     t_in = 20.0
     for t in range(horizon):
-        next_t = building.next_indoor_temp(
-            t_in,
-            outdoor_temp=outdoor[t],
-            heat_input_kw=result.thermal_power_kw[t],
-            step_hours=1.0,
-        )
+        # The optimizer integrates in quarter-hour substeps.
+        next_t = t_in
+        for _ in range(4):
+            next_t = building.next_indoor_temp(
+                next_t,
+                outdoor_temp=outdoor[t],
+                heat_input_kw=result.thermal_power_kw[t],
+                step_hours=0.25,
+            )
         assert next_t == pytest.approx(result.indoor_temps[t], abs=2e-3)
         t_in = next_t
 
@@ -126,9 +127,10 @@ def test_out_of_range_current_offset_does_not_raise():
 
 
 def test_own_thermostat_stops_heat_above_target():
-    """A heat pump with its own room thermostat delivers no heat once the
-    room is 0.3 K above the target, whatever the curve could still give,
-    and the plan has no "pump off" of its own."""
+    """A heat pump with its own room thermostat delivers no heat while the
+    room is above the middle of the thermostat's band (target + 0.15 K),
+    whatever the curve could still give, and then holds it there; the plan
+    has no "pump off" of its own."""
     building, heatpump, emitter = _make_system(comfort_min=19.5, comfort_max=20.5)
     building.target_temp = 20.0
 
@@ -136,25 +138,55 @@ def test_own_thermostat_stops_heat_above_target():
         building=building,
         heatpump=heatpump,
         emitter=emitter,
-        outdoor_temps=[5.0] * 4,
-        prices=[0.25] * 4,
-        initial_indoor_temp=20.4,  # > target + 0.3
+        outdoor_temps=[5.0] * 16,
+        prices=[0.25] * 16,
+        initial_indoor_temp=20.4,
         water_min=25.0,
         water_max=45.0,
         outdoor_min=-20.0,
         outdoor_max=15.0,
-        time_base=60,
+        time_base=15,
+        offset_delta_t=15,
         pump_follows_plan=False,
     )
 
     assert result.thermal_power_kw[0] == pytest.approx(0.0)
     # No heat delivered means the plan does not report the pump as on.
     assert not result.pump_on[0]
+    # Once there, the thermostat holds the room at target + 0.15 K, even at
+    # the highest offset.
+    assert max(result.indoor_temps[8:]) <= 20.15 + 1e-3
+    assert any(power > 0 for power in result.thermal_power_kw)
     # Without a plan-driven off, coasting is the thermostat's doing only.
     assert all(
         on == (power > 0)
         for on, power in zip(result.pump_on, result.thermal_power_kw, strict=True)
     )
+
+
+def test_own_thermostat_full_output_below_its_band():
+    """Below the thermostat's band the curve delivers its full output: the
+    output is not tapered down near the target, so in cold weather the
+    room can still be warmed up to the thermostat's hold point."""
+    building, heatpump, emitter = _make_system(comfort_min=19.5, comfort_max=20.5)
+    building.target_temp = 20.0
+    common = {
+        "building": building,
+        "heatpump": heatpump,
+        "emitter": emitter,
+        "outdoor_temps": [-5.0] * 8,
+        "prices": [0.10] * 4 + [0.50] * 4,
+        "initial_indoor_temp": 19.9,
+        "water_min": 25.0,
+        "water_max": 45.0,
+        "outdoor_min": -10.0,
+        "outdoor_max": 15.0,
+        "time_base": 60,
+        "pump_follows_plan": False,
+    }
+    result = optimize_thermal_schedule(**common)
+    # Cheap first: the plan warms the room up to the hold point.
+    assert max(result.indoor_temps[:4]) == pytest.approx(20.15, abs=0.02)
 
 
 def _a_plus_underfloor() -> tuple[BuildingConfig, HeatPumpConfig, EmitterConfig]:
@@ -325,7 +357,9 @@ def test_undersized_heat_pump_heats_at_maximum():
     emitter = EmitterConfig.sized_to_building(
         building, design_outdoor_temp=-10.0, design_supply_temp=45.0
     )
-    undersized_heatpump = HeatPumpConfig(max_thermal_power_kw=0.5)
+    undersized_heatpump = HeatPumpConfig(
+        max_thermal_power_kw=0.5, capacity_rating_temp=-15.0
+    )
     horizon = 12
 
     result = optimize_thermal_schedule(
@@ -481,12 +515,52 @@ def test_higher_price_never_increases_thermal_power_same_step():
     assert high_result.thermal_power_kw[3] <= base_result.thermal_power_kw[3] + 1e-9
 
 
-def test_dp_matches_brute_force_on_small_horizon():
+def _brute_force_best(model, *, horizon, offsets, max_change, hold, ramp0, cycling):
+    """Cheapest action sequence by exhaustive enumeration (None = pump off).
+
+    A change of offset needs `hold` full periods since the last change,
+    as the DP's ramp mode does.
+    """
+    terminal = model.terminal_value_fn()
+
+    def objective(sequence):
+        t_in = model.mass_for_air(0, 20.0)
+        prev, ramp, total = 0, ramp0, 0.0
+        for t, action in enumerate(sequence):
+            if action is None:
+                outcome = model.step(t, t_in, prev, pump_on=False)
+                ramp = min(hold, ramp + 1)
+            else:
+                if action != prev:
+                    if ramp < hold or abs(action - prev) > max_change:
+                        return math.inf
+                    ramp = 1
+                else:
+                    ramp = min(hold, ramp + 1)
+                outcome = model.step(t, t_in, action)
+                total += cycling * (action - prev) ** 2
+                prev = action
+            total += model.stage_cost(t, outcome)
+            t_in = outcome.next_t_in
+        return total + terminal(t_in)
+
+    best = min(
+        objective(sequence)
+        for sequence in itertools.product([None, *offsets], repeat=horizon)
+    )
+    return best, objective
+
+
+@pytest.mark.parametrize(
+    ("time_base", "offset_delta_t", "durations"),
+    [(60, 60, None), (15, 30, None), (60, 30, [0.5, 1.0, 1.0, 1.0])],
+)
+def test_dp_matches_brute_force_on_small_horizon(time_base, offset_delta_t, durations):
     """Cross-check the DP search against exhaustive enumeration of every
-    rate-limit-respecting offset sequence, simulated with the same
-    continuous physics and scored with the same objective. The DP works
-    on an interpolated value function, so its plan may be marginally
-    worse than the true optimum, but never by more than a small margin."""
+    ramp-respecting action sequence, simulated with the same model and
+    scored with the same objective. The DP works on an interpolated value
+    function, so its plan may be marginally worse than the true optimum,
+    but never by more than a small margin."""
     building = BuildingConfig(
         area_m2=100, energy_label="C", comfort_min=19.5, comfort_max=20.5
     )
@@ -498,117 +572,218 @@ def test_dp_matches_brute_force_on_small_horizon():
     horizon = 4
     outdoor = [2.0, 0.0, 4.0, 1.0]
     prices = [0.10, 0.35, 0.15, 0.30]
-    kwargs = {
+    hours = durations or [time_base / 60] * horizon
+    curve = {
         "water_min": 20.0,
         "water_max": 45.0,
         "outdoor_min": -20.0,
         "outdoor_max": 15.0,
-        "comfort_penalty_weight": 50.0,
-        "cycling_penalty_weight": 0.01,
     }
-    initial_indoor_temp = 20.0
-
     result = optimize_thermal_schedule(
         building=building,
         heatpump=heatpump,
         emitter=emitter,
         outdoor_temps=outdoor,
         prices=prices,
-        initial_indoor_temp=initial_indoor_temp,
-        time_base=60,
-        offset_delta_t=60,
+        initial_indoor_temp=20.0,
+        step_durations_hours=hours,
+        time_base=time_base,
+        offset_delta_t=offset_delta_t,
         offset_min=-2,
         offset_max=2,
         current_offset=0,
-        **kwargs,
+        comfort_penalty_weight=50.0,
+        cycling_penalty_weight=0.01,
+        **curve,
     )
 
-    base_supply = [
-        calculate_supply_temperature(
-            outdoor[t],
-            water_min=kwargs["water_min"],
-            water_max=kwargs["water_max"],
-            outdoor_min=kwargs["outdoor_min"],
-            outdoor_max=kwargs["outdoor_max"],
-        )
-        for t in range(horizon)
-    ]
-    terminal_cop = heatpump.cop_at(
-        supply_temp=base_supply[-1], outdoor_temp=outdoor[-1]
+    model = ThermalModel(
+        building=building,
+        heatpump=heatpump,
+        emitter=emitter,
+        outdoor=outdoor,
+        price=prices,
+        solar=[0.0] * horizon,
+        pv=[0.0] * horizon,
+        feed_in=[0.07] * horizon,
+        humidity=[80.0] * horizon,
+        floors=[building.comfort_min] * horizon,
+        durations=hours,
+        comfort_penalty_weight=50.0,
+        hard_floor_penalty=1000.0,
+        state_margin=1.5,
+        **curve,
     )
-
-    def objective(sequence: tuple[int | None, ...]) -> float:
-        t_in = initial_indoor_temp
-        prev = 0
-        total = 0.0
-        for t, action in enumerate(sequence):
-            if action is None:
-                # Explicit "pump off": offset unchanged.
-                offset = prev
-                q = 0.0
-                supply = min(
-                    kwargs["water_max"],
-                    max(kwargs["water_min"], base_supply[t] + offset),
-                )
-            else:
-                offset = action
-                supply = min(
-                    kwargs["water_max"],
-                    max(kwargs["water_min"], base_supply[t] + offset),
-                )
-                q = min(
-                    emitter.available_power_kw(supply_temp=supply, indoor_temp=t_in),
-                    heatpump.max_thermal_power_kw,
-                )
-                # Comfort ceiling mirrored from optimize_thermal_schedule.
-                if t_in >= building.comfort_max:
-                    q = 0.0
-                elif t_in > building.comfort_max - 0.3:
-                    q *= (building.comfort_max - t_in) / 0.3
-            cop = heatpump.cop_at(supply_temp=supply, outdoor_temp=outdoor[t])
-            p_elec = q / cop if q > 0 else 0.0
-            t_in = building.next_indoor_temp(
-                t_in, outdoor_temp=outdoor[t], heat_input_kw=q, step_hours=1.0
-            )
-            total += (
-                p_elec * prices[t]
-                + comfort_penalty(
-                    t_in,
-                    comfort_min=building.comfort_min,
-                    comfort_max=building.comfort_max,
-                    weight=kwargs["comfort_penalty_weight"],
-                    hard_floor=building.comfort_min - 1.5,
-                )
-                + (
-                    0.0
-                    if action is None
-                    else kwargs["cycling_penalty_weight"] * (offset - prev) ** 2
-                )
-            )
-            if action is not None:
-                prev = offset
-        return total - (t_in - building.comfort_min) * (
-            building.thermal_mass_kwh_per_k * prices[-1] / terminal_cop
-        )
-
-    actions = [None, -2, -1, 0, 1, 2]
-    best = math.inf
-    for sequence in itertools.product(actions, repeat=horizon):
-        prev = 0
-        valid = True
-        for action in sequence:
-            if action is not None and abs(action - prev) > 1:
-                valid = False
-                break
-            if action is not None:
-                prev = action
-        if valid:
-            best = min(best, objective(sequence))
-
+    max_change, hold = offset_ramp(time_base, offset_delta_t)
+    # The brute force counts every step; the half-hour first step of the
+    # last case must not count, so it is checked with that step held.
+    best, objective = _brute_force_best(
+        model,
+        horizon=horizon,
+        offsets=range(-2, 3),
+        max_change=max_change,
+        hold=hold,
+        ramp0=hold,
+        cycling=0.01,
+    )
     dp_sequence = tuple(
         None if not result.pump_on[t] else result.offsets[t] for t in range(horizon)
     )
     assert objective(dp_sequence) <= best + 0.02
+
+
+def test_ramp_limit_holds_in_real_time():
+    """Quarter-hour periods at 30 min/K: one 1 K change per two periods
+    (2 K per hour), not one per period; a change the previous run made
+    still holds back the next one."""
+    building, heatpump, emitter = _a_plus_underfloor()
+    horizon = 16
+    common = {
+        "building": building,
+        "heatpump": heatpump,
+        "emitter": emitter,
+        # Cheap, then very expensive: the plan wants to swing the offset.
+        "outdoor_temps": [0.0] * horizon,
+        "prices": [0.05] * 8 + [0.80] * 8,
+        "initial_indoor_temp": 19.8,
+        "water_min": 27.0,
+        "water_max": 33.0,
+        "outdoor_min": -10.0,
+        "outdoor_max": 18.0,
+        "time_base": 15,
+        "offset_delta_t": 30,
+        "current_offset": -4,
+    }
+
+    def changes(offsets, start):
+        sequence = [start, *offsets]
+        return [i for i in range(1, len(sequence)) if sequence[i] != sequence[i - 1]]
+
+    result = optimize_thermal_schedule(**common)
+    steps = changes(result.offsets, -4)
+    assert steps
+    assert all(b - a >= 2 for a, b in itertools.pairwise(steps))
+    assert all(abs(b - a) <= 1 for a, b in itertools.pairwise([-4, *result.offsets]))
+
+    held = optimize_thermal_schedule(**common, initial_ramp_steps=1)
+    assert held.offsets[0] == -4
+
+
+def test_partial_first_step_does_not_count_towards_minimums():
+    """A first step shorter than a period (the rest of the current one)
+    does not count: a run that has just started still lasts the full
+    minimum of four periods after it, however expensive."""
+    building, heatpump, emitter = _a_plus_underfloor()
+    horizon = 12
+    result = optimize_thermal_schedule(
+        building=building,
+        heatpump=heatpump,
+        emitter=emitter,
+        outdoor_temps=[10.0] * horizon,
+        prices=[1.00] * horizon,
+        initial_indoor_temp=20.2,
+        water_min=27.0,
+        water_max=33.0,
+        outdoor_min=-10.0,
+        outdoor_max=18.0,
+        time_base=15,
+        offset_delta_t=7,
+        step_durations_hours=[0.05] + [0.25] * (horizon - 1),
+        min_on_steps=4,
+        min_off_steps=4,
+        initial_pump_on=True,
+        initial_mode_steps=0,
+    )
+    assert result.pump_on[:5] == [True] * 5
+    assert result.pump_on[5] is False
+
+
+def test_terminal_value_is_concave_and_needs_heat_demand():
+    """Stored heat is worth less per kelvin the more there is (it leaks
+    while it is used up) and nothing when the house needs no heat."""
+    building, heatpump, emitter = _make_system()
+
+    def terminal(outdoor):
+        model = ThermalModel(
+            building=building,
+            heatpump=heatpump,
+            emitter=emitter,
+            outdoor=[outdoor] * 4,
+            price=[0.30] * 4,
+            solar=[0.0] * 4,
+            pv=[0.0] * 4,
+            feed_in=[0.07] * 4,
+            humidity=[80.0] * 4,
+            floors=[building.comfort_min] * 4,
+            durations=[1.0] * 4,
+            water_min=25.0,
+            water_max=45.0,
+            outdoor_min=-20.0,
+            outdoor_max=15.0,
+            comfort_penalty_weight=50.0,
+            hard_floor_penalty=1000.0,
+            state_margin=1.5,
+        )
+        return model.terminal_value_fn()
+
+    cold = terminal(0.0)
+    floor = building.comfort_min
+    first = cold(floor + 0.5) - cold(floor)
+    second = cold(floor + 1.0) - cold(floor + 0.5)
+    assert first < second < 0  # value, as a negative cost, with less gain
+    # A deficit costs linearly.
+    assert cold(floor) == pytest.approx(0.0)
+    assert cold(floor - 1.0) == pytest.approx(2 * cold(floor - 0.5))
+    assert cold(floor - 1.0) > 0
+    warm = terminal(25.0)
+    assert warm(floor + 1.0) == 0.0
+
+
+def test_measured_air_offset_fades_out():
+    """A measured room temperature off the model's air (mass-air) is the
+    start of the plan, and the difference fades over a few hours."""
+    building, heatpump, emitter = _make_system()
+    building.air_coupling_kw_per_k = 8.0
+    model = ThermalModel(
+        building=building,
+        heatpump=heatpump,
+        emitter=emitter,
+        outdoor=[5.0] * 4,
+        price=[0.25] * 4,
+        solar=[0.0] * 4,
+        pv=[0.0] * 4,
+        feed_in=[0.07] * 4,
+        humidity=[80.0] * 4,
+        floors=[building.comfort_min] * 4,
+        durations=[3.0] * 4,
+        water_min=25.0,
+        water_max=45.0,
+        outdoor_min=-20.0,
+        outdoor_max=15.0,
+        comfort_penalty_weight=50.0,
+        hard_floor_penalty=1000.0,
+        state_margin=1.5,
+        initial_air_offset=-0.5,
+    )
+    mass = 20.5
+    plain_air = building.air_temp(mass, outdoor_temp=5.0)
+    assert model.air(0, mass, 0.0) == pytest.approx(plain_air - 0.5)
+    assert model.air(0, mass, 3.0) == pytest.approx(plain_air - 0.5 / math.e)
+    assert model.mass_for_air(0, plain_air - 0.5, 0.0) == pytest.approx(mass)
+
+    common = {
+        "building": building,
+        "heatpump": heatpump,
+        "emitter": emitter,
+        "outdoor_temps": [5.0] * 12,
+        "prices": [0.25] * 12,
+        "initial_indoor_temp": 20.0,
+        "initial_mass_temp": mass,
+        "time_base": 60,
+    }
+    plain = optimize_thermal_schedule(**common)
+    shifted = optimize_thermal_schedule(**common, initial_air_offset=-0.5)
+    assert shifted.indoor_temps[0] < plain.indoor_temps[0] - 0.1
 
 
 def test_away_setback_coasts_and_is_back_in_band_on_return():

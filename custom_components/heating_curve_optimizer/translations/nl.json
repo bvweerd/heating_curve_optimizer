@@ -63,7 +63,7 @@
               "k_factor": "Typisch 0,08-0,12: hoe snel de COP daalt bij hogere aanvoertemperatuur.",
               "outdoor_temp_coefficient": "Typisch 0,05-0,10.",
               "cop_compensation_factor": "Schaalt de gemodelleerde COP naar je gemeten COP (1,0 = datablad).",
-              "heat_pump_max_thermal_power_kw": "Optioneel. Nominaal verwarmingsvermogen. Leeg: 1,3x het warmteverlies bij de ontwerp-buitentemperatuur.",
+              "heat_pump_max_thermal_power_kw": "Optioneel. Nominaal verwarmingsvermogen bij 7 °C buiten (A7/W35); lager bij koudere lucht. Leeg: 1,3x het warmteverlies bij de ontwerp-buitentemperatuur.",
               "heat_pump_control": "Eigen thermostaat: de warmtepomp stopt op zijn eigen ruimtethermostaat bij de doeltemperatuur; het plan zet alleen de offset. Volgt de planning: een automatisering schakelt de warmtepomp met de binaire sensor *Planning actief*; het plan bepaalt dan ook wanneer hij draait.",
               "min_run_minutes": "Bij *Volgt de planning*: elke run duurt minstens zo lang, om de compressor te sparen.",
               "min_off_minutes": "Bij *Volgt de planning*: elke pauze duurt minstens zo lang."
@@ -104,6 +104,7 @@
               "cycling_penalty_weight": "Schakelstraf gewicht",
               "hard_floor_penalty": "Harde vloerstraf",
               "feed_in_price_fallback": "Terugleverprijs terugval",
+              "house_base_load_w": "Basisverbruik huis",
               "offset_min": "Minimum offset",
               "offset_max": "Maximum offset",
               "heatpump_headroom": "Warmtepomp overcapaciteit"
@@ -113,6 +114,7 @@
               "cycling_penalty_weight": "Straf voor offset-wisselingen tussen stappen. Hogere waarden produceren stabielere plannen.",
               "hard_floor_penalty": "Straf in EUR als de binnentemperatuur ver onder het comfort-minimum zakt.",
               "feed_in_price_fallback": "Terugvalwaarde terugleverpijs als er geen productieprijs-sensor is geconfigureerd.",
+              "house_base_load_w": "Gemiddeld verbruik van het huishouden naast de warmtepomp. Dit gaat van de PV-verwachting af voordat de rest als overschot voor verwarming telt.",
               "offset_min": "Laagste stooklijn-offset die de optimizer mag gebruiken.",
               "offset_max": "Hoogste stooklijn-offset die de optimizer mag gebruiken.",
               "heatpump_headroom": "Veronderstelde capaciteit warmtepomp als verhouding tot het ontwerppunt van de emitter. 1,3 betekent 30% overcapaciteit."
@@ -283,7 +285,7 @@
               "k_factor": "Typisch 0,08-0,12: hoe snel de COP daalt bij hogere aanvoertemperatuur.",
               "outdoor_temp_coefficient": "Typisch 0,05-0,10.",
               "cop_compensation_factor": "Schaalt de gemodelleerde COP naar je gemeten COP (1,0 = datablad).",
-              "heat_pump_max_thermal_power_kw": "Optioneel. Nominaal verwarmingsvermogen. Leeg: 1,3x het warmteverlies bij de ontwerp-buitentemperatuur.",
+              "heat_pump_max_thermal_power_kw": "Optioneel. Nominaal verwarmingsvermogen bij 7 °C buiten (A7/W35); lager bij koudere lucht. Leeg: 1,3x het warmteverlies bij de ontwerp-buitentemperatuur.",
               "heat_pump_control": "Eigen thermostaat: de warmtepomp stopt op zijn eigen ruimtethermostaat bij de doeltemperatuur; het plan zet alleen de offset. Volgt de planning: een automatisering schakelt de warmtepomp met de binaire sensor *Planning actief*; het plan bepaalt dan ook wanneer hij draait.",
               "min_run_minutes": "Bij *Volgt de planning*: elke run duurt minstens zo lang, om de compressor te sparen.",
               "min_off_minutes": "Bij *Volgt de planning*: elke pauze duurt minstens zo lang."
@@ -324,6 +326,7 @@
               "cycling_penalty_weight": "Schakelstraf gewicht",
               "hard_floor_penalty": "Harde vloerstraf",
               "feed_in_price_fallback": "Terugleverprijs terugval",
+              "house_base_load_w": "Basisverbruik huis",
               "offset_min": "Minimum offset",
               "offset_max": "Maximum offset",
               "heatpump_headroom": "Warmtepomp overcapaciteit"
@@ -333,6 +336,7 @@
               "cycling_penalty_weight": "Straf voor offset-wisselingen tussen stappen. Hogere waarden produceren stabielere plannen.",
               "hard_floor_penalty": "Straf in EUR als de binnentemperatuur ver onder het comfort-minimum zakt.",
               "feed_in_price_fallback": "Terugvalwaarde terugleverpijs als er geen productieprijs-sensor is geconfigureerd.",
+              "house_base_load_w": "Gemiddeld verbruik van het huishouden naast de warmtepomp. Dit gaat van de PV-verwachting af voordat de rest als overschot voor verwarming telt.",
               "offset_min": "Laagste stooklijn-offset die de optimizer mag gebruiken.",
               "offset_max": "Hoogste stooklijn-offset die de optimizer mag gebruiken.",
               "heatpump_headroom": "Veronderstelde capaciteit warmtepomp als verhouding tot het ontwerppunt van de emitter. 1,3 betekent 30% overcapaciteit."

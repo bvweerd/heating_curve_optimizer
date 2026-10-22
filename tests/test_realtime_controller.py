@@ -281,3 +281,23 @@ def test_export_import_cycle_with_heat_pump_does_not_flap():
     # Never steps back down while the heat pump runs on surplus.
     assert all(b >= a for a, b in itertools.pairwise(results))
     assert results[-1] == 2
+
+
+def test_export_worth_more_than_storage_does_not_raise():
+    """Raising only pays when stored heat saves more than exporting earns:
+    shadow price above feed-in price / COP."""
+    controller = RealtimeController(RealtimeControllerConfig())
+    adjustment = controller.calculate_adjustment(
+        current_grid_w=-1500.0,
+        shadow_price_eur_per_kwh=0.015,
+        export_value_eur_per_kwh=0.07 / 4.0,
+        max_adjustment=2,
+    )
+    assert adjustment == 0
+    adjustment = controller.calculate_adjustment(
+        current_grid_w=-1500.0,
+        shadow_price_eur_per_kwh=0.03,
+        export_value_eur_per_kwh=0.07 / 4.0,
+        max_adjustment=2,
+    )
+    assert adjustment == 1

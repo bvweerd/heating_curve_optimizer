@@ -100,6 +100,22 @@ Set this to your actual feed-in tariff if you do not have a price sensor for
 it. In the Netherlands typical net-metering-equivalent values are 0.05–0.10
 EUR/kWh; countries without net metering may use values as low as 0.02.
 
+
+---
+
+### `house_base_load_w`
+
+| | |
+|---|---|
+| Default | `300` W |
+| Range | 0–5000 W |
+
+Average household consumption besides the heat pump. The PV forecast minus
+this load is what the optimizer counts as surplus for heating (priced at
+the feed-in price); with several heating zones the surplus is shared
+equally over them. Set it to your typical daytime consumption: too low
+makes the plan heat at midday on electricity the house itself uses, too
+high ignores real surplus.
 ---
 
 ### `offset_min` / `offset_max`
@@ -460,7 +476,7 @@ diagnostic flag is set. If the building model's one-step prediction errors
 are correlated above this threshold, it suggests the building has two
 distinct thermal masses (e.g., light walls plus a heavy concrete floor
 slab) that the single-mass model cannot fully capture. This is informational
-only; the optimizer continues using the single-mass model.
+only; switch the zone to *Building model: Mass + air* to model it.
 
 **Lower** (e.g., to 0.4) to flag the condition more readily. **Raise** to
 0.8 if you only want the flag set for clear-cut two-mass situations.

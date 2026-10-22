@@ -90,6 +90,7 @@ from .const import (
     CONF_HEAT_CURVE_MIN_OUTDOOR,
     CONF_HEAT_PUMP_CONTROL,
     CONF_HEATPUMP_HEADROOM,
+    CONF_HOUSE_BASE_LOAD_W,
     CONF_IDLE_POWER_THRESHOLD_KW,
     CONF_INDOOR_TEMPERATURE_SENSOR,
     CONF_MIN_OFF_MINUTES,
@@ -133,6 +134,7 @@ from .const import (
     DEFAULT_HEAT_CURVE_MIN_OUTDOOR,
     DEFAULT_HEAT_PUMP_CONTROL,
     DEFAULT_HEATPUMP_HEADROOM,
+    DEFAULT_HOUSE_BASE_LOAD_W,
     DEFAULT_IDLE_POWER_THRESHOLD_KW,
     DEFAULT_MIN_OFF_MINUTES,
     DEFAULT_MIN_RUN_MINUTES,
@@ -158,8 +160,8 @@ from .helpers import (
     extract_price_forecast_with_timestamps,
     get_sensor_value,
     heat_is_measured,
-    max_offset_change,
     measured_heat_kw,
+    offset_ramp,
     read_power_kw,
     resample_to_steps,
     schedule_is_on,
@@ -186,8 +188,36 @@ ACCURACY_MATCH_TOLERANCE = timedelta(minutes=30)
 ACCURACY_WINDOW = timedelta(hours=24)
 # How often the mass-air coupling is relearned from the history.
 MASS_LEARN_INTERVAL = timedelta(hours=6)
+# Shortest horizon worth planning: below it the last known price is held.
+MIN_HORIZON = timedelta(hours=6)
 # A larger supply-return spread means a lagging sensor, not a steady state.
 MAX_WATER_DELTA_T = 20.0
+# A measured-minus-modelled air difference beyond this is a broken sensor
+# or a model far off, not something to plan around.
+MAX_AIR_OFFSET_K = 2.0
+
+
+def hourly_means(values: list[float]) -> list[float]:
+    """Interval means of a series of on-the-hour (instantaneous) values.
+
+    open-meteo reports temperature and humidity *at* each hour; the step
+    grid treats every value as the mean of the hour that follows. The
+    midpoint of two consecutive readings is that mean (to first order);
+    the last value has no successor and is kept.
+    """
+    return [
+        (value + values[i + 1]) / 2 if i + 1 < len(values) else value
+        for i, value in enumerate(values)
+    ]
+
+
+def pv_surplus(
+    production_kw: list[float], base_load_kw: float, zone_count: int
+) -> list[float]:
+    """PV available for heating: production minus the household base load,
+    shared over the zones (they run on one heat pump)."""
+    share = max(1, zone_count)
+    return [max(0.0, kw - base_load_kw) / share for kw in production_kw]
 
 
 def _plan_run_advice(
@@ -241,11 +271,13 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         *,
         subentry_id: str | None = None,
         calibration_allowed: bool = True,
+        zone_count: int = 1,
     ) -> None:
         """Initialize the optimization coordinator.
 
         ``calibration_allowed`` is False when several zones share one heat
         pump: its power cannot be attributed to a single zone.
+        ``zone_count``: zones sharing the heat pump (and the PV surplus).
         """
         super().__init__(
             hass,
@@ -265,6 +297,9 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_heat_indoor: float | None = None
         self._last_heat_source: str | None = None
         self._current_offset = 0
+        self._zone_count = zone_count
+        # When the published offset last changed (ramp limit across runs).
+        self._offset_changed_at: datetime | None = None
         # The published on/off advice and since when (plan-driven pump).
         self._plan_on: bool | None = None
         self._plan_on_since: datetime | None = None
@@ -566,13 +601,27 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         discharge_w = self._battery_discharge_w()
         offsets = data.get("offsets") or [0]
         power_kw = read_power_kw(self.hass, self.config.get(CONF_POWER_CONSUMPTION))
+        cops = data.get("cop") or []
+        feed_in = data.get("feed_in_prices") or []
+        feed_in_now = (
+            float(feed_in[0])
+            if feed_in
+            else float(
+                self.config.get(
+                    CONF_FEED_IN_PRICE_FALLBACK, DEFAULT_FEED_IN_PRICE_FALLBACK
+                )
+            )
+        )
         action = self._realtime_controller.get_control_action(
             current_grid_w=grid_w + discharge_w,
             shadow_price_eur_per_kwh=data.get("shadow_price_eur_per_kwh", 0.0),
-            planned_offset=offsets[0],
-            max_adjustment=max_offset_change(
-                data.get("step_minutes", 60), self._offset_delta_t()
+            export_value_eur_per_kwh=(
+                feed_in_now / float(cops[0]) if cops and cops[0] > 0 else 0.0
             ),
+            planned_offset=offsets[0],
+            max_adjustment=offset_ramp(
+                data.get("step_minutes", 60), self._offset_delta_t()
+            )[0],
             heat_pump_running=(
                 power_kw > self._idle_power_threshold_kw
                 if power_kw is not None
@@ -684,18 +733,24 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> tuple[list[datetime], list[float]]:
         """DP step grid: one step per price period, the first starting now.
 
-        The horizon covers the planning window, rounded up to whole periods.
-
-        When the price sensor only reports the current price (a single
-        period), the grid is extended with further periods of the same
-        length so the horizon still spans the planning window.
+        The horizon covers the planning window, rounded up to whole periods,
+        but ends with the last known price: beyond it a made-up flat price
+        would only blunt the plan (the terminal value covers what follows).
+        Only when fewer than `MIN_HORIZON` of prices are known (a sensor
+        with just the current price, or late in the evening before
+        tomorrow's prices) is the last price held to reach that minimum,
+        or the planning window when it is shorter.
         """
         horizon_end = now + timedelta(
             hours=int(self.config.get(CONF_PLANNING_WINDOW, DEFAULT_PLANNING_WINDOW))
         )
         period = timedelta(minutes=interval)
         periods = list(starts)
-        while periods[-1] + period < horizon_end:
+        if len(periods) == 1:
+            plan_end = horizon_end
+        else:
+            plan_end = min(horizon_end, now + MIN_HORIZON)
+        while periods[-1] + period < plan_end:
             periods.append(periods[-1] + period)
 
         step_starts: list[datetime] = []
@@ -769,6 +824,16 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             else away_floor
             for start, hours in zip(step_starts, durations, strict=True)
         ]
+
+    def _ramp_steps(self, interval: int, now: datetime) -> int | None:
+        """Whole price periods since the published offset last changed.
+
+        None when it has not changed since startup: free to change now.
+        """
+        if self._offset_changed_at is None or interval <= 0:
+            return None
+        elapsed = (now - self._offset_changed_at).total_seconds() / 60
+        return max(0, int(elapsed // interval))
 
     def _pump_cycle(self, interval: int, now: datetime) -> dict[str, Any]:
         """Optimizer arguments for the run/pause minimums.
@@ -867,16 +932,25 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             feed_in = align(fi_prices, fi_starts[0], fi_interval)
 
         forecast_start: datetime = weather_data["forecast_start_utc"]
-        outdoor = align(weather_data["temperature_forecast"], forecast_start, 60)
+        outdoor = align(
+            hourly_means(weather_data["temperature_forecast"]), forecast_start, 60
+        )
         humidity = align(
-            weather_data.get("humidity_forecast") or [], forecast_start, 60
+            hourly_means(weather_data.get("humidity_forecast") or []),
+            forecast_start,
+            60,
         )
         solar = align(heat_data.get("solar_gain_forecast") or [], forecast_start, 60)
-        pv = align(heat_data.get("pv_production_forecast") or [], forecast_start, 60)
+        config = self.heat_coordinator.effective_config()
+        pv = pv_surplus(
+            align(heat_data.get("pv_production_forecast") or [], forecast_start, 60),
+            float(config.get(CONF_HOUSE_BASE_LOAD_W, DEFAULT_HOUSE_BASE_LOAD_W))
+            / 1000.0,
+            self._zone_count,
+        )
         if not outdoor:
             raise _update_failed("no_weather_data_for_optimization")
 
-        config = self.heat_coordinator.effective_config()
         indoor_temp = float(heat_data["indoor_temperature"])
         self._last_heat_indoor = indoor_temp
         self._last_heat_source = heat_data.get("indoor_temperature_source")
@@ -885,6 +959,9 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._mass is not None:
             self._update_mass(now)
             initial_mass = self._mass.mass_temp
+        indoor_is_measured = (
+            heat_data.get("indoor_temperature_source") == INDOOR_SOURCE_SENSOR
+        )
         result = await self.hass.async_add_executor_job(
             self._optimize,
             config,
@@ -900,16 +977,18 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             floors,
             self._pump_cycle(interval, now),
             initial_mass,
+            self._ramp_steps(interval, now),
+            indoor_is_measured,
         )
         opt: ThermalOptimizationResult = result["result"]
         building: BuildingConfig = result["building"]
 
-        self._current_offset = opt.offsets[0] if opt.offsets else 0
+        new_offset = opt.offsets[0] if opt.offsets else 0
+        if new_offset != self._current_offset:
+            self._offset_changed_at = now
+        self._current_offset = new_offset
 
         power_kw = read_power_kw(self.hass, self.config.get(CONF_POWER_CONSUMPTION))
-        indoor_is_measured = (
-            heat_data.get("indoor_temperature_source") == INDOOR_SOURCE_SENSOR
-        )
         self._track_accuracy(
             now=now,
             indoor_temp=indoor_temp,
@@ -989,8 +1068,14 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "baseline_cost_eur": opt.baseline_cost_eur,
             "baseline_total_cost_eur": opt.baseline_total_cost_eur,
             "cost_savings_eur": opt.cost_savings_eur,
+            "comfort_deficit_kh": opt.comfort_deficit_kh,
+            "baseline_comfort_deficit_kh": opt.baseline_comfort_deficit_kh,
             "shadow_price_eur_per_kwh": opt.shadow_price_eur_per_kwh,
             "prices": [round(p, 5) for p in price_series],
+            "feed_in_prices": (
+                [round(p, 5) for p in feed_in[: len(opt.offsets)]] if feed_in else None
+            ),
+            "pv_surplus_kw": [round(v, 3) for v in pv[: len(opt.offsets)]],
             "outdoor_forecast": [round(t, 1) for t in outdoor],
             "step_start_times": [s.isoformat() for s in step_starts],
             "step_durations_hours": [round(d, 4) for d in durations],
@@ -1067,10 +1152,8 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         building = BuildingConfig.from_config(config)
         calibration = self._calibration
         if (
-            self.calibration_mode() == MODE_APPLY
-            and self._calibration_allowed
+            self._building_fit_usable()
             and calibration is not None
-            and calibration.ready
             and calibration.fit is not None
         ):
             fit = calibration.fit
@@ -1086,6 +1169,23 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     # ------------------------------------------------------------------
     # Mass-air building model
     # ------------------------------------------------------------------
+
+    def _building_fit_usable(self) -> bool:
+        """Whether the applied building fit replaces the label model.
+
+        Not with the mass-air model: the fit is a one-node model of the room
+        air, whose apparent thermal mass is not the mass the heat pump
+        heats. The COP scale and the emitter curve still apply.
+        """
+        calibration = self._calibration
+        return (
+            self.calibration_mode() == MODE_APPLY
+            and self._calibration_allowed
+            and calibration is not None
+            and calibration.ready
+            and calibration.fit is not None
+            and not self._mass_model_enabled()
+        )
 
     def _mass_model_enabled(self) -> bool:
         return self.config.get(CONF_BUILDING_MODEL) == BUILDING_MODEL_MASS_AIR
@@ -1334,9 +1434,12 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self, config: dict[str, Any], emitter: EmitterConfig
     ) -> HeatPumpConfig:
         """COP curve: measured fit, else configured x learned scale."""
+        # The fallback capacity is derived from the emitter's design point,
+        # so it holds at the curve's design outdoor temperature.
         heatpump = HeatPumpConfig.from_config(
             config,
             max_thermal_power_kw=emitter.nominal_power_kw * self._heatpump_headroom,
+            fallback_rating_temp=self._curve()[2],
         )
         calibration = self._calibration
         if not self._calibration_applied() or calibration is None:
@@ -1476,11 +1579,26 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         floors: list[float] | None = None,
         pump_cycle: dict[str, Any] | None = None,
         initial_mass: float | None = None,
+        initial_ramp_steps: int | None = None,
+        indoor_is_measured: bool = False,
     ) -> dict[str, Any]:
         """Build the models and run the DP (blocking, executor)."""
         building = self.building_config(config)
         if building.area_m2 <= 0:
             raise _update_failed("missing_building_config")
+        # Mass-air: what the measured air differs from the air the mass
+        # implies (sensor placement, a draught, model error). The plan
+        # starts from the measurement and lets the difference fade.
+        air_offset = 0.0
+        if initial_mass is not None and indoor_is_measured and outdoor:
+            modelled = building.air_temp(
+                initial_mass,
+                outdoor_temp=outdoor[0],
+                solar_gain_kw=(solar[0] if solar else 0.0) * building.solar_factor,
+            )
+            air_offset = max(
+                -MAX_AIR_OFFSET_K, min(MAX_AIR_OFFSET_K, indoor_temp - modelled)
+            )
         min_supply, max_supply, min_outdoor, max_outdoor = self._curve()
         emitter = self.emitter_config(config, building)
         heatpump = self.heatpump_config(config, emitter)
@@ -1518,9 +1636,11 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 config.get(CONF_HARD_FLOOR_PENALTY, DEFAULT_HARD_FLOOR_PENALTY)
             ),
             current_offset=self._current_offset,
+            initial_ramp_steps=initial_ramp_steps,
             comfort_min_per_step=floors[:horizon] if floors else None,
             **(pump_cycle or {}),
             initial_mass_temp=initial_mass,
+            initial_air_offset=air_offset,
         )
         return {
             "result": result,
@@ -1598,6 +1718,8 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
         if not self._calibration_allowed:
             summary["last_result"] = RESULT_MULTI_ZONE
+        # With the mass-air model the building fit is shown, not used.
+        summary["building_fit_used"] = self._building_fit_usable()
         summary |= self._cop_and_emitter_summary(config)
         if fit is None:
             return summary

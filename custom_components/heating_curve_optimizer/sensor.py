@@ -282,6 +282,10 @@ COST_SAVINGS_FORECAST = HcoSensorEntityDescription(
         "horizon_hours": round(sum(d.get("step_durations_hours", [])), 2),
         "cost_eur": d.get("cost_eur", []),
         "baseline_cost_eur_per_step": d.get("baseline_cost_eur", []),
+        # Degree-hours below the band: savings against a baseline that
+        # leaves the house too cold are not real savings.
+        "comfort_deficit_kh": d.get("comfort_deficit_kh"),
+        "baseline_comfort_deficit_kh": d.get("baseline_comfort_deficit_kh"),
     },
 )
 SHADOW_PRICE = HcoSensorEntityDescription(

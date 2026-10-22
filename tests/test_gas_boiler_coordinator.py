@@ -80,6 +80,22 @@ async def test_computes_correct_comparison(hass: HomeAssistant):
 
 
 @pytest.mark.asyncio
+async def test_uses_the_plans_calibrated_cop(hass: HomeAssistant):
+    """The comparison uses the optimizer's own (calibrated) COP for the
+    current step, not the configured COP curve."""
+    hass.states.async_set("sensor.gas_price", "1.20")
+    hass.states.async_set("sensor.elec_price", "0.35")
+    coordinator = _make_coordinator(
+        hass, optimization_data={"supply_temps": [40.0], "cop": [2.5]}
+    )
+
+    data = await coordinator._async_update_data()
+
+    assert data["heat_pump_cop"] == pytest.approx(2.5)
+    assert data["heat_pump_cost_eur_per_kwh"] == pytest.approx(0.35 / 2.5)
+
+
+@pytest.mark.asyncio
 async def test_gas_price_ignores_forecast_attribute_uses_state(hass: HomeAssistant):
     """Regression test: the gas price must always come from state.state,
     never from a forecast_prices[0] the sensor happens to also carry -

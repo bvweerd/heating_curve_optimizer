@@ -312,12 +312,18 @@ class EmitterConfig:
 
     ``water_delta_t`` is the supply-return spread. For heat pumps this is
     typically 5 K; for gas boilers 10-20 K.
+
+    ``heats_mass``: the emitter delivers into the thermal mass of the
+    mass-air model (a floor, the structure), so its temperature difference
+    is taken against the mass rather than the room air. A loaded floor
+    then accepts less heat, as a real one does.
     """
 
     exponent: float = 1.3
     nominal_delta_t: float = 25.0
     nominal_power_kw: float = 6.0
     water_delta_t: float = 5.0
+    heats_mass: bool = False
 
     def available_power_kw(self, *, supply_temp: float, indoor_temp: float) -> float:
         """Maximum thermal power (kW) the emitter can deliver at this ΔT.
@@ -352,6 +358,10 @@ class EmitterConfig:
         CONF_HEAT_CURVE_MIN_OUTDOOR -> CONF_HEAT_CURVE_MAX), the emitter's
         nominal output exactly matches the building's peak heat loss. Uses
         the EN 442 mean water temperature convention.
+
+        With the mass-air model the emitter heats the mass: the design
+        temperature difference is then taken against the mass temperature
+        that holds the air at the design indoor temperature.
         """
         indoor = (
             design_indoor_temp
@@ -359,8 +369,16 @@ class EmitterConfig:
             else building.comfort_max
         )
         nominal_power_kw = building.heat_loss_kw(indoor, design_outdoor_temp)
+        heats_mass = building.air_coupling_kw_per_k > 0
+        reference = (
+            building.mass_temp_for_air(
+                indoor, outdoor_temp=design_outdoor_temp, internal_gain_kw=0.0
+            )
+            if heats_mass
+            else indoor
+        )
         mean_water_at_design = design_supply_temp - water_delta_t / 2
-        nominal_delta_t = mean_water_at_design - indoor
+        nominal_delta_t = mean_water_at_design - reference
         exponent = EMITTER_EXPONENT_MAP.get(
             emitter_type, EMITTER_EXPONENT_MAP[DEFAULT_EMITTER_TYPE]
         )
@@ -369,4 +387,5 @@ class EmitterConfig:
             nominal_delta_t=max(nominal_delta_t, 1.0),
             nominal_power_kw=max(nominal_power_kw, 0.1),
             water_delta_t=water_delta_t,
+            heats_mass=heats_mass,
         )

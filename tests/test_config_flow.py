@@ -51,6 +51,7 @@ def _sectioned(**overrides) -> dict:
             "cycling_penalty_weight": 0.01,
             "hard_floor_penalty": 1000.0,
             "feed_in_price_fallback": 0.07,
+            "house_base_load_w": 300,
             "offset_min": -4,
             "offset_max": 4,
             "heatpump_headroom": 1.3,

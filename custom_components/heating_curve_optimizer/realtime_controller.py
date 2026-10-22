@@ -3,15 +3,17 @@
 A fast feedback loop on live grid power, layered on top of the periodic DP
 plan. The heat pump only accepts whole-degree curve offsets, so this is a
 deadbanded step controller rather than a continuous integrator: exporting
-more than the deadband (while the DP says stored heat is worth something)
-raises the offset one degree above the plan. The extra degree is stepped
+more than the deadband (while the DP says stored heat is worth more than
+the feed-in tariff pays for the electricity it takes) raises the offset one
+degree above the plan. The extra degree is stepped
 back down once the surplus is gone, judged on the grid power the house
 would have *without* the heat pump: the import the heat pump itself causes
 by soaking up the surplus must not undo the adjustment, or the offset flaps
 between "export -> up" and "import -> down". An idle compressor with no
 export also steps it down (the extra offset absorbs nothing and would wait
 to be applied at the next start, at the full grid price), and so does a
-non-positive shadow price (the building is full).
+shadow price at or below the export value (the building is full, or
+exporting earns more than storing the heat saves).
 
 Every change holds for `min_hold_s` before the next one, so the heat pump's
 own response to a new offset settles before it is judged.
@@ -79,14 +81,16 @@ class RealtimeController:
         *,
         current_grid_w: float,
         shadow_price_eur_per_kwh: float,
+        export_value_eur_per_kwh: float,
         heat_pump_running: bool | None,
         heat_pump_power_w: float | None,
     ) -> int:
         """+1, -1 or 0: where the surplus says the adjustment should go."""
         deadband = self.config.deadband_w
-        if current_grid_w <= -deadband and shadow_price_eur_per_kwh > 0:
+        worth_storing = shadow_price_eur_per_kwh > max(0.0, export_value_eur_per_kwh)
+        if current_grid_w <= -deadband and worth_storing:
             return 1
-        if shadow_price_eur_per_kwh <= 0 or heat_pump_running is False:
+        if not worth_storing or heat_pump_running is False:
             return -1
         if heat_pump_power_w is not None:
             # Grid power without the heat pump: still exporting beyond the
@@ -100,6 +104,7 @@ class RealtimeController:
         current_grid_w: float,
         shadow_price_eur_per_kwh: float,
         max_adjustment: int,
+        export_value_eur_per_kwh: float = 0.0,
         heat_pump_running: bool | None = None,
         heat_pump_power_w: float | None = None,
         now: datetime | None = None,
@@ -110,9 +115,11 @@ class RealtimeController:
         exporting (PV surplus). `shadow_price_eur_per_kwh`: the DP's own
         estimate of what storing an extra kWh of heat right now is worth
         (`thermal_optimizer.optimize_thermal_schedule`'s return value) -
-        acting on surplus is only worthwhile when this is positive; zero or
-        negative means the building is already at (or past) the comfort
-        ceiling, where more heat is wasted, not stored.
+        acting on surplus is only worthwhile when this exceeds
+        `export_value_eur_per_kwh`, what exporting the electricity for one
+        kWh of heat earns instead (feed-in price / COP); zero or negative
+        means the building is already at (or past) the comfort ceiling,
+        where more heat is wasted, not stored.
         `heat_pump_running` / `heat_pump_power_w`: the measured heat pump;
         None when unknown (then only grid import steps the adjustment down).
         `now`: enables the minimum hold time between changes.
@@ -128,6 +135,7 @@ class RealtimeController:
                 + self._direction(
                     current_grid_w=current_grid_w,
                     shadow_price_eur_per_kwh=shadow_price_eur_per_kwh,
+                    export_value_eur_per_kwh=export_value_eur_per_kwh,
                     heat_pump_running=heat_pump_running,
                     heat_pump_power_w=heat_pump_power_w,
                 ),
@@ -153,6 +161,7 @@ class RealtimeController:
         shadow_price_eur_per_kwh: float,
         planned_offset: int,
         max_adjustment: int,
+        export_value_eur_per_kwh: float = 0.0,
         heat_pump_running: bool | None = None,
         heat_pump_power_w: float | None = None,
         now: datetime | None = None,
@@ -173,6 +182,7 @@ class RealtimeController:
             current_grid_w=current_grid_w,
             shadow_price_eur_per_kwh=shadow_price_eur_per_kwh,
             max_adjustment=max_adjustment,
+            export_value_eur_per_kwh=export_value_eur_per_kwh,
             heat_pump_running=heat_pump_running,
             heat_pump_power_w=heat_pump_power_w,
             now=now,
@@ -186,6 +196,7 @@ class RealtimeController:
             "planned_offset": planned_offset,
             "current_grid_w": current_grid_w,
             "shadow_price_eur_per_kwh": shadow_price_eur_per_kwh,
+            "export_value_eur_per_kwh": round(export_value_eur_per_kwh, 5),
         }
 
 

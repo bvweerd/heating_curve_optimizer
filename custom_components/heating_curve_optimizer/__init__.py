@@ -219,6 +219,7 @@ async def _async_setup_zone(
     primary: bool,
     subentry_id: str,
     calibration_allowed: bool,
+    zone_count: int,
 ) -> tuple[HeatCalculationCoordinator, OptimizationCoordinator]:
     """Create and start the coordinator pair of one heating zone."""
     heat_coordinator = HeatCalculationCoordinator(
@@ -240,6 +241,7 @@ async def _async_setup_zone(
         zone_id,
         subentry_id=subentry_id,
         calibration_allowed=calibration_allowed,
+        zone_count=zone_count,
     )
     await optimization_coordinator.async_setup()
     _schedule_first_refresh(
@@ -309,6 +311,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 primary=True,
                 subentry_id=subentry_id,
                 calibration_allowed=len(zone_subentries) == 1,
+                zone_count=len(zone_subentries),
             )
             continue
         zone_id = f"{entry.entry_id}_{subentry_id}"
@@ -323,6 +326,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             primary=False,
             subentry_id=subentry_id,
             calibration_allowed=False,
+            zone_count=len(zone_subentries),
         )
         zones[subentry_id] = {
             "heat_coordinator": zone_heat,

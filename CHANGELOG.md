@@ -11,6 +11,29 @@ First release of the redesigned integration. There are no earlier
 deployments to migrate from.
 
 ### Optimizer
+- Algorithm review fixes:
+  - The offset ramp limit holds in real time: 15-minute prices at
+    30 min/K now allow 1 °C per half hour (was 1 °C per quarter); the DP
+    state counts periods since the last change, also across runs.
+  - Ramp and run/pause minimums count only full price periods; the short
+    first step no longer shortens a minimum run or pause.
+  - Steps are integrated in substeps of at most 15 minutes; *Own
+    thermostat* is modelled as holding target + 0.15 °C with the curve's
+    full output below it (was a taper that limited pre-heating in cold
+    weather and made hourly plans zigzag).
+  - PV for heating is the forecast minus the house base load (new expert
+    setting, 300 W), shared over the zones.
+  - The horizon ends with the last known price (minimum 6 h); the
+    terminal value uses the horizon's mean price and accounts for leakage.
+  - Weather temperature and humidity are hourly means, not on-the-hour
+    readings; heat pump capacity falls 2 %/K in colder air.
+  - Mass + air: the emitter heats the mass, the measured air offset is the
+    plan's start (fading over 3 h), and the one-node building fit is not
+    applied.
+  - The PV-surplus layer raises only when stored heat is worth more than
+    exporting (shadow price > feed-in price / COP); the gas comparison
+    uses the plan's own, calibrated COP.
+  - The savings forecast reports comfort deficits of plan and baseline.
 - Opt-in *Mass + air* building model per zone: the heat pump heats the
   thermal mass, sun and internal gains warm the air directly; the DP runs
   on the mass temperature (observer on measured air), the mass-air

@@ -45,8 +45,8 @@ COP × defrost factor (0.6 … 1.0, between −10 °C and +6 °C at high humidit
 | k-factor | 0.11 | COP loss per °C supply temperature above 35 °C. 0.08–0.12 for air-to-water. |
 | Outdoor temperature coefficient | 0.08 | COP gain per °C outdoor temperature. 0.05–0.10. |
 | Compensation factor | 1.0 | Scales the model to your measured seasonal COP. |
-| Maximum thermal power | empty | Rated heating capacity in kW. Empty: 1.3 × the building's heat loss at the design outdoor temperature. |
-| Switching | Own thermostat | *Own thermostat*: the heat pump stops on its own room thermostat at the target; the plan only sets the offset. *Follows the plan*: an automation switches the heat pump with the *Plan active* binary sensor, and the plan decides when it runs. |
+| Maximum thermal power | empty | Rated heating capacity in kW at 7 °C outdoor (A7/W35); the model lowers it 2 % per K in colder air. Empty: 1.3 × the building's heat loss at the design outdoor temperature (holding there). |
+| Switching | Own thermostat | *Own thermostat*: the heat pump switches on its own room thermostat around the target (modelled as holding target + 0.15 °C); the plan only sets the offset. *Follows the plan*: an automation switches the heat pump with the *Plan active* binary sensor, and the plan decides when it runs. |
 | Minimum run time / pause | 60 / 60 min | Only with *Follows the plan*: every run and every pause lasts at least this long, to spare the compressor. |
 
 ### Heating curve

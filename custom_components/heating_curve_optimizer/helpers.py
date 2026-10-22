@@ -826,13 +826,22 @@ def calculate_supply_temperature(
     return water_max + (water_min - water_max) * ratio
 
 
-def max_offset_change(time_base: int, offset_delta_t: int) -> int:
-    """Maximum heating curve offset change (°C) allowed per optimizer step.
+def offset_ramp(step_minutes: int, offset_delta_t: int) -> tuple[int, int]:
+    """(K per change, periods between changes) for the offset ramp limit.
 
-    At time_base=60 and offset_delta_t=10: 60/10 = 6°C per step.
-    At time_base=60 and offset_delta_t=60: 60/60 = 1°C per step.
+    `offset_delta_t` is the number of minutes per 1 K of offset change.
+    A period at least that long may change by
+    `step_minutes // offset_delta_t` K every period; a shorter one by 1 K
+    every `ceil(offset_delta_t / step_minutes)` periods. Both round
+    towards the slower ramp, so the limit is never exceeded: 15-minute
+    periods at 30 min/K change 1 K every second period (2 K per hour),
+    hourly periods at 45 min/K 1 K per hour.
     """
-    return max(1, time_base // max(1, offset_delta_t))
+    step = max(1, step_minutes)
+    delta = max(1, offset_delta_t)
+    if step >= delta:
+        return step // delta, 1
+    return 1, math.ceil(delta / step)
 
 
 def _solar_position(

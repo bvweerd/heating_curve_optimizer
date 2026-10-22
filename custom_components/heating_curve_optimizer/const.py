@@ -431,6 +431,11 @@ DEFAULT_HARD_FLOOR_PENALTY = 1000.0  # EUR, penalty below comfort_min - margin
 CONF_FEED_IN_PRICE_FALLBACK = "feed_in_price_fallback"
 DEFAULT_FEED_IN_PRICE_FALLBACK = 0.07  # EUR/kWh
 
+# Household consumption other than the heat pump, taken off the PV forecast
+# before what remains counts as surplus for heating.
+CONF_HOUSE_BASE_LOAD_W = "house_base_load_w"
+DEFAULT_HOUSE_BASE_LOAD_W = 300.0
+
 CONF_OFFSET_MIN = "offset_min"
 DEFAULT_OFFSET_MIN = -4  # K
 

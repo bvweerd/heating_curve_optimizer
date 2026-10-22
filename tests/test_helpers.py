@@ -20,6 +20,7 @@ from custom_components.heating_curve_optimizer.helpers import (
     calculate_window_solar_gain,
     extract_price_forecast_with_timestamps,
     get_sensor_value,
+    offset_ramp,
     price_unit_scale,
     read_power_kw,
     resample_to_steps,
@@ -886,3 +887,19 @@ def test_heat_meter_takes_precedence_over_flow():
     # Idle: zero, whatever the counter did.
     states["sensor.power"] = State("sensor.power", "5", {"unit_of_measurement": "W"})
     assert measured_heat_kw(hass, config, counter, t0 + timedelta(minutes=13)) == 0.0
+
+
+@pytest.mark.parametrize(
+    ("step", "delta", "expected"),
+    [
+        (15, 30, (1, 2)),  # 2 K per hour, not 1 K per quarter
+        (60, 30, (2, 1)),
+        (60, 45, (1, 1)),  # rounds to the slower ramp
+        (15, 15, (1, 1)),
+        (15, 120, (1, 8)),
+    ],
+)
+def test_offset_ramp_never_exceeds_the_configured_rate(step, delta, expected):
+    assert offset_ramp(step, delta) == expected
+    changes, every = expected
+    assert changes / (every * step) <= 1 / delta + 1e-9
