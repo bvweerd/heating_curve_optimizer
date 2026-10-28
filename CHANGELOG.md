@@ -52,6 +52,8 @@ deployments to migrate from.
 - Heat meter (cumulative kWh, e.g. the heat pump's own heat counter) as
   heat source, preferred over flow × spread: a slightly low return sensor
   inflated flow-based heat 1.7× on the reference install.
+- The supply and return temperature fields, like flow and heat meter,
+  list sensors without a device class (Modbus, ESPHome, templates).
 - Optional water flow sensor: with supply and return temperature it
   measures the delivered heat (flow × spread × 4.16 kJ/(L·K)), used like
   a heat meter for calibration, the COP fit and the thermal power sensor

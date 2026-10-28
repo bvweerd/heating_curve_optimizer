@@ -477,12 +477,13 @@ def build_main_schema(defaults: dict[str, Any]) -> vol.Schema:
         {
             opt(CONF_POWER_CONSUMPTION): _sensor("power"),
             opt(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR): _sensor("power"),
-            # No device-class filter on the heat meter and flow: sensors from
-            # Modbus, ESPHome or templates often have none. The unit is
-            # checked when the value is read.
+            # No device-class filter on the heat meter, flow and water
+            # temperatures: sensors from Modbus, ESPHome or templates often
+            # have none. Flow and meter units are checked when read; water
+            # temperatures are taken as °C.
             opt(CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR): _sensor(),
-            opt(CONF_SUPPLY_TEMPERATURE_SENSOR): _sensor("temperature"),
-            opt(CONF_RETURN_TEMPERATURE_SENSOR): _sensor("temperature"),
+            opt(CONF_SUPPLY_TEMPERATURE_SENSOR): _sensor(),
+            opt(CONF_RETURN_TEMPERATURE_SENSOR): _sensor(),
             opt(CONF_FLOW_SENSOR): _sensor(),
             opt(CONF_DHW_ACTIVE_SENSOR): EntitySelector(
                 EntitySelectorConfig(domain="binary_sensor")
