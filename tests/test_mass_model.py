@@ -104,6 +104,18 @@ def test_learning_finds_the_coupling_of_a_mass_air_house():
     assert fit.mae_k < fit.one_node_mae_k
 
 
+def test_learning_finds_an_overestimated_solar_gain():
+    # The window model says twice the gain the house really gets.
+    history = [
+        HistorySample(s.air, s.outdoor, 2 * s.solar_kw, s.heat_kw)
+        for s in _synthetic_history(8.0)
+    ]
+    fit = fit_air_coupling(history, _building())
+    assert fit is not None
+    assert fit.coupling_kw_per_k == 8.0
+    assert fit.solar_factor == pytest.approx(0.45, abs=0.06)
+
+
 def test_learning_rejects_a_one_node_house_and_short_history():
     # A stiff coupling is a one-node house: no clear gain, not accepted.
     fit = fit_air_coupling(_synthetic_history(1e6), _building())
@@ -168,6 +180,22 @@ async def test_zone_with_mass_model_observes_and_learns(
     summary = coordinator.data["mass_model"]
     assert summary["learned_accepted"] is True
     assert summary["source"] == "learned"
+
+    # A fit that loses to one node runs the zone as one node, not on the
+    # default coupling.
+    from custom_components.heating_curve_optimizer.mass_model import CouplingFit
+
+    mass.fit = CouplingFit(8.0, 0.3, 0.2, 900, False, 0.5)
+    config = coordinator.heat_coordinator.effective_config()
+    assert coordinator.mass_parameters(config, building) == (
+        0.0,
+        "learned_one_node",
+        None,
+    )
+    mass.fit = CouplingFit(8.0, 0.18, 0.2, 900, False, 0.5)
+    used = coordinator.building_config(config)
+    assert used.air_coupling_kw_per_k == 8.0
+    assert used.solar_factor == 0.5
 
     # The observer advances with the delivered heat between ticks.
     start = mass.mass_temp

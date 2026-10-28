@@ -724,3 +724,29 @@ async def test_heat_meter_feeds_the_thermal_power_sensor(
     thermal_id = _entity_id(hass, "sensor", f"{entry.entry_id}_heat_pump_thermal_power")
     # A single reading gives no rate yet: the sensor waits.
     assert hass.states.get(thermal_id).state == "unavailable"
+
+
+async def test_pv_adjustment_waits_while_a_plan_driven_pump_is_off(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    """Raising the offset of a pump the plan keeps off changes nothing; it
+    made the published offset flap (up on export, down a quarter later)."""
+    hass.states.async_set("sensor.grid", "-2000", {"unit_of_measurement": "W"})
+    entry = make_entry(
+        grid_import_sensor="sensor.grid",
+        heat_pump_control="follows_plan",
+    )
+    await setup_entry(hass, entry)
+    coordinator = entry.runtime_data.optimization_coordinator
+    data = {
+        **coordinator.data,
+        "heat_pump_plan_on": False,
+        "shadow_price_eur_per_kwh": 5.0,
+    }
+    assert coordinator._realtime_action(data)["adjustment"] == 0
+    coordinator._realtime_controller.reset()
+    data["heat_pump_plan_on"] = True
+    assert coordinator._realtime_action(data)["adjustment"] == 1
+    # Published offset changes are logged for validation.
+    coordinator._log_offset({**data, "offset": 0, "realtime": {"effective_offset": 1}})
+    assert coordinator.mass_validation()["offset_changes"][-1][1:] == (0, 1)

@@ -110,6 +110,17 @@ def report_zone(name: str, data: dict[str, Any], stored: dict[str, Any]) -> None
             f"PV adjustment changes: {len(adjustments)} in {hours:.1f} h "
             f"({len(adjustments) / max(hours, 1e-9):.2f}/h)"
         )
+    offsets = data.get("offset_changes", [])
+    if len(offsets) > 1:
+        hours = (
+            datetime.fromisoformat(offsets[-1][0])
+            - datetime.fromisoformat(offsets[0][0])
+        ).total_seconds() / 3600
+        planned = sum(1 for a, b in itertools.pairwise(offsets) if a[1] != b[1])
+        print(
+            f"published offset changes: {len(offsets) - 1} in {hours:.1f} h, "
+            f"{planned} of them in the plan, the rest from the PV adjustment"
+        )
 
 
 def main(path: str) -> None:

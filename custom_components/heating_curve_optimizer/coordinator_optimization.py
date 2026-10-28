@@ -316,6 +316,8 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # as (time, value) - for validation in diagnostics.
         self._advice_log: deque[tuple[str, bool | None]] = deque(maxlen=1000)
         self._realtime_log: deque[tuple[str, int, float]] = deque(maxlen=2000)
+        # Published offset changes: (time, planned, effective).
+        self._offset_log: deque[tuple[str, int, int]] = deque(maxlen=2000)
         # Rate of a configured heat meter (energy counter).
         self._heat_counter = EnergyCounterRate()
         # Mass-air building model (opt-in per zone): observer and learning.
@@ -602,6 +604,10 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         offsets = data.get("offsets") or [0]
         power_kw = read_power_kw(self.hass, self.config.get(CONF_POWER_CONSUMPTION))
         cops = data.get("cop") or []
+        # A plan-driven heat pump only runs while the plan says so: raising
+        # the offset while it is off changes nothing, and the idle rule then
+        # took it back a quarter later, so the published offset flapped.
+        plan_off = self._pump_follows_plan and data.get("heat_pump_plan_on") is False
         feed_in = data.get("feed_in_prices") or []
         feed_in_now = (
             float(feed_in[0])
@@ -619,9 +625,13 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 feed_in_now / float(cops[0]) if cops and cops[0] > 0 else 0.0
             ),
             planned_offset=offsets[0],
-            max_adjustment=offset_ramp(
-                data.get("step_minutes", 60), self._offset_delta_t()
-            )[0],
+            max_adjustment=(
+                0
+                if plan_off
+                else offset_ramp(data.get("step_minutes", 60), self._offset_delta_t())[
+                    0
+                ]
+            ),
             heat_pump_running=(
                 power_kw > self._idle_power_threshold_kw
                 if power_kw is not None
@@ -643,6 +653,14 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         return action
 
+    def _log_offset(self, data: dict[str, Any]) -> None:
+        """Record a change of the published (planned, effective) offset."""
+        planned = int(data.get("offset") or 0)
+        effective = int((data.get("realtime") or {}).get("effective_offset", planned))
+        last = self._offset_log[-1] if self._offset_log else None
+        if last is None or (last[1], last[2]) != (planned, effective):
+            self._offset_log.append((dt_util.utcnow().isoformat(), planned, effective))
+
     async def _handle_realtime_update(self, now: datetime) -> None:
         """Adjust the planned offset around live grid power."""
         if not self.data:
@@ -653,6 +671,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Not async_set_updated_data: that reschedules the 15-minute poll,
         # and with this 60 s loop the plan would never be re-optimized.
         self.data = {**self.data, "realtime": action}
+        self._log_offset(self.data)
         self.async_update_listeners()
 
     # ------------------------------------------------------------------
@@ -1129,6 +1148,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # here dropped the real-time offset to the plan every 15 minutes.
         if (action := self._realtime_action(data)) is not None:
             data["realtime"] = action
+        self._log_offset(data)
         return data
 
     def _measured_supply_temp(self) -> float | None:
@@ -1148,6 +1168,17 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return spread if 0.0 < spread <= MAX_WATER_DELTA_T else None
 
     def building_config(self, config: dict[str, Any]) -> BuildingConfig:
+        """The building model in use: one node or with the mass-air
+        parameters (`mass_parameters`)."""
+        building = self._one_node_building(config)
+        if self._mass_model_enabled():
+            coupling, _source, solar_factor = self.mass_parameters(config, building)
+            building.air_coupling_kw_per_k = coupling
+            if solar_factor is not None:
+                building.solar_factor = solar_factor
+        return building
+
+    def _one_node_building(self, config: dict[str, Any]) -> BuildingConfig:
         """Label-based building model, replaced by the calibration when applied."""
         building = BuildingConfig.from_config(config)
         calibration = self._calibration
@@ -1162,8 +1193,6 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             building.internal_gain_kw = fit.internal_gain_kw
             building.solar_factor = fit.solar_factor
             building.time_constant_hours = fit.time_constant_hours
-        if self._mass_model_enabled():
-            building.air_coupling_kw_per_k = self.air_coupling(config, building)[0]
         return building
 
     # ------------------------------------------------------------------
@@ -1190,17 +1219,29 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _mass_model_enabled(self) -> bool:
         return self.config.get(CONF_BUILDING_MODEL) == BUILDING_MODEL_MASS_AIR
 
-    def air_coupling(
+    def mass_parameters(
         self, config: dict[str, Any], building: BuildingConfig
-    ) -> tuple[float, str]:
-        """(mass-air coupling in kW/K, source): set > learned > default."""
+    ) -> tuple[float, str, float | None]:
+        """(coupling kW/K, source, solar factor or None) of the mass model.
+
+        A set coupling wins. Otherwise the learned fit, also when it is not
+        clearly better than one node: then it is still the best evidence,
+        and when one node predicts better the coupling is 0 - one node.
+        Before any fit: 55 W/K per m² floor.
+        """
         configured = config.get(CONF_AIR_COUPLING)
         if configured:
-            return float(configured), "configured"
+            return float(configured), "configured", None
         fit = self._mass.fit if self._mass else None
-        if self._mass_model_enabled() and fit is not None and fit.accepted:
-            return fit.coupling_kw_per_k, "learned"
-        return building.area_m2 * DEFAULT_AIR_COUPLING_W_PER_M2_K / 1000.0, "default"
+        if fit is not None:
+            if fit.mae_k < fit.one_node_mae_k:
+                return fit.coupling_kw_per_k, "learned", fit.solar_factor
+            return 0.0, "learned_one_node", None
+        return (
+            building.area_m2 * DEFAULT_AIR_COUPLING_W_PER_M2_K / 1000.0,
+            "default",
+            None,
+        )
 
     def _measured_heat_kw(self) -> float | None:
         """Measured heat now (thermal power, heat meter rate, or flow)."""
@@ -1243,7 +1284,8 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         supply = self._measured_supply_temp()
         if supply is None and self.data and self.data.get("supply_temps"):
             supply = float(self.data["supply_temps"][0])
-        building = self.building_config(self.heat_coordinator.effective_config())
+        config = self.heat_coordinator.effective_config()
+        building = self.building_config(config)
         mass.update(
             now,
             building,
@@ -1257,7 +1299,10 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         due = mass.fitted_at is None or now - mass.fitted_at >= MASS_LEARN_INTERVAL
         if due and not self._mass_learning:
             self._mass_learning = True
-            self.hass.async_create_task(self._learn_air_coupling(now, building))
+            # Learn against the one-node parameters, not the last fit.
+            self.hass.async_create_task(
+                self._learn_air_coupling(now, self._one_node_building(config))
+            )
 
     def measured_cop_ratio(self) -> float | None:
         """Measured / modelled COP over the history (heat measured only)."""
@@ -1309,6 +1354,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "history": self._mass.history_rows(),
             "plan_advice_changes": list(self._advice_log),
             "realtime_adjustments": list(self._realtime_log),
+            "offset_changes": list(self._offset_log),
         }
 
     async def _learn_air_coupling(
@@ -1318,7 +1364,6 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             if mass is None:
                 return
-            # Learn against the one-node parameters in use, without coupling.
             building.air_coupling_kw_per_k = 0.0
             fit = await self.hass.async_add_executor_job(
                 fit_air_coupling, list(mass.history), building
@@ -1337,14 +1382,16 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
         enabled = self._mass_model_enabled()
         building = BuildingConfig.from_config(config)
-        coupling, source = self.air_coupling(config, building)
+        coupling, source, solar_factor = self.mass_parameters(config, building)
         fit = self._mass.fit
         return {
             "enabled": enabled,
             "air_coupling_kw_per_k": round(coupling, 2) if enabled else None,
             "source": source if enabled else None,
             "history_hours": round(len(self._mass.history) * 5 / 60, 1),
+            "solar_factor": solar_factor if enabled else None,
             "learned_kw_per_k": fit.coupling_kw_per_k if fit else None,
+            "learned_solar_factor": fit.solar_factor if fit else None,
             "learned_mae_k": fit.mae_k if fit else None,
             "one_node_mae_k": fit.one_node_mae_k if fit else None,
             "learned_accepted": fit.accepted if fit else None,

@@ -69,11 +69,17 @@ room air every minute: `C · dT_mass/dt = Q − H · (T_mass − T_air,measured)
 
 `H` is learned: every zone keeps 14 days of 5-minute history (air, outdoor,
 solar, heat), and every 6 hours a grid search replays the observer and
-predicts the air 6 hours ahead from every hour, for each candidate `H`. The
-best `H` is used once there are 3 days of history with some heating and it
-beats the one-node model by at least 15 %. Until then `H` = 55 W/K per m²
-floor, or the value set in the zone. The history is collected in one-node
-zones too, so diagnostics show whether switching would pay off.
+predicts the air 6 hours ahead from every hour, for each candidate `H`
+together with a solar factor (0.3–1.2 × the building's). The sun reaches
+the air directly in this model, so a window gain that is too high (low
+autumn sun, shading) shows as a warm error and is learned away. Once there
+are 3 days of history with some heating, the best `H` and solar factor are
+used if they predict better than the one-node model (with its own best
+solar factor); otherwise the zone runs as one node. Until then `H` = 55 W/K
+per m² floor, or the value set in the zone (a set value always wins and
+keeps the building's solar factor). The history is collected in one-node
+zones too, so diagnostics show whether switching would pay off
+(`learned_accepted`: at least 15 % better).
 
 On one house (159 m², heavy, underfloor heating, two weeks of October data,
 the last three days held out) the 6-hour-ahead error went from 0.24 K

@@ -27,6 +27,12 @@ deployments to migrate from.
     terminal value uses the horizon's mean price and accounts for leakage.
   - Weather temperature and humidity are hourly means, not on-the-hour
     readings; heat pump capacity falls 2 %/K in colder air.
+  - Mass + air learns the solar factor together with the coupling and
+    uses the fit whenever it beats one node (falls back to one node, no
+    longer to the 55 W/K·m² default, when it does not).
+  - With *Follows plan* the PV-surplus layer no longer raises the offset
+    while the plan keeps the heat pump off (the published offset flapped
+    0/+1 every quarter); diagnostics log every published offset change.
   - Mass + air: the emitter heats the mass, the measured air offset is the
     plan's start (fading over 3 h), and the one-node building fit is not
     applied.

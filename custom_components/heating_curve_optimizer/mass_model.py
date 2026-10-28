@@ -9,9 +9,9 @@ integrating the delivered heat against the measured room air:
     C dT_mass/dt = Q_heat_pump - H (T_mass - T_air,measured)
 
 The same observer, replayed over a few days of 5-minute history, learns
-the coupling H: for each candidate H it predicts the air temperature 1 and
-6 hours ahead from every hour and keeps the H with the smallest error -
-but only when that beats the one-node model clearly.
+the coupling H together with the solar factor: for each candidate it
+predicts the air temperature 6 hours ahead from every hour and keeps the
+one with the smallest error, compared with the one-node model.
 
 Identified on a heavy house with underfloor heating: the heat pump heats
 the mass, sun and internal gains warm the air directly, H around 55 W/K
@@ -21,6 +21,7 @@ mass and predicts too warm hours later.
 
 from __future__ import annotations
 
+import copy
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -36,6 +37,9 @@ from .heatpump_model import HeatPumpConfig
 DEFAULT_AIR_COUPLING_W_PER_M2_K = 55.0
 # Candidate couplings (kW/K) for the learning grid search.
 AIR_COUPLING_GRID = (2.0, 3.0, 4.0, 5.0, 6.5, 8.0, 10.0, 13.0, 17.0, 22.0, 30.0)
+# Multipliers on the building's solar factor searched with the coupling:
+# low sun is shaded more than the window model knows.
+SOLAR_FACTOR_GRID = (0.3, 0.45, 0.6, 0.75, 0.9, 1.0, 1.2)
 HISTORY_INTERVAL = timedelta(minutes=5)
 HISTORY_LENGTH = int(timedelta(days=14) / HISTORY_INTERVAL)
 # Learning needs a few days, some heating and a clear gain over one node.
@@ -74,6 +78,10 @@ class CouplingFit:
     one_node_mae_k: float
     samples: int
     accepted: bool
+    # Solar factor (absolute) learned with the coupling; the sun reaches the
+    # air directly in this model, so an over-estimated window gain shows.
+    # None for a fit stored before it was learned.
+    solar_factor: float | None = None
 
 
 def _replay(
@@ -148,20 +156,29 @@ def _observe(
 def fit_air_coupling(
     samples: list[HistorySample], building: BuildingConfig
 ) -> CouplingFit | None:
-    """Grid search for the coupling that predicts the air best, 6 h ahead.
+    """Grid search for the coupling and solar factor that predict the air
+    best, 6 h ahead, against the one-node model with its own best solar
+    factor.
 
-    None without enough history or heating to judge; `accepted` only when
-    the best coupling clearly beats the one-node model.
+    None without enough history or heating to judge; `accepted` when the
+    best coupling clearly beats the one-node model.
     """
     if len(samples) < MIN_HISTORY_SAMPLES:
         return None
     heating = sum(1 for s in samples if s.heat_kw > 0.1) / len(samples)
     if heating < MIN_HEATING_SHARE:
         return None
-    one_node = _replay(samples, building, 0.0)
-    best_coupling, best_mae = min(
-        ((h, _replay(samples, building, h)) for h in AIR_COUPLING_GRID),
-        key=lambda item: item[1],
+
+    def with_solar(multiplier: float) -> BuildingConfig:
+        candidate = copy.copy(building)
+        candidate.solar_factor = building.solar_factor * multiplier
+        return candidate
+
+    one_node = min(_replay(samples, with_solar(m), 0.0) for m in SOLAR_FACTOR_GRID)
+    best_mae, best_coupling, best_solar = min(
+        (_replay(samples, with_solar(m), h), h, building.solar_factor * m)
+        for h in AIR_COUPLING_GRID
+        for m in SOLAR_FACTOR_GRID
     )
     return CouplingFit(
         coupling_kw_per_k=float(best_coupling),
@@ -169,6 +186,7 @@ def fit_air_coupling(
         one_node_mae_k=round(float(one_node), 4),
         samples=len(samples),
         accepted=bool(best_mae <= MIN_IMPROVEMENT * one_node),
+        solar_factor=round(float(best_solar), 3),
     )
 
 

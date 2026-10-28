@@ -72,8 +72,9 @@ docs/                         index, installation, quick-start, configuration, a
   measured-minus-modelled air offset fading over 3 h; comfort and
   thermostat on air, emitter on mass (`EmitterConfig.heats_mass`). The
   building calibration fit is not applied in this mode. Observer every 60 s; coupling H learned
-  every 6 h (accepted only if ≥15 % better than one node), else zone
-  `air_coupling_kw_per_k` or 55 W/K·m². History is kept in every zone and
+  every 6 h with the solar factor; used when it beats one node, else
+  coupling 0 (one node); zone `air_coupling_kw_per_k` wins, 55 W/K·m²
+  before the first fit. History is kept in every zone and
   exported under diagnostics `stored_data.validation`.
 - **Away periods**: optional zone `comfort_schedule` (a `schedule` helper,
   on = home, read via `schedule.get_schedule` each run) lowers the floor by
