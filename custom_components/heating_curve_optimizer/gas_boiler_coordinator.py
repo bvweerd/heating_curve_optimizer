@@ -6,7 +6,8 @@ Policy: **heat pump first**, gas as comfort backup.
   source - even when gas is cheaper.
 - When the indoor temperature is (or is about to be) below the band but
   the heat-pump-only plan recovers within ``COMFORT_LOOKAHEAD_HOURS``, gas
-  is only recommended if it is cheaper per kWh of heat.
+  is only recommended if it is cheaper per kWh of heat than the plan's
+  marginal heat (shadow price, at most electricity price / COP now).
 - When the plan shows the heat pump cannot bring the house back into the
   band within the lookahead (the plan already uses the heat pump as hard
   as it usefully can), gas is recommended regardless of price - unless
@@ -276,7 +277,19 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             cop = HeatPumpConfig.from_config(self.config).cop_at(
                 supply_temp=supply_temp, outdoor_temp=outdoor_temp
             )
-        heat_pump_cost_eur_per_kwh = electricity_price / cop
+        spot_cost_eur_per_kwh = electricity_price / cop
+        # Gas now replaces the plan's marginal kWh of heat pump heat, which
+        # may be bought hours earlier or later: the shadow price. A
+        # pre-heated house coasting through a price peak costs that, not the
+        # peak price / COP. Capped at the cost of heating right now, which
+        # the plan can always fall back to; the cap also keeps a comfort
+        # penalty in the shadow price from posing as an energy cost.
+        shadow_price = optimization_data.get("shadow_price_eur_per_kwh")
+        heat_pump_cost_eur_per_kwh = (
+            spot_cost_eur_per_kwh
+            if shadow_price is None
+            else min(max(float(shadow_price), 0.0), spot_cost_eur_per_kwh)
+        )
 
         boiler = GasBoilerConfig.from_config(self.config)
         gas_cost_eur_per_kwh = boiler.cost_per_kwh_thermal(gas_price)
@@ -316,6 +329,8 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "supply_temp": supply_temp,
             "outdoor_temp": outdoor_temp,
             "heat_pump_cost_eur_per_kwh": comparison.heat_pump_cost_eur_per_kwh,
+            "heat_pump_cost_now_eur_per_kwh": spot_cost_eur_per_kwh,
+            "shadow_price_eur_per_kwh": shadow_price,
             "gas_cost_eur_per_kwh": comparison.gas_cost_eur_per_kwh,
             "savings_eur_per_kwh": comparison.savings_eur_per_kwh,
             "savings_pct": comparison.savings_pct,

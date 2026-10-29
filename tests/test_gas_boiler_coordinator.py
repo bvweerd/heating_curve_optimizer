@@ -95,6 +95,39 @@ async def test_uses_the_plans_calibrated_cop(hass: HomeAssistant):
     assert data["heat_pump_cost_eur_per_kwh"] == pytest.approx(0.35 / 2.5)
 
 
+@pytest.mark.parametrize(
+    ("shadow_price", "expected_cost", "gas_cheaper"),
+    [
+        # Pre-heated house coasting through a price peak: gas competes with
+        # the cheap stored heat, not with the peak price / COP.
+        (0.05, 0.05, False),
+        # No heat demand: the plan's heat costs nothing.
+        (0.0, 0.0, False),
+        # A comfort penalty in the shadow price is capped at heating now.
+        (2.0, 0.40 / 2.5, True),
+    ],
+)
+async def test_heat_pump_cost_is_the_plans_marginal_heat(
+    hass: HomeAssistant, shadow_price, expected_cost, gas_cheaper
+):
+    hass.states.async_set("sensor.gas_price", "1.20")
+    hass.states.async_set("sensor.elec_price", "0.40")
+    coordinator = _make_coordinator(
+        hass,
+        optimization_data={
+            "supply_temps": [40.0],
+            "cop": [2.5],
+            "shadow_price_eur_per_kwh": shadow_price,
+        },
+    )
+
+    data = await coordinator._async_update_data()
+
+    assert data["heat_pump_cost_now_eur_per_kwh"] == pytest.approx(0.40 / 2.5)
+    assert data["heat_pump_cost_eur_per_kwh"] == pytest.approx(expected_cost)
+    assert data["gas_cheaper"] is gas_cheaper
+
+
 @pytest.mark.asyncio
 async def test_gas_price_ignores_forecast_attribute_uses_state(hass: HomeAssistant):
     """Regression test: the gas price must always come from state.state,

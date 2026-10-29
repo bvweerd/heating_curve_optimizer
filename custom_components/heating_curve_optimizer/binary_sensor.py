@@ -147,7 +147,8 @@ class GasBoilerCheaperBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Pure price comparison: on when gas is cheaper per kWh of heat.
 
     Unlike GasBoilerPreferredBinarySensor this does not include the comfort
-    backup policy; it only answers "which source is cheaper right now".
+    backup policy; it only answers "which source is cheaper right now", with
+    the plan's marginal cost of heat as the heat pump's price.
     """
 
     _attr_has_entity_name = True

@@ -99,6 +99,14 @@ comfortable, or recovers within 3 hours while the heat pump is cheaper.
 Check `comfort_at_risk`, `comfort_reason` and `gas_cheaper` on the binary
 sensor.
 
+## Gas boiler cheaper is off during an expensive evening
+
+The heat pump's price is the plan's marginal cost of heat, not the current
+electricity price / COP: a house pre-heated on cheap hours coasts through
+the peak on heat that has already been paid for. Compare
+`heat_pump_cost_now_eur_per_kwh` (heating right now) with
+`shadow_price_eur_per_kwh` on the heat pump *Cost per kWh* sensor.
+
 ## Total cost savings goes down
 
 Expected while pre-heating: the extra cost is booked when it is made, the

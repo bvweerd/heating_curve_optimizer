@@ -273,9 +273,17 @@ next 3 hours:
 "The band" is the per-step band: a planned dip during an away setback does
 not count.
 
-Cost per kWh of heat: gas = `gas price / calorific value / efficiency`,
-heat pump = `electricity price / COP`, with the optimizer's own COP for
-the current step (the calibrated COP model when calibration is applied).
+Cost per kWh of heat: gas = `gas price / calorific value / efficiency`.
+For the heat pump it is what a kWh of gas heat now saves the plan: the
+shadow price (the marginal cost of the plan's heat, which may be bought
+hours earlier or later), capped at `electricity price / COP` for heating
+right now, with the optimizer's own COP for the current step (the
+calibrated COP model when calibration is applied). A pre-heated house
+coasting through an evening price peak therefore compares gas with the
+cheap heat already stored, not with the peak price; without heat demand
+the heat pump cost is 0 and gas is never cheaper. The attributes
+`heat_pump_cost_now_eur_per_kwh` and `shadow_price_eur_per_kwh` on the heat
+pump *Cost per kWh* sensor show both parts.
 
 The attributes `comfort_at_risk`, `comfort_reason`
 (`below_comfort_band` / `heat_pump_cannot_keep_up`), `gas_cheaper` and

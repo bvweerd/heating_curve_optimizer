@@ -353,6 +353,8 @@ GAS_BOILER_HEAT_PUMP_COST = HcoSensorEntityDescription(
     value_fn=lambda d: d.get("heat_pump_cost_eur_per_kwh"),
     attrs_fn=lambda d: {
         "electricity_price_eur_per_kwh": d.get("electricity_price_eur_per_kwh"),
+        "heat_pump_cost_now_eur_per_kwh": d.get("heat_pump_cost_now_eur_per_kwh"),
+        "shadow_price_eur_per_kwh": d.get("shadow_price_eur_per_kwh"),
         "heat_pump_cop": d.get("heat_pump_cop"),
         "supply_temp": d.get("supply_temp"),
         "outdoor_temp": d.get("outdoor_temp"),
