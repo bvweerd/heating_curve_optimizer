@@ -1,5 +1,5 @@
-asyncio
 pytest
 pytest-cov
+pytest-timeout
 pytest-homeassistant-custom-component
 syrupy

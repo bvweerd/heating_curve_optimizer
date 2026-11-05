@@ -84,8 +84,11 @@ jobs:
             echo "Python \`${{ matrix.python-version }}\` → Home Assistant \`$HA_VERSION\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # --timeout turns a hung test into a failure that names it. Without it
+      # the Python 3.13 job sat in pytest until GitHub's 6-hour job limit,
+      # with only progress dots in the log.
       - name: Run pytest
-        run: pytest --cov=custom_components --cov-report=xml -q
+        run: pytest --cov=custom_components --cov-report=xml -q --timeout=120
 
       # setup.cfg gates the build at 85%, but the number itself appeared
       # nowhere on the pull request — so a run could sit just above the floor,
