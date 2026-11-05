@@ -110,8 +110,8 @@ jobs:
 
             ---
 
-            ## Installation via HACS
-            Install or update via HACS — the new version will be offered automatically.
+            ## Installation via the Marketplace
+            On Home Assistant 2026.11 or later, install or update through Settings → Marketplace. On 2026.10 and older, use HACS. The new version is offered automatically (checked every 48 hours for repositories added from a link).
 
             ## Manual installation
             Download `heating_curve_optimizer.zip`, extract and copy `heating_curve_optimizer/` to your `custom_components/` directory.

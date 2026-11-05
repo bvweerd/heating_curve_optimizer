@@ -3,8 +3,8 @@ rules:
   action-setup: done
   appropriate-polling: done
   brands:
-    status: todo
-    comment: Needs an entry in home-assistant/brands.
+    status: done
+    comment: Ships its own images in brand/ (Home Assistant 2026.3+).
   common-modules: done
   config-flow-test-coverage: done
   config-flow: done

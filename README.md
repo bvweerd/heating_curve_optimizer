@@ -2,7 +2,7 @@
 
 [![GitHub Release](https://img.shields.io/github/release/bvweerd/heating_curve_optimizer.svg?style=flat-square)](https://github.com/bvweerd/heating_curve_optimizer/releases)
 [![License](https://img.shields.io/github/license/bvweerd/heating_curve_optimizer.svg?style=flat-square)](LICENSE)
-[![hacs](https://img.shields.io/badge/HACS-Custom-orange.svg?style=flat-square)](https://hacs.xyz)
+[![Marketplace](https://img.shields.io/badge/Marketplace-Custom-orange.svg?style=flat-square)](https://www.home-assistant.io/blog/2026/11/04/release-202611/)
 
 A Home Assistant integration that plans the **heating curve offset** of a
 weather-compensated heat pump for the next 24 hours: heat when electricity
@@ -36,8 +36,11 @@ heating zones.
 
 ## Installation
 
-1. HACS → Integrations → ⋮ → *Custom repositories* → add this repository
-   as *Integration*, install **Heating Curve Optimizer**, restart.
+1. *Settings → Marketplace → Add from link* (Home Assistant 2026.11+) →
+   enter `https://github.com/bvweerd/heating_curve_optimizer` and install
+   **Heating Curve Optimizer**. On 2026.10 and older: HACS → Integrations →
+   ⋮ → *Custom repositories* → add this repository as *Integration*,
+   install, restart.
 2. *Settings → Devices & services → Add integration → Heating Curve
    Optimizer*: select your price sensor, enter the heat pump's COP data and
    its heating curve.

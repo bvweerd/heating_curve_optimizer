@@ -143,9 +143,6 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # brands quality-scale rule is still "todo" (see quality_scale.yaml)
-          # - no approved home-assistant/brands entry exists yet.
-          ignore: brands
 
   hassfest:
     name: Home Assistant hassfest
