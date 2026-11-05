@@ -1,8 +1,10 @@
 # Heating Curve Optimizer
 
+<!-- ha-marketplace:exclude-start -->
 [![GitHub Release](https://img.shields.io/github/release/bvweerd/heating_curve_optimizer.svg?style=flat-square)](https://github.com/bvweerd/heating_curve_optimizer/releases)
 [![License](https://img.shields.io/github/license/bvweerd/heating_curve_optimizer.svg?style=flat-square)](LICENSE)
-[![hacs](https://img.shields.io/badge/HACS-Custom-orange.svg?style=flat-square)](https://hacs.xyz)
+[![Marketplace](https://img.shields.io/badge/Marketplace-Custom-orange.svg?style=flat-square)](https://www.home-assistant.io/blog/2026/11/04/release-202611/)
+<!-- ha-marketplace:exclude-end -->
 
 A Home Assistant integration that plans the **heating curve offset** of a
 weather-compensated heat pump for the next 24 hours: heat when electricity
@@ -34,14 +36,23 @@ a real-time PV-surplus layer, a hybrid gas boiler (heat pump first, gas as
 comfort backup or when comfort is at risk and gas is cheaper), and several
 heating zones.
 
+<!-- ha-marketplace:exclude-start -->
 ## Installation
 
-1. HACS → Integrations → ⋮ → *Custom repositories* → add this repository
-   as *Integration*, install **Heating Curve Optimizer**, restart.
-2. *Settings → Devices & services → Add integration → Heating Curve
+*Settings → Marketplace → Add from link* (Home Assistant 2026.11+) → enter
+`https://github.com/bvweerd/heating_curve_optimizer` and install
+**Heating Curve Optimizer**. On 2026.10 and older: HACS → Integrations → ⋮ →
+*Custom repositories* → add this repository as *Integration*, install,
+restart.
+
+<!-- ha-marketplace:exclude-end -->
+
+## Setup
+
+1. *Settings → Devices & services → Add integration → Heating Curve
    Optimizer*: select your price sensor, enter the heat pump's COP data and
    its heating curve.
-3. On the integration page, **Add heating zone**: floor area, energy label,
+2. On the integration page, **Add heating zone**: floor area, energy label,
    construction, emitters, windows, setpoint and indoor temperature sensor.
 
 Requires Home Assistant 2025.4 or newer.

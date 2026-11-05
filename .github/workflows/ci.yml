@@ -84,8 +84,19 @@ jobs:
             echo "Python \`${{ matrix.python-version }}\` → Home Assistant \`$HA_VERSION\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # A hung test must fail and say where, instead of sitting in pytest
+      # until GitHub's 6-hour job limit with only progress dots in the log
+      # (the Python 3.13 job did, from 3 November). The default signal-based
+      # timeout never fired on that hang, so: faulthandler dumps every
+      # thread's stack after 90 s without needing the GIL, and the
+      # thread-based timeout then ends the process. -v prints each test name
+      # before it runs, so the last line names the culprit.
       - name: Run pytest
-        run: pytest --cov=custom_components --cov-report=xml -q
+        timeout-minutes: 15
+        run: >-
+          pytest --cov=custom_components --cov-report=xml -v
+          --timeout=120 --timeout_method=thread
+          -o faulthandler_timeout=90
 
       # setup.cfg gates the build at 85%, but the number itself appeared
       # nowhere on the pull request — so a run could sit just above the floor,
@@ -143,9 +154,6 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # brands quality-scale rule is still "todo" (see quality_scale.yaml)
-          # - no approved home-assistant/brands entry exists yet.
-          ignore: brands
 
   hassfest:
     name: Home Assistant hassfest
