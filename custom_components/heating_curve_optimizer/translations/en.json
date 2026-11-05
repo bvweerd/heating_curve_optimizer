@@ -23,18 +23,26 @@
             "data": {
               "power_consumption": "Heat pump electrical power",
               "heat_pump_thermal_power_sensor": "Heat pump thermal power",
+              "heat_pump_thermal_energy_sensor": "Heat meter (energy)",
               "supply_temperature_sensor": "Measured supply temperature",
+              "return_temperature_sensor": "Measured return temperature",
+              "flow_sensor": "Water flow",
               "dhw_active_sensor": "Tap water heating active",
               "grid_import_sensor": "Grid import power",
-              "grid_export_sensor": "Grid export power"
+              "grid_export_sensor": "Grid export power",
+              "battery_power_sensors": "Home battery power"
             },
             "data_description": {
               "power_consumption": "Power sensor (W or kW) of the heat pump. Enables thermal power/energy sensors and thermal calibration.",
               "heat_pump_thermal_power_sensor": "Optional heat meter or heat output reported by the heat pump (W or kW). Makes calibration independent of the COP model and enables learning the COP curve.",
+              "heat_pump_thermal_energy_sensor": "Optional cumulative thermal energy in kWh, e.g. the heat pump's own heat counter. The delivered heat is its increase over the last 10 minutes. Preferred over water flow; a thermal power sensor takes precedence.",
               "dhw_active_sensor": "Binary sensor that is on while the heat pump heats tap water. Those periods are left out of the calibration. Leave empty if there is no tap water operation.",
               "supply_temperature_sensor": "Used for the COP of the measured operating point; otherwise the planned supply temperature is used.",
+              "return_temperature_sensor": "Supply minus return gives the real water spread for the emitter calibration (mean water temperature); otherwise a 5 K spread is assumed.",
+              "flow_sensor": "Optional (L/min, L/h or m³/h). With the supply and return temperature it gives the delivered heat: flow × spread × 4.16 kJ/(L·K). Used instead of the COP model for calibration, the COP fit and the thermal power sensor; a thermal power sensor takes precedence.",
               "grid_import_sensor": "Live power (W or kW). With import and/or export configured, the real-time offset sensor raises the offset while PV surplus is exported.",
-              "grid_export_sensor": "Live power (W or kW), positive while exporting."
+              "grid_export_sensor": "Live power (W or kW), positive while exporting.",
+              "battery_power_sensors": "Optional, one sensor per battery (W or kW), positive while charging, as in Battery Controller. Battery discharge counts as grid import for the PV-surplus layer, so a battery covering the heat pump is not mistaken for surplus."
             }
           },
           "heat_pump": {
@@ -45,14 +53,20 @@
               "k_factor": "k-factor (COP loss per °C supply)",
               "outdoor_temp_coefficient": "Outdoor temperature coefficient (COP gain per °C)",
               "cop_compensation_factor": "COP compensation factor",
-              "heat_pump_max_thermal_power_kw": "Maximum thermal power"
+              "heat_pump_max_thermal_power_kw": "Maximum thermal power",
+              "heat_pump_control": "Switching",
+              "min_run_minutes": "Minimum run time",
+              "min_off_minutes": "Minimum pause"
             },
             "data_description": {
               "base_cop": "From the datasheet (e.g. A2/W35). Typical 3.5-4.5 for air-to-water.",
               "k_factor": "Typically 0.08-0.12: how fast COP drops with higher supply temperature.",
               "outdoor_temp_coefficient": "Typically 0.05-0.10.",
               "cop_compensation_factor": "Scales the modelled COP to your measured COP (1.0 = datasheet).",
-              "heat_pump_max_thermal_power_kw": "Optional. Rated heating capacity. Empty: 1.3x the heat loss at the design outdoor temperature."
+              "heat_pump_max_thermal_power_kw": "Optional. Rated heating capacity at 7 °C outdoor (A7/W35); lower in colder air. Empty: 1.3x the heat loss at the design outdoor temperature.",
+              "heat_pump_control": "Own thermostat: the heat pump stops on its own room thermostat at the target; the plan only sets the offset. Follows the plan: an automation switches the heat pump with the *Plan active* binary sensor; the plan then also decides when it runs.",
+              "min_run_minutes": "With *Follows the plan*: every run lasts at least this long, to spare the compressor.",
+              "min_off_minutes": "With *Follows the plan*: every pause lasts at least this long."
             }
           },
           "heating_curve": {
@@ -90,6 +104,7 @@
               "cycling_penalty_weight": "Cycling penalty weight",
               "hard_floor_penalty": "Hard floor penalty",
               "feed_in_price_fallback": "Feed-in price fallback",
+              "house_base_load_w": "House base load",
               "offset_min": "Minimum offset",
               "offset_max": "Maximum offset",
               "heatpump_headroom": "Heat pump headroom"
@@ -99,6 +114,7 @@
               "cycling_penalty_weight": "Penalty for offset changes between steps. Higher values produce more stable plans with less switching.",
               "hard_floor_penalty": "Penalty in EUR when indoor temperature falls far below comfort minimum. Prevents deep undershoot.",
               "feed_in_price_fallback": "Fallback feed-in price when no production price sensor is configured.",
+              "house_base_load_w": "Average household consumption besides the heat pump. It is taken off the PV forecast before the rest counts as surplus for heating.",
               "offset_min": "Lowest heating curve offset the optimizer may use.",
               "offset_max": "Highest heating curve offset the optimizer may use.",
               "heatpump_headroom": "Assumed heat pump capacity as a ratio of emitter design-point output. 1.3 means 30% overcapacity."
@@ -229,18 +245,26 @@
             "data": {
               "power_consumption": "Heat pump electrical power",
               "heat_pump_thermal_power_sensor": "Heat pump thermal power",
+              "heat_pump_thermal_energy_sensor": "Heat meter (energy)",
               "supply_temperature_sensor": "Measured supply temperature",
+              "return_temperature_sensor": "Measured return temperature",
+              "flow_sensor": "Water flow",
               "dhw_active_sensor": "Tap water heating active",
               "grid_import_sensor": "Grid import power",
-              "grid_export_sensor": "Grid export power"
+              "grid_export_sensor": "Grid export power",
+              "battery_power_sensors": "Home battery power"
             },
             "data_description": {
               "power_consumption": "Power sensor (W or kW) of the heat pump. Enables thermal power/energy sensors and thermal calibration.",
               "heat_pump_thermal_power_sensor": "Optional heat meter or heat output reported by the heat pump (W or kW). Makes calibration independent of the COP model and enables learning the COP curve.",
+              "heat_pump_thermal_energy_sensor": "Optional cumulative thermal energy in kWh, e.g. the heat pump's own heat counter. The delivered heat is its increase over the last 10 minutes. Preferred over water flow; a thermal power sensor takes precedence.",
               "dhw_active_sensor": "Binary sensor that is on while the heat pump heats tap water. Those periods are left out of the calibration. Leave empty if there is no tap water operation.",
               "supply_temperature_sensor": "Used for the COP of the measured operating point; otherwise the planned supply temperature is used.",
+              "return_temperature_sensor": "Supply minus return gives the real water spread for the emitter calibration (mean water temperature); otherwise a 5 K spread is assumed.",
+              "flow_sensor": "Optional (L/min, L/h or m³/h). With the supply and return temperature it gives the delivered heat: flow × spread × 4.16 kJ/(L·K). Used instead of the COP model for calibration, the COP fit and the thermal power sensor; a thermal power sensor takes precedence.",
               "grid_import_sensor": "Live power (W or kW). With import and/or export configured, the real-time offset sensor raises the offset while PV surplus is exported.",
-              "grid_export_sensor": "Live power (W or kW), positive while exporting."
+              "grid_export_sensor": "Live power (W or kW), positive while exporting.",
+              "battery_power_sensors": "Optional, one sensor per battery (W or kW), positive while charging, as in Battery Controller. Battery discharge counts as grid import for the PV-surplus layer, so a battery covering the heat pump is not mistaken for surplus."
             }
           },
           "heat_pump": {
@@ -251,14 +275,20 @@
               "k_factor": "k-factor (COP loss per °C supply)",
               "outdoor_temp_coefficient": "Outdoor temperature coefficient (COP gain per °C)",
               "cop_compensation_factor": "COP compensation factor",
-              "heat_pump_max_thermal_power_kw": "Maximum thermal power"
+              "heat_pump_max_thermal_power_kw": "Maximum thermal power",
+              "heat_pump_control": "Switching",
+              "min_run_minutes": "Minimum run time",
+              "min_off_minutes": "Minimum pause"
             },
             "data_description": {
               "base_cop": "From the datasheet (e.g. A2/W35). Typical 3.5-4.5 for air-to-water.",
               "k_factor": "Typically 0.08-0.12: how fast COP drops with higher supply temperature.",
               "outdoor_temp_coefficient": "Typically 0.05-0.10.",
               "cop_compensation_factor": "Scales the modelled COP to your measured COP (1.0 = datasheet).",
-              "heat_pump_max_thermal_power_kw": "Optional. Rated heating capacity. Empty: 1.3x the heat loss at the design outdoor temperature."
+              "heat_pump_max_thermal_power_kw": "Optional. Rated heating capacity at 7 °C outdoor (A7/W35); lower in colder air. Empty: 1.3x the heat loss at the design outdoor temperature.",
+              "heat_pump_control": "Own thermostat: the heat pump stops on its own room thermostat at the target; the plan only sets the offset. Follows the plan: an automation switches the heat pump with the *Plan active* binary sensor; the plan then also decides when it runs.",
+              "min_run_minutes": "With *Follows the plan*: every run lasts at least this long, to spare the compressor.",
+              "min_off_minutes": "With *Follows the plan*: every pause lasts at least this long."
             }
           },
           "heating_curve": {
@@ -296,6 +326,7 @@
               "cycling_penalty_weight": "Cycling penalty weight",
               "hard_floor_penalty": "Hard floor penalty",
               "feed_in_price_fallback": "Feed-in price fallback",
+              "house_base_load_w": "House base load",
               "offset_min": "Minimum offset",
               "offset_max": "Maximum offset",
               "heatpump_headroom": "Heat pump headroom"
@@ -305,6 +336,7 @@
               "cycling_penalty_weight": "Penalty for offset changes between steps. Higher values produce more stable plans with less switching.",
               "hard_floor_penalty": "Penalty in EUR when indoor temperature falls far below comfort minimum. Prevents deep undershoot.",
               "feed_in_price_fallback": "Fallback feed-in price when no production price sensor is configured.",
+              "house_base_load_w": "Average household consumption besides the heat pump. It is taken off the PV forecast before the rest counts as surplus for heating.",
               "offset_min": "Lowest heating curve offset the optimizer may use.",
               "offset_max": "Highest heating curve offset the optimizer may use.",
               "heatpump_headroom": "Assumed heat pump capacity as a ratio of emitter design-point output. 1.3 means 30% overcapacity."
@@ -419,6 +451,8 @@
             "ceiling_height": "Ceiling height",
             "thermal_mass_class": "Construction (thermal mass)",
             "emitter_type": "Heat emitters",
+            "building_model": "Building model",
+            "air_coupling_kw_per_k": "Mass-air coupling",
             "internal_gains_w_per_m2": "Internal heat gains",
             "glass_south_m2": "Window area south",
             "glass_east_m2": "Window area east",
@@ -429,6 +463,8 @@
             "indoor_temp_hysteresis_upper": "Comfort band above target",
             "indoor_temperature_sensor": "Indoor temperature sensor",
             "window_sensors": "Window and door contacts",
+            "comfort_schedule": "Home schedule",
+            "away_setback": "Away setback",
             "calibration_mode": "Calibration",
             "heat_curve_min": "Own curve: supply temperature at the warm end",
             "heat_curve_max": "Own curve: supply temperature at the cold end",
@@ -436,11 +472,15 @@
           },
           "data_description": {
             "energy_label": "Used to estimate the heat loss coefficient until calibration has learned it.",
+            "building_model": "One node: the room is the thermal mass. Mass + air (recommended for underfloor heating in a heavy house): the heat pump heats the floor and structure, sun and internal gains warm the air directly. Needs the indoor temperature sensor.",
+            "air_coupling_kw_per_k": "Only with Mass + air. Empty: learned from the history after a few days (until then 55 W/K per m² floor).",
             "internal_gains_w_per_m2": "People, appliances and lighting. 2-4 W/m² for an occupied home.",
             "glass_u_value": "Double glazing ~2.8, HR++ ~1.2, triple ~0.8.",
             "indoor_temp_hysteresis_lower": "The optimizer keeps the indoor temperature between target - lower and target + upper.",
             "indoor_temperature_sensor": "Strongly recommended. Without it the optimizer assumes the room is at the target temperature and calibration is not possible.",
             "window_sensors": "Optional. Periods with an open window or door are left out of the calibration.",
+            "comfort_schedule": "Optional schedule helper: on while someone is home. While it is off the comfort floor drops by the away setback, and the plan reheats in the cheapest hours before the schedule switches on again.",
+            "away_setback": "How far the bottom of the comfort band may drop while the home schedule is off.",
             "calibration_mode": "Learn the building from measurements. Observe: learn and show results, ask before using them. Apply: use the learned model as soon as it passes the quality checks.",
             "heat_curve_min": "Only for a separate heating circuit with its own curve; leave both empty to use the main curve.",
             "heat_curve_max": "Fill both or neither.",
@@ -458,6 +498,8 @@
             "ceiling_height": "Ceiling height",
             "thermal_mass_class": "Construction (thermal mass)",
             "emitter_type": "Heat emitters",
+            "building_model": "Building model",
+            "air_coupling_kw_per_k": "Mass-air coupling",
             "internal_gains_w_per_m2": "Internal heat gains",
             "glass_south_m2": "Window area south",
             "glass_east_m2": "Window area east",
@@ -468,6 +510,8 @@
             "indoor_temp_hysteresis_upper": "Comfort band above target",
             "indoor_temperature_sensor": "Indoor temperature sensor",
             "window_sensors": "Window and door contacts",
+            "comfort_schedule": "Home schedule",
+            "away_setback": "Away setback",
             "calibration_mode": "Calibration",
             "heat_curve_min": "Own curve: supply temperature at the warm end",
             "heat_curve_max": "Own curve: supply temperature at the cold end",
@@ -475,11 +519,15 @@
           },
           "data_description": {
             "energy_label": "Used to estimate the heat loss coefficient until calibration has learned it.",
+            "building_model": "One node: the room is the thermal mass. Mass + air (recommended for underfloor heating in a heavy house): the heat pump heats the floor and structure, sun and internal gains warm the air directly. Needs the indoor temperature sensor.",
+            "air_coupling_kw_per_k": "Only with Mass + air. Empty: learned from the history after a few days (until then 55 W/K per m² floor).",
             "internal_gains_w_per_m2": "People, appliances and lighting. 2-4 W/m² for an occupied home.",
             "glass_u_value": "Double glazing ~2.8, HR++ ~1.2, triple ~0.8.",
             "indoor_temp_hysteresis_lower": "The optimizer keeps the indoor temperature between target - lower and target + upper.",
             "indoor_temperature_sensor": "Strongly recommended. Without it the optimizer assumes the room is at the target temperature and calibration is not possible.",
             "window_sensors": "Optional. Periods with an open window or door are left out of the calibration.",
+            "comfort_schedule": "Optional schedule helper: on while someone is home. While it is off the comfort floor drops by the away setback, and the plan reheats in the cheapest hours before the schedule switches on again.",
+            "away_setback": "How far the bottom of the comfort band may drop while the home schedule is off.",
             "calibration_mode": "Learn the building from measurements. Observe: learn and show results, ask before using them. Apply: use the learned model as soon as it passes the quality checks.",
             "heat_curve_min": "Only for a separate heating circuit with its own curve; leave both empty to use the main curve.",
             "heat_curve_max": "Fill both or neither.",
@@ -599,7 +647,8 @@
         "production_price_sensor": "Feed-in price",
         "power_consumption": "Heat pump power",
         "grid_import_sensor": "Grid import",
-        "grid_export_sensor": "Grid export"
+        "grid_export_sensor": "Grid export",
+        "battery_power_sensors": "Home battery power"
       }
     },
     "calibration_mode": {
@@ -635,6 +684,26 @@
         "underfloor": "Underfloor heating",
         "fan_coil": "Fan coil units"
       }
+    },
+    "heat_pump_control": {
+      "options": {
+        "own_thermostat": "Own thermostat",
+        "follows_plan": "Follows the plan (on/off via Plan active)"
+      }
+    },
+    "building_model": {
+      "options": {
+        "one_node": "One node",
+        "mass_air": "Mass + air"
+      }
+    }
+  },
+  "device": {
+    "heat_pump": {
+      "name": "Heat pump"
+    },
+    "gas_boiler": {
+      "name": "Gas boiler"
     }
   },
   "entity": {
@@ -708,27 +777,36 @@
         }
       },
       "heat_pump_thermal_power": {
-        "name": "Heat pump thermal power"
+        "name": "Thermal power"
       },
       "heat_pump_thermal_energy": {
-        "name": "Heat pump thermal energy"
+        "name": "Thermal energy"
       },
       "gas_boiler_heat_pump_cost": {
-        "name": "Heat pump cost per kWh heat"
+        "name": "Cost per kWh"
       },
       "gas_boiler_gas_cost": {
-        "name": "Gas boiler cost per kWh heat"
+        "name": "Cost per kWh"
       },
       "gas_boiler_cost_savings": {
-        "name": "Gas boiler savings per kWh heat"
+        "name": "Savings per kWh"
       }
     },
     "binary_sensor": {
       "heat_pump_plan_active": {
         "name": "Heat pump plan active"
       },
+      "plan_active": {
+        "name": "Plan active"
+      },
+      "heat_pump_cheaper": {
+        "name": "Cheaper"
+      },
       "gas_boiler_preferred": {
-        "name": "Gas boiler preferred"
+        "name": "Advised"
+      },
+      "gas_boiler_cheaper": {
+        "name": "Cheaper"
       }
     },
     "number": {
@@ -805,6 +883,10 @@
       "title": "Indoor temperature sensor unavailable",
       "description": "The indoor temperature sensor **{sensor}** is unavailable. Until it reports again, the optimizer assumes the room is at its target temperature and calibration is paused."
     },
+    "comfort_schedule_unavailable": {
+      "title": "Home schedule unavailable",
+      "description": "The home schedule **{entity}** could not be read. Until it can, the optimizer keeps the full comfort band all the time."
+    },
     "calibration_ready": {
       "title": "Calibration of {zone} is ready",
       "fix_flow": {
@@ -819,6 +901,10 @@
     "gas_price_sensor_unavailable": {
       "title": "Gas price sensor unavailable",
       "description": "The gas price sensor **{sensor}** is unavailable. The gas boiler comparison cannot run without it."
+    },
+    "cop_model_mismatch": {
+      "title": "COP model does not match the measured COP",
+      "description": "Over the last days the measured COP (measured heat divided by electrical power) is **{ratio}×** what the configured COP model gives at the same temperatures. First check the heat measurement: the heat pump's own heat counter is the most reliable source; flow × supply-return spread is only as good as the two temperature sensors (a return reading below the room temperature, or a COP above half the Carnot limit, points at the sensors). When the measurement is right, set the zone's calibration to *Apply* so the COP curve is learned from it, or adjust the COP settings."
     }
   },
   "services": {

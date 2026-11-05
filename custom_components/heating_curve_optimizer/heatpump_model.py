@@ -40,6 +40,14 @@ from .helpers import calculate_defrost_factor
 # Floor for the COP so electrical power never divides by a near-zero number.
 MIN_COP = DEFAULT_MIN_COP
 
+# Outdoor temperature at which a configured maximum thermal power is rated
+# (the A7/W35 point of a data sheet).
+CAPACITY_RATING_OUTDOOR_TEMP = 7.0
+# Air-source capacity falls about 2 % per K colder outdoor air; bounded so a
+# far-off rating point cannot make the heat pump vanish or explode.
+CAPACITY_CHANGE_PER_K = 0.02
+CAPACITY_FACTOR_BOUNDS = (0.5, 1.25)
+
 
 @dataclass
 class HeatPumpConfig:
@@ -55,6 +63,8 @@ class HeatPumpConfig:
     outdoor_temp_coefficient: float = DEFAULT_OUTDOOR_TEMP_COEFFICIENT
     cop_compensation_factor: float = DEFAULT_COP_COMPENSATION_FACTOR
     max_thermal_power_kw: float = 8.0
+    # Outdoor temperature at which `max_thermal_power_kw` holds.
+    capacity_rating_temp: float = CAPACITY_RATING_OUTDOOR_TEMP
     min_cop: float = DEFAULT_MIN_COP
     defrost_free_threshold: float = DEFAULT_DEFROST_FREE_THRESHOLD
     defrost_cold_threshold: float = DEFAULT_DEFROST_COLD_THRESHOLD
@@ -63,16 +73,23 @@ class HeatPumpConfig:
 
     @classmethod
     def from_config(
-        cls, config: dict[str, Any], *, max_thermal_power_kw: float = 8.0
+        cls,
+        config: dict[str, Any],
+        *,
+        max_thermal_power_kw: float = 8.0,
+        fallback_rating_temp: float = CAPACITY_RATING_OUTDOOR_TEMP,
     ) -> HeatPumpConfig:
         """Build a `HeatPumpConfig` from a merged config-entry dict.
 
-        A configured `CONF_HEAT_PUMP_MAX_THERMAL_POWER` wins over the
-        `max_thermal_power_kw` fallback supplied by the caller.
+        A configured `CONF_HEAT_PUMP_MAX_THERMAL_POWER` (rated at 7 °C
+        outdoor) wins over the `max_thermal_power_kw` fallback supplied by
+        the caller, which holds at `fallback_rating_temp`.
         """
+        rating_temp = fallback_rating_temp
         configured = config.get(CONF_HEAT_PUMP_MAX_THERMAL_POWER)
         if configured is not None and float(configured) > 0:
             max_thermal_power_kw = float(configured)
+            rating_temp = CAPACITY_RATING_OUTDOOR_TEMP
         return cls(
             base_cop_at_35=float(config.get(CONF_BASE_COP, DEFAULT_COP_AT_35)),
             k_factor=float(config.get(CONF_K_FACTOR, DEFAULT_K_FACTOR)),
@@ -87,6 +104,7 @@ class HeatPumpConfig:
                 )
             ),
             max_thermal_power_kw=max_thermal_power_kw,
+            capacity_rating_temp=rating_temp,
             min_cop=float(config.get(CONF_MIN_COP, DEFAULT_MIN_COP)),
             defrost_free_threshold=float(
                 config.get(CONF_DEFROST_FREE_THRESHOLD, DEFAULT_DEFROST_FREE_THRESHOLD)
@@ -149,6 +167,19 @@ class HeatPumpConfig:
             carnot_cop = (supply_temp + 273.15) / lift_k
             cop = min(cop, carnot_cop)
         return max(self.min_cop, cop)
+
+    def max_thermal_power_at(self, outdoor_temp: float) -> float:
+        """Maximum thermal output (kW) at this outdoor temperature.
+
+        An air-source heat pump loses capacity in colder air; the rated
+        maximum is scaled by `CAPACITY_CHANGE_PER_K` per K away from the
+        rating temperature, within `CAPACITY_FACTOR_BOUNDS`.
+        """
+        low, high = CAPACITY_FACTOR_BOUNDS
+        factor = 1.0 + CAPACITY_CHANGE_PER_K * (
+            outdoor_temp - self.capacity_rating_temp
+        )
+        return self.max_thermal_power_kw * min(high, max(low, factor))
 
     def electrical_power_kw(
         self,

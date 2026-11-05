@@ -5,18 +5,19 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.start import async_at_started
 
 from .const import (
     CONF_GAS_BOILER_EFFICIENCY,
@@ -34,6 +35,14 @@ from .coordinator_optimization import OptimizationCoordinator
 from .coordinator_weather import WeatherDataCoordinator
 from .gas_boiler_coordinator import GasBoilerCoordinator
 
+if TYPE_CHECKING:
+    # Home Assistant 2026.10+ validates with probatio and aliases voluptuous to it
+    # at runtime, so Core's signatures expect probatio types. Older releases still
+    # ship voluptuous, which is why the runtime import stays as it is.
+    import probatio as vol
+else:
+    import voluptuous as vol
+
 _LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -49,6 +58,8 @@ _SERVICE_RESET_SCHEMA = vol.Schema({vol.Optional(SERVICE_ENTRY_ID): cv.string})
 # Delay before the first optimization run, so entities exist before the
 # (comparatively slow) DP result arrives.
 FIRST_REFRESH_DELAY_S = 5
+FIRST_REFRESH_TIMEOUT_S = 120
+FIRST_REFRESH_POLL_S = 2
 
 
 @dataclass
@@ -61,6 +72,11 @@ class HeatingCurveOptimizerData:
     optimization_coordinator: OptimizationCoordinator | None
     config: dict[str, Any]
     device: DeviceInfo
+    # Device for everything that describes the heat pump itself (plan-active
+    # advice, planned COP, cost per kWh, measured thermal sensors). The
+    # heat-pump *settings* deliberately stay in the main entry options; this
+    # is only the device grouping in the UI.
+    heatpump_device: DeviceInfo
     # Additional (non-primary) zones keyed by subentry id: heat_coordinator,
     # optimization_coordinator, config, device, name.
     zones: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -115,24 +131,30 @@ def _zone_subentries(entry: ConfigEntry) -> list[tuple[str, Any]]:
 
 def _child_device(
     identifier: str,
-    name: str,
+    name: str | None,
     model: str,
     sw_version: str,
     entry: ConfigEntry,
     parent_device_id: str,
+    *,
+    translation_key: str | None = None,
 ) -> DeviceInfo:
     """DeviceInfo for a subentry device, linked to the main device.
 
+    Pass either a fixed ``name`` (a subentry title) or a ``translation_key``.
     Newer Home Assistant releases link by registry id (``via_device_id``);
     older ones only accept the parent's identifier tuple (``via_device``).
     """
     info: dict[str, Any] = {
         "identifiers": {(DOMAIN, identifier)},
-        "name": name,
         "manufacturer": "Heating Curve Optimizer",
         "model": model,
         "sw_version": sw_version,
     }
+    if translation_key is not None:
+        info["translation_key"] = translation_key
+    else:
+        info["name"] = name
     if "via_device_id" in DeviceInfo.__annotations__:
         info["via_device_id"] = parent_device_id
     else:
@@ -141,17 +163,50 @@ def _child_device(
 
 
 def _schedule_first_refresh(
-    hass: HomeAssistant, entry: ConfigEntry, coordinator: Any
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: Any,
+    *,
+    ready: Callable[[], bool] | None = None,
 ) -> None:
-    """Run a coordinator's first refresh shortly after setup, off the setup path."""
+    """Run a coordinator's first refresh off the setup path, once its inputs exist.
+
+    After a restart the source sensors (prices, indoor temperature) usually
+    belong to integrations that are still loading. Refreshing right away
+    logs an error, raises a repair issue and - for the plan - starts from
+    the target-temperature fallback. So wait until Home Assistant has
+    started, then until ``ready()`` holds (bounded by
+    ``FIRST_REFRESH_TIMEOUT_S``, so a broken sensor still surfaces).
+    """
 
     async def _refresh() -> None:
+        await _async_wait_started(hass)
         await asyncio.sleep(FIRST_REFRESH_DELAY_S)
+        if ready is not None:
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + FIRST_REFRESH_TIMEOUT_S
+            while not ready() and loop.time() < deadline:
+                await asyncio.sleep(FIRST_REFRESH_POLL_S)
         await coordinator.async_request_refresh()
 
     entry.async_create_background_task(
         hass, _refresh(), f"{DOMAIN}_first_refresh_{coordinator.name}"
     )
+
+
+async def _async_wait_started(hass: HomeAssistant) -> None:
+    """Return once Home Assistant has started (immediately when it has)."""
+    started = asyncio.Event()
+
+    @callback
+    def _set(_hass: HomeAssistant) -> None:
+        started.set()
+
+    unsub = async_at_started(hass, _set)
+    try:
+        await started.wait()
+    finally:
+        unsub()
 
 
 async def _async_setup_zone(
@@ -164,6 +219,7 @@ async def _async_setup_zone(
     primary: bool,
     subentry_id: str,
     calibration_allowed: bool,
+    zone_count: int,
 ) -> tuple[HeatCalculationCoordinator, OptimizationCoordinator]:
     """Create and start the coordinator pair of one heating zone."""
     heat_coordinator = HeatCalculationCoordinator(
@@ -185,9 +241,15 @@ async def _async_setup_zone(
         zone_id,
         subentry_id=subentry_id,
         calibration_allowed=calibration_allowed,
+        zone_count=zone_count,
     )
     await optimization_coordinator.async_setup()
-    _schedule_first_refresh(hass, entry, optimization_coordinator)
+    _schedule_first_refresh(
+        hass,
+        entry,
+        optimization_coordinator,
+        ready=optimization_coordinator.inputs_ready,
+    )
     return heat_coordinator, optimization_coordinator
 
 
@@ -249,6 +311,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 primary=True,
                 subentry_id=subentry_id,
                 calibration_allowed=len(zone_subentries) == 1,
+                zone_count=len(zone_subentries),
             )
             continue
         zone_id = f"{entry.entry_id}_{subentry_id}"
@@ -263,6 +326,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             primary=False,
             subentry_id=subentry_id,
             calibration_allowed=False,
+            zone_count=len(zone_subentries),
         )
         zones[subentry_id] = {
             "heat_coordinator": zone_heat,
@@ -293,15 +357,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entry.entry_id,
         )
         await gas_boiler_coordinator.async_setup()
-        _schedule_first_refresh(hass, entry, gas_boiler_coordinator)
+        _schedule_first_refresh(
+            hass,
+            entry,
+            gas_boiler_coordinator,
+            ready=gas_boiler_coordinator.inputs_ready,
+        )
+        # Translated device name (the single gas subentry has a fixed title),
+        # so the short entity names read "Gas boiler Advised" / "Gasketel
+        # Inzetten" instead of doubling the device name.
         gas_boiler_device = _child_device(
             f"{entry.entry_id}_gas_boiler",
-            gas_subentry.title,
+            None,
             "Hybrid gas boiler",
             sw_version,
             entry,
             parent.id,
+            translation_key="gas_boiler",
         )
+
+    # The heat pump always gets its own child device: its advice, planned COP
+    # and cost live there, so the short entity names never land on the main
+    # device. The name is translated (``device.heat_pump`` in strings.json).
+    heatpump_device = _child_device(
+        f"{entry.entry_id}_heat_pump",
+        None,
+        "Heat pump",
+        sw_version,
+        entry,
+        parent.id,
+        translation_key="heat_pump",
+    )
 
     entry.runtime_data = HeatingCurveOptimizerData(
         weather_coordinator=weather_coordinator,
@@ -313,6 +399,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         gas_boiler_coordinator=gas_boiler_coordinator,
         gas_boiler_device=gas_boiler_device,
         gas_boiler_subentry_id=gas_boiler_subentry_id,
+        heatpump_device=heatpump_device,
         options=dict(entry.options),
     )
     _LOGGER.debug(

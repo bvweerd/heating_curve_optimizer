@@ -14,7 +14,8 @@ with yet: remove obsolete code instead of keeping legacy paths.
 custom_components/heating_curve_optimizer/
   __init__.py                 setup/unload, zones, gas boiler, update listener, service
   const.py                    config keys, defaults, energy-label -> UA helpers
-  building_model.py           BuildingConfig (1R1C, internal gains), EmitterConfig   [pure]
+  building_model.py           BuildingConfig (1R1C or mass-air, internal gains), EmitterConfig [pure]
+  mass_model.py               mass observer, 5-min history, coupling grid search, measured COP check
   heatpump_model.py           HeatPumpConfig.cop_at: the ONLY COP implementation    [pure]
   thermal_optimizer.py        optimize_thermal_schedule: DP + baseline + shadow price [pure]
   calibration.py              ridge fits: building (C, UA, solar factor, internal gains, COP scale
@@ -46,24 +47,54 @@ docs/                         index, installation, quick-start, configuration, a
   listener then refreshes the primary zone instead of reloading;
   `HeatCalculationCoordinator.effective_config()` merges them in.
 - **Step grid**: one DP step per price period, first step from now to the
-  next price boundary, horizon = planning window rounded up to periods.
-  All forecasts go through `resample_to_steps`.
-- **Optimizer**: state `(T_in, prev_offset)`, value function on a 0.1 °C
-  grid with linear interpolation, exact transitions, continuous forward
-  pass. Comfort: 50 €/K²/h outside the band + 1000 € below
-  `comfort_min - 1.5`. Terminal value prices stored heat above
-  `comfort_min`. Baseline = offset 0 through the same model.
+  next price boundary, horizon = planning window rounded up to periods but
+  ending with the last known price (last price held up to 6 h minimum).
+  All forecasts go through `resample_to_steps`; on-the-hour weather values
+  first through `hourly_means`. PV for heating = production minus
+  `house_base_load_w`, shared over the zones.
+- **Optimizer**: state `(T_in, prev_offset, mode)`, mode = run/pause
+  phase × ramp counter (`helpers.offset_ramp`; counters advance on full
+  periods only). Value function on a 0.1 °C grid with linear interpolation,
+  exact transitions, continuous forward pass. `ThermalModel` holds the
+  physics: ≤15-min substeps, capacity derated by outdoor temperature.
+  Comfort: 50 €/K²/h outside the band + 1000 € below `comfort_min - 1.5`.
+  Terminal value: stored heat above `comfort_min` at the mean price/COP,
+  concave for leakage, zero without heat demand. Baseline = offset 0
+  through the same model.
+- **Switching** (`heat_pump_control`): `own_thermostat` (default) =
+  thermostat holds the air at target + 0.15 (full output below), no off
+  action, plan only sets the offset; `follows_plan` = off action, no
+  thermostat, run/pause phases in the DP
+  state (`min_run_minutes`/`min_off_minutes`, default 60), published
+  `heat_pump_plan_on` held until the minimum has passed.
+- **Mass + air** (`building_model` zone option, default `one_node`): DP state =
+  mass temp, air quasi-steady `(H Tm + UA To + S + G)/(H+UA)` plus the
+  measured-minus-modelled air offset fading over 3 h; comfort and
+  thermostat on air, emitter on mass (`EmitterConfig.heats_mass`). The
+  building calibration fit is not applied in this mode. Observer every 60 s; coupling H learned
+  every 6 h with the solar factor; used when it beats one node, else
+  coupling 0 (one node); zone `air_coupling_kw_per_k` wins, 55 W/K·m²
+  before the first fit. History is kept in every zone and
+  exported under diagnostics `stored_data.validation`.
+- **Away periods**: optional zone `comfort_schedule` (a `schedule` helper,
+  on = home, read via `schedule.get_schedule` each run) lowers the floor by
+  `away_setback` for steps that *end* while it is off (`comfort_mins`);
+  unreadable → full band + repair issue `comfort_schedule_unavailable_*`.
 - **Indoor temperature fallback** is the target temperature; a configured
   but unavailable sensor raises repair issue `indoor_sensor_unavailable_*`.
 - **Hybrid** (heat pump first, gas as comfort backup): gas when the plan
   is still below the band after 3 h (`heat_pump_cannot_keep_up`, any
   price unless `gas_comfort_backup` is off), or when below/dipping below the band but recovering
-  (`below_comfort_band`) and gas is cheaper per kWh of heat.
+  (`below_comfort_band`) and gas is cheaper per kWh of heat (heat pump at
+  the plan's `cop[0]`).
 - **Optimization data keys** (consumed by sensors, gas boiler, diagnostics):
   `offset, offsets, supply_temps, indoor_temps, cop, cost_eur,
   baseline_*, cost_savings_eur, shadow_price_eur_per_kwh,
   step_durations_hours, step_start_times, step_minutes, comfort_min/max,
-  buffer_kwh, calibration (summary dict), model_accuracy, realtime`.
+  comfort_mins (per-step floor), comfort_deficit_kh,
+  baseline_comfort_deficit_kh, feed_in_prices, pv_surplus_kw, mass_temp,
+  mass_temps, mass_model, buffer_kwh, calibration (summary dict),
+  model_accuracy, realtime`.
 - **Calibration**: per zone mode off/observe/apply (`calibration_mode`); only
   with one zone. Windows close after 0.3 K movement; excluded on DHW, open
   window, 1 K jump, gaps. Applied fits replace UA/C/internal gains/solar
@@ -85,8 +116,7 @@ docs/                         index, installation, quick-start, configuration, a
 ## Checks before pushing
 
 ```bash
-pre-commit run --all-files
-mypy custom_components/heating_curve_optimizer
+pre-commit run --all-files   # includes mypy (local hook, needs HA installed)
 pytest            # coverage floor 85%
 mkdocs build --strict   # when docs changed (requirements-docs.txt)
 ```

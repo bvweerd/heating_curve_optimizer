@@ -104,3 +104,21 @@ def test_from_config_reads_expected_keys():
     assert hp.outdoor_temp_coefficient == 0.09
     assert hp.cop_compensation_factor == 0.95
     assert hp.max_thermal_power_kw == 10.0
+
+
+def test_capacity_falls_in_colder_air():
+    hp = HeatPumpConfig(max_thermal_power_kw=8.0)
+    assert hp.max_thermal_power_at(7.0) == pytest.approx(8.0)
+    assert hp.max_thermal_power_at(-3.0) == pytest.approx(8.0 * 0.8)
+    assert hp.max_thermal_power_at(-60.0) == pytest.approx(4.0)  # bounded
+
+
+def test_fallback_capacity_holds_at_its_own_rating_point():
+    hp = HeatPumpConfig.from_config(
+        {}, max_thermal_power_kw=10.0, fallback_rating_temp=-10.0
+    )
+    assert hp.max_thermal_power_at(-10.0) == pytest.approx(10.0)
+    configured = HeatPumpConfig.from_config(
+        {"heat_pump_max_thermal_power_kw": 6.0}, fallback_rating_temp=-10.0
+    )
+    assert configured.capacity_rating_temp == pytest.approx(7.0)

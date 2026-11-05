@@ -23,7 +23,11 @@ number/climate entities re-runs the optimizer immediately without a reload.
 | Heat pump thermal power | Heat meter or output reported by the heat pump (W/kW). Calibration without relying on the COP model, and learning the COP curve. |
 | Tap water heating active | Binary sensor, on while the heat pump heats tap water; those periods are left out of calibration. Empty: no tap water operation. |
 | Measured supply temperature | COP of the actual operating point (thermal power sensor, calibration). Without it the planned supply temperature is used. |
+| Measured return temperature | Supply minus return is the real water spread, used for the mean water temperature in the emitter calibration. Without it a 5 K spread is assumed. |
+| Heat meter (energy) | Cumulative thermal energy in kWh (Wh/MWh converted), e.g. the heat pump's own heat counter. Delivered heat = its increase over the last 10 minutes. The best heat source after a thermal power sensor; used for calibration, the COP curve and the *Thermal power* sensor. |
+| Water flow | L/min, L/h or m³/h. With supply and return temperature it measures the delivered heat: flow × spread × 4.16 kJ/(L·K), counted only while the heat pump draws more than its standby power. Used like a heat meter (calibration, COP curve, *Thermal power* sensor); a thermal power sensor takes precedence. |
 | Grid import / export power | Enables the real-time PV-surplus layer. W or kW; a sensor without unit is read as W. |
+| Home battery power | One sensor per battery, positive while charging (the Battery Controller convention; the setup wizard offers its batteries). Discharge counts as grid import for the PV-surplus layer. |
 
 ### Heat pump
 
@@ -41,7 +45,9 @@ COP × defrost factor (0.6 … 1.0, between −10 °C and +6 °C at high humidit
 | k-factor | 0.11 | COP loss per °C supply temperature above 35 °C. 0.08–0.12 for air-to-water. |
 | Outdoor temperature coefficient | 0.08 | COP gain per °C outdoor temperature. 0.05–0.10. |
 | Compensation factor | 1.0 | Scales the model to your measured seasonal COP. |
-| Maximum thermal power | empty | Rated heating capacity in kW. Empty: 1.3 × the building's heat loss at the design outdoor temperature. |
+| Maximum thermal power | empty | Rated heating capacity in kW at 7 °C outdoor (A7/W35); the model lowers it 2 % per K in colder air. Empty: 1.3 × the building's heat loss at the design outdoor temperature (holding there). |
+| Switching | Own thermostat | *Own thermostat*: the heat pump switches on its own room thermostat around the target (modelled as holding target + 0.15 °C); the plan only sets the offset. *Follows the plan*: an automation switches the heat pump with the *Plan active* binary sensor, and the plan decides when it runs. |
+| Minimum run time / pause | 60 / 60 min | Only with *Follows the plan*: every run and every pause lasts at least this long, to spare the compressor. |
 
 ### Heating curve
 
@@ -73,18 +79,40 @@ offset of −4 … +4 °C on top of it.
 | Ceiling height | 2.5 m | Volume for the ventilation loss. |
 | Construction | medium | Thermal mass: light 40, medium 90, heavy 165 Wh/(m²·K). |
 | Heat emitters | radiators | Emitter exponent: radiators 1.3, underfloor 1.1, fan coils 1.0. |
+| Building model | One node | *Mass + air*: the heat pump heats floor and structure, sun and internal gains warm the air directly. Recommended for underfloor heating in a heavy house; needs the indoor temperature sensor. See [Algorithm](algorithm.md#mass-air-opt-in-per-zone). |
+| Mass-air coupling | empty | Only with *Mass + air*. Empty: learned from the history after a few days (until then 55 W/K per m² floor). |
 | Internal heat gains | 3 W/m² | People, appliances, lighting. |
 | Window area south/east/west | 0 | m² glass; solar gain uses sun position and direct/diffuse irradiance. |
 | Glazing U-value | 1.2 | Determines the solar heat gain coefficient. |
 | Target temperature, comfort band below/above | 20 °C, 0.3, 0.5 | The optimizer keeps the indoor temperature between target − below and target + above. Deviations are penalised quadratically (50 €/K²/h). |
 | Indoor temperature sensor | — | Strongly recommended. Without it the optimizer assumes the room is at its target temperature and calibration is disabled. An unavailable sensor raises a repair issue. |
 | Window and door contacts | — | Optional binary sensors; periods with an open window are left out of calibration. |
+| Home schedule | — | Optional [schedule helper](https://www.home-assistant.io/integrations/schedule/), on while someone is home. See [Away periods](#away-periods). |
+| Away setback | 2 °C | How far the bottom of the comfort band drops while the home schedule is off. |
 | Calibration | Observe | Off / Observe / Apply, see [Calibration](calibration.md). |
 | Own heating curve (warm/cold end) | empty | Only for a separate heating circuit with its own curve. Fill both or neither. |
 
 The first zone is the primary zone; its setpoints are exposed as number and
 climate entities. Additional zones each get their own device with offset,
 supply temperature, planned indoor temperature, savings and heat demand.
+
+### Away periods
+
+With a home schedule the comfort floor follows the schedule: every planning
+step that ends while the schedule is off may drop to `target − below −
+away setback`. The top of the band stays where it is. Because the optimizer
+reads the whole weekly schedule, it knows when you come back and reheats in
+the cheapest hours before the schedule switches on, instead of heating hard
+at whatever price the moment you return.
+
+Lowering the target with an automation when you leave does not do this:
+the optimizer then only learns about the return when the target goes back
+up, with the room already below the band.
+
+In a heavy, well-insulated house the room cools slowly, so an away period
+mostly gives the optimizer freedom to skip expensive hours; the energy
+saved by the lower temperature itself is small. If the schedule cannot be
+read, a repair issue appears and the full band applies all the time.
 
 !!! note "Several zones on one heat pump"
     Each zone is optimized independently, as its own heating circuit. The

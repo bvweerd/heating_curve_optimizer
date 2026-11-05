@@ -42,6 +42,7 @@ def _make_runtime_data(
         optimization_coordinator=optimization or _default_coordinator(),
         config=config or {},
         device=MagicMock(),
+        heatpump_device=MagicMock(),
         zones=zones or {},
     )
 
@@ -239,6 +240,7 @@ async def test_diagnostics_no_crash_without_primary_zone(hass: HomeAssistant):
         optimization_coordinator=None,
         config={},
         device=MagicMock(),
+        heatpump_device=MagicMock(),
     )
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)

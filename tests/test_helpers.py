@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from homeassistant.core import State
+from homeassistant.util import dt as dt_util
 
 from custom_components.heating_curve_optimizer.helpers import (
     UNAVAILABLE_STATES,
@@ -19,9 +20,11 @@ from custom_components.heating_curve_optimizer.helpers import (
     calculate_window_solar_gain,
     extract_price_forecast_with_timestamps,
     get_sensor_value,
+    offset_ramp,
     price_unit_scale,
     read_power_kw,
     resample_to_steps,
+    schedule_is_on,
     state_has_value,
 )
 
@@ -137,9 +140,11 @@ def test_detect_interval_with_from_key():
 
 def test_extract_price_forecast_from_forecast_prices():
     """Test extracting forecast from forecast_prices attribute."""
-    state = MagicMock(spec=State)
-    state.attributes = {"forecast_prices": [0.20, 0.25, 0.30]}
-    state.state = "0.25"
+    state = State(
+        "sensor.price",
+        "0.25",
+        {"forecast_prices": [0.20, 0.25, 0.30]},
+    )
 
     prices, interval = extract_price_forecast_with_interval(state)
     assert prices == [0.20, 0.25, 0.30]
@@ -148,17 +153,19 @@ def test_extract_price_forecast_from_forecast_prices():
 
 def test_extract_price_forecast_from_net_prices():
     """Test extracting forecast from net_prices_today/tomorrow."""
-    state = MagicMock(spec=State)
-    state.attributes = {
-        "net_prices_today": [
-            {"start": "2024-01-01T12:00:00+00:00", "value": 0.20},
-            {"start": "2024-01-01T13:00:00+00:00", "value": 0.25},
-        ],
-        "net_prices_tomorrow": [
-            {"start": "2024-01-02T00:00:00+00:00", "value": 0.30},
-        ],
-    }
-    state.state = "0.25"
+    state = State(
+        "sensor.price",
+        "0.25",
+        {
+            "net_prices_today": [
+                {"start": "2024-01-01T12:00:00+00:00", "value": 0.20},
+                {"start": "2024-01-01T13:00:00+00:00", "value": 0.25},
+            ],
+            "net_prices_tomorrow": [
+                {"start": "2024-01-02T00:00:00+00:00", "value": 0.30},
+            ],
+        },
+    )
 
     with patch("homeassistant.util.dt.utcnow") as mock_now:
         mock_now.return_value = datetime(2024, 1, 1, 11, 0, 0, tzinfo=UTC)
@@ -169,12 +176,14 @@ def test_extract_price_forecast_from_net_prices():
 
 def test_extract_price_forecast_from_raw_today_tomorrow():
     """Test extracting forecast from raw_today/raw_tomorrow."""
-    state = MagicMock(spec=State)
-    state.attributes = {
-        "raw_today": [0.20, 0.21, 0.22, 0.23, 0.24, 0.25, 0.26],
-        "raw_tomorrow": [0.27, 0.28],
-    }
-    state.state = "0.25"
+    state = State(
+        "sensor.price",
+        "0.25",
+        {
+            "raw_today": [0.20, 0.21, 0.22, 0.23, 0.24, 0.25, 0.26],
+            "raw_tomorrow": [0.27, 0.28],
+        },
+    )
 
     # Test with raw_today/raw_tomorrow
     # The function uses now.hour to slice raw_today
@@ -187,9 +196,11 @@ def test_extract_price_forecast_from_raw_today_tomorrow():
 
 def test_extract_price_forecast_fallback_to_state():
     """Test fallback to current state when no forecast available."""
-    state = MagicMock(spec=State)
-    state.attributes = {}
-    state.state = "0.25"
+    state = State(
+        "sensor.price",
+        "0.25",
+        {},
+    )
 
     prices, interval = extract_price_forecast_with_interval(state)
     assert prices == [0.25]
@@ -198,9 +209,11 @@ def test_extract_price_forecast_fallback_to_state():
 
 def test_extract_price_forecast_invalid_state():
     """Test handling invalid state value."""
-    state = MagicMock(spec=State)
-    state.attributes = {}
-    state.state = "unavailable"
+    state = State(
+        "sensor.price",
+        "unavailable",
+        {},
+    )
 
     prices, interval = extract_price_forecast_with_interval(state)
     assert prices == []
@@ -209,9 +222,11 @@ def test_extract_price_forecast_invalid_state():
 
 def test_extract_price_forecast_wrapper():
     """Test extract_price_forecast wrapper function."""
-    state = MagicMock(spec=State)
-    state.attributes = {"forecast_prices": [0.20, 0.25, 0.30]}
-    state.state = "0.25"
+    state = State(
+        "sensor.price",
+        "0.25",
+        {"forecast_prices": [0.20, 0.25, 0.30]},
+    )
 
     prices, _ = extract_price_forecast_with_interval(state)
     assert prices == [0.20, 0.25, 0.30]
@@ -224,12 +239,14 @@ def test_extract_price_forecast_from_today_tomorrow():
     already elapsed, using DST-aware index arithmetic. We mock the local
     clock to midnight so that all today entries are still in the future.
     """
-    state = MagicMock(spec=State)
-    state.attributes = {
-        "today": [0.20, 0.21, 0.22],
-        "tomorrow": [0.23, 0.24],
-    }
-    state.state = "0.25"
+    state = State(
+        "sensor.price",
+        "0.25",
+        {
+            "today": [0.20, 0.21, 0.22],
+            "tomorrow": [0.23, 0.24],
+        },
+    )
 
     midnight = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
     with (
@@ -373,15 +390,17 @@ def test_defrost_factor_range_check():
 
 def test_extract_price_forecast_with_dict_values():
     """Test extracting forecast with dict-wrapped values."""
-    state = MagicMock(spec=State)
-    state.attributes = {
-        "forecast_prices": [
-            {"value": 0.20},
-            {"value": 0.25},
-            {"value": 0.30},
-        ]
-    }
-    state.state = "0.25"
+    state = State(
+        "sensor.price",
+        "0.25",
+        {
+            "forecast_prices": [
+                {"value": 0.20},
+                {"value": 0.25},
+                {"value": 0.30},
+            ]
+        },
+    )
 
     prices, _interval = extract_price_forecast_with_interval(state)
     assert prices == [0.20, 0.25, 0.30]
@@ -389,9 +408,11 @@ def test_extract_price_forecast_with_dict_values():
 
 def test_extract_price_forecast_mixed_types():
     """Test extracting forecast with mixed value types."""
-    state = MagicMock(spec=State)
-    state.attributes = {"forecast_prices": [0.20, "0.25", {"value": 0.30}]}
-    state.state = "0.25"
+    state = State(
+        "sensor.price",
+        "0.25",
+        {"forecast_prices": [0.20, "0.25", {"value": 0.30}]},
+    )
 
     prices, _interval = extract_price_forecast_with_interval(state)
     assert prices == [0.20, 0.25, 0.30]
@@ -399,9 +420,11 @@ def test_extract_price_forecast_mixed_types():
 
 def test_extract_price_forecast_skips_invalid_values():
     """Test extracting forecast skips invalid values."""
-    state = MagicMock(spec=State)
-    state.attributes = {"forecast_prices": [0.20, "invalid", 0.30, None, 0.35]}
-    state.state = "0.25"
+    state = State(
+        "sensor.price",
+        "0.25",
+        {"forecast_prices": [0.20, "invalid", 0.30, None, 0.35]},
+    )
 
     prices, _interval = extract_price_forecast_with_interval(state)
     assert prices == [0.20, 0.30, 0.35]
@@ -450,16 +473,14 @@ def test_defrost_factor_worst_near_zero():
 
 def test_state_has_value_valid():
     """Test state_has_value with a valid state."""
-    state = MagicMock(spec=State)
-    state.state = "21.5"
+    state = State("sensor.temperature", "21.5")
     assert state_has_value(state) is True
 
 
 def test_state_has_value_unavailable():
     """Test state_has_value with unavailable states."""
     for bad_state in UNAVAILABLE_STATES:
-        state = MagicMock(spec=State)
-        state.state = bad_state
+        state = State("sensor.temperature", bad_state)
         assert state_has_value(state) is False
 
 
@@ -473,22 +494,19 @@ def test_state_has_value_none():
 
 def test_price_unit_scale_eur_kwh():
     """Sensors with per-kWh unit should return scale 1.0."""
-    state = MagicMock(spec=State)
-    state.attributes = {"unit_of_measurement": "EUR/kWh"}
+    state = State("sensor.price", "0.25", {"unit_of_measurement": "EUR/kWh"})
     assert price_unit_scale(state) == 1.0
 
 
 def test_price_unit_scale_eur_mwh():
     """Sensors with per-MWh unit should return scale 0.001."""
-    state = MagicMock(spec=State)
-    state.attributes = {"unit_of_measurement": "EUR/MWh"}
+    state = State("sensor.price", "250", {"unit_of_measurement": "EUR/MWh"})
     assert price_unit_scale(state) == 0.001
 
 
 def test_price_unit_scale_magnitude_heuristic():
     """Without a unit, large magnitudes should indicate EUR/MWh."""
-    state = MagicMock(spec=State)
-    state.attributes = {}
+    state = State("sensor.price", "0.25", {})
     # Typical EUR/kWh prices (< 1.0) → scale 1.0
     assert price_unit_scale(state, samples=[0.20, 0.25, 0.30]) == 1.0
     # Typical EUR/MWh prices (> 5.0) → scale 0.001
@@ -715,3 +733,173 @@ def test_window_solar_gain_south_beats_north_facing_side_in_winter_noon():
 
 def test_window_solar_gain_zero_without_glass():
     assert calculate_window_solar_gain([500.0, 0.0], {}, 1.2) == [0.0, 0.0]
+
+
+def test_schedule_is_on_follows_the_schedule_entity_rules():
+    """`from` inclusive, `to` exclusive, 24:00 to midnight; local time."""
+    from datetime import time
+
+    week = {
+        "monday": [
+            {"from": time(6, 0), "to": time(8, 0)},
+            {"from": "17:00:00", "to": "24:00:00"},
+        ],
+        "tuesday": [{"from": "00:00:00", "to": time.max}],
+    }
+    tz = dt_util.get_default_time_zone()
+    monday = datetime(2026, 10, 19, tzinfo=tz)  # a Monday
+    assert schedule_is_on(week, monday.replace(hour=6))
+    assert schedule_is_on(week, monday.replace(hour=7, minute=59))
+    assert not schedule_is_on(week, monday.replace(hour=8))
+    assert not schedule_is_on(week, monday.replace(hour=12))
+    assert schedule_is_on(week, monday.replace(hour=23, minute=59))
+    assert schedule_is_on(week, monday.replace(day=20, hour=3))  # Tuesday
+    assert not schedule_is_on(week, monday.replace(day=21, hour=3))  # no blocks
+    # UTC input is converted to local time first.
+    assert schedule_is_on(week, dt_util.as_utc(monday.replace(hour=6, minute=30)))
+
+
+def test_schedule_is_on_ignores_malformed_blocks():
+    week = {"monday": [{"from": "noon", "to": "18:00"}, {"to": "18:00"}]}
+    monday = datetime(2026, 10, 19, 12, tzinfo=dt_util.get_default_time_zone())
+    assert not schedule_is_on(week, monday)
+
+
+def test_flow_and_measured_heat():
+    from custom_components.heating_curve_optimizer.helpers import (
+        heat_is_measured,
+        measured_heat_kw,
+        read_flow_l_per_min,
+    )
+
+    states = {
+        "sensor.flow": State("sensor.flow", "12", {"unit_of_measurement": "L/min"}),
+        "sensor.flow_h": State("sensor.flow_h", "720", {"unit_of_measurement": "L/h"}),
+        "sensor.flow_nounit": State("sensor.flow_nounit", "12", {}),
+        "sensor.supply": State("sensor.supply", "35", {}),
+        "sensor.return": State("sensor.return", "30", {}),
+        "sensor.heat": State("sensor.heat", "3.0", {"unit_of_measurement": "kW"}),
+    }
+    hass = MagicMock()
+    hass.states.get = states.get
+
+    assert read_flow_l_per_min(hass, "sensor.flow") == 12.0
+    assert read_flow_l_per_min(hass, "sensor.flow_h") == 12.0
+    assert read_flow_l_per_min(hass, "sensor.flow_nounit") is None
+
+    flow_config = {
+        "flow_sensor": "sensor.flow",
+        "supply_temperature_sensor": "sensor.supply",
+        "return_temperature_sensor": "sensor.return",
+    }
+    assert heat_is_measured(flow_config)
+    assert measured_heat_kw(hass, flow_config) == pytest.approx(12 / 60 * 4.163 * 5)
+    # Without the return sensor the flow alone measures nothing.
+    partial = {**flow_config, "return_temperature_sensor": None}
+    assert not heat_is_measured(partial)
+    assert measured_heat_kw(hass, partial) is None
+    # A thermal power sensor takes precedence.
+    meter = {**flow_config, "heat_pump_thermal_power_sensor": "sensor.heat"}
+    assert measured_heat_kw(hass, meter) == 3.0
+
+
+def test_flow_heat_is_zero_while_the_heat_pump_is_idle():
+    """A placeholder flow reported while stopped must not become heat."""
+    from custom_components.heating_curve_optimizer.helpers import measured_heat_kw
+
+    states = {
+        "sensor.flow": State("sensor.flow", "5.0", {"unit_of_measurement": "L/min"}),
+        "sensor.supply": State("sensor.supply", "16.4", {}),
+        "sensor.return": State("sensor.return", "15.6", {}),
+        "sensor.power": State("sensor.power", "7", {"unit_of_measurement": "W"}),
+    }
+    hass = MagicMock()
+    hass.states.get = states.get
+    config = {
+        "flow_sensor": "sensor.flow",
+        "supply_temperature_sensor": "sensor.supply",
+        "return_temperature_sensor": "sensor.return",
+        "power_consumption": "sensor.power",
+    }
+    assert measured_heat_kw(hass, config) == 0.0
+    states["sensor.power"] = State("sensor.power", "900", {"unit_of_measurement": "W"})
+    assert measured_heat_kw(hass, config) == pytest.approx(5 / 60 * 4.163 * 0.8)
+
+
+def test_energy_counter_rate():
+    from datetime import timedelta
+
+    from custom_components.heating_curve_optimizer.helpers import EnergyCounterRate
+
+    rate = EnergyCounterRate(window=timedelta(minutes=10))
+    t0 = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
+    assert rate.update(t0, 100.0) is None  # no span yet
+    assert rate.update(t0 + timedelta(minutes=1), 100.0) is None  # < 2 minutes
+    # 1.5 kWh in 15 minutes, the window keeps the last 10 (+ the reading before).
+    for minute in range(2, 16):
+        value = rate.update(t0 + timedelta(minutes=minute), 100.0 + 0.1 * minute)
+    assert value == pytest.approx(6.0)
+    assert rate.update(t0 + timedelta(minutes=16), None) is None
+    # A counter reset starts over.
+    assert rate.update(t0 + timedelta(minutes=17), 0.0) is None
+
+
+def test_heat_meter_takes_precedence_over_flow():
+    from datetime import timedelta
+
+    from custom_components.heating_curve_optimizer.helpers import (
+        EnergyCounterRate,
+        heat_is_measured,
+        measured_heat_kw,
+    )
+
+    states = {
+        "sensor.counter": State(
+            "sensor.counter", "1000.0", {"unit_of_measurement": "kWh"}
+        ),
+        "sensor.flow": State("sensor.flow", "12", {"unit_of_measurement": "L/min"}),
+        "sensor.supply": State("sensor.supply", "35", {}),
+        "sensor.return": State("sensor.return", "25", {}),
+        "sensor.power": State("sensor.power", "1.0", {"unit_of_measurement": "kW"}),
+    }
+    hass = MagicMock()
+    hass.states.get = states.get
+    config = {
+        "heat_pump_thermal_energy_sensor": "sensor.counter",
+        "flow_sensor": "sensor.flow",
+        "supply_temperature_sensor": "sensor.supply",
+        "return_temperature_sensor": "sensor.return",
+        "power_consumption": "sensor.power",
+    }
+    assert heat_is_measured({"heat_pump_thermal_energy_sensor": "sensor.counter"})
+    counter = EnergyCounterRate()
+    t0 = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
+    assert measured_heat_kw(hass, config, counter, t0) is None
+    states["sensor.counter"] = State(
+        "sensor.counter", "1001.0", {"unit_of_measurement": "kWh"}
+    )
+    # 1 kWh in 12 minutes = 5 kW, not the flow's 8.3 kW.
+    assert measured_heat_kw(
+        hass, config, counter, t0 + timedelta(minutes=12)
+    ) == pytest.approx(5.0)
+    # Without a rate tracker the meter cannot be read.
+    assert measured_heat_kw(hass, config) is None
+    # Idle: zero, whatever the counter did.
+    states["sensor.power"] = State("sensor.power", "5", {"unit_of_measurement": "W"})
+    assert measured_heat_kw(hass, config, counter, t0 + timedelta(minutes=13)) == 0.0
+
+
+@pytest.mark.parametrize(
+    ("step", "delta", "expected"),
+    [
+        (15, 30, (1, 2)),  # 2 K per hour, not 1 K per quarter
+        (60, 30, (2, 1)),
+        (60, 45, (1, 1)),  # rounds to the slower ramp
+        (15, 15, (1, 1)),
+        (15, 120, (1, 8)),
+    ],
+)
+def test_offset_ramp_never_exceeds_the_configured_rate(step, delta, expected):
+    assert offset_ramp(step, delta) == expected
+    changes, every = expected
+    assert changes / (every * step) <= 1 / delta + 1e-9

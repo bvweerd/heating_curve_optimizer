@@ -1,6 +1,10 @@
 {
   "domain": "heating_curve_optimizer",
   "name": "Heating Curve Optimizer",
+  "after_dependencies": [
+    "schedule"
+  ],
+  "categories": ["climate.heat_pumps_air_conditioning", "energy.energy_prices"],
   "codeowners": [
     "@bvweerd"
   ],

@@ -122,8 +122,8 @@ def test_cop_fit_recovers_curve() -> None:
 
 def test_emitter_fit_recovers_curve() -> None:
     samples = [
-        EmitterSample(dt, 9.0 * (dt / 25.0) ** 1.25)
-        for dt in [6, 8, 10, 12, 15, 18, 20, 24] * 12
+        EmitterSample(dt, 9.0 * (dt / 25.0) ** 1.25, 4.0 + 2.0 * (i % 2))
+        for i, dt in enumerate([6, 8, 10, 12, 15, 18, 20, 24] * 12)
     ]
     fit = fit_emitter(
         samples, prior_nominal_kw=12.0, prior_exponent=1.3, nominal_delta_t=25.0
@@ -131,6 +131,7 @@ def test_emitter_fit_recovers_curve() -> None:
     assert fit is not None and fit.usable
     assert fit.nominal_power_kw == pytest.approx(9.0, rel=0.05)
     assert fit.exponent == pytest.approx(1.25, abs=0.05)
+    assert fit.water_delta_t == pytest.approx(5.0)
 
 
 def test_residual_diagnosis_flags_correlated_errors() -> None:
@@ -171,3 +172,13 @@ async def test_state_persists_and_resets() -> None:
 
     await restored.async_reset()
     assert restored.sample_count == 0 and restored.fit is None
+
+
+async def test_load_drops_rows_in_an_outdated_layout() -> None:
+    store = MagicMock()
+    store.async_load = AsyncMock(
+        return_value={"emitter_samples": [[12.0, 3.0], [12.0, 3.0, 6.0]]}
+    )
+    state = ThermalCalibrationState(store=store)
+    await state.async_load()
+    assert list(state.emitter_samples) == [EmitterSample(12.0, 3.0, 6.0)]

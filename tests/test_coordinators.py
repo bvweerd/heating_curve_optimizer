@@ -17,7 +17,9 @@ from custom_components.heating_curve_optimizer.calibration import (
 from custom_components.heating_curve_optimizer.coordinator_optimization import (
     OptimizationCoordinator,
     _plan_run_advice,
+    hourly_means,
     price_change_is_significant,
+    pv_surplus,
 )
 from custom_components.heating_curve_optimizer.sensor import TotalCostSavingsSensor
 
@@ -77,6 +79,16 @@ def test_plan_run_advice_currently_off_reports_when_heat_resumes() -> None:
     assert change_at == starts[2]
 
 
+def test_plan_run_advice_trickle_below_idle_threshold_is_off() -> None:
+    """The threshold is electrical: 0.1 kW electric (0.5 kW heat at COP 5)
+    is standby-level trickle, not a running heat pump."""
+    now = dt_util.utcnow()
+    starts = [now + timedelta(minutes=15 * i) for i in range(3)]
+    on, change_at = _plan_run_advice([0.1, 0.1, 0.8], starts, 0.15)
+    assert on is False
+    assert change_at == starts[2]
+
+
 def _optimization_coordinator(hass: HomeAssistant, **config) -> OptimizationCoordinator:
     heat = MagicMock()
     heat.effective_config.return_value = {**main_config(), **zone_data(), **config}
@@ -104,6 +116,44 @@ def test_steps_extend_a_single_current_price(hass: HomeAssistant) -> None:
     step_starts, durations = coordinator._build_steps([base], 60, base)
     assert len(step_starts) == 12
     assert sum(durations) == pytest.approx(12.0)
+
+
+def test_steps_end_with_the_last_known_price(hass: HomeAssistant) -> None:
+    """Beyond the known prices the horizon stops, not a flat made-up price."""
+    coordinator = _optimization_coordinator(hass, planning_window=24)
+    base = datetime(2026, 1, 1, 10, 0, tzinfo=UTC)
+    starts = [base + timedelta(minutes=15 * i) for i in range(56)]  # until 0:00
+    _, durations = coordinator._build_steps(starts, 15, base)
+    assert sum(durations) == pytest.approx(14.0)
+
+
+def test_steps_hold_the_last_price_for_a_minimum_horizon(hass: HomeAssistant) -> None:
+    """Late in the evening, before tomorrow's prices, at least six hours."""
+    coordinator = _optimization_coordinator(hass, planning_window=24)
+    base = datetime(2026, 1, 1, 22, 0, tzinfo=UTC)
+    starts = [base + timedelta(minutes=15 * i) for i in range(8)]  # until 0:00
+    _, durations = coordinator._build_steps(starts, 15, base)
+    assert sum(durations) == pytest.approx(6.0)
+
+
+def test_hourly_means_turn_readings_into_interval_means() -> None:
+    assert hourly_means([0.0, 2.0, 4.0]) == [1.0, 3.0, 4.0]
+    assert hourly_means([]) == []
+
+
+def test_pv_surplus_takes_off_base_load_and_shares_zones() -> None:
+    assert pv_surplus([0.1, 1.3, 2.3], 0.3, 1) == pytest.approx([0.0, 1.0, 2.0])
+    assert pv_surplus([2.3], 0.3, 2) == pytest.approx([1.0])
+
+
+def test_ramp_steps_count_whole_periods_since_the_change(
+    hass: HomeAssistant,
+) -> None:
+    coordinator = _optimization_coordinator(hass)
+    now = datetime(2026, 1, 1, 10, 0, tzinfo=UTC)
+    assert coordinator._ramp_steps(15, now) is None
+    coordinator._offset_changed_at = now - timedelta(minutes=20)
+    assert coordinator._ramp_steps(15, now) == 1
 
 
 def _calibrating_coordinator(hass: HomeAssistant, **config) -> OptimizationCoordinator:
@@ -283,11 +333,40 @@ def _ready_calibration(coordinator: OptimizationCoordinator) -> None:
             coordinator.cop_prior(),
         )
         calibration.record_emitter_sample(
-            EmitterSample(6.0 + i % 18, 8.0 * ((6.0 + i % 18) / 25.0) ** 1.2),
+            EmitterSample(6.0 + i % 18, 8.0 * ((6.0 + i % 18) / 25.0) ** 1.2, 7.0),
             prior_nominal_kw=10.0,
             prior_exponent=1.3,
             nominal_delta_t=25.0,
         )
+
+
+@pytest.mark.parametrize(
+    ("return_temp", "expected_spread"),
+    [("31.0", 7.0), ("unavailable", 5.0), ("39.0", 5.0)],
+)
+def test_emitter_sample_uses_measured_return_temperature(
+    hass: HomeAssistant, return_temp: str, expected_spread: float
+) -> None:
+    coordinator = _calibrating_coordinator(
+        hass,
+        heat_pump_thermal_power_sensor="sensor.heat",
+        supply_temperature_sensor="sensor.supply",
+        return_temperature_sensor="sensor.return",
+    )
+    hass.states.async_set("sensor.heat", "5.0", {"unit_of_measurement": "kW"})
+    hass.states.async_set("sensor.supply", "38.0")
+    hass.states.async_set("sensor.return", return_temp)
+    coordinator._record_operating_point(
+        indoor_temp=20.0,
+        indoor_is_measured=True,
+        outdoor_temp=5.0,
+        humidity=80.0,
+        power_kw=1.5,
+        planned_supply=None,
+    )
+    (sample,) = coordinator.thermal_calibration.emitter_samples
+    assert sample.water_delta_t == pytest.approx(expected_spread)
+    assert sample.delta_t == pytest.approx(38.0 - expected_spread / 2 - 20.0)
 
 
 def test_applied_calibration_replaces_the_models(hass: HomeAssistant) -> None:
@@ -307,6 +386,7 @@ def test_applied_calibration_replaces_the_models(hass: HomeAssistant) -> None:
     assert emitter.exponent == pytest.approx(
         coordinator.thermal_calibration.emitter_fit.exponent
     )
+    assert emitter.water_delta_t == pytest.approx(7.0)
     heatpump = coordinator.heatpump_config(config, emitter)
     assert heatpump.cop_compensation_factor == 1.0
     assert heatpump.base_cop_at_35 == pytest.approx(
@@ -319,6 +399,29 @@ def test_applied_calibration_replaces_the_models(hass: HomeAssistant) -> None:
     assert "effective_energy_label" in summary
 
 
+def test_building_fit_not_used_with_mass_air_model(hass: HomeAssistant) -> None:
+    """The one-node fit of the room air is not the mass the heat pump heats;
+    the COP and emitter fits still apply."""
+    coordinator = _calibrating_coordinator(
+        hass,
+        calibration_mode="apply",
+        building_model="mass_air",
+        heat_pump_thermal_power_sensor="sensor.heat",
+        power_consumption="sensor.p",
+    )
+    _ready_calibration(coordinator)
+    config = coordinator.heat_coordinator.effective_config()
+    building = coordinator.building_config(config)
+    fit = coordinator.thermal_calibration.fit
+    assert building.ua_w_per_k != pytest.approx(fit.ua_w_per_k)
+    assert building.air_coupling_kw_per_k > 0
+    emitter = coordinator.emitter_config(config, building)
+    assert emitter.exponent == pytest.approx(
+        coordinator.thermal_calibration.emitter_fit.exponent
+    )
+    assert coordinator.calibration_summary(config)["building_fit_used"] is False
+
+
 def test_observed_calibration_is_not_used(hass: HomeAssistant) -> None:
     coordinator = _calibrating_coordinator(hass, power_consumption="sensor.p")
     _ready_calibration(coordinator)
@@ -328,3 +431,27 @@ def test_observed_calibration_is_not_used(hass: HomeAssistant) -> None:
     assert building.ua_w_per_k == pytest.approx(
         coordinator.calibration_prior().ua_w_per_k
     )
+
+
+async def test_realtime_update_keeps_the_poll_scheduled(hass: HomeAssistant) -> None:
+    """The 60 s realtime loop must not push the 15-minute re-plan back:
+    async_set_updated_data reschedules the poll, so it never fired."""
+    from custom_components.heating_curve_optimizer.realtime_controller import (
+        create_realtime_controller,
+    )
+
+    coordinator = _optimization_coordinator(hass, grid_import_sensor="sensor.grid")
+    coordinator._realtime_controller = create_realtime_controller(coordinator.config)
+    hass.states.async_set("sensor.grid", "500", {"unit_of_measurement": "W"})
+    coordinator.data = {"offsets": [0], "shadow_price_eur_per_kwh": 0.1}
+    listener = MagicMock()
+    unsub = coordinator.async_add_listener(listener)
+    scheduled = coordinator._unsub_refresh
+    assert scheduled is not None
+
+    await coordinator._handle_realtime_update(dt_util.utcnow())
+
+    assert coordinator._unsub_refresh is scheduled
+    assert "realtime" in coordinator.data
+    listener.assert_called_once()
+    unsub()

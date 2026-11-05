@@ -8,11 +8,10 @@ subentries, added from the integration page after setup.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 
 import aiohttp
-import voluptuous as vol
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -48,9 +47,14 @@ from .companion_integrations import (
     detect_pv_arrays,
 )
 from .const import (
+    BUILDING_MODELS,
     CONF_ACCURACY_HORIZON_HOURS,
+    CONF_AIR_COUPLING,
     CONF_AREA_M2,
+    CONF_AWAY_SETBACK,
     CONF_BASE_COP,
+    CONF_BATTERY_POWER_SENSORS,
+    CONF_BUILDING_MODEL,
     CONF_CALIBRATION_MAX_HOURS,
     CONF_CALIBRATION_MAX_JUMP_C,
     CONF_CALIBRATION_MIN_HOURS,
@@ -59,6 +63,7 @@ from .const import (
     CONF_CEILING_HEIGHT,
     CONF_COMFORT_LOOKAHEAD_HOURS,
     CONF_COMFORT_PENALTY_WEIGHT,
+    CONF_COMFORT_SCHEDULE,
     CONF_COMFORT_TOLERANCE_C,
     CONF_CONSUMPTION_PRICE_SENSOR,
     CONF_COP_COMPENSATION_FACTOR,
@@ -75,6 +80,7 @@ from .const import (
     CONF_EMITTER_TYPE,
     CONF_ENERGY_LABEL,
     CONF_FEED_IN_PRICE_FALLBACK,
+    CONF_FLOW_SENSOR,
     CONF_GAS_BOILER_EFFICIENCY,
     CONF_GAS_CALORIFIC_VALUE,
     CONF_GAS_COMFORT_BACKUP,
@@ -93,9 +99,12 @@ from .const import (
     CONF_HEAT_CURVE_MAX_OUTDOOR,
     CONF_HEAT_CURVE_MIN,
     CONF_HEAT_CURVE_MIN_OUTDOOR,
+    CONF_HEAT_PUMP_CONTROL,
     CONF_HEAT_PUMP_MAX_THERMAL_POWER,
+    CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR,
     CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
     CONF_HEATPUMP_HEADROOM,
+    CONF_HOUSE_BASE_LOAD_W,
     CONF_IDLE_POWER_THRESHOLD_KW,
     CONF_INDOOR_TEMP_HYSTERESIS_LOWER,
     CONF_INDOOR_TEMP_HYSTERESIS_UPPER,
@@ -107,8 +116,10 @@ from .const import (
     CONF_MIN_COP_SAMPLES,
     CONF_MIN_EMITTER_SAMPLES,
     CONF_MIN_INDOOR_TEMP_DELTA,
+    CONF_MIN_OFF_MINUTES,
     CONF_MIN_R_SQUARED,
     CONF_MIN_RESIDUAL_SAMPLES,
+    CONF_MIN_RUN_MINUTES,
     CONF_MIN_RUNNING_POWER_KW,
     CONF_MIN_SAMPLES_TO_APPLY,
     CONF_MIN_SHARE_EACH_DIRECTION,
@@ -130,6 +141,7 @@ from .const import (
     CONF_PV_TILT,
     CONF_RATIO_BOUNDS_LOWER,
     CONF_RATIO_BOUNDS_UPPER,
+    CONF_RETURN_TEMPERATURE_SENSOR,
     CONF_SOLAR_FACTOR_BOUNDS_UPPER,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
     CONF_TARGET_INDOOR_TEMP,
@@ -139,6 +151,8 @@ from .const import (
     CONF_WINDOW_SENSORS,
     CONF_WINDOW_SHGC,
     DEFAULT_ACCURACY_HORIZON_HOURS,
+    DEFAULT_AWAY_SETBACK,
+    DEFAULT_BUILDING_MODEL,
     DEFAULT_CALIBRATION_MAX_HOURS,
     DEFAULT_CALIBRATION_MAX_JUMP_C,
     DEFAULT_CALIBRATION_MIN_HOURS,
@@ -172,7 +186,9 @@ from .const import (
     DEFAULT_HEAT_CURVE_MAX_OUTDOOR,
     DEFAULT_HEAT_CURVE_MIN,
     DEFAULT_HEAT_CURVE_MIN_OUTDOOR,
+    DEFAULT_HEAT_PUMP_CONTROL,
     DEFAULT_HEATPUMP_HEADROOM,
+    DEFAULT_HOUSE_BASE_LOAD_W,
     DEFAULT_IDLE_POWER_THRESHOLD_KW,
     DEFAULT_INDOOR_TEMP_HYSTERESIS_LOWER,
     DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER,
@@ -183,8 +199,10 @@ from .const import (
     DEFAULT_MIN_COP_SAMPLES,
     DEFAULT_MIN_EMITTER_SAMPLES,
     DEFAULT_MIN_INDOOR_TEMP_DELTA,
+    DEFAULT_MIN_OFF_MINUTES,
     DEFAULT_MIN_R_SQUARED,
     DEFAULT_MIN_RESIDUAL_SAMPLES,
+    DEFAULT_MIN_RUN_MINUTES,
     DEFAULT_MIN_RUNNING_POWER_KW,
     DEFAULT_MIN_SAMPLES_TO_APPLY,
     DEFAULT_MIN_SHARE_EACH_DIRECTION,
@@ -212,11 +230,20 @@ from .const import (
     ENERGY_LABELS,
     ENTITY_MANAGED_OPTIONS,
     GAS_SUBENTRY_TYPE,
+    HEAT_PUMP_CONTROL_MODES,
     PV_SUBENTRY_TYPE,
     THERMAL_MASS_WH_PER_M2_K,
     VENTILATION_TYPES,
     ZONE_SUBENTRY_TYPE,
 )
+
+if TYPE_CHECKING:
+    # Home Assistant 2026.10+ validates with probatio and aliases voluptuous to it
+    # at runtime, so Core's signatures expect probatio types. Older releases still
+    # ship voluptuous, which is why the runtime import stays as it is.
+    import probatio as vol
+else:
+    import voluptuous as vol
 
 # --- selector helpers -------------------------------------------------------
 
@@ -292,10 +319,14 @@ _MAIN_SECTIONS: dict[str, tuple[str, ...]] = {
     SECTION_SENSORS: (
         CONF_POWER_CONSUMPTION,
         CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
+        CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR,
         CONF_SUPPLY_TEMPERATURE_SENSOR,
+        CONF_RETURN_TEMPERATURE_SENSOR,
+        CONF_FLOW_SENSOR,
         CONF_DHW_ACTIVE_SENSOR,
         CONF_GRID_IMPORT_SENSOR,
         CONF_GRID_EXPORT_SENSOR,
+        CONF_BATTERY_POWER_SENSORS,
     ),
     SECTION_HEAT_PUMP: (
         CONF_BASE_COP,
@@ -303,6 +334,9 @@ _MAIN_SECTIONS: dict[str, tuple[str, ...]] = {
         CONF_OUTDOOR_TEMP_COEFFICIENT,
         CONF_COP_COMPENSATION_FACTOR,
         CONF_HEAT_PUMP_MAX_THERMAL_POWER,
+        CONF_HEAT_PUMP_CONTROL,
+        CONF_MIN_RUN_MINUTES,
+        CONF_MIN_OFF_MINUTES,
     ),
     SECTION_HEATING_CURVE: (
         CONF_HEAT_CURVE_MIN,
@@ -317,6 +351,7 @@ _MAIN_SECTIONS: dict[str, tuple[str, ...]] = {
         CONF_CYCLING_PENALTY_WEIGHT,
         CONF_HARD_FLOOR_PENALTY,
         CONF_FEED_IN_PRICE_FALLBACK,
+        CONF_HOUSE_BASE_LOAD_W,
         CONF_OFFSET_MIN,
         CONF_OFFSET_MAX,
         CONF_HEATPUMP_HEADROOM,
@@ -366,6 +401,9 @@ MAIN_DEFAULTS: dict[str, Any] = {
     CONF_K_FACTOR: DEFAULT_K_FACTOR,
     CONF_OUTDOOR_TEMP_COEFFICIENT: DEFAULT_OUTDOOR_TEMP_COEFFICIENT,
     CONF_COP_COMPENSATION_FACTOR: DEFAULT_COP_COMPENSATION_FACTOR,
+    CONF_HEAT_PUMP_CONTROL: DEFAULT_HEAT_PUMP_CONTROL,
+    CONF_MIN_RUN_MINUTES: DEFAULT_MIN_RUN_MINUTES,
+    CONF_MIN_OFF_MINUTES: DEFAULT_MIN_OFF_MINUTES,
     CONF_HEAT_CURVE_MIN: DEFAULT_HEAT_CURVE_MIN,
     CONF_HEAT_CURVE_MAX: DEFAULT_HEAT_CURVE_MAX,
     CONF_HEAT_CURVE_MIN_OUTDOOR: DEFAULT_HEAT_CURVE_MIN_OUTDOOR,
@@ -377,6 +415,7 @@ MAIN_DEFAULTS: dict[str, Any] = {
     CONF_CYCLING_PENALTY_WEIGHT: DEFAULT_CYCLING_PENALTY_WEIGHT,
     CONF_HARD_FLOOR_PENALTY: DEFAULT_HARD_FLOOR_PENALTY,
     CONF_FEED_IN_PRICE_FALLBACK: DEFAULT_FEED_IN_PRICE_FALLBACK,
+    CONF_HOUSE_BASE_LOAD_W: DEFAULT_HOUSE_BASE_LOAD_W,
     CONF_OFFSET_MIN: DEFAULT_OFFSET_MIN,
     CONF_OFFSET_MAX: DEFAULT_OFFSET_MAX,
     CONF_HEATPUMP_HEADROOM: DEFAULT_HEATPUMP_HEADROOM,
@@ -438,12 +477,24 @@ def build_main_schema(defaults: dict[str, Any]) -> vol.Schema:
         {
             opt(CONF_POWER_CONSUMPTION): _sensor("power"),
             opt(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR): _sensor("power"),
-            opt(CONF_SUPPLY_TEMPERATURE_SENSOR): _sensor("temperature"),
+            # No device-class filter on the heat meter, flow and water
+            # temperatures: sensors from Modbus, ESPHome or templates often
+            # have none. Flow and meter units are checked when read; water
+            # temperatures are taken as °C.
+            opt(CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR): _sensor(),
+            opt(CONF_SUPPLY_TEMPERATURE_SENSOR): _sensor(),
+            opt(CONF_RETURN_TEMPERATURE_SENSOR): _sensor(),
+            opt(CONF_FLOW_SENSOR): _sensor(),
             opt(CONF_DHW_ACTIVE_SENSOR): EntitySelector(
                 EntitySelectorConfig(domain="binary_sensor")
             ),
             opt(CONF_GRID_IMPORT_SENSOR): _sensor("power"),
             opt(CONF_GRID_EXPORT_SENSOR): _sensor("power"),
+            opt(CONF_BATTERY_POWER_SENSORS): EntitySelector(
+                EntitySelectorConfig(
+                    domain="sensor", device_class="power", multiple=True
+                )
+            ),
         }
     )
     heat_pump = vol.Schema(
@@ -453,6 +504,11 @@ def build_main_schema(defaults: dict[str, Any]) -> vol.Schema:
             req(CONF_OUTDOOR_TEMP_COEFFICIENT): _number(0.0, 0.2, 0.005),
             req(CONF_COP_COMPENSATION_FACTOR): _number(0.5, 1.2, 0.01),
             opt(CONF_HEAT_PUMP_MAX_THERMAL_POWER): _number(1.0, 50.0, 0.5, "kW"),
+            req(CONF_HEAT_PUMP_CONTROL): _select(
+                HEAT_PUMP_CONTROL_MODES, CONF_HEAT_PUMP_CONTROL
+            ),
+            req(CONF_MIN_RUN_MINUTES): _number(0, 240, 5, "min"),
+            req(CONF_MIN_OFF_MINUTES): _number(0, 240, 5, "min"),
         }
     )
     heating_curve = vol.Schema(
@@ -471,6 +527,7 @@ def build_main_schema(defaults: dict[str, Any]) -> vol.Schema:
             req(CONF_CYCLING_PENALTY_WEIGHT): _number(0.0, 1.0, 0.001),
             req(CONF_HARD_FLOOR_PENALTY): _number(10.0, 10000.0, 10.0, "EUR"),
             req(CONF_FEED_IN_PRICE_FALLBACK): _number(0.0, 0.50, 0.005, "EUR/kWh"),
+            req(CONF_HOUSE_BASE_LOAD_W): _number(0, 5000, 50, "W"),
             req(CONF_OFFSET_MIN): _number(-10, 0, 1, "K"),
             req(CONF_OFFSET_MAX): _number(0, 10, 1, "K"),
             req(CONF_HEATPUMP_HEADROOM): _number(0.5, 3.0, 0.05),
@@ -551,7 +608,12 @@ def flatten_main_input(user_input: dict[str, Any]) -> dict[str, Any]:
         values = user_input.get(section_key) or {}
         for key in keys:
             flat[key] = values.get(key)
+    flat[CONF_BATTERY_POWER_SENSORS] = (
+        list(flat.get(CONF_BATTERY_POWER_SENSORS) or []) or None
+    )
     for key in (
+        CONF_MIN_RUN_MINUTES,
+        CONF_MIN_OFF_MINUTES,
         CONF_OFFSET_DELTA_T,
         CONF_PLANNING_WINDOW,
         CONF_OFFSET_MIN,
@@ -665,7 +727,7 @@ class HeatingCurveOptimizerConfigFlow(ConfigFlow, domain=DOMAIN):
             SelectOptionDict(
                 value=field,
                 label=f"{translations.get(prefix + field, field)}: "
-                f"{detected.entity_id} ({detected.source})",
+                f"{detected.label} ({detected.source})",
             )
             for field, detected in self._detected.items()
         ]
@@ -747,6 +809,13 @@ def build_zone_schema(defaults: dict[str, Any]) -> vol.Schema:
                 description=d(CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE),
             ): _select(list(EMITTER_EXPONENT_MAP), "emitter_type"),
             vol.Required(
+                CONF_BUILDING_MODEL,
+                description=d(CONF_BUILDING_MODEL, DEFAULT_BUILDING_MODEL),
+            ): _select(BUILDING_MODELS, CONF_BUILDING_MODEL),
+            vol.Optional(CONF_AIR_COUPLING, description=d(CONF_AIR_COUPLING)): _number(
+                0.5, 100.0, 0.1, "kW/K"
+            ),
+            vol.Required(
                 CONF_INTERNAL_GAINS_W_PER_M2,
                 description=d(
                     CONF_INTERNAL_GAINS_W_PER_M2, DEFAULT_INTERNAL_GAINS_W_PER_M2
@@ -792,6 +861,13 @@ def build_zone_schema(defaults: dict[str, Any]) -> vol.Schema:
             ): EntitySelector(
                 EntitySelectorConfig(domain="binary_sensor", multiple=True)
             ),
+            vol.Optional(
+                CONF_COMFORT_SCHEDULE, description=d(CONF_COMFORT_SCHEDULE)
+            ): EntitySelector(EntitySelectorConfig(domain="schedule")),
+            vol.Required(
+                CONF_AWAY_SETBACK,
+                description=d(CONF_AWAY_SETBACK, DEFAULT_AWAY_SETBACK),
+            ): _number(0.0, 5.0, 0.5, "°C"),
             vol.Required(
                 CONF_CALIBRATION_MODE,
                 description=d(CONF_CALIBRATION_MODE, DEFAULT_CALIBRATION_MODE),
@@ -844,10 +920,20 @@ def validate_zone_input(
         CONF_EMITTER_TYPE,
     ):
         data[key] = user_input[key]
+    data[CONF_BUILDING_MODEL] = user_input.get(
+        CONF_BUILDING_MODEL, DEFAULT_BUILDING_MODEL
+    )
+    if (coupling := user_input.get(CONF_AIR_COUPLING)) is not None:
+        data[CONF_AIR_COUPLING] = float(coupling)
     if sensor := user_input.get(CONF_INDOOR_TEMPERATURE_SENSOR):
         data[CONF_INDOOR_TEMPERATURE_SENSOR] = sensor
     if windows := user_input.get(CONF_WINDOW_SENSORS):
         data[CONF_WINDOW_SENSORS] = list(windows)
+    if schedule := user_input.get(CONF_COMFORT_SCHEDULE):
+        data[CONF_COMFORT_SCHEDULE] = schedule
+    data[CONF_AWAY_SETBACK] = float(
+        user_input.get(CONF_AWAY_SETBACK, DEFAULT_AWAY_SETBACK)
+    )
     data[CONF_CALIBRATION_MODE] = user_input.get(
         CONF_CALIBRATION_MODE, DEFAULT_CALIBRATION_MODE
     )

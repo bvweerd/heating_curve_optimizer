@@ -39,6 +39,7 @@ DEFAULT_GLASS_U_VALUE = 1.2
 CONF_POWER_CONSUMPTION = "power_consumption"
 CONF_INDOOR_TEMPERATURE_SENSOR = "indoor_temperature_sensor"
 CONF_SUPPLY_TEMPERATURE_SENSOR = "supply_temperature_sensor"
+CONF_RETURN_TEMPERATURE_SENSOR = "return_temperature_sensor"
 # Heating zones (config subentries). Each zone is one heating circuit with
 # its own building envelope, emitters, thermostat and - optionally - its
 # own heating curve; price sensors and heat pump parameters are shared from
@@ -78,12 +79,51 @@ DEFAULT_GAS_CALORIFIC_VALUE_KWH_PER_M3 = 9.77
 CONF_GRID_IMPORT_SENSOR = "grid_import_sensor"
 # Optional calibration inputs.
 CONF_HEAT_PUMP_THERMAL_POWER_SENSOR = "heat_pump_thermal_power_sensor"
+# Cumulative heat meter (kWh), e.g. the heat pump's own thermal energy
+# counter: preferred over flow x spread, after a thermal power sensor.
+CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR = "heat_pump_thermal_energy_sensor"
+# Water flow through the heat pump: with the supply and return sensors it
+# gives the delivered heat when there is no thermal power or energy sensor.
+CONF_FLOW_SENSOR = "flow_sensor"
 CONF_DHW_ACTIVE_SENSOR = "dhw_active_sensor"
 CONF_WINDOW_SENSORS = "window_sensors"  # zone
 CONF_CALIBRATION_MODE = "calibration_mode"  # zone
 DEFAULT_CALIBRATION_MODE = "observe"
+# Zone building model: one node (the room is the mass), or a thermal mass
+# the heat pump heats with the room air on top, warmed directly by sun and
+# internal gains (mass_model.py). The coupling is learned unless set.
+CONF_BUILDING_MODEL = "building_model"
+BUILDING_MODEL_ONE_NODE = "one_node"
+BUILDING_MODEL_MASS_AIR = "mass_air"
+BUILDING_MODELS = [BUILDING_MODEL_ONE_NODE, BUILDING_MODEL_MASS_AIR]
+DEFAULT_BUILDING_MODEL = BUILDING_MODEL_ONE_NODE
+CONF_AIR_COUPLING = "air_coupling_kw_per_k"
+# Zone: a `schedule` helper that is on while someone is home. While it is
+# off, the comfort floor drops by the away setback.
+CONF_COMFORT_SCHEDULE = "comfort_schedule"
+CONF_AWAY_SETBACK = "away_setback"
+DEFAULT_AWAY_SETBACK = 2.0  # K
 CONF_GRID_EXPORT_SENSOR = "grid_export_sensor"
+# Home batteries, one signed power sensor each (positive = charging, as in
+# battery_controller). Discharge counts as grid import for the PV-surplus
+# layer: a battery covering the heat pump is not surplus.
+CONF_BATTERY_POWER_SENSORS = "battery_power_sensors"
 CONF_HEAT_PUMP_MAX_THERMAL_POWER = "heat_pump_max_thermal_power_kw"
+# How the heat pump is switched: by its own room thermostat (the plan only
+# moves the offset), or by the plan's on/off advice. Then every run and
+# every pause lasts at least the minimum, to spare the compressor.
+CONF_HEAT_PUMP_CONTROL = "heat_pump_control"
+HEAT_PUMP_CONTROL_OWN_THERMOSTAT = "own_thermostat"
+HEAT_PUMP_CONTROL_FOLLOWS_PLAN = "follows_plan"
+HEAT_PUMP_CONTROL_MODES = [
+    HEAT_PUMP_CONTROL_OWN_THERMOSTAT,
+    HEAT_PUMP_CONTROL_FOLLOWS_PLAN,
+]
+DEFAULT_HEAT_PUMP_CONTROL = HEAT_PUMP_CONTROL_OWN_THERMOSTAT
+CONF_MIN_RUN_MINUTES = "min_run_minutes"
+DEFAULT_MIN_RUN_MINUTES = 60
+CONF_MIN_OFF_MINUTES = "min_off_minutes"
+DEFAULT_MIN_OFF_MINUTES = 60
 CONF_K_FACTOR = "k_factor"
 CONF_BASE_COP = "base_cop"
 CONF_COP_COMPENSATION_FACTOR = "cop_compensation_factor"
@@ -369,6 +409,10 @@ CONF_REALTIME_DEADBAND_W = "realtime_deadband_w"
 DEFAULT_REALTIME_DEADBAND_W = 300.0  # W - looser than a battery's ~50 W:
 # heating's actuator is a whole-degree curve offset, not a continuous power
 # setpoint, so chasing small fluctuations only adds wear for no benefit.
+# An adjustment holds at least one 15-minute step before it moves again:
+# the heat pump's own response to an offset change shifts grid power, and
+# reacting to that within minutes made the offset flap.
+DEFAULT_REALTIME_MIN_HOLD_S = 900
 DEFAULT_REALTIME_INTERVAL_S = 60  # much slower than battery_controller's
 # ~10 s: a heat pump's weather-compensation curve has nothing to gain from
 # being re-commanded faster than its own control loop settles.
@@ -386,6 +430,11 @@ DEFAULT_HARD_FLOOR_PENALTY = 1000.0  # EUR, penalty below comfort_min - margin
 
 CONF_FEED_IN_PRICE_FALLBACK = "feed_in_price_fallback"
 DEFAULT_FEED_IN_PRICE_FALLBACK = 0.07  # EUR/kWh
+
+# Household consumption other than the heat pump, taken off the PV forecast
+# before what remains counts as surplus for heating.
+CONF_HOUSE_BASE_LOAD_W = "house_base_load_w"
+DEFAULT_HOUSE_BASE_LOAD_W = 300.0
 
 CONF_OFFSET_MIN = "offset_min"
 DEFAULT_OFFSET_MIN = -4  # K

@@ -210,3 +210,20 @@ def test_underfloor_emitter_flatter_than_radiator():
         / underfloor.nominal_power_kw
     )
     assert floor_fraction > rad_fraction
+
+
+def test_mass_air_emitter_heats_the_mass_and_covers_design_loss():
+    """With the mass-air model the emitter delivers into the mass: at the
+    design point, with the mass at the temperature that holds the air at
+    the design indoor temperature, it delivers exactly the design loss."""
+    building = BuildingConfig(area_m2=150, air_coupling_kw_per_k=8.0)
+    emitter = EmitterConfig.sized_to_building(
+        building, design_outdoor_temp=-10.0, design_supply_temp=45.0
+    )
+    assert emitter.heats_mass
+    indoor = building.comfort_max
+    mass = building.mass_temp_for_air(indoor, outdoor_temp=-10.0, internal_gain_kw=0.0)
+    assert mass > indoor
+    assert emitter.available_power_kw(
+        supply_temp=45.0, indoor_temp=mass
+    ) == pytest.approx(building.heat_loss_kw(indoor, -10.0))

@@ -42,14 +42,18 @@ from homeassistant.util import dt as dt_util
 
 from .calibration import CALIBRATION_STATUSES
 from .const import (
+    CONF_FLOW_SENSOR,
     CONF_GRID_EXPORT_SENSOR,
     CONF_GRID_IMPORT_SENSOR,
     CONF_HEAT_CURVE_MAX,
     CONF_HEAT_CURVE_MAX_OUTDOOR,
     CONF_HEAT_CURVE_MIN,
     CONF_HEAT_CURVE_MIN_OUTDOOR,
+    CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR,
+    CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
     CONF_IDLE_POWER_THRESHOLD_KW,
     CONF_POWER_CONSUMPTION,
+    CONF_RETURN_TEMPERATURE_SENSOR,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
     DEFAULT_HEAT_CURVE_MAX,
     DEFAULT_HEAT_CURVE_MAX_OUTDOOR,
@@ -58,7 +62,14 @@ from .const import (
     DEFAULT_IDLE_POWER_THRESHOLD_KW,
 )
 from .heatpump_model import HeatPumpConfig
-from .helpers import calculate_supply_temperature, get_sensor_value, read_power_kw
+from .helpers import (
+    EnergyCounterRate,
+    calculate_supply_temperature,
+    get_sensor_value,
+    heat_is_measured,
+    measured_heat_kw,
+    read_power_kw,
+)
 
 PARALLEL_UPDATES = 0
 
@@ -106,6 +117,9 @@ class HcoSensorEntityDescription(SensorEntityDescription):
 
     value_fn: Callable[[dict[str, Any]], Any]
     attrs_fn: Callable[[dict[str, Any]], dict[str, Any]] | None = None
+    # Disabled-by-default entities are still created, but hidden until the
+    # user enables them (used for diagnostic/advanced sensors).
+    enabled_default: bool = True
 
 
 # --- Weather coordinator -----------------------------------------------------
@@ -182,6 +196,7 @@ HEATING_CURVE_OFFSET = HcoSensorEntityDescription(
     value_fn=lambda d: d.get("offset"),
     attrs_fn=lambda d: {
         "offsets": d.get("offsets", []),
+        "pump_on": d.get("pump_on", []),
         "prices": d.get("prices", []),
         "outdoor_forecast": d.get("outdoor_forecast", []),
         **_step_attrs(d),
@@ -206,12 +221,15 @@ PLANNED_INDOOR_TEMPERATURE = HcoSensorEntityDescription(
     device_class=SensorDeviceClass.TEMPERATURE,
     native_unit_of_measurement=UnitOfTemperature.CELSIUS,
     state_class=SensorStateClass.MEASUREMENT,
+    entity_category=EntityCategory.DIAGNOSTIC,
+    enabled_default=False,
     suggested_display_precision=1,
     value_fn=lambda d: _first(d, "indoor_temps"),
     attrs_fn=lambda d: {
         "initial_indoor_temp": d.get("initial_indoor_temp"),
         "comfort_min": d.get("comfort_min"),
         "comfort_max": d.get("comfort_max"),
+        "comfort_mins": d.get("comfort_mins", []),
         "indoor_temps": d.get("indoor_temps", []),
         "baseline_indoor_temps": d.get("baseline_indoor_temps", []),
         **_step_attrs(d),
@@ -254,6 +272,8 @@ COST_SAVINGS_FORECAST = HcoSensorEntityDescription(
     translation_key="cost_savings_forecast",
     device_class=SensorDeviceClass.MONETARY,
     native_unit_of_measurement=CURRENCY_EUR,
+    entity_category=EntityCategory.DIAGNOSTIC,
+    enabled_default=False,
     suggested_display_precision=2,
     value_fn=lambda d: d.get("cost_savings_eur"),
     attrs_fn=lambda d: {
@@ -262,6 +282,10 @@ COST_SAVINGS_FORECAST = HcoSensorEntityDescription(
         "horizon_hours": round(sum(d.get("step_durations_hours", [])), 2),
         "cost_eur": d.get("cost_eur", []),
         "baseline_cost_eur_per_step": d.get("baseline_cost_eur", []),
+        # Degree-hours below the band: savings against a baseline that
+        # leaves the house too cold are not real savings.
+        "comfort_deficit_kh": d.get("comfort_deficit_kh"),
+        "baseline_comfort_deficit_kh": d.get("baseline_comfort_deficit_kh"),
     },
 )
 SHADOW_PRICE = HcoSensorEntityDescription(
@@ -313,6 +337,7 @@ REALTIME_OFFSET = HcoSensorEntityDescription(
         "planned_offset": d.get("offset"),
         "adjustment": (d.get("realtime") or {}).get("adjustment", 0),
         "current_grid_w": (d.get("realtime") or {}).get("current_grid_w"),
+        "battery_discharge_w": (d.get("realtime") or {}).get("battery_discharge_w"),
         "shadow_price_eur_per_kwh": d.get("shadow_price_eur_per_kwh"),
     },
 )
@@ -328,6 +353,8 @@ GAS_BOILER_HEAT_PUMP_COST = HcoSensorEntityDescription(
     value_fn=lambda d: d.get("heat_pump_cost_eur_per_kwh"),
     attrs_fn=lambda d: {
         "electricity_price_eur_per_kwh": d.get("electricity_price_eur_per_kwh"),
+        "heat_pump_cost_now_eur_per_kwh": d.get("heat_pump_cost_now_eur_per_kwh"),
+        "shadow_price_eur_per_kwh": d.get("shadow_price_eur_per_kwh"),
         "heat_pump_cop": d.get("heat_pump_cop"),
         "supply_temp": d.get("supply_temp"),
         "outdoor_temp": d.get("outdoor_temp"),
@@ -379,6 +406,7 @@ class HcoCoordinatorSensor(
         self.entity_description = description
         self._attr_unique_id = f"{unique_id_prefix}_{description.key}"
         self._attr_device_info = device
+        self._attr_entity_registry_enabled_default = description.enabled_default
 
     @property
     def available(self) -> bool:
@@ -524,25 +552,35 @@ def _heat_pump_thermal_power(
     config: dict[str, Any],
     weather_coordinator: DataUpdateCoordinator[dict[str, Any]],
     optimization_coordinator: DataUpdateCoordinator[dict[str, Any]],
-) -> tuple[float, float, float] | None:
-    """(thermal kW, COP, supply °C) from the heat pump's electricity meter.
+    counter: EnergyCounterRate | None = None,
+) -> tuple[float, float, float | None, str] | None:
+    """(thermal kW, COP, supply °C, source) of the heat pump.
 
-    The supply temperature is the measured one when a supply sensor is
-    configured, otherwise the one the optimizer planned for this step.
+    Measured heat (a thermal power sensor, or flow x supply-return spread)
+    when configured; the COP is then measured heat / electrical power.
+    Otherwise the electricity meter x the modelled COP, with the measured
+    supply temperature or, without a supply sensor, the planned one.
 
     Electrical power at or below the idle threshold (standby consumption
     of the controller, circulation pump, etc.) is treated as zero thermal
     output — the compressor is not running.
     """
     power_kw = read_power_kw(hass, config.get(CONF_POWER_CONSUMPTION))
+    supply = get_sensor_value(hass, config.get(CONF_SUPPLY_TEMPERATURE_SENSOR), None)
+    if heat_is_measured(config):
+        heat_kw = measured_heat_kw(hass, config, counter)
+        if heat_kw is None:
+            return None
+        heat_kw = max(0.0, heat_kw)
+        cop = heat_kw / power_kw if power_kw and power_kw > 0 else 0.0
+        return heat_kw, cop, supply, "measured"
     if power_kw is None or not weather_coordinator.data:
         return None
     idle_threshold = float(
         config.get(CONF_IDLE_POWER_THRESHOLD_KW, DEFAULT_IDLE_POWER_THRESHOLD_KW)
     )
     if power_kw <= idle_threshold:
-        return 0.0, 0.0, 0.0
-    supply = get_sensor_value(hass, config.get(CONF_SUPPLY_TEMPERATURE_SENSOR), None)
+        return 0.0, 0.0, 0.0, "cop_model"
     if supply is None and optimization_coordinator.data:
         supply = _first(optimization_coordinator.data, "supply_temps")
     if supply is None:
@@ -551,11 +589,12 @@ def _heat_pump_thermal_power(
         supply_temp=float(supply),
         outdoor_temp=float(weather_coordinator.data["current_temperature"]),
     )
-    return max(0.0, power_kw) * cop, cop, float(supply)
+    return max(0.0, power_kw) * cop, cop, float(supply), "cop_model"
 
 
 class HeatPumpThermalPowerSensor(SensorEntity):
-    """Thermal output of the heat pump: metered electrical power x modelled COP."""
+    """Thermal output of the heat pump: measured, or metered electrical power
+    x modelled COP."""
 
     _attr_has_entity_name = True
     _attr_translation_key = "heat_pump_thermal_power"
@@ -580,6 +619,7 @@ class HeatPumpThermalPowerSensor(SensorEntity):
         self._attr_unique_id = f"{unique_id_prefix}_heat_pump_thermal_power"
         self._attr_device_info = device
         self._attr_available = False
+        self._counter = EnergyCounterRate()
 
     async def async_added_to_hass(self) -> None:
         """Recompute on meter/supply sensor changes and coordinator updates."""
@@ -588,6 +628,10 @@ class HeatPumpThermalPowerSensor(SensorEntity):
             for s in (
                 self._config.get(CONF_POWER_CONSUMPTION),
                 self._config.get(CONF_SUPPLY_TEMPERATURE_SENSOR),
+                self._config.get(CONF_RETURN_TEMPERATURE_SENSOR),
+                self._config.get(CONF_FLOW_SENSOR),
+                self._config.get(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR),
+                self._config.get(CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR),
             )
             if s
         ]
@@ -605,17 +649,18 @@ class HeatPumpThermalPowerSensor(SensorEntity):
     @callback
     def _recompute(self) -> None:
         result = _heat_pump_thermal_power(
-            self.hass, self._config, self._weather, self._optimization
+            self.hass, self._config, self._weather, self._optimization, self._counter
         )
         if result is None:
             self._attr_available = False
         else:
-            thermal_kw, cop, supply = result
+            thermal_kw, cop, supply, source = result
             self._attr_available = True
             self._attr_native_value = round(thermal_kw, 3)
             self._attr_extra_state_attributes = {
                 "cop": round(cop, 3),
                 "supply_temperature": supply,
+                "source": source,
             }
         self.async_write_ha_state()
 
@@ -648,6 +693,7 @@ class HeatPumpThermalEnergySensor(RestoreSensor):
         self._optimization = optimization_coordinator
         self._attr_unique_id = f"{unique_id_prefix}_heat_pump_thermal_energy"
         self._attr_device_info = device
+        self._counter = EnergyCounterRate()
         self._total_kwh = 0.0
         self._last_time: datetime | None = None
         self._last_kw: float | None = None
@@ -694,7 +740,7 @@ class HeatPumpThermalEnergySensor(RestoreSensor):
         previous reading into the interval.
         """
         result = _heat_pump_thermal_power(
-            self.hass, self._config, self._weather, self._optimization
+            self.hass, self._config, self._weather, self._optimization, self._counter
         )
         current_kw = result[0] if result is not None else None
         if (
@@ -729,6 +775,8 @@ class TotalCostSavingsSensor(
     _attr_native_unit_of_measurement = CURRENCY_EUR
     _attr_state_class = SensorStateClass.TOTAL
     _attr_suggested_display_precision = 2
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
 
     MAX_GAP_HOURS = 1.0
 
@@ -804,6 +852,7 @@ async def async_setup_entry(
     runtime_data = entry.runtime_data
     config = runtime_data.config
     device = runtime_data.device
+    heatpump_device = runtime_data.heatpump_device
     prefix = entry.entry_id
     weather = runtime_data.weather_coordinator
     heat = runtime_data.heat_coordinator
@@ -824,7 +873,6 @@ async def async_setup_entry(
             OPTIMIZED_SUPPLY_TEMPERATURE,
             PLANNED_INDOOR_TEMPERATURE,
             HEAT_BUFFER,
-            PLANNED_COP,
             COST_SAVINGS_FORECAST,
             SHADOW_PRICE,
             CALIBRATION,
@@ -834,6 +882,11 @@ async def async_setup_entry(
             optimization_descriptions.append(REALTIME_OFFSET)
         entities += _optimization_entities(
             optimization, optimization_descriptions, prefix, device
+        )
+        # COP is a property of the heat pump itself, so its planned value
+        # belongs to the heat-pump device.
+        entities += _optimization_entities(
+            optimization, [PLANNED_COP], prefix, heatpump_device
         )
         entities.append(TotalCostSavingsSensor(optimization, prefix, device))
         entities.append(
@@ -846,12 +899,12 @@ async def async_setup_entry(
         if config.get(CONF_POWER_CONSUMPTION):
             entities.append(
                 HeatPumpThermalPowerSensor(
-                    config, weather, optimization, prefix, device
+                    config, weather, optimization, prefix, heatpump_device
                 )
             )
             entities.append(
                 HeatPumpThermalEnergySensor(
-                    config, weather, optimization, prefix, device
+                    config, weather, optimization, prefix, heatpump_device
                 )
             )
     async_add_entities(entities)
@@ -886,10 +939,18 @@ async def async_setup_entry(
                     gas, description, gas_prefix, runtime_data.gas_boiler_device
                 )
                 for description in (
-                    GAS_BOILER_HEAT_PUMP_COST,
                     GAS_BOILER_GAS_COST,
                     GAS_BOILER_COST_SAVINGS,
                 )
             ],
             config_subentry_id=runtime_data.gas_boiler_subentry_id,
+        )
+        # The heat pump's own cost per kWh belongs on the heat-pump device,
+        # not on the gas boiler's.
+        async_add_entities(
+            [
+                HcoCoordinatorSensor(
+                    gas, GAS_BOILER_HEAT_PUMP_COST, prefix, heatpump_device
+                )
+            ]
         )

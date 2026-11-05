@@ -34,6 +34,9 @@ def _sectioned(**overrides) -> dict:
             "k_factor": 0.1,
             "outdoor_temp_coefficient": 0.08,
             "cop_compensation_factor": 0.95,
+            "heat_pump_control": "follows_plan",
+            "min_run_minutes": 45,
+            "min_off_minutes": 60,
         },
         "heating_curve": {
             "heat_curve_min": 25.0,
@@ -48,6 +51,7 @@ def _sectioned(**overrides) -> dict:
             "cycling_penalty_weight": 0.01,
             "hard_floor_penalty": 1000.0,
             "feed_in_price_fallback": 0.07,
+            "house_base_load_w": 300,
             "offset_min": -4,
             "offset_max": 4,
             "heatpump_headroom": 1.3,
@@ -127,6 +131,8 @@ async def test_user_flow_creates_entry(hass: HomeAssistant) -> None:
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"]["base_cop"] == 4.0
     assert result["data"]["planning_window"] == 24
+    assert result["data"]["heat_pump_control"] == "follows_plan"
+    assert result["data"]["min_run_minutes"] == 45
 
 
 async def test_user_flow_reports_unreachable_api(hass: HomeAssistant) -> None:
@@ -180,6 +186,18 @@ def test_zone_validation() -> None:
 
     _, error = validate_zone_input(zone_data(name="  "))
     assert error == "name_required"
+
+
+def test_zone_validation_stores_the_home_schedule() -> None:
+    data, error = validate_zone_input(
+        zone_data(comfort_schedule="schedule.home", away_setback=1.5)
+    )
+    assert error is None
+    assert data["comfort_schedule"] == "schedule.home"
+    assert data["away_setback"] == 1.5
+
+    data, _ = validate_zone_input(zone_data())
+    assert "comfort_schedule" not in data
 
 
 async def _start_subentry_flow(hass: HomeAssistant, entry, subentry_type: str):

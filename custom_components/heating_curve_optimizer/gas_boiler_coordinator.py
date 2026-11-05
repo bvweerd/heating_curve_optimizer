@@ -6,7 +6,8 @@ Policy: **heat pump first**, gas as comfort backup.
   source - even when gas is cheaper.
 - When the indoor temperature is (or is about to be) below the band but
   the heat-pump-only plan recovers within ``COMFORT_LOOKAHEAD_HOURS``, gas
-  is only recommended if it is cheaper per kWh of heat.
+  is only recommended if it is cheaper per kWh of heat than the plan's
+  marginal heat (shadow price, at most electricity price / COP now).
 - When the plan shows the heat pump cannot bring the house back into the
   band within the lookahead (the plan already uses the heat pump as hard
   as it usefully can), gas is recommended regardless of price - unless
@@ -45,6 +46,7 @@ from .coordinator_optimization import OptimizationCoordinator
 from .coordinator_weather import _update_failed
 from .gas_boiler_model import GasBoilerConfig, compare_heat_pump_and_gas
 from .heatpump_model import HeatPumpConfig
+from .helpers import usable_state
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,29 +68,37 @@ def _comfort_at_risk(
     house is (or dips) below the band but the plan recovers in time.
     """
     comfort_min = optimization_data.get("comfort_min", heat_data.get("lower_bound"))
+    # Per step: a scheduled setback is a planned dip, not a shortfall.
+    step_floors = optimization_data.get("comfort_mins") or []
     planned: list[float] = []
+    floors: list[float] = []
     elapsed = 0.0
-    for temp, hours in zip(
-        optimization_data.get("indoor_temps") or [],
-        optimization_data.get("step_durations_hours") or [],
-        strict=False,
+    for i, (temp, hours) in enumerate(
+        zip(
+            optimization_data.get("indoor_temps") or [],
+            optimization_data.get("step_durations_hours") or [],
+            strict=False,
+        )
     ):
         if elapsed >= comfort_lookahead_hours:
             break
         planned.append(temp)
+        if comfort_min is not None:
+            step_floor = step_floors[i] if i < len(step_floors) else comfort_min
+            floors.append(step_floor - comfort_tolerance_c)
         elapsed += hours
     lowest = min(planned) if planned else None
     if comfort_min is None:
         return False, None, lowest
-    floor = comfort_min - comfort_tolerance_c
+    floor_now = floors[0] if floors else comfort_min - comfort_tolerance_c
     indoor = heat_data.get("indoor_temperature")
     below_now = (
         heat_data.get("indoor_temperature_source") == "sensor"
         and indoor is not None
-        and indoor < floor
+        and indoor < floor_now
     )
-    dips = lowest is not None and lowest < floor
-    if planned and planned[-1] < floor and (below_now or dips):
+    dips = any(temp < floor for temp, floor in zip(planned, floors, strict=True))
+    if planned and planned[-1] < floors[-1] and (below_now or dips):
         return True, REASON_CANNOT_KEEP_UP, lowest
     if below_now or dips:
         return True, REASON_BELOW_BAND, lowest
@@ -144,13 +154,31 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._handle_plan_update
         )
 
+    def inputs_ready(self) -> bool:
+        """Whether both prices report and the heat-pump plan exists.
+
+        Holds back the first comparison after a restart: it needs the plan's
+        operating point, and the price sensors' integrations may still load.
+        """
+        return (
+            usable_state(self.hass, self._gas_price_sensor) is not None
+            and usable_state(self.hass, self._electricity_price_sensor) is not None
+            and self.optimization_coordinator.data is not None
+        )
+
     @callback
     def _handle_plan_update(self) -> None:
+        if self.data is None and not self.inputs_ready():
+            # Startup: the scheduled first refresh waits for the inputs;
+            # refreshing now would only log an error.
+            return
         self.hass.async_create_task(self.async_request_refresh())
 
     async def _handle_price_change(self, event: Event[EventStateChangedData]) -> None:
         """Refresh unconditionally - this computation is O(1), unlike the
         DP re-run the main optimizer's 10%-change gate exists to avoid."""
+        if self.data is None and not self.inputs_ready():
+            return  # startup: the scheduled first refresh waits for inputs
         await self.async_request_refresh()
 
     async def async_shutdown(self) -> None:
@@ -187,15 +215,16 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         gas_price = self._read_gas_price_eur_per_m3()
         if gas_price is None:
-            ir.async_create_issue(
-                self.hass,
-                DOMAIN,
-                f"gas_price_sensor_unavailable_{self._entry_id}",
-                is_fixable=False,
-                severity=ir.IssueSeverity.WARNING,
-                translation_key="gas_price_sensor_unavailable",
-                translation_placeholders={"sensor": self._gas_price_sensor},
-            )
+            if self.hass.is_running:
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    f"gas_price_sensor_unavailable_{self._entry_id}",
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key="gas_price_sensor_unavailable",
+                    translation_placeholders={"sensor": self._gas_price_sensor},
+                )
             raise _update_failed(
                 "gas_price_sensor_unavailable",
                 translation_placeholders={"sensor": self._gas_price_sensor},
@@ -239,9 +268,28 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if outdoor_temp is None or supply_temp is None:
             raise _update_failed("gas_boiler_operating_point_unavailable")
 
-        heatpump = HeatPumpConfig.from_config(self.config)
-        cop = heatpump.cop_at(supply_temp=supply_temp, outdoor_temp=outdoor_temp)
-        heat_pump_cost_eur_per_kwh = electricity_price / cop
+        # The optimizer's own COP for this step: the same (possibly
+        # calibrated) model, at the planned supply and forecast weather.
+        planned_cops = optimization_data.get("cop") or []
+        if planned_cops and planned_cops[0] > 0:
+            cop = float(planned_cops[0])
+        else:
+            cop = HeatPumpConfig.from_config(self.config).cop_at(
+                supply_temp=supply_temp, outdoor_temp=outdoor_temp
+            )
+        spot_cost_eur_per_kwh = electricity_price / cop
+        # Gas now replaces the plan's marginal kWh of heat pump heat, which
+        # may be bought hours earlier or later: the shadow price. A
+        # pre-heated house coasting through a price peak costs that, not the
+        # peak price / COP. Capped at the cost of heating right now, which
+        # the plan can always fall back to; the cap also keeps a comfort
+        # penalty in the shadow price from posing as an energy cost.
+        shadow_price = optimization_data.get("shadow_price_eur_per_kwh")
+        heat_pump_cost_eur_per_kwh = (
+            spot_cost_eur_per_kwh
+            if shadow_price is None
+            else min(max(float(shadow_price), 0.0), spot_cost_eur_per_kwh)
+        )
 
         boiler = GasBoilerConfig.from_config(self.config)
         gas_cost_eur_per_kwh = boiler.cost_per_kwh_thermal(gas_price)
@@ -281,6 +329,8 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "supply_temp": supply_temp,
             "outdoor_temp": outdoor_temp,
             "heat_pump_cost_eur_per_kwh": comparison.heat_pump_cost_eur_per_kwh,
+            "heat_pump_cost_now_eur_per_kwh": spot_cost_eur_per_kwh,
+            "shadow_price_eur_per_kwh": shadow_price,
             "gas_cost_eur_per_kwh": comparison.gas_cost_eur_per_kwh,
             "savings_eur_per_kwh": comparison.savings_eur_per_kwh,
             "savings_pct": comparison.savings_pct,

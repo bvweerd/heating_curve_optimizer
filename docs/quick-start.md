@@ -8,7 +8,7 @@ whole installation:
 | Section | What to fill in |
 |---|---|
 | Electricity prices | Your consumption price sensor (required) and feed-in price sensor (optional). |
-| Measurement sensors | Heat pump power (W/kW), measured supply temperature, grid import/export power. All optional. |
+| Measurement sensors | Heat pump power (W/kW), measured supply and return temperature, grid import/export power. All optional. |
 | Heat pump | Base COP, k-factor, outdoor coefficient, compensation factor, optionally the rated heating capacity. |
 | Heating curve | The curve **as set on your heat pump**: supply temperature at the warm and the cold end, and the matching outdoor temperatures. |
 | Advanced | Planning horizon (default 24 h). |

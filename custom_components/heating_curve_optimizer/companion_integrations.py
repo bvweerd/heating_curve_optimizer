@@ -53,8 +53,12 @@ _BC_CONF_GRID_EXPORT_SENSORS = "grid_export_sensors"
 _BC_CONF_PRICE_SENSOR = "price_sensor"
 _BC_CONF_FEED_IN_PRICE_SENSOR = "feed_in_price_sensor"
 
-# battery_controller stores each PV array as its own subentry.
+# battery_controller stores each PV array and each battery as its own
+# subentry; a battery's power sensor is signed like ours (positive =
+# charging).
 _BC_PV_SUBENTRY_TYPE = "pv_array"
+_BC_BATTERY_SUBENTRY_TYPE = "battery"
+_BC_CONF_BATTERY_POWER_SENSOR = "battery_power_sensor"
 
 _BATTERY_CONTROLLER_SOURCE = "Battery Controller"
 _DECC_SOURCE = "Dynamic Energy Contract Calculator"
@@ -65,14 +69,23 @@ FIELD_GRID_IMPORT_SENSOR = "grid_import_sensor"
 FIELD_GRID_EXPORT_SENSOR = "grid_export_sensor"
 FIELD_CONSUMPTION_PRICE_SENSOR = "consumption_price_sensor"
 FIELD_PRODUCTION_PRICE_SENSOR = "production_price_sensor"
+FIELD_BATTERY_POWER_SENSORS = "battery_power_sensors"
 
 
 @dataclass
 class DetectedSensor:
-    """A sensor entity_id found in a companion integration's own config."""
+    """A sensor entity_id (or several, for a multi-sensor field) found in a
+    companion integration's own config."""
 
-    entity_id: str
+    entity_id: str | list[str]
     source: str
+
+    @property
+    def label(self) -> str:
+        """The entity_id(s) as one line for the prefill list."""
+        if isinstance(self.entity_id, str):
+            return self.entity_id
+        return ", ".join(self.entity_id)
 
 
 @dataclass
@@ -187,6 +200,11 @@ def detect_main_flow_sensors(hass: HomeAssistant) -> dict[str, DetectedSensor]:
                 production_price, _BATTERY_CONTROLLER_SOURCE
             )
 
+        if batteries := _battery_power_sensors(hass):
+            detected[FIELD_BATTERY_POWER_SENSORS] = DetectedSensor(
+                batteries, _BATTERY_CONTROLLER_SOURCE
+            )
+
     decc_consumption = _decc_price_sensor(hass, "current_consumption_price")
     if decc_consumption is not None:
         detected[FIELD_CONSUMPTION_PRICE_SENSOR] = decc_consumption
@@ -196,6 +214,19 @@ def detect_main_flow_sensors(hass: HomeAssistant) -> dict[str, DetectedSensor]:
         detected[FIELD_PRODUCTION_PRICE_SENSOR] = decc_production
 
     return detected
+
+
+def _battery_power_sensors(hass: HomeAssistant) -> list[str]:
+    """The power sensor of every battery_controller battery subentry."""
+    entries = hass.config_entries.async_entries(BATTERY_CONTROLLER_DOMAIN)
+    if not entries:
+        return []
+    return [
+        str(sensor)
+        for subentry in getattr(entries[0], "subentries", {}).values()
+        if getattr(subentry, "subentry_type", None) == _BC_BATTERY_SUBENTRY_TYPE
+        and (sensor := subentry.data.get(_BC_CONF_BATTERY_POWER_SENSOR))
+    ]
 
 
 def detect_gas_price_sensor(hass: HomeAssistant) -> DetectedSensor | None:

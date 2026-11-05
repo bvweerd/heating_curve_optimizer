@@ -38,6 +38,7 @@ def main_config(**overrides: Any) -> dict[str, Any]:
         "production_price_sensor": None,
         "power_consumption": None,
         "supply_temperature_sensor": None,
+        "return_temperature_sensor": None,
         "grid_import_sensor": None,
         "grid_export_sensor": None,
         "base_cop": 4.2,
@@ -65,6 +66,7 @@ def zone_data(name: str = "Living room", **overrides: Any) -> dict[str, Any]:
         "ceiling_height": 2.5,
         "thermal_mass_class": "medium",
         "emitter_type": "radiator",
+        "building_model": "one_node",
         "internal_gains_w_per_m2": 3.0,
         "glass_south_m2": 8.0,
         "glass_east_m2": 2.0,
@@ -74,6 +76,7 @@ def zone_data(name: str = "Living room", **overrides: Any) -> dict[str, Any]:
         "indoor_temp_hysteresis_lower": 0.3,
         "indoor_temp_hysteresis_upper": 0.5,
         "indoor_temperature_sensor": INDOOR_SENSOR,
+        "away_setback": 2.0,
         "calibration_mode": "observe",
         **overrides,
     }
@@ -94,11 +97,16 @@ def make_entry(
     pv: bool = False,
     gas: bool = False,
     options: dict[str, Any] | None = None,
+    zone_overrides: dict[str, Any] | None = None,
     **config: Any,
 ) -> MockConfigEntry:
     """A config entry with the requested subentries."""
     subentries = [
-        subentry(ZONE_SUBENTRY_TYPE, f"Zone {i + 1}", zone_data(f"Zone {i + 1}"))
+        subentry(
+            ZONE_SUBENTRY_TYPE,
+            f"Zone {i + 1}",
+            zone_data(f"Zone {i + 1}", **(zone_overrides or {})),
+        )
         for i in range(zones)
     ]
     if pv:

@@ -16,7 +16,17 @@
 - Internet access to `api.open-meteo.com` (no account needed).
 - Strongly recommended: an indoor temperature sensor per heating zone.
 
-## HACS
+## Marketplace (Home Assistant 2026.11+)
+
+1. *Settings → Marketplace → Add from link* → enter
+   `https://github.com/bvweerd/heating_curve_optimizer`.
+2. Install **Heating Curve Optimizer**. A first install needs no restart.
+
+Adding a repository from a link needs a GitHub connection (device sign-in,
+read-only, public data only). Installed through HACS before 2026.11? Nothing
+to do: the installation and its custom repository are migrated automatically.
+
+## HACS (2026.10 and older)
 
 1. HACS → Integrations → ⋮ → *Custom repositories* → add
    `https://github.com/bvweerd/heating_curve_optimizer` as *Integration*.
@@ -35,6 +45,6 @@ Continue with the [quick start](quick-start.md).
 ## Removal
 
 *Settings → Devices & services → Heating Curve Optimizer → ⋮ → Delete*,
-then remove the files (or uninstall through HACS). Learned calibration data
+then remove the files (or uninstall through the Marketplace or HACS). Learned calibration data
 is stored in `.storage/heating_curve_optimizer_<entry_id>_thermal_calibration`
 and is deleted with the entry's storage cleanup; remove it by hand if needed.

@@ -23,18 +23,26 @@
             "data": {
               "power_consumption": "Elektrisch vermogen warmtepomp",
               "heat_pump_thermal_power_sensor": "Thermisch vermogen warmtepomp",
+              "heat_pump_thermal_energy_sensor": "Warmtemeter (energie)",
               "supply_temperature_sensor": "Gemeten aanvoertemperatuur",
+              "return_temperature_sensor": "Gemeten retourtemperatuur",
+              "flow_sensor": "Waterdebiet",
               "dhw_active_sensor": "Tapwaterbedrijf actief",
               "grid_import_sensor": "Netafname vermogen",
-              "grid_export_sensor": "Netteruglevering vermogen"
+              "grid_export_sensor": "Netteruglevering vermogen",
+              "battery_power_sensors": "Vermogen thuisbatterij"
             },
             "data_description": {
               "power_consumption": "Vermogenssensor (W of kW) van de warmtepomp. Activeert de thermisch vermogen/energie-sensoren en thermische kalibratie.",
               "heat_pump_thermal_power_sensor": "Optionele warmtemeter of door de warmtepomp gerapporteerd afgegeven vermogen (W of kW). Maakt de kalibratie onafhankelijk van het COP-model en maakt het leren van de COP-curve mogelijk.",
+              "heat_pump_thermal_energy_sensor": "Optioneel: cumulatieve warmte in kWh, bijvoorbeeld de eigen warmteteller van de warmtepomp. De geleverde warmte is de toename over de laatste 10 minuten. Gaat voor het waterdebiet; een thermisch-vermogensensor gaat voor.",
               "dhw_active_sensor": "Binaire sensor die aan is terwijl de warmtepomp tapwater verwarmt. Die periodes worden buiten de kalibratie gehouden. Leeg laten als er geen tapwaterbedrijf is.",
               "supply_temperature_sensor": "Gebruikt voor de COP van het gemeten werkpunt; anders wordt de geplande aanvoertemperatuur gebruikt.",
+              "return_temperature_sensor": "Aanvoer min retour geeft de werkelijke spreiding voor de kalibratie van de afgiftecurve (gemiddelde watertemperatuur); anders wordt 5 K spreiding aangenomen.",
+              "flow_sensor": "Optioneel (L/min, L/h of m³/h). Samen met aanvoer- en retourtemperatuur geeft dit de geleverde warmte: debiet × temperatuurverschil × 4,16 kJ/(L·K). Gebruikt in plaats van het COP-model voor de kalibratie, de COP-fit en de sensor voor thermisch vermogen; een thermisch-vermogensensor gaat voor.",
               "grid_import_sensor": "Actueel vermogen (W of kW). Met afname en/of teruglevering ingesteld verhoogt de realtime-offsetsensor de offset zolang er PV-overschot wordt teruggeleverd.",
-              "grid_export_sensor": "Actueel vermogen (W of kW), positief tijdens teruglevering."
+              "grid_export_sensor": "Actueel vermogen (W of kW), positief tijdens teruglevering.",
+              "battery_power_sensors": "Optioneel, één sensor per batterij (W of kW), positief bij laden, zoals in Battery Controller. Ontladen telt voor de PV-overschotlaag als netafname, zodat een batterij die de warmtepomp voedt niet voor overschot wordt aangezien."
             }
           },
           "heat_pump": {
@@ -45,14 +53,20 @@
               "k_factor": "k-factor (COP-verlies per °C aanvoer)",
               "outdoor_temp_coefficient": "Buitentemperatuurcoëfficiënt (COP-winst per °C)",
               "cop_compensation_factor": "COP-compensatiefactor",
-              "heat_pump_max_thermal_power_kw": "Maximaal thermisch vermogen"
+              "heat_pump_max_thermal_power_kw": "Maximaal thermisch vermogen",
+              "heat_pump_control": "Aansturing",
+              "min_run_minutes": "Minimale draaitijd",
+              "min_off_minutes": "Minimale rusttijd"
             },
             "data_description": {
               "base_cop": "Uit het datablad (bijv. A2/W35). Typisch 3,5-4,5 voor lucht-water.",
               "k_factor": "Typisch 0,08-0,12: hoe snel de COP daalt bij hogere aanvoertemperatuur.",
               "outdoor_temp_coefficient": "Typisch 0,05-0,10.",
               "cop_compensation_factor": "Schaalt de gemodelleerde COP naar je gemeten COP (1,0 = datablad).",
-              "heat_pump_max_thermal_power_kw": "Optioneel. Nominaal verwarmingsvermogen. Leeg: 1,3x het warmteverlies bij de ontwerp-buitentemperatuur."
+              "heat_pump_max_thermal_power_kw": "Optioneel. Nominaal verwarmingsvermogen bij 7 °C buiten (A7/W35); lager bij koudere lucht. Leeg: 1,3x het warmteverlies bij de ontwerp-buitentemperatuur.",
+              "heat_pump_control": "Eigen thermostaat: de warmtepomp stopt op zijn eigen ruimtethermostaat bij de doeltemperatuur; het plan zet alleen de offset. Volgt de planning: een automatisering schakelt de warmtepomp met de binaire sensor *Planning actief*; het plan bepaalt dan ook wanneer hij draait.",
+              "min_run_minutes": "Bij *Volgt de planning*: elke run duurt minstens zo lang, om de compressor te sparen.",
+              "min_off_minutes": "Bij *Volgt de planning*: elke pauze duurt minstens zo lang."
             }
           },
           "heating_curve": {
@@ -90,6 +104,7 @@
               "cycling_penalty_weight": "Schakelstraf gewicht",
               "hard_floor_penalty": "Harde vloerstraf",
               "feed_in_price_fallback": "Terugleverprijs terugval",
+              "house_base_load_w": "Basisverbruik huis",
               "offset_min": "Minimum offset",
               "offset_max": "Maximum offset",
               "heatpump_headroom": "Warmtepomp overcapaciteit"
@@ -99,6 +114,7 @@
               "cycling_penalty_weight": "Straf voor offset-wisselingen tussen stappen. Hogere waarden produceren stabielere plannen.",
               "hard_floor_penalty": "Straf in EUR als de binnentemperatuur ver onder het comfort-minimum zakt.",
               "feed_in_price_fallback": "Terugvalwaarde terugleverpijs als er geen productieprijs-sensor is geconfigureerd.",
+              "house_base_load_w": "Gemiddeld verbruik van het huishouden naast de warmtepomp. Dit gaat van de PV-verwachting af voordat de rest als overschot voor verwarming telt.",
               "offset_min": "Laagste stooklijn-offset die de optimizer mag gebruiken.",
               "offset_max": "Hoogste stooklijn-offset die de optimizer mag gebruiken.",
               "heatpump_headroom": "Veronderstelde capaciteit warmtepomp als verhouding tot het ontwerppunt van de emitter. 1,3 betekent 30% overcapaciteit."
@@ -229,18 +245,26 @@
             "data": {
               "power_consumption": "Elektrisch vermogen warmtepomp",
               "heat_pump_thermal_power_sensor": "Thermisch vermogen warmtepomp",
+              "heat_pump_thermal_energy_sensor": "Warmtemeter (energie)",
               "supply_temperature_sensor": "Gemeten aanvoertemperatuur",
+              "return_temperature_sensor": "Gemeten retourtemperatuur",
+              "flow_sensor": "Waterdebiet",
               "dhw_active_sensor": "Tapwaterbedrijf actief",
               "grid_import_sensor": "Netafname vermogen",
-              "grid_export_sensor": "Netteruglevering vermogen"
+              "grid_export_sensor": "Netteruglevering vermogen",
+              "battery_power_sensors": "Vermogen thuisbatterij"
             },
             "data_description": {
               "power_consumption": "Vermogenssensor (W of kW) van de warmtepomp. Activeert de thermisch vermogen/energie-sensoren en thermische kalibratie.",
               "heat_pump_thermal_power_sensor": "Optionele warmtemeter of door de warmtepomp gerapporteerd afgegeven vermogen (W of kW). Maakt de kalibratie onafhankelijk van het COP-model en maakt het leren van de COP-curve mogelijk.",
+              "heat_pump_thermal_energy_sensor": "Optioneel: cumulatieve warmte in kWh, bijvoorbeeld de eigen warmteteller van de warmtepomp. De geleverde warmte is de toename over de laatste 10 minuten. Gaat voor het waterdebiet; een thermisch-vermogensensor gaat voor.",
               "dhw_active_sensor": "Binaire sensor die aan is terwijl de warmtepomp tapwater verwarmt. Die periodes worden buiten de kalibratie gehouden. Leeg laten als er geen tapwaterbedrijf is.",
               "supply_temperature_sensor": "Gebruikt voor de COP van het gemeten werkpunt; anders wordt de geplande aanvoertemperatuur gebruikt.",
+              "return_temperature_sensor": "Aanvoer min retour geeft de werkelijke spreiding voor de kalibratie van de afgiftecurve (gemiddelde watertemperatuur); anders wordt 5 K spreiding aangenomen.",
+              "flow_sensor": "Optioneel (L/min, L/h of m³/h). Samen met aanvoer- en retourtemperatuur geeft dit de geleverde warmte: debiet × temperatuurverschil × 4,16 kJ/(L·K). Gebruikt in plaats van het COP-model voor de kalibratie, de COP-fit en de sensor voor thermisch vermogen; een thermisch-vermogensensor gaat voor.",
               "grid_import_sensor": "Actueel vermogen (W of kW). Met afname en/of teruglevering ingesteld verhoogt de realtime-offsetsensor de offset zolang er PV-overschot wordt teruggeleverd.",
-              "grid_export_sensor": "Actueel vermogen (W of kW), positief tijdens teruglevering."
+              "grid_export_sensor": "Actueel vermogen (W of kW), positief tijdens teruglevering.",
+              "battery_power_sensors": "Optioneel, één sensor per batterij (W of kW), positief bij laden, zoals in Battery Controller. Ontladen telt voor de PV-overschotlaag als netafname, zodat een batterij die de warmtepomp voedt niet voor overschot wordt aangezien."
             }
           },
           "heat_pump": {
@@ -251,14 +275,20 @@
               "k_factor": "k-factor (COP-verlies per °C aanvoer)",
               "outdoor_temp_coefficient": "Buitentemperatuurcoëfficiënt (COP-winst per °C)",
               "cop_compensation_factor": "COP-compensatiefactor",
-              "heat_pump_max_thermal_power_kw": "Maximaal thermisch vermogen"
+              "heat_pump_max_thermal_power_kw": "Maximaal thermisch vermogen",
+              "heat_pump_control": "Aansturing",
+              "min_run_minutes": "Minimale draaitijd",
+              "min_off_minutes": "Minimale rusttijd"
             },
             "data_description": {
               "base_cop": "Uit het datablad (bijv. A2/W35). Typisch 3,5-4,5 voor lucht-water.",
               "k_factor": "Typisch 0,08-0,12: hoe snel de COP daalt bij hogere aanvoertemperatuur.",
               "outdoor_temp_coefficient": "Typisch 0,05-0,10.",
               "cop_compensation_factor": "Schaalt de gemodelleerde COP naar je gemeten COP (1,0 = datablad).",
-              "heat_pump_max_thermal_power_kw": "Optioneel. Nominaal verwarmingsvermogen. Leeg: 1,3x het warmteverlies bij de ontwerp-buitentemperatuur."
+              "heat_pump_max_thermal_power_kw": "Optioneel. Nominaal verwarmingsvermogen bij 7 °C buiten (A7/W35); lager bij koudere lucht. Leeg: 1,3x het warmteverlies bij de ontwerp-buitentemperatuur.",
+              "heat_pump_control": "Eigen thermostaat: de warmtepomp stopt op zijn eigen ruimtethermostaat bij de doeltemperatuur; het plan zet alleen de offset. Volgt de planning: een automatisering schakelt de warmtepomp met de binaire sensor *Planning actief*; het plan bepaalt dan ook wanneer hij draait.",
+              "min_run_minutes": "Bij *Volgt de planning*: elke run duurt minstens zo lang, om de compressor te sparen.",
+              "min_off_minutes": "Bij *Volgt de planning*: elke pauze duurt minstens zo lang."
             }
           },
           "heating_curve": {
@@ -296,6 +326,7 @@
               "cycling_penalty_weight": "Schakelstraf gewicht",
               "hard_floor_penalty": "Harde vloerstraf",
               "feed_in_price_fallback": "Terugleverprijs terugval",
+              "house_base_load_w": "Basisverbruik huis",
               "offset_min": "Minimum offset",
               "offset_max": "Maximum offset",
               "heatpump_headroom": "Warmtepomp overcapaciteit"
@@ -305,6 +336,7 @@
               "cycling_penalty_weight": "Straf voor offset-wisselingen tussen stappen. Hogere waarden produceren stabielere plannen.",
               "hard_floor_penalty": "Straf in EUR als de binnentemperatuur ver onder het comfort-minimum zakt.",
               "feed_in_price_fallback": "Terugvalwaarde terugleverpijs als er geen productieprijs-sensor is geconfigureerd.",
+              "house_base_load_w": "Gemiddeld verbruik van het huishouden naast de warmtepomp. Dit gaat van de PV-verwachting af voordat de rest als overschot voor verwarming telt.",
               "offset_min": "Laagste stooklijn-offset die de optimizer mag gebruiken.",
               "offset_max": "Hoogste stooklijn-offset die de optimizer mag gebruiken.",
               "heatpump_headroom": "Veronderstelde capaciteit warmtepomp als verhouding tot het ontwerppunt van de emitter. 1,3 betekent 30% overcapaciteit."
@@ -419,6 +451,8 @@
             "ceiling_height": "Plafondhoogte",
             "thermal_mass_class": "Bouwwijze (thermische massa)",
             "emitter_type": "Afgiftesysteem",
+            "building_model": "Gebouwmodel",
+            "air_coupling_kw_per_k": "Koppeling massa-lucht",
             "internal_gains_w_per_m2": "Interne warmtelast",
             "glass_south_m2": "Raamoppervlak zuid",
             "glass_east_m2": "Raamoppervlak oost",
@@ -429,6 +463,8 @@
             "indoor_temp_hysteresis_upper": "Comfortband boven doel",
             "indoor_temperature_sensor": "Binnentemperatuursensor",
             "window_sensors": "Raam- en deurcontacten",
+            "comfort_schedule": "Thuis-schema",
+            "away_setback": "Afwezigheidsverlaging",
             "calibration_mode": "Kalibratie",
             "heat_curve_min": "Eigen stooklijn: aanvoertemperatuur warme kant",
             "heat_curve_max": "Eigen stooklijn: aanvoertemperatuur koude kant",
@@ -436,11 +472,15 @@
           },
           "data_description": {
             "energy_label": "Gebruikt om de warmteverliescoëfficiënt te schatten totdat de kalibratie die heeft geleerd.",
+            "building_model": "Eén knoop: de ruimte is de warmtemassa. Massa + lucht (aanbevolen bij vloerverwarming in een zwaar huis): de warmtepomp verwarmt vloer en constructie, zon en interne warmte verwarmen de lucht direct. Vereist de binnentemperatuursensor.",
+            "air_coupling_kw_per_k": "Alleen bij Massa + lucht. Leeg: na enkele dagen geleerd uit de geschiedenis (tot dan 55 W/K per m² vloer).",
             "internal_gains_w_per_m2": "Bewoners, apparaten en verlichting. 2-4 W/m² voor een bewoonde woning.",
             "glass_u_value": "Dubbel glas ~2,8, HR++ ~1,2, triple ~0,8.",
             "indoor_temp_hysteresis_lower": "De optimizer houdt de binnentemperatuur tussen doel - onder en doel + boven.",
             "indoor_temperature_sensor": "Sterk aanbevolen. Zonder sensor neemt de optimizer aan dat de ruimte op de doeltemperatuur is en is kalibratie niet mogelijk.",
             "window_sensors": "Optioneel. Periodes met een open raam of deur worden buiten de kalibratie gehouden.",
+            "comfort_schedule": "Optionele schema-helper: aan zolang er iemand thuis is. Staat het schema uit, dan zakt de ondergrens van de comfortband met de afwezigheidsverlaging, en warmt het plan op in de goedkoopste uren voordat het schema weer aangaat.",
+            "away_setback": "Hoeveel de ondergrens van de comfortband mag zakken zolang het thuis-schema uit staat.",
             "calibration_mode": "Leer het gebouw uit metingen. Observeren: leren en resultaten tonen, vragen voordat ze gebruikt worden. Toepassen: het geleerde model gebruiken zodra het de kwaliteitscontroles doorstaat.",
             "heat_curve_min": "Alleen voor een aparte verwarmingsgroep met een eigen stooklijn; laat beide leeg om de hoofdstooklijn te gebruiken.",
             "heat_curve_max": "Vul beide of geen van beide in.",
@@ -458,6 +498,8 @@
             "ceiling_height": "Plafondhoogte",
             "thermal_mass_class": "Bouwwijze (thermische massa)",
             "emitter_type": "Afgiftesysteem",
+            "building_model": "Gebouwmodel",
+            "air_coupling_kw_per_k": "Koppeling massa-lucht",
             "internal_gains_w_per_m2": "Interne warmtelast",
             "glass_south_m2": "Raamoppervlak zuid",
             "glass_east_m2": "Raamoppervlak oost",
@@ -468,6 +510,8 @@
             "indoor_temp_hysteresis_upper": "Comfortband boven doel",
             "indoor_temperature_sensor": "Binnentemperatuursensor",
             "window_sensors": "Raam- en deurcontacten",
+            "comfort_schedule": "Thuis-schema",
+            "away_setback": "Afwezigheidsverlaging",
             "calibration_mode": "Kalibratie",
             "heat_curve_min": "Eigen stooklijn: aanvoertemperatuur warme kant",
             "heat_curve_max": "Eigen stooklijn: aanvoertemperatuur koude kant",
@@ -475,11 +519,15 @@
           },
           "data_description": {
             "energy_label": "Gebruikt om de warmteverliescoëfficiënt te schatten totdat de kalibratie die heeft geleerd.",
+            "building_model": "Eén knoop: de ruimte is de warmtemassa. Massa + lucht (aanbevolen bij vloerverwarming in een zwaar huis): de warmtepomp verwarmt vloer en constructie, zon en interne warmte verwarmen de lucht direct. Vereist de binnentemperatuursensor.",
+            "air_coupling_kw_per_k": "Alleen bij Massa + lucht. Leeg: na enkele dagen geleerd uit de geschiedenis (tot dan 55 W/K per m² vloer).",
             "internal_gains_w_per_m2": "Bewoners, apparaten en verlichting. 2-4 W/m² voor een bewoonde woning.",
             "glass_u_value": "Dubbel glas ~2,8, HR++ ~1,2, triple ~0,8.",
             "indoor_temp_hysteresis_lower": "De optimizer houdt de binnentemperatuur tussen doel - onder en doel + boven.",
             "indoor_temperature_sensor": "Sterk aanbevolen. Zonder sensor neemt de optimizer aan dat de ruimte op de doeltemperatuur is en is kalibratie niet mogelijk.",
             "window_sensors": "Optioneel. Periodes met een open raam of deur worden buiten de kalibratie gehouden.",
+            "comfort_schedule": "Optionele schema-helper: aan zolang er iemand thuis is. Staat het schema uit, dan zakt de ondergrens van de comfortband met de afwezigheidsverlaging, en warmt het plan op in de goedkoopste uren voordat het schema weer aangaat.",
+            "away_setback": "Hoeveel de ondergrens van de comfortband mag zakken zolang het thuis-schema uit staat.",
             "calibration_mode": "Leer het gebouw uit metingen. Observeren: leren en resultaten tonen, vragen voordat ze gebruikt worden. Toepassen: het geleerde model gebruiken zodra het de kwaliteitscontroles doorstaat.",
             "heat_curve_min": "Alleen voor een aparte verwarmingsgroep met een eigen stooklijn; laat beide leeg om de hoofdstooklijn te gebruiken.",
             "heat_curve_max": "Vul beide of geen van beide in.",
@@ -599,7 +647,8 @@
         "production_price_sensor": "Terugleverprijs",
         "power_consumption": "Vermogen warmtepomp",
         "grid_import_sensor": "Netafname",
-        "grid_export_sensor": "Netteruglevering"
+        "grid_export_sensor": "Netteruglevering",
+        "battery_power_sensors": "Vermogen thuisbatterij"
       }
     },
     "calibration_mode": {
@@ -635,6 +684,26 @@
         "underfloor": "Vloerverwarming",
         "fan_coil": "Ventilatorconvectoren"
       }
+    },
+    "heat_pump_control": {
+      "options": {
+        "own_thermostat": "Eigen thermostaat",
+        "follows_plan": "Volgt de planning (aan/uit via Planning actief)"
+      }
+    },
+    "building_model": {
+      "options": {
+        "one_node": "Eén knoop",
+        "mass_air": "Massa + lucht"
+      }
+    }
+  },
+  "device": {
+    "heat_pump": {
+      "name": "Warmtepomp"
+    },
+    "gas_boiler": {
+      "name": "Gasketel"
     }
   },
   "entity": {
@@ -708,27 +777,36 @@
         }
       },
       "heat_pump_thermal_power": {
-        "name": "Thermisch vermogen warmtepomp"
+        "name": "Thermisch vermogen"
       },
       "heat_pump_thermal_energy": {
-        "name": "Thermische energie warmtepomp"
+        "name": "Thermische energie"
       },
       "gas_boiler_heat_pump_cost": {
-        "name": "Kosten warmtepomp per kWh warmte"
+        "name": "Kosten per kWh"
       },
       "gas_boiler_gas_cost": {
-        "name": "Kosten gasketel per kWh warmte"
+        "name": "Kosten per kWh"
       },
       "gas_boiler_cost_savings": {
-        "name": "Besparing gasketel per kWh warmte"
+        "name": "Besparing per kWh"
       }
     },
     "binary_sensor": {
       "heat_pump_plan_active": {
         "name": "Warmtepomp planning actief"
       },
+      "plan_active": {
+        "name": "Planning actief"
+      },
+      "heat_pump_cheaper": {
+        "name": "Voordeliger"
+      },
       "gas_boiler_preferred": {
-        "name": "Gasketel voordeliger"
+        "name": "Inzetten"
+      },
+      "gas_boiler_cheaper": {
+        "name": "Goedkoper"
       }
     },
     "number": {
@@ -805,6 +883,10 @@
       "title": "Binnentemperatuursensor niet beschikbaar",
       "description": "De binnentemperatuursensor **{sensor}** is niet beschikbaar. Tot hij weer meet, neemt de optimizer aan dat de ruimte op de doeltemperatuur is en staat de kalibratie stil."
     },
+    "comfort_schedule_unavailable": {
+      "title": "Thuis-schema niet beschikbaar",
+      "description": "Het thuis-schema **{entity}** kon niet worden gelezen. Tot dat weer lukt, houdt de optimizer de hele tijd de volledige comfortband aan."
+    },
     "calibration_ready": {
       "title": "Kalibratie van {zone} is klaar",
       "fix_flow": {
@@ -819,6 +901,10 @@
     "gas_price_sensor_unavailable": {
       "title": "Gasprijssensor niet beschikbaar",
       "description": "De gasprijssensor **{sensor}** is niet beschikbaar. De gasketelvergelijking kan zonder deze sensor niet draaien."
+    },
+    "cop_model_mismatch": {
+      "title": "COP-model past niet bij de gemeten COP",
+      "description": "De afgelopen dagen is de gemeten COP (gemeten warmte gedeeld door elektrisch vermogen) **{ratio}×** wat het ingestelde COP-model bij dezelfde temperaturen geeft. Controleer eerst de warmtemeting: de eigen warmteteller van de warmtepomp is de betrouwbaarste bron; debiet × aanvoer-retourverschil is zo goed als de twee temperatuursensoren (een retour onder de kamertemperatuur, of een COP boven de helft van de Carnot-grens, wijst op de sensoren). Klopt de meting, zet dan de kalibratie van de zone op *Toepassen* zodat de COP-curve eruit wordt geleerd, of pas de COP-instellingen aan."
     }
   },
   "services": {

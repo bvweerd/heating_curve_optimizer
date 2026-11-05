@@ -11,6 +11,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.heating_curve_optimizer.companion_integrations import (
     BATTERY_CONTROLLER_DOMAIN,
     DECC_DOMAIN,
+    FIELD_BATTERY_POWER_SENSORS,
     FIELD_CONSUMPTION_PRICE_SENSOR,
     FIELD_GRID_EXPORT_SENSOR,
     FIELD_GRID_IMPORT_SENSOR,
@@ -294,3 +295,37 @@ async def test_detect_pv_arrays_skips_subentry_missing_peak_power(
     detected = detect_pv_arrays(hass)
 
     assert [array.name for array in detected] == ["Valid array"]
+
+
+@pytest.mark.asyncio
+async def test_battery_power_sensors_from_every_battery_subentry(
+    hass: HomeAssistant,
+):
+    bc_entry = MockConfigEntry(domain=BATTERY_CONTROLLER_DOMAIN, data={})
+    bc_entry.add_to_hass(hass)
+    bc_entry.subentries = {
+        "sub1": SimpleNamespace(
+            subentry_type="battery",
+            title="Garage",
+            data={"battery_power_sensor": "sensor.garage_battery_power"},
+        ),
+        "sub2": SimpleNamespace(
+            subentry_type="battery",
+            title="Attic",
+            data={"battery_power_sensor": "sensor.attic_battery_power"},
+        ),
+        "sub3": SimpleNamespace(
+            subentry_type="battery", title="No sensor", data={"capacity_kwh": 5.0}
+        ),
+        "sub4": SimpleNamespace(
+            subentry_type="pv_array", title="Roof", data={"peak_power_kwp": 3.0}
+        ),
+    }
+
+    detected = detect_main_flow_sensors(hass)[FIELD_BATTERY_POWER_SENSORS]
+
+    assert detected.entity_id == [
+        "sensor.garage_battery_power",
+        "sensor.attic_battery_power",
+    ]
+    assert detected.label == ("sensor.garage_battery_power, sensor.attic_battery_power")

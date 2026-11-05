@@ -8,14 +8,48 @@ logger:
     custom_components.heating_curve_optimizer: debug
 ```
 
-Repair notifications (price, indoor temperature, gas price, weather) clear
-themselves within seconds once the sensor reports again, and are removed
+Repair notifications (price, indoor temperature, home schedule, gas price,
+weather) clear themselves within seconds once the sensor reports again, and are removed
 when the integration is unloaded or the zone/gas boiler they belong to is
 deleted.
 
 The *Status* diagnostic sensor shows per coordinator whether it has data
 and the last error. **Download diagnostics** on the integration page gives
 the full state with sensor IDs redacted.
+
+## COP model does not match the measured COP
+
+A repair issue appears when, over the stored history, the measured COP
+(measured heat divided by electrical power) is below 0.7× or above 1.4×
+the COP model at the same temperatures.
+
+First make sure the heat measurement is right. A heat meter or the heat
+pump's own heat counter is the best source. Flow × supply-return spread is
+only as good as the two temperature sensors: a return sensor reading a
+little low inflates the spread, and with it the heat. Physics gives a
+check: a measured COP above about half the Carnot limit
+`(T_supply + 273) / (T_supply − T_outdoor)` is implausible, and so is a
+return temperature below the room temperature.
+
+When the measurement is right, set the zone's calibration to *Apply* so
+the COP curve is learned from it, or adjust the COP settings. Datasheet
+curves are lab values; in real operation cycling, defrost and circulation
+pump usually cost some efficiency (one LG Therma V ran at about 0.8× its
+datasheet COP in mild weather, measured with its own heat counter).
+
+## Validating the models after a few days
+
+**Download diagnostics** on the integration page and run, in the
+development environment:
+
+```bash
+python scripts/validate_diagnostics.py config_entry-heating_curve_optimizer-....json
+```
+
+It replays the stored 5-minute history: the 6-hour-ahead error of the
+one-node model against *Mass + air* at every coupling, the measured COP
+against the COP model, run and pause durations of the on/off advice, and
+how often the PV-surplus adjustment changed.
 
 ## Only two sensors appear
 
@@ -58,12 +92,20 @@ State *Provisional* with enough samples usually means too few cooling (or
 heating) windows, or a low `r_squared`: the building needs some variation.
 A wrong fit can be cleared with `heating_curve_optimizer.reset_thermal_calibration`.
 
-## Gas boiler preferred never turns on
+## Gas boiler advised never turns on
 
 That is the intended heat-pump-first behaviour while the house stays
 comfortable, or recovers within 3 hours while the heat pump is cheaper.
 Check `comfort_at_risk`, `comfort_reason` and `gas_cheaper` on the binary
 sensor.
+
+## Gas boiler cheaper is off during an expensive evening
+
+The heat pump's price is the plan's marginal cost of heat, not the current
+electricity price / COP: a house pre-heated on cheap hours coasts through
+the peak on heat that has already been paid for. Compare
+`heat_pump_cost_now_eur_per_kwh` (heating right now) with
+`shadow_price_eur_per_kwh` on the heat pump *Cost per kWh* sensor.
 
 ## Total cost savings goes down
 
