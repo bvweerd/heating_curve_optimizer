@@ -33,6 +33,7 @@ def _make_coordinator(
     entry_id: str = "test_entry",
 ) -> GasBoilerCoordinator:
     heat_coordinator = MagicMock()
+    heat_coordinator.has_real_indoor_sensor = False
     heat_coordinator.data = (
         heat_data
         if heat_data is not None
@@ -360,3 +361,38 @@ async def test_comfort_backup_can_be_switched_off(hass: HomeAssistant):
     assert data["comfort_reason"] == "heat_pump_cannot_keep_up"
     assert data["comfort_backup"] is False
     assert data["prefer_gas_boiler"] is False
+
+
+@pytest.mark.asyncio
+async def test_no_comparison_until_the_plan_uses_the_measured_indoor_temp(
+    hass: HomeAssistant,
+):
+    """After a restart the first plan starts from the target temperature;
+    its cost is a placeholder and flipped "gas cheaper" for a few minutes."""
+    hass.states.async_set("sensor.gas_price", "1.20")
+    hass.states.async_set("sensor.elec_price", "0.35")
+    coordinator = _make_coordinator(hass)
+    coordinator.heat_coordinator.has_real_indoor_sensor = True
+    coordinator.heat_coordinator.data["indoor_temperature_source"] = "target"
+    data = await coordinator._async_update_data()
+    assert data["available"] is False
+    assert data["reason"] == "waiting_for_plan"
+    coordinator.heat_coordinator.data["indoor_temperature_source"] = "sensor"
+    data = await coordinator._async_update_data()
+    assert data["available"] is True
+
+
+def test_gas_cheaper_has_a_dead_band_and_a_hold_time(hass: HomeAssistant):
+    from datetime import UTC, datetime, timedelta
+
+    coordinator = _make_coordinator(hass)
+    t0 = datetime(2026, 11, 7, 17, 0, tzinfo=UTC)
+    gas = 0.136  # dead band: 5 % = 0.0068 EUR/kWh
+    flag = coordinator._gas_cheaper_with_deadband
+    assert flag(-0.01, gas, t0) is False  # first: plain comparison
+    assert flag(0.002, gas, t0 + timedelta(hours=2)) is False  # within band
+    assert flag(0.008, gas, t0 + timedelta(hours=2)) is True  # clearly cheaper
+    # Back to the heat pump only after an hour, and only clearly.
+    assert flag(-0.01, gas, t0 + timedelta(hours=2, minutes=30)) is True
+    assert flag(-0.003, gas, t0 + timedelta(hours=3, minutes=5)) is True
+    assert flag(-0.01, gas, t0 + timedelta(hours=3, minutes=5)) is False
