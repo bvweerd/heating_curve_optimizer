@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import math
 from collections import deque
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, time, timedelta
 from typing import Any
 
@@ -13,6 +13,7 @@ from homeassistant.core import State
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_DELTA_T_CORRECTION,
     CONF_FLOW_SENSOR,
     CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR,
     CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
@@ -20,6 +21,7 @@ from .const import (
     CONF_POWER_CONSUMPTION,
     CONF_RETURN_TEMPERATURE_SENSOR,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
+    DEFAULT_DELTA_T_CORRECTION,
     DEFAULT_IDLE_POWER_THRESHOLD_KW,
 )
 
@@ -772,10 +774,14 @@ def measured_heat_kw(
     config: dict[str, Any],
     counter: EnergyCounterRate | None = None,
     now: datetime | None = None,
+    learned_correction: Callable[[float], float] | None = None,
 ) -> float | None:
     """Delivered heat in kW, by precedence: thermal power sensor; heat meter
     (energy counter, rate via `counter`); flow x (supply - return) x water
     heat capacity. None when not measured or unavailable.
+
+    The flow-based spread is corrected for a sensor offset
+    (`delta_t_correction_k`): with a 4 K spread, 0.4 K offset is 10 % heat.
 
     Heat from the meter or the flow is zero while the heat pump draws no
     more than its standby power: some heat pumps report a placeholder flow
@@ -806,7 +812,29 @@ def measured_heat_kw(
     )
     if flow is None or supply is None or return_temp is None:
         return None
-    return flow / 60.0 * WATER_KJ_PER_L_K * (supply - return_temp)
+    spread = (
+        supply
+        - return_temp
+        + delta_t_correction_k(config, (supply + return_temp) / 2, learned_correction)
+    )
+    return flow / 60.0 * WATER_KJ_PER_L_K * spread
+
+
+def delta_t_correction_k(
+    config: dict[str, Any],
+    water_temp: float,
+    learned_correction: Callable[[float], float] | None = None,
+) -> float:
+    """K added to a measured supply-return spread: the configured
+    correction, else the learned one (when given), else 0."""
+    configured = float(
+        config.get(CONF_DELTA_T_CORRECTION, DEFAULT_DELTA_T_CORRECTION) or 0.0
+    )
+    if configured:
+        return configured
+    if learned_correction is not None:
+        return learned_correction(water_temp)
+    return 0.0
 
 
 def calculate_supply_temperature(

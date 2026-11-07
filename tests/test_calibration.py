@@ -113,7 +113,7 @@ def test_cop_fit_recovers_curve() -> None:
         outdoor = rng.uniform(-8, 12)
         supply = rng.uniform(28, 48)
         cop = 3.8 + 0.07 * outdoor - 0.09 * (supply - 35)
-        samples.append(CopSample(outdoor, supply, 1.0, cop))
+        samples.append(CopSample(outdoor, supply, 1.0, cop, 1.0))
     fit = fit_cop(samples, (4.2, 0.08, 0.11))
     assert fit is not None and fit.usable
     assert fit.base_cop == pytest.approx(3.8, abs=0.05)

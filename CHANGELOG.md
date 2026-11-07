@@ -10,6 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 First release of the redesigned integration. There are no earlier
 deployments to migrate from.
 
+### Measurement and accounting
+- COP samples sum heat and electricity over windows of compressor
+  operation (start to stop, at most an hour), including start-up and
+  defrost, instead of instantaneous heat / power ratios that were noisy,
+  missed defrosts and gave implausible fits. Samples stored in the old
+  layout are dropped.
+- Supply-return sensor offset: learned from pump runs without compressor
+  (applied with calibration *Applied*) or set as `delta_t_correction`;
+  corrects flow-based heat everywhere. New expert setting `pump_min_flow`.
+- *Total cost savings* books the plan's savings only for the share of
+  time the heat pump followed the plan; what it would have saved is an
+  attribute (`savings_if_followed_eur`).
+- Mass + air learns a scale on the label-based heat loss `UA` together
+  with the coupling and solar factor.
+- *Model accuracy* reports the persistence error and the skill against it.
+
 ### Optimizer
 - Algorithm review fixes:
   - The offset ramp limit holds in real time: 15-minute prices at

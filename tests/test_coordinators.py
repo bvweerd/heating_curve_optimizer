@@ -302,6 +302,7 @@ def test_total_cost_savings_books_losses_too() -> None:
             "step_durations_hours": [1.0],
             "cost_eur": [cost],
             "baseline_cost_eur": [baseline],
+            "plan_followed_fraction": 1.0,
         }
         sensor._handle_coordinator_update()
 
@@ -310,6 +311,35 @@ def test_total_cost_savings_books_losses_too() -> None:
     assert sensor.native_value == pytest.approx(-0.05)
     update(t0 + timedelta(minutes=60), baseline=0.50, cost=0.10)
     assert sensor.native_value == pytest.approx(0.15)
+
+
+def test_total_cost_savings_books_only_the_followed_share() -> None:
+    """The integration only advises: savings of a plan the heat pump did not
+    follow are not booked, only kept as what it would have saved."""
+    coordinator = MagicMock()
+    sensor = TotalCostSavingsSensor(coordinator, "entry", MagicMock())
+    sensor.async_write_ha_state = MagicMock()
+    t0 = datetime(2026, 1, 1, 10, 0, tzinfo=UTC)
+
+    def update(ts: datetime, followed: float | None) -> None:
+        coordinator.data = {
+            "timestamp": ts,
+            "step_durations_hours": [1.0],
+            "cost_eur": [0.10],
+            "baseline_cost_eur": [0.50],
+            "plan_followed_fraction": followed,
+        }
+        sensor._handle_coordinator_update()
+
+    update(t0, followed=None)
+    update(t0 + timedelta(hours=1), followed=0.25)  # 0.40 €/h x 1 h x 25 %
+    assert sensor.native_value == pytest.approx(0.10)
+    update(t0 + timedelta(hours=1, minutes=30), followed=None)  # not observed
+    assert sensor.native_value == pytest.approx(0.10)
+    attrs = sensor.extra_state_attributes
+    assert attrs["savings_if_followed_eur"] == pytest.approx(0.60)
+    assert attrs["observed_hours"] == pytest.approx(1.0)
+    assert attrs["plan_followed_share"] == pytest.approx(0.25)
 
 
 def _ready_calibration(coordinator: OptimizationCoordinator) -> None:
@@ -329,7 +359,7 @@ def _ready_calibration(coordinator: OptimizationCoordinator) -> None:
         rate = (heat + prior.internal_gain_kw - ua / 1000 * delta_t) / mass
         calibration.record_sample(Sample(delta_t, heat, 0.0, rate), prior)
         calibration.record_cop_sample(
-            CopSample(-5.0 + i % 12, 30.0 + i % 15, 1.0, 3.5 + 0.06 * (i % 12)),
+            CopSample(-5.0 + i % 12, 30.0 + i % 15, 1.0, 3.5 + 0.06 * (i % 12), 1.0),
             coordinator.cop_prior(),
         )
         calibration.record_emitter_sample(
@@ -362,7 +392,6 @@ def test_emitter_sample_uses_measured_return_temperature(
         outdoor_temp=5.0,
         humidity=80.0,
         power_kw=1.5,
-        planned_supply=None,
     )
     (sample,) = coordinator.thermal_calibration.emitter_samples
     assert sample.water_delta_t == pytest.approx(expected_spread)

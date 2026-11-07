@@ -64,10 +64,44 @@ tap water.
 
 ### COP curve from a heat meter (phase 2a)
 
-With both electrical and thermal power, every run where the heat pump is
-running gives a measured COP at the current outdoor and supply temperature.
+With both electrical and thermal power, heat and electricity are summed
+over each window of compressor operation: from start to stop, or an hour
+of continuous running (then the next window starts). Start-up and defrost
+are included - a defrost draws heat from the water and counts as negative
+heat - so each sample is the COP the heat pump really delivers, at the mean
+outdoor and supply temperature of the window. Windows shorter than 15
+minutes or under 0.15 kWh, with a gap in the readings, or during an
+exclusion (DHW, open window) are dropped.
+
 A fit of `COP / defrost = base + a · T_outdoor − k · (T_supply − 35)` gives
 the base COP, the outdoor coefficient and the k-factor.
+
+!!! note "Why not the instantaneous ratio"
+    Heat / power at one moment is noisy (temperature sensors that step in
+    0.3–0.4 K on a 4 K spread), lags at start-up, and misses defrosts when
+    only positive heat is kept. On one installation such samples ranged
+    from 2.5 to 13.6 with a median of 4.2 while the hourly measured COP
+    was 3.7, and the fit was rejected as implausible.
+
+### Supply-return sensor offset
+
+When heat is computed from flow × (supply − return), a fixed difference
+between the two temperature sensors is a fixed error in heat: 0.4 K on a
+4 K spread is 10 %. The offset is learned from pump runs without
+compressor: at least 15 minutes after the compressor stopped and 50
+seconds into a pump run, supply and return are the same water, so what
+they read apart is the offset. The median of each run (removing the
+sensors' quantisation) is a sample; after 20 runs the offset is fitted -
+as a line over the water temperature when the runs span at least 6 K
+(held constant outside the measured range), else a constant.
+
+The learned correction is used with calibration *Applied*; a value set in
+the expert setting `delta_t_correction` always wins. It applies to the
+measured heat everywhere: calibration, COP and emitter samples and the
+*Thermal power* sensor. Attributes: `delta_t_offset_runs`,
+`learned_delta_t_correction_k`, `learned_delta_t_valid_range_c`,
+`delta_t_correction_source`. Set `pump_min_flow` above the flow the heat
+pump reports when its pump is off.
 
 ### Emitter curve (phase 3)
 
@@ -94,9 +128,10 @@ slow part that one mass cannot describe. The remedy is the zone's
 
 With the mass-air model the building fit is shown but not used: the
 thermal mass the air appears to have is not the mass the heat pump heats.
-The zone keeps the label-based `UA`, `C`, solar factor and internal gains
-(attribute `building_fit_used: false`); the COP curve, the COP scale and
-the emitter curve still apply.
+The zone keeps the label-based `C` and internal gains (attribute
+`building_fit_used: false`); the mass model learns its own solar factor and
+a scale on the label `UA` (see [How it works](algorithm.md#mass-air-opt-in-per-zone)).
+The COP curve, the COP scale and the emitter curve still apply.
 
 ## Quality checks
 
@@ -148,7 +183,10 @@ explain the result:
 The **Model accuracy** sensor is the mean absolute error (K) of the
 optimizer's one-hour-ahead indoor temperature predictions over the last 24
 hours. `mae_label_model_k` is the same error for the energy-label model, so
-you can see whether calibration helps. The comparison assumes the planned
-offset was actually applied. `errors_k` holds the recent errors for a
+you can see whether calibration helps. `mae_persistence_k` is the error of
+assuming the temperature stays as it is, and `skill_vs_persistence` the
+share of that error the model removes (0: no better than persistence;
+indoor temperature changes slowly, so a small MAE alone says little). The
+comparison assumes the planned offset was actually applied. `errors_k` holds the recent errors for a
 graph; `residual_autocorrelation` and `two_mass_suspected` are the phase 4
 diagnosis.

@@ -9,9 +9,12 @@ integrating the delivered heat against the measured room air:
     C dT_mass/dt = Q_heat_pump - H (T_mass - T_air,measured)
 
 The same observer, replayed over a few days of 5-minute history, learns
-the coupling H together with the solar factor: for each candidate it
-predicts the air temperature 6 hours ahead from every hour and keeps the
-one with the smallest error, compared with the one-node model.
+the coupling H together with the solar factor and a scale on the heat
+loss UA: for each candidate it predicts the air temperature 6 hours ahead
+from every hour and keeps the one with the smallest error, compared with
+the one-node model. The label-based UA is a rule of thumb; without the
+scale a house that loses less heat than its label says needs less heat
+than the plan expects, and the plan over-heats or over-pays.
 
 Identified on a heavy house with underfloor heating: the heat pump heats
 the mass, sun and internal gains warm the air directly, H around 55 W/K
@@ -40,6 +43,8 @@ AIR_COUPLING_GRID = (2.0, 3.0, 4.0, 5.0, 6.5, 8.0, 10.0, 13.0, 17.0, 22.0, 30.0)
 # Multipliers on the building's solar factor searched with the coupling:
 # low sun is shaded more than the window model knows.
 SOLAR_FACTOR_GRID = (0.3, 0.45, 0.6, 0.75, 0.9, 1.0, 1.2)
+# Multipliers on the label-based heat loss UA, searched after the coupling.
+UA_SCALE_GRID = (0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.15, 1.3, 1.5)
 HISTORY_INTERVAL = timedelta(minutes=5)
 HISTORY_LENGTH = int(timedelta(days=14) / HISTORY_INTERVAL)
 # Learning needs a few days, some heating and a clear gain over one node.
@@ -82,6 +87,8 @@ class CouplingFit:
     # air directly in this model, so an over-estimated window gain shows.
     # None for a fit stored before it was learned.
     solar_factor: float | None = None
+    # Multiplier on the label-based UA learned with them (None: not learned).
+    ua_scale: float | None = None
 
 
 def _replay(
@@ -169,24 +176,42 @@ def fit_air_coupling(
     if heating < MIN_HEATING_SHARE:
         return None
 
-    def with_solar(multiplier: float) -> BuildingConfig:
-        candidate = copy.copy(building)
-        candidate.solar_factor = building.solar_factor * multiplier
-        return candidate
+    def candidate(solar: float, ua: float) -> BuildingConfig:
+        model = copy.copy(building)
+        model.solar_factor = building.solar_factor * solar
+        model.ua_w_per_k = building.ua_w_per_k * ua
+        return model
 
-    one_node = min(_replay(samples, with_solar(m), 0.0) for m in SOLAR_FACTOR_GRID)
-    best_mae, best_coupling, best_solar = min(
-        (_replay(samples, with_solar(m), h), h, building.solar_factor * m)
-        for h in AIR_COUPLING_GRID
-        for m in SOLAR_FACTOR_GRID
-    )
+    def search(coupling: float | None) -> tuple[float, float, float, float]:
+        """(mae, coupling, solar multiplier, UA scale): coupling and sun at
+        the label UA, then the UA scale, then coupling and sun again at that
+        scale. Coordinate-wise: the full grid would be ~4x the replays."""
+        couplings = AIR_COUPLING_GRID if coupling is None else (coupling,)
+
+        def coupling_and_sun(ua: float) -> tuple[float, float, float]:
+            return min(
+                (_replay(samples, candidate(m, ua), h), h, m)
+                for h in couplings
+                for m in SOLAR_FACTOR_GRID
+            )
+
+        _mae, h, m = coupling_and_sun(1.0)
+        _mae, ua = min(
+            (_replay(samples, candidate(m, ua), h), ua) for ua in UA_SCALE_GRID
+        )
+        mae, h, m = coupling_and_sun(ua)
+        return mae, h, m, ua
+
+    one_node, _h, _m, _ua = search(0.0)
+    best_mae, best_coupling, best_solar, best_ua = search(None)
     return CouplingFit(
         coupling_kw_per_k=float(best_coupling),
         mae_k=round(float(best_mae), 4),
         one_node_mae_k=round(float(one_node), 4),
         samples=len(samples),
         accepted=bool(best_mae <= MIN_IMPROVEMENT * one_node),
-        solar_factor=round(float(best_solar), 3),
+        solar_factor=round(float(building.solar_factor * best_solar), 3),
+        ua_scale=float(best_ua),
     )
 
 

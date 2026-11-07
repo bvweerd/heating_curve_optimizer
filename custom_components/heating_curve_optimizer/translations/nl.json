@@ -185,7 +185,9 @@
               "price_change_rel": "Prijswijziging trigger (relatief)",
               "price_change_min_abs": "Prijswijziging trigger (absoluut)",
               "min_running_power_kw": "Minimum bedrijfsvermogen",
-              "accuracy_horizon_hours": "Nauwkeurigheidshorizon"
+              "accuracy_horizon_hours": "Nauwkeurigheidshorizon",
+              "delta_t_correction": "Correctie aanvoer-retour",
+              "pump_min_flow": "Minimale pompflow"
             },
             "data_description": {
               "ground_albedo": "Grondreflectie voor zonneberekeningen. Sneeuwdek: 0,5–0,7.",
@@ -199,7 +201,9 @@
               "price_change_rel": "Relatieve prijswijziging die onmiddellijke heroptimalisatie triggert.",
               "price_change_min_abs": "Minimale absolute prijswijziging voor heroptimalisatie.",
               "min_running_power_kw": "Minimaal vermogen voor een stabiele verwarmingstoestand voor COP- en emittermetingen.",
-              "accuracy_horizon_hours": "Voorspellingshorizon voor modelnauwkeurigheidsregistratie."
+              "accuracy_horizon_hours": "Voorspellingshorizon voor modelnauwkeurigheidsregistratie.",
+              "delta_t_correction": "Opgeteld bij aanvoer min retour als de warmte uit de flow wordt berekend. 0 = gebruik de offset die geleerd is uit pompbeurten zonder compressor (calibratie toegepast).",
+              "pump_min_flow": "Vanaf deze flow draait de circulatiepomp. Zet hoger dan de vaste flow die je warmtepomp meldt als de pomp uit staat."
             }
           }
         }
@@ -407,7 +411,9 @@
               "price_change_rel": "Prijswijziging trigger (relatief)",
               "price_change_min_abs": "Prijswijziging trigger (absoluut)",
               "min_running_power_kw": "Minimum bedrijfsvermogen",
-              "accuracy_horizon_hours": "Nauwkeurigheidshorizon"
+              "accuracy_horizon_hours": "Nauwkeurigheidshorizon",
+              "delta_t_correction": "Correctie aanvoer-retour",
+              "pump_min_flow": "Minimale pompflow"
             },
             "data_description": {
               "ground_albedo": "Grondreflectie voor zonneberekeningen. Sneeuwdek: 0,5–0,7.",
@@ -421,7 +427,9 @@
               "price_change_rel": "Relatieve prijswijziging die onmiddellijke heroptimalisatie triggert.",
               "price_change_min_abs": "Minimale absolute prijswijziging voor heroptimalisatie.",
               "min_running_power_kw": "Minimaal vermogen voor een stabiele verwarmingstoestand voor COP- en emittermetingen.",
-              "accuracy_horizon_hours": "Voorspellingshorizon voor modelnauwkeurigheidsregistratie."
+              "accuracy_horizon_hours": "Voorspellingshorizon voor modelnauwkeurigheidsregistratie.",
+              "delta_t_correction": "Opgeteld bij aanvoer min retour als de warmte uit de flow wordt berekend. 0 = gebruik de offset die geleerd is uit pompbeurten zonder compressor (calibratie toegepast).",
+              "pump_min_flow": "Vanaf deze flow draait de circulatiepomp. Zet hoger dan de vaste flow die je warmtepomp meldt als de pomp uit staat."
             }
           }
         }
