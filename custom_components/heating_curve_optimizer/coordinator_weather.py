@@ -16,11 +16,19 @@ from homeassistant.helpers.update_coordinator import (
 )
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .const import CONF_OUTDOOR_TEMPERATURE_SENSOR, DOMAIN
+from .helpers import get_sensor_value
 
 _LOGGER = logging.getLogger(__name__)
 
 FORECAST_HOURS = 48
+# A local outdoor sensor corrects the forecast: the difference with the
+# forecast now fades linearly to zero over these hours, and is bounded so a
+# sensor in the sun cannot derail the plan.
+LOCAL_CORRECTION_FADE_HOURS = 6
+LOCAL_CORRECTION_MAX_K = 5.0
+# Readings outside this range are a faulty sensor (°C).
+LOCAL_TEMPERATURE_RANGE = (-40.0, 60.0)
 
 
 def _update_failed(
@@ -43,6 +51,15 @@ def _parse_utc(timestamp: str) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=dt_util.UTC)
     return parsed
+
+
+def _corrected_forecast(forecast: list[float], difference: float) -> list[float]:
+    """The forecast with `difference` (K) added, fading out over the hours."""
+    bounded = max(-LOCAL_CORRECTION_MAX_K, min(LOCAL_CORRECTION_MAX_K, difference))
+    return [
+        round(t + bounded * max(0.0, 1.0 - i / LOCAL_CORRECTION_FADE_HOURS), 2)
+        for i, t in enumerate(forecast)
+    ]
 
 
 class WeatherDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -70,6 +87,21 @@ class WeatherDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.latitude = hass.config.latitude
         self.longitude = hass.config.longitude
         self.session = async_get_clientsession(hass)
+        self._outdoor_sensor: str | None = (
+            {**config_entry.data, **config_entry.options}.get(
+                CONF_OUTDOOR_TEMPERATURE_SENSOR
+            )
+            if config_entry is not None
+            else None
+        )
+
+    def _local_outdoor_temperature(self) -> float | None:
+        """The configured outdoor sensor's reading, if it is plausible."""
+        value = get_sensor_value(self.hass, self._outdoor_sensor, None)
+        if value is None:
+            return None
+        low, high = LOCAL_TEMPERATURE_RANGE
+        return float(value) if low <= value <= high else None
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch weather and radiation data from open-meteo.com."""
@@ -125,8 +157,19 @@ class WeatherDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if current_temp is None:
             current_temp = temp_forecast[0]
 
+        forecast_now = round(float(current_temp), 2)
+        local = self._local_outdoor_temperature()
+        if local is not None:
+            current_temp = local
+            temp_forecast = _corrected_forecast(temp_forecast, local - forecast_now)
+
         result = {
             "current_temperature": round(float(current_temp), 2),
+            # What the weather service says for now, and which one is used.
+            "forecast_current_temperature": forecast_now,
+            "outdoor_temperature_source": (
+                "sensor" if local is not None else "forecast"
+            ),
             "temperature_forecast": temp_forecast,
             "humidity_forecast": _series("relative_humidity_2m"),
             # Radiation is a preceding-hour mean: slot i+1 covers hour i.

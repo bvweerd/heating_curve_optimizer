@@ -85,6 +85,7 @@ CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR = "heat_pump_thermal_energy_sensor"
 # Water flow through the heat pump: with the supply and return sensors it
 # gives the delivered heat when there is no thermal power or energy sensor.
 CONF_FLOW_SENSOR = "flow_sensor"
+CONF_OUTDOOR_TEMPERATURE_SENSOR = "outdoor_temperature_sensor"
 CONF_DHW_ACTIVE_SENSOR = "dhw_active_sensor"
 CONF_WINDOW_SENSORS = "window_sensors"  # zone
 CONF_CALIBRATION_MODE = "calibration_mode"  # zone

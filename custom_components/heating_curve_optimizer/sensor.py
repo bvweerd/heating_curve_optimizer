@@ -134,6 +134,8 @@ OUTDOOR_TEMPERATURE = HcoSensorEntityDescription(
     attrs_fn=lambda d: {
         "forecast": d.get("temperature_forecast", []),
         "humidity_forecast": d.get("humidity_forecast", []),
+        "forecast_current_temperature": d.get("forecast_current_temperature"),
+        "outdoor_temperature_source": d.get("outdoor_temperature_source"),
         "forecast_start": str(d.get("forecast_start_utc")),
     },
 )

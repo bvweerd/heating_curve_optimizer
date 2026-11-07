@@ -44,6 +44,9 @@ deployments to migrate from.
 - *Gas boiler cheaper* / *Heat pump cheaper* compare heat made now; the
   gas advice keeps comparing with the plan's marginal heat
   (`gas_cheaper_than_plan`). Dutch name *Voordeliger* → *Goedkoper*.
+- Optional local outdoor temperature sensor: replaces the weather service
+  for the current temperature and corrects the forecast, fading out over
+  6 hours (at most 5 K).
 
 ### Optimizer
 - Algorithm review fixes:
