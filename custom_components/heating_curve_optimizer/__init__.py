@@ -243,6 +243,8 @@ async def _async_setup_zone(
         calibration_allowed=calibration_allowed,
         zone_count=zone_count,
     )
+    # The heat sensors show the building model the optimizer uses.
+    heat_coordinator.building_provider = optimization_coordinator.building_config
     await optimization_coordinator.async_setup()
     _schedule_first_refresh(
         hass,

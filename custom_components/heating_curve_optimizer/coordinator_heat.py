@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
@@ -94,6 +95,10 @@ class HeatCalculationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             CONF_INDOOR_TEMPERATURE_SENSOR
         )
         self._unsub: Any = None
+        # The building model the optimizer uses (learned UA, gains, solar
+        # factor), set once the optimization coordinator exists; until then
+        # the label-based model.
+        self.building_provider: Callable[[dict[str, Any]], BuildingConfig] | None = None
 
     @property
     def has_real_indoor_sensor(self) -> bool:
@@ -191,9 +196,16 @@ class HeatCalculationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ir.async_delete_issue(self.hass, DOMAIN, "weather_data_unavailable")
 
         config = self.effective_config()
-        building = BuildingConfig.from_config(config)
-        if building.area_m2 <= 0:
+        label_building = BuildingConfig.from_config(config)
+        if label_building.area_m2 <= 0:
             raise _update_failed("missing_building_config")
+        # Heat loss and gains as the optimizer models them, so the sensors
+        # show the demand the plan is based on, not the energy-label guess.
+        building = (
+            self.building_provider(config)
+            if self.building_provider is not None
+            else label_building
+        )
 
         target_temp = float(
             config.get(CONF_TARGET_INDOOR_TEMP, DEFAULT_TARGET_INDOOR_TEMP)
@@ -240,11 +252,17 @@ class HeatCalculationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         solar_gain = solar_forecast[0] if solar_forecast else 0.0
         internal_gain = building.internal_gain_kw
+        # `solar_gain` stays the window model's raw gain (the optimizer and
+        # the calibration apply the solar factor themselves); the effective
+        # gain is what reaches the house.
+        solar_factor = building.solar_factor
+        effective_forecast = [v * solar_factor for v in solar_forecast]
+        effective_solar = solar_gain * solar_factor
 
-        net_heat_loss = heat_loss - solar_gain - internal_gain
+        net_heat_loss = heat_loss - effective_solar - internal_gain
         net_forecast = [
             loss
-            - (solar_forecast[i] if i < len(solar_forecast) else 0.0)
+            - (effective_forecast[i] if i < len(effective_forecast) else 0.0)
             - internal_gain
             for i, loss in enumerate(heat_loss_forecast)
         ]
@@ -254,6 +272,9 @@ class HeatCalculationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "heat_loss_forecast": [round(v, 3) for v in heat_loss_forecast],
             "solar_gain": round(solar_gain, 3),
             "solar_gain_forecast": [round(v, 3) for v in solar_forecast],
+            "solar_factor": round(solar_factor, 3),
+            "effective_solar_gain": round(effective_solar, 3),
+            "effective_solar_gain_forecast": [round(v, 3) for v in effective_forecast],
             "internal_gain": round(internal_gain, 3),
             "pv_production_forecast": [round(v, 3) for v in pv_forecast],
             "net_heat_loss": round(net_heat_loss, 3),
@@ -267,6 +288,10 @@ class HeatCalculationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "lower_bound": round(lower_bound, 2),
             "heat_pump_on": indoor_temp <= target_temp and heat_demand_factor > 0.0,
             "htc_w_per_k": round(building.ua_w_per_k, 1),
+            "label_htc_w_per_k": round(label_building.ua_w_per_k, 1),
+            "building_model_source": (
+                "optimizer" if self.building_provider is not None else "label"
+            ),
             "timestamp": dt_util.utcnow(),
         }
 

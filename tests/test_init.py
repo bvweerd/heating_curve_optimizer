@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EntityCategory
 from homeassistant.core import CoreState, HomeAssistant
@@ -750,3 +751,41 @@ async def test_pv_adjustment_waits_while_a_plan_driven_pump_is_off(
     # Published offset changes are logged for validation.
     coordinator._log_offset({**data, "offset": 0, "realtime": {"effective_offset": 1}})
     assert coordinator.mass_validation()["offset_changes"][-1][1:] == (0, 1)
+
+
+async def test_heat_sensors_use_the_optimizers_building_model(
+    hass: HomeAssistant, mock_open_meteo, price_state
+) -> None:
+    """Heat loss and net demand follow the learned building model the plan
+    uses, not the energy-label guess; the raw window gain stays for the
+    optimizer, which applies the solar factor itself."""
+    entry = make_entry()
+    await setup_entry(hass, entry)
+    heat = entry.runtime_data.heat_coordinator
+    optimization = entry.runtime_data.optimization_coordinator
+    assert heat.building_provider is not None
+
+    label = heat.data["htc_w_per_k"]
+    original = optimization.building_config
+
+    def learned(config):
+        building = original(config)
+        building.ua_w_per_k *= 0.8
+        building.solar_factor = 0.5
+        return building
+
+    heat.building_provider = learned
+    await heat.async_refresh()
+    data = heat.data
+    assert data["building_model_source"] == "optimizer"
+    assert data["htc_w_per_k"] == pytest.approx(label * 0.8, abs=0.2)
+    assert data["label_htc_w_per_k"] == pytest.approx(label, abs=0.1)
+    assert data["effective_solar_gain"] == pytest.approx(
+        data["solar_gain"] * 0.5, abs=1e-3
+    )
+    assert data["net_heat_loss"] == pytest.approx(
+        data["heat_loss"] - data["effective_solar_gain"] - data["internal_gain"],
+        abs=2e-3,
+    )
+    sensor = _state(hass, "sensor", f"{entry.entry_id}_window_solar_gain")
+    assert sensor.attributes["solar_factor"] == 0.5
