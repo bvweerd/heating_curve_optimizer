@@ -28,6 +28,11 @@ deployments to migrate from.
 - *Heat loss*, *Window solar gain* and *Net heat demand* use the building
   model the optimizer uses (learned `UA`, internal gains, solar factor)
   instead of the energy-label model.
+- Defrost heat counts negative (net) in the mass history, the building
+  calibration samples and the *Thermal power*/*Thermal energy* sensors
+  (state class `total`): about 0.4 kWh per defrost, 3-10 % of the heat in
+  frosty weather, was counted as delivered and absorbed by the learned
+  heat loss.
 
 ### Optimizer
 - Algorithm review fixes:

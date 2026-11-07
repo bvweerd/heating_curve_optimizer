@@ -334,3 +334,47 @@ def test_cop_fit_keeps_the_prior_k_when_supply_follows_the_curve() -> None:
     assert fit.base_cop + fit.outdoor_coefficient * 10 - 0.07 * (31.0 - 35) == (
         pytest.approx(2.6 + 2.0 + 0.28, abs=0.15)
     )
+
+
+# --- Defrost: net heat ----------------------------------------------------------
+
+
+def test_defrost_heat_counts_negative_in_sensors_and_mass_history(
+    hass: HomeAssistant,
+) -> None:
+    """A defrost draws heat from the water: the thermal power goes negative,
+    the energy total steps back (state class total) and the mass observer
+    gets the net heat."""
+    from homeassistant.components.sensor import SensorStateClass
+
+    from custom_components.heating_curve_optimizer.sensor import (
+        HeatPumpThermalEnergySensor,
+    )
+
+    config = {
+        "power_consumption": "sensor.power",
+        "heat_pump_thermal_power_sensor": "sensor.heat",
+    }
+    hass.states.async_set("sensor.power", "1200", {"unit_of_measurement": "W"})
+    weather, optimization = MagicMock(), MagicMock()
+    weather.data = {"current_temperature": 2.0}
+    optimization.data = {}
+    optimization.learned_delta_t_correction = MagicMock(return_value=None)
+    sensor = HeatPumpThermalEnergySensor(
+        config, weather, optimization, "zone", MagicMock()
+    )
+    sensor.hass = hass
+    sensor.async_write_ha_state = MagicMock()
+    assert sensor.state_class is SensorStateClass.TOTAL
+
+    hass.states.async_set("sensor.heat", "4.0", {"unit_of_measurement": "kW"})
+    sensor.integrate(_minutes(0))
+    sensor.integrate(_minutes(15))  # +1.0 kWh
+    hass.states.async_set("sensor.heat", "-10.0", {"unit_of_measurement": "kW"})
+    sensor.integrate(_minutes(15.01))
+    sensor.integrate(_minutes(19))  # defrost: about -0.7 kWh
+    assert sensor.native_value < 1.0
+    assert sensor.native_value == pytest.approx(1.0 - 10.0 * (4 / 60), abs=0.06)
+
+    coordinator = _coordinator(hass, **config)
+    assert coordinator._current_heat_kw(2.0, 30.0) == pytest.approx(-10.0)

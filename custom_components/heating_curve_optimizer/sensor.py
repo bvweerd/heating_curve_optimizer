@@ -585,7 +585,7 @@ def _heat_pump_thermal_power(
         )
         if heat_kw is None:
             return None
-        heat_kw = max(0.0, heat_kw)
+        # Negative during a defrost: the heat pump draws heat from the water.
         cop = heat_kw / power_kw if power_kw and power_kw > 0 else 0.0
         return heat_kw, cop, supply, "measured"
     if power_kw is None or not weather_coordinator.data:
@@ -680,13 +680,18 @@ class HeatPumpThermalPowerSensor(SensorEntity):
 
 
 class HeatPumpThermalEnergySensor(RestoreSensor):
-    """Cumulative thermal energy delivered by the heat pump (left Riemann sum)."""
+    """Cumulative net thermal energy delivered by the heat pump.
+
+    Net: a defrost draws heat from the water and counts negative, so the
+    total can step back briefly (state class `total`, not
+    `total_increasing`, which would read a dip as a meter reset).
+    """
 
     _attr_has_entity_name = True
     _attr_translation_key = "heat_pump_thermal_energy"
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_state_class = SensorStateClass.TOTAL
     _attr_suggested_display_precision = 2
     _attr_should_poll = False
 

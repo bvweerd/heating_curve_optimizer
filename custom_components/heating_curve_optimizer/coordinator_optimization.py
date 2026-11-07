@@ -1372,10 +1372,16 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.hass.async_create_task(calibration.async_save())
 
     def _current_heat_kw(self, outdoor_temp: float, supply: float | None) -> float:
-        """Heat the heat pump delivers now: measured, else power x COP."""
+        """Heat the heat pump delivers now: measured, else power x COP.
+
+        Measured heat is negative during a defrost (heat drawn from the
+        water) and kept so: about 0.4 kWh per defrost, 3-10 % of the heat in
+        frosty weather, which the mass history would otherwise count as
+        delivered and the learned heat loss would absorb.
+        """
         heat = self._measured_heat_kw()
         if heat is not None:
-            return max(0.0, heat)
+            return heat
         power_kw = read_power_kw(self.hass, self.config.get(CONF_POWER_CONSUMPTION))
         if power_kw is None or power_kw <= self._idle_power_threshold_kw:
             return 0.0
@@ -2177,7 +2183,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
 
         current = {
-            "heat_kw": max(0.0, heat_kw),
+            "heat_kw": heat_kw,  # net: a defrost counts negative
             "solar_kw": max(0.0, solar_gain_kw),
             "delta_t": indoor_temp - outdoor_temp,
         }
