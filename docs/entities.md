@@ -39,8 +39,8 @@ itself; its settings stay in the main entry.
 |---|---|---|---|
 | `binary_sensor.heat_pump_plan_active` | | On while the optimized plan calls for heat now; off while it plans to coast on buffer, solar or internal gains. Switches ahead of the event, since the plan covers the whole horizon - see [Algorithm](algorithm.md#run-advice). | `changes_at`, `changes_in_minutes`, `hold_until`, `planned_supply_temperature`, `buffer_kwh` |
 | `sensor.heat_pump_expected_cop` | | COP of the planned operating point now. | `cop`, `baseline_cop`, `cop_delta_now` |
-| `sensor.heat_pump_thermal_power` | kW | Only with a power sensor: electrical power × COP. | `cop`, `supply_temperature` |
-| `sensor.heat_pump_thermal_energy` | kWh | Only with a power sensor: cumulative heat delivered. | |
+| `sensor.heat_pump_thermal_power` | kW | Only with a power sensor: measured heat, or electrical power × COP. Negative during a defrost when measured. | `cop`, `supply_temperature` |
+| `sensor.heat_pump_thermal_energy` | kWh | Only with a power sensor: cumulative net heat delivered (a defrost steps it back; state class `total`). | |
 | `sensor.heat_pump_cost_per_kwh` | EUR/kWh | Only with a gas boiler: the plan's marginal cost of heat (shadow price), at most electricity price / COP now. See [hybrid gas boiler](algorithm.md#hybrid-gas-boiler). | `heat_pump_cost_now_eur_per_kwh`, `shadow_price_eur_per_kwh`, `heat_pump_cop` |
 | `binary_sensor.heat_pump_cheaper` | | Only with a gas boiler: on while the heat pump is cheaper per kWh of heat (the inverse of *Gas boiler cheaper*). | `heat_pump_cost_eur_per_kwh`, `gas_cost_eur_per_kwh` |
 
