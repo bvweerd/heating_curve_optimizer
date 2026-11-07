@@ -41,8 +41,8 @@ itself; its settings stay in the main entry.
 | `sensor.heat_pump_expected_cop` | | COP of the planned operating point now. | `cop`, `baseline_cop`, `cop_delta_now` |
 | `sensor.heat_pump_thermal_power` | kW | Only with a power sensor: measured heat, or electrical power × COP. Negative during a defrost when measured. | `cop`, `supply_temperature` |
 | `sensor.heat_pump_thermal_energy` | kWh | Only with a power sensor: cumulative net heat delivered (a defrost steps it back; state class `total`). | |
-| `sensor.heat_pump_cost_per_kwh` | EUR/kWh | Only with a gas boiler: cost of a kWh of heat made now (electricity price / planned COP). The gas comparison uses the plan's marginal cost instead (`cost_compared_with_gas_eur_per_kwh`: the shadow price, at most this), see [hybrid gas boiler](algorithm.md#hybrid-gas-boiler). | `shadow_price_eur_per_kwh`, `cost_compared_with_gas_eur_per_kwh`, `heat_pump_cop` |
-| `binary_sensor.heat_pump_cheaper` | | Only with a gas boiler: on while the heat pump is cheaper per kWh of heat (the inverse of *Gas boiler cheaper*). | `heat_pump_cost_eur_per_kwh`, `gas_cost_eur_per_kwh` |
+| `sensor.heat_pump_cost_per_kwh` | EUR/kWh | Only with a gas boiler: cost of a kWh of heat made now (electricity price / planned COP). The gas advice uses the plan's marginal cost instead (`heat_pump_plan_cost_eur_per_kwh`: the shadow price, at most this), see [hybrid gas boiler](algorithm.md#hybrid-gas-boiler). | `shadow_price_eur_per_kwh`, `heat_pump_plan_cost_eur_per_kwh`, `heat_pump_cop` |
+| `binary_sensor.heat_pump_cheaper` | | Only with a gas boiler: on while heat made now by the heat pump is cheaper than gas (the inverse of *Gas boiler cheaper*). | `heat_pump_cost_now_eur_per_kwh`, `gas_cost_eur_per_kwh` |
 
 ## Additional zones
 
@@ -57,7 +57,7 @@ heat pump plan active.
 | `sensor.gas_boiler_cost_per_kwh` | EUR/kWh | Gas price / calorific value / efficiency. |
 | `sensor.gas_boiler_savings_per_kwh` | EUR/kWh | Heat pump cost − gas cost (positive: gas cheaper). |
 | `binary_sensor.gas_boiler_advised` | | Run advice: on when the gas boiler should heat now. See [hybrid gas boiler](algorithm.md#hybrid-gas-boiler). |
-| `binary_sensor.gas_boiler_cheaper` | | Price comparison only: on while gas is cheaper per kWh of heat. Switches only when the other source is cheaper by more than 5 % (at least €0.005/kWh) and at least an hour after the previous switch; unavailable after a restart until the plan starts from the measured indoor temperature. Attributes `gas_cheaper_now` (plain comparison) and `gas_cheaper_since`. |
+| `binary_sensor.gas_boiler_cheaper` | | Price comparison only: on while gas is cheaper than heat made now by the heat pump (electricity price / planned COP). It ignores the plan: at a peak the house may coast on heat bought earlier, so gas can be cheaper now while *Gas boiler advised* stays off. Switches only when the other source is cheaper by more than 5 % (at least €0.005/kWh) and at least an hour after the previous switch; unavailable after a restart until the plan starts from the measured indoor temperature. | `heat_pump_cost_now_eur_per_kwh`, `gas_cost_eur_per_kwh`, `gas_cheaper_since` |
 
 ## Service
 

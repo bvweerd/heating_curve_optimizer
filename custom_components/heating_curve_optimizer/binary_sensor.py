@@ -133,22 +133,23 @@ class GasBoilerPreferredBinarySensor(CoordinatorEntity, BinarySensorEntity):
         return {
             "comfort_at_risk": data.get("comfort_at_risk"),
             "comfort_reason": data.get("comfort_reason"),
-            "gas_cheaper": data.get("gas_cheaper"),
+            "gas_cheaper_than_plan": data.get("gas_cheaper_than_plan"),
             "comfort_backup": data.get("comfort_backup"),
             "lowest_planned_indoor_temp": data.get("lowest_planned_indoor_temp"),
-            "heat_pump_cost_eur_per_kwh": data.get("heat_pump_cost_eur_per_kwh"),
+            "heat_pump_plan_cost_eur_per_kwh": data.get("heat_pump_cost_eur_per_kwh"),
             "gas_cost_eur_per_kwh": data.get("gas_cost_eur_per_kwh"),
-            "savings_eur_per_kwh": data.get("savings_eur_per_kwh"),
-            "savings_pct": data.get("savings_pct"),
+            "plan_savings_eur_per_kwh": data.get("plan_savings_eur_per_kwh"),
         }
 
 
 class GasBoilerCheaperBinarySensor(CoordinatorEntity, BinarySensorEntity):
-    """Pure price comparison: on when gas is cheaper per kWh of heat.
+    """Pure price comparison: on when gas is cheaper per kWh of heat made
+    now (electricity price / planned COP vs. gas), with a dead band and a
+    hold time.
 
-    Unlike GasBoilerPreferredBinarySensor this does not include the comfort
-    backup policy; it only answers "which source is cheaper right now", with
-    the plan's marginal cost of heat as the heat pump's price.
+    Unlike GasBoilerPreferredBinarySensor this ignores comfort and the plan:
+    a pre-heated house can coast through a peak on heat bought earlier, so
+    gas can be cheaper now while the advice still says heat pump.
     """
 
     _attr_has_entity_name = True
@@ -184,10 +185,13 @@ class GasBoilerCheaperBinarySensor(CoordinatorEntity, BinarySensorEntity):
             return {}
         data = self.coordinator.data
         return {
-            "heat_pump_cost_eur_per_kwh": data.get("heat_pump_cost_eur_per_kwh"),
+            "heat_pump_cost_now_eur_per_kwh": data.get(
+                "heat_pump_cost_now_eur_per_kwh"
+            ),
             "gas_cost_eur_per_kwh": data.get("gas_cost_eur_per_kwh"),
             "savings_eur_per_kwh": data.get("savings_eur_per_kwh"),
             "savings_pct": data.get("savings_pct"),
+            "gas_cheaper_since": data.get("gas_cheaper_since"),
         }
 
 
@@ -231,10 +235,13 @@ class HeatPumpCheaperBinarySensor(CoordinatorEntity, BinarySensorEntity):
             return {}
         data = self.coordinator.data
         return {
-            "heat_pump_cost_eur_per_kwh": data.get("heat_pump_cost_eur_per_kwh"),
+            "heat_pump_cost_now_eur_per_kwh": data.get(
+                "heat_pump_cost_now_eur_per_kwh"
+            ),
             "gas_cost_eur_per_kwh": data.get("gas_cost_eur_per_kwh"),
             "savings_eur_per_kwh": data.get("savings_eur_per_kwh"),
             "savings_pct": data.get("savings_pct"),
+            "gas_cheaper_since": data.get("gas_cheaper_since"),
         }
 
 

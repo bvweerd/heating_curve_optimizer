@@ -126,7 +126,8 @@ async def test_heat_pump_cost_is_the_plans_marginal_heat(
 
     assert data["heat_pump_cost_now_eur_per_kwh"] == pytest.approx(0.40 / 2.5)
     assert data["heat_pump_cost_eur_per_kwh"] == pytest.approx(expected_cost)
-    assert data["gas_cheaper"] is gas_cheaper
+    assert data["gas_cheaper_than_plan"] is gas_cheaper
+    assert data["gas_cheaper"] is True  # heat made now: 0.16 > 0.137
 
 
 @pytest.mark.asyncio
@@ -388,7 +389,10 @@ def test_gas_cheaper_has_a_dead_band_and_a_hold_time(hass: HomeAssistant):
     coordinator = _make_coordinator(hass)
     t0 = datetime(2026, 11, 7, 17, 0, tzinfo=UTC)
     gas = 0.136  # dead band: 5 % = 0.0068 EUR/kWh
-    flag = coordinator._gas_cheaper_with_deadband
+
+    def flag(savings, gas_cost, now):
+        return coordinator._flag_with_deadband("now", savings, gas_cost, now)
+
     assert flag(-0.01, gas, t0) is False  # first: plain comparison
     assert flag(0.002, gas, t0 + timedelta(hours=2)) is False  # within band
     assert flag(0.008, gas, t0 + timedelta(hours=2)) is True  # clearly cheaper
@@ -396,3 +400,28 @@ def test_gas_cheaper_has_a_dead_band_and_a_hold_time(hass: HomeAssistant):
     assert flag(-0.01, gas, t0 + timedelta(hours=2, minutes=30)) is True
     assert flag(-0.003, gas, t0 + timedelta(hours=3, minutes=5)) is True
     assert flag(-0.01, gas, t0 + timedelta(hours=3, minutes=5)) is False
+
+
+@pytest.mark.asyncio
+async def test_cheaper_compares_heat_made_now_and_advice_the_plan(
+    hass: HomeAssistant,
+):
+    """At a price peak heat made now costs more than gas, while the plan's
+    marginal heat (bought earlier) is cheaper: "gas cheaper" on, the advice
+    still off."""
+    hass.states.async_set("sensor.gas_price", "1.20")  # 0.1365 EUR/kWh heat
+    hass.states.async_set("sensor.elec_price", "0.52")
+    coordinator = _make_coordinator(
+        hass,
+        optimization_data={
+            "supply_temps": [30.0],
+            "cop": [2.94],
+            "shadow_price_eur_per_kwh": 0.10,
+        },
+    )
+    data = await coordinator._async_update_data()
+    assert data["heat_pump_cost_now_eur_per_kwh"] == pytest.approx(0.52 / 2.94)
+    assert data["gas_cheaper"] is True
+    assert data["savings_eur_per_kwh"] > 0
+    assert data["gas_cheaper_than_plan"] is False
+    assert data["prefer_gas_boiler"] is False
