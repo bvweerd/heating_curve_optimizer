@@ -358,11 +358,14 @@ GAS_BOILER_HEAT_PUMP_COST = HcoSensorEntityDescription(
     native_unit_of_measurement=EUR_PER_KWH,
     state_class=SensorStateClass.MEASUREMENT,
     suggested_display_precision=3,
-    value_fn=lambda d: d.get("heat_pump_cost_eur_per_kwh"),
+    # What a kWh of heat costs when made now (electricity price / COP). The
+    # gas comparison uses the plan's marginal cost (at most this), which a
+    # pre-heated house coasting through a peak makes lower: an attribute.
+    value_fn=lambda d: d.get("heat_pump_cost_now_eur_per_kwh"),
     attrs_fn=lambda d: {
         "electricity_price_eur_per_kwh": d.get("electricity_price_eur_per_kwh"),
-        "heat_pump_cost_now_eur_per_kwh": d.get("heat_pump_cost_now_eur_per_kwh"),
         "shadow_price_eur_per_kwh": d.get("shadow_price_eur_per_kwh"),
+        "cost_compared_with_gas_eur_per_kwh": d.get("heat_pump_cost_eur_per_kwh"),
         "heat_pump_cop": d.get("heat_pump_cop"),
         "supply_temp": d.get("supply_temp"),
         "outdoor_temp": d.get("outdoor_temp"),

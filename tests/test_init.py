@@ -260,6 +260,11 @@ async def test_hybrid_run_advice_and_cheaper_binary_sensors(
     hp_cost_id = _entity_id(hass, "sensor", f"{entry.entry_id}_heat_pump_cost")
     hp_cost_entity = er.async_get(hass).async_get(hp_cost_id)
     assert hp_cost_entity is not None and hp_cost_entity.device_id == hp_device.id
+    # The state is the cost of heat made now; the gas comparison's cost
+    # (the plan's marginal heat) is at most that.
+    hp_cost = hass.states.get(hp_cost_id)
+    compared = hp_cost.attributes["cost_compared_with_gas_eur_per_kwh"]
+    assert compared <= float(hp_cost.state) + 1e-6
 
     gas_device = _device(hass, entry, f"{entry.entry_id}_gas_boiler")
     assert gas_device.name == "Gas boiler"

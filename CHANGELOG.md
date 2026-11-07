@@ -38,6 +38,9 @@ deployments to migrate from.
   one-hour hold, and wait after a restart until the plan starts from the
   measured indoor temperature; near break-even they flipped on every
   quarter-hour price and on every reload.
+- The heat pump's *Cost per kWh* shows the cost of heat made now
+  (electricity price / COP); the shadow price and the cost the gas
+  comparison uses are attributes.
 
 ### Optimizer
 - Algorithm review fixes:
