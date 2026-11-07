@@ -185,7 +185,9 @@
               "price_change_rel": "Price change trigger (relative)",
               "price_change_min_abs": "Price change trigger (absolute)",
               "min_running_power_kw": "Minimum running power",
-              "accuracy_horizon_hours": "Accuracy horizon"
+              "accuracy_horizon_hours": "Accuracy horizon",
+              "delta_t_correction": "Supply-return correction",
+              "pump_min_flow": "Minimum pump flow"
             },
             "data_description": {
               "ground_albedo": "Ground reflectance for solar calculations. Snow cover: 0.5–0.7.",
@@ -199,7 +201,9 @@
               "price_change_rel": "Relative price change that triggers immediate re-optimization.",
               "price_change_min_abs": "Minimum absolute price change for re-optimization trigger.",
               "min_running_power_kw": "Minimum power for a steady heating state for COP and emitter samples.",
-              "accuracy_horizon_hours": "Prediction horizon used for model accuracy tracking."
+              "accuracy_horizon_hours": "Prediction horizon used for model accuracy tracking.",
+              "delta_t_correction": "Added to supply minus return when heat is computed from flow. 0 = use the offset learned from pump runs without compressor (calibration applied).",
+              "pump_min_flow": "Flow at or above this means the circulation pump runs. Set above the placeholder flow your heat pump reports when the pump is off."
             }
           }
         }
@@ -407,7 +411,9 @@
               "price_change_rel": "Price change trigger (relative)",
               "price_change_min_abs": "Price change trigger (absolute)",
               "min_running_power_kw": "Minimum running power",
-              "accuracy_horizon_hours": "Accuracy horizon"
+              "accuracy_horizon_hours": "Accuracy horizon",
+              "delta_t_correction": "Supply-return correction",
+              "pump_min_flow": "Minimum pump flow"
             },
             "data_description": {
               "ground_albedo": "Ground reflectance for solar calculations. Snow cover: 0.5–0.7.",
@@ -421,7 +427,9 @@
               "price_change_rel": "Relative price change that triggers immediate re-optimization.",
               "price_change_min_abs": "Minimum absolute price change for re-optimization trigger.",
               "min_running_power_kw": "Minimum power for a steady heating state for COP and emitter samples.",
-              "accuracy_horizon_hours": "Prediction horizon used for model accuracy tracking."
+              "accuracy_horizon_hours": "Prediction horizon used for model accuracy tracking.",
+              "delta_t_correction": "Added to supply minus return when heat is computed from flow. 0 = use the offset learned from pump runs without compressor (calibration applied).",
+              "pump_min_flow": "Flow at or above this means the circulation pump runs. Set above the placeholder flow your heat pump reports when the pump is off."
             }
           }
         }

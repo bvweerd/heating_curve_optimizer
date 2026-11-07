@@ -462,6 +462,21 @@ DEFAULT_MIN_RUNNING_POWER_KW = 0.3
 CONF_ACCURACY_HORIZON_HOURS = "accuracy_horizon_hours"
 DEFAULT_ACCURACY_HORIZON_HOURS = 1.0
 
+# Added to supply - return when heat is computed from the flow. 0 = none set:
+# the offset learned from pump runs without compressor is used (calibration
+# applied).
+CONF_DELTA_T_CORRECTION = "delta_t_correction"
+DEFAULT_DELTA_T_CORRECTION = 0.0  # K
+
+# Flow at or above this means the circulation pump runs (some heat pumps
+# report a placeholder flow when it is stopped).
+CONF_PUMP_MIN_FLOW = "pump_min_flow"
+DEFAULT_PUMP_MIN_FLOW = 6.0  # l/min
+
+# A running heat pump follows the plan when its supply is this close to the
+# planned supply (own thermostat control).
+PLAN_SUPPLY_TOLERANCE_K = 1.5
+
 CONF_MWH_MAGNITUDE_THRESHOLD = "mwh_magnitude_threshold"
 DEFAULT_MWH_MAGNITUDE_THRESHOLD = 5.0
 

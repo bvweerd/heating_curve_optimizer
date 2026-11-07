@@ -339,9 +339,9 @@ equipment loads are higher.
 | Default | `20` |
 | Range | ≥ 1 |
 
-Minimum number of COP measurement points (each a heat-pump run with both
-electrical and thermal power available) before the COP curve fit is
-attempted. Requires a heat meter.
+Minimum number of COP measurement points (each a window of compressor
+operation, up to an hour, with heat and electricity summed) before the COP
+curve fit is attempted. Requires a heat meter.
 
 ---
 
@@ -675,6 +675,33 @@ Look-ahead horizon for the *Model accuracy* sensor (mean absolute error of
 indoor temperature predictions). A shorter horizon focuses the error metric
 on near-term prediction quality; a longer horizon reflects how well the model
 tracks temperature over a full heating cycle.
+
+---
+
+### `delta_t_correction`
+
+| | |
+|---|---|
+| Default | `0.0` K |
+| Range | −3 … 3 K |
+
+Added to supply − return when the delivered heat is computed from a flow
+sensor. `0` uses the offset learned from pump runs without compressor
+(calibration *Applied*). Set it when you have measured the offset yourself,
+e.g. by reading both sensors in a bucket of water.
+
+---
+
+### `pump_min_flow`
+
+| | |
+|---|---|
+| Default | `6.0` l/min |
+| Range | ≥ 0 |
+
+Flow at or above which the circulation pump counts as running, for
+learning the supply-return offset. Some heat pumps report a fixed
+placeholder flow (e.g. 5 l/min) while the pump is off; set this above it.
 
 ---
 

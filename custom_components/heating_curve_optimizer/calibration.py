@@ -35,6 +35,7 @@ import logging
 import math
 from collections import deque
 from dataclasses import dataclass, field, fields
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.helpers import storage
@@ -441,15 +442,28 @@ COP_SCALE_BOUNDS = (DEFAULT_COP_SCALE_BOUNDS_LOWER, DEFAULT_COP_SCALE_BOUNDS_UPP
 
 @dataclass(frozen=True)
 class CopSample:
-    """One steady heat pump operating point with measured heat."""
+    """Measured COP over one window of compressor operation (`CopWindow`).
+
+    ``cop`` is heat / electricity summed over the window - start-up,
+    defrost and the measured supply and outdoor temperatures (time means)
+    included - so it is the COP the optimizer actually pays for, not the
+    steady-state peak an instantaneous heat / power ratio reports.
+    """
 
     outdoor_temp: float
     supply_temp: float
     defrost_factor: float
-    cop: float  # measured thermal / electrical
+    cop: float  # summed measured heat / summed electricity
+    hours: float  # length of the window
 
     def as_list(self) -> list[float]:
-        return [self.outdoor_temp, self.supply_temp, self.defrost_factor, self.cop]
+        return [
+            self.outdoor_temp,
+            self.supply_temp,
+            self.defrost_factor,
+            self.cop,
+            self.hours,
+        ]
 
 
 @dataclass(frozen=True)
@@ -480,6 +494,29 @@ class CopFit:
         return self.usable_with()
 
 
+# Supply temperature spread (K, standard deviation) left after the part the
+# outdoor temperature explains; below it the k-factor is not identifiable.
+COP_MIN_SUPPLY_SPREAD_K = 2.0
+
+
+def _supply_spread_beyond_outdoor(samples: list[CopSample]) -> float:
+    """Standard deviation of the supply temperature around its linear fit
+    on the outdoor temperature."""
+    n = len(samples)
+    mean_t = sum(s.outdoor_temp for s in samples) / n
+    mean_s = sum(s.supply_temp for s in samples) / n
+    sxx = sum((s.outdoor_temp - mean_t) ** 2 for s in samples)
+    slope = (
+        sum((s.outdoor_temp - mean_t) * (s.supply_temp - mean_s) for s in samples) / sxx
+        if sxx > 0
+        else 0.0
+    )
+    residual = [
+        s.supply_temp - mean_s - slope * (s.outdoor_temp - mean_t) for s in samples
+    ]
+    return math.sqrt(sum(r * r for r in residual) / n)
+
+
 def fit_cop(
     samples: list[CopSample],
     prior: tuple[float, float, float],
@@ -488,22 +525,51 @@ def fit_cop(
     """Fit ``COP/defrost = b + a·T_out − k·(T_sup − 35)``, ridge to the prior.
 
     ``prior`` is (base COP, outdoor coefficient, k-factor) with the configured
-    compensation factor already applied. A narrow spread of outdoor or supply
-    temperatures leaves the corresponding slope at its prior.
+    compensation factor already applied. The supply temperature mostly
+    follows the heating curve, i.e. the outdoor temperature: when it varies
+    less than `COP_MIN_SUPPLY_SPREAD_K` apart from that, the two slopes
+    cannot be told apart and ``k`` stays at its prior (else the fit trades
+    one for the other and returns a negative ``k``).
     """
     if len(samples) < 3:
         return None
     scales = [max(prior[0], 1.0), max(abs(prior[1]), 0.02), max(prior[2], 0.02)]
     prior_x = [prior[0] / scales[0], prior[1] / scales[1], prior[2] / scales[2]]
+    ys = [s.cop / max(s.defrost_factor, 0.1) for s in samples]
+    ps = settings.prior_strength if settings is not None else PRIOR_STRENGTH
+    if _supply_spread_beyond_outdoor(samples) < COP_MIN_SUPPLY_SPREAD_K:
+        k = prior[2]
+        rows = [[scales[0], s.outdoor_temp * scales[1]] for s in samples]
+        free = _ridge(
+            rows,
+            [y + k * (s.supply_temp - 35.0) for y, s in zip(ys, samples, strict=True)],
+            prior_x[:2],
+            prior_strength=ps,
+        )
+        if free is None:
+            return None
+        x = [free[0], free[1], prior_x[2]]
+    else:
+        x_fit = _ridge(
+            [
+                [
+                    scales[0],
+                    s.outdoor_temp * scales[1],
+                    -(s.supply_temp - 35.0) * scales[2],
+                ]
+                for s in samples
+            ],
+            ys,
+            prior_x,
+            prior_strength=ps,
+        )
+        if x_fit is None:
+            return None
+        x = x_fit
     rows = [
         [scales[0], s.outdoor_temp * scales[1], -(s.supply_temp - 35.0) * scales[2]]
         for s in samples
     ]
-    ys = [s.cop / max(s.defrost_factor, 0.1) for s in samples]
-    ps = settings.prior_strength if settings is not None else PRIOR_STRENGTH
-    x = _ridge(rows, ys, prior_x, prior_strength=ps)
-    if x is None:
-        return None
     predicted = [sum(r[i] * x[i] for i in range(3)) for r in rows]
     mean_y = sum(ys) / len(ys)
     ss_tot = sum((y - mean_y) ** 2 for y in ys)
@@ -517,6 +583,226 @@ def fit_cop(
         mean_abs_error=sum(abs(y - p) for y, p in zip(ys, predicted, strict=True))
         / len(ys),
     )
+
+
+# A window closes when the compressor stops, or after this long of
+# continuous running (the next window then starts right away).
+COP_WINDOW_MAX = 1.0  # h
+# Shorter windows or less electricity are too noisy to be a sample.
+COP_WINDOW_MIN_HOURS = 0.25
+COP_WINDOW_MIN_KWH = 0.15
+# Readings further apart than this are a gap: the window is dropped.
+COP_WINDOW_MAX_STEP = 5.0 / 60.0  # h
+
+
+class CopWindow:
+    """Sum measured heat and electricity over compressor operation.
+
+    Fed once a minute. A window opens when the compressor starts and closes
+    when it stops or has run `COP_WINDOW_MAX`. Heat may be negative
+    (defrost draws heat from the water) and is summed as measured, so the
+    sample includes the defrost and start-up losses. Any gap, missing
+    reading or exclusion (DHW, ...) drops the open window.
+    """
+
+    def __init__(self) -> None:
+        """Start without an open window."""
+        self._last: datetime | None = None
+        self._reset()
+
+    def _reset(self) -> None:
+        self._hours = 0.0
+        self._heat_kwh = 0.0
+        self._elec_kwh = 0.0
+        self._outdoor_h = 0.0
+        self._supply_h = 0.0
+        self._humidity_h = 0.0
+
+    def update(
+        self,
+        now: datetime,
+        *,
+        running: bool,
+        heat_kw: float | None,
+        power_kw: float | None,
+        outdoor_temp: float,
+        supply_temp: float | None,
+        humidity: float,
+        excluded: bool = False,
+    ) -> tuple[float, float, float, float, float] | None:
+        """Add the interval since the previous call; a finished window as
+        (outdoor °C, supply °C, humidity %, COP, hours), else None."""
+        last, self._last = self._last, now
+        if excluded or heat_kw is None or power_kw is None or supply_temp is None:
+            self._reset()
+            return None
+        hours = (now - last).total_seconds() / 3600 if last is not None else 0.0
+        if hours <= 0 or hours > COP_WINDOW_MAX_STEP:
+            self._reset()
+            return None
+        if running:
+            self._hours += hours
+            self._heat_kwh += heat_kw * hours
+            self._elec_kwh += power_kw * hours
+            self._outdoor_h += outdoor_temp * hours
+            self._supply_h += supply_temp * hours
+            self._humidity_h += humidity * hours
+            if self._hours < COP_WINDOW_MAX:
+                return None
+        elif self._hours <= 0:
+            return None
+        result = None
+        if (
+            self._hours >= COP_WINDOW_MIN_HOURS
+            and self._elec_kwh >= COP_WINDOW_MIN_KWH
+            and self._heat_kwh > 0
+        ):
+            result = (
+                self._outdoor_h / self._hours,
+                self._supply_h / self._hours,
+                self._humidity_h / self._hours,
+                self._heat_kwh / self._elec_kwh,
+                self._hours,
+            )
+        self._reset()
+        return result
+
+
+# --- Supply-return sensor offset ---------------------------------------------
+
+# The pump must have run this long (compressor off) before the water in the
+# outdoor unit is mixed and the two sensors see the same water.
+OFFSET_SETTLE = timedelta(seconds=50)
+# Heat stored in the water and the unit fades this long after a run.
+OFFSET_AFTER_RUN = timedelta(minutes=15)
+OFFSET_MIN_READINGS = 3  # per pump run
+OFFSET_MIN_RUNS = 20
+OFFSET_MAX_RUNS = 200
+OFFSET_MAX_K = 2.0
+# A temperature-dependent offset needs this spread of water temperatures;
+# the slope is bounded (an NTC drifts, it does not run away).
+OFFSET_MIN_SPREAD_K = 6.0
+OFFSET_MAX_SLOPE = 0.15  # K/K
+
+
+@dataclass(frozen=True)
+class OffsetRun:
+    """Median supply-return reading of one pump run without compressor."""
+
+    water_temp: float
+    spread: float
+
+    def as_list(self) -> list[float]:
+        return [self.water_temp, self.spread]
+
+
+@dataclass(frozen=True)
+class DeltaTOffsetFit:
+    """Supply-return reading at equal water temperature: a + b·T, valid
+    between `t_min` and `t_max` (held constant outside)."""
+
+    intercept: float
+    slope: float
+    t_min: float
+    t_max: float
+    runs: int
+
+    def spread_at(self, water_temp: float) -> float:
+        """The spread the sensors read when the true spread is zero."""
+        t = min(self.t_max, max(self.t_min, water_temp))
+        return max(-OFFSET_MAX_K, min(OFFSET_MAX_K, self.intercept + self.slope * t))
+
+    def correction(self, water_temp: float) -> float:
+        """K to add to a measured supply-return spread."""
+        return -self.spread_at(water_temp)
+
+
+def fit_delta_t_offset(runs: list[OffsetRun]) -> DeltaTOffsetFit | None:
+    """Offset of the supply-return pair from pump runs without heat.
+
+    With the compressor off for a while and the pump running, supply and
+    return are the same water, so whatever they read apart is sensor
+    offset. A median per run removes the quantisation; a line over the
+    water temperature when the runs cover enough of it, else a constant.
+    """
+    if len(runs) < OFFSET_MIN_RUNS:
+        return None
+    temps = [r.water_temp for r in runs]
+    spreads = sorted(r.spread for r in runs)
+    t_min, t_max = min(temps), max(temps)
+    median = spreads[len(spreads) // 2]
+    slope = 0.0
+    intercept = median
+    if t_max - t_min >= OFFSET_MIN_SPREAD_K:
+        n = len(runs)
+        mean_t = sum(temps) / n
+        mean_s = sum(r.spread for r in runs) / n
+        sxx = sum((t - mean_t) ** 2 for t in temps)
+        sxy = sum((r.water_temp - mean_t) * (r.spread - mean_s) for r in runs)
+        slope = max(-OFFSET_MAX_SLOPE, min(OFFSET_MAX_SLOPE, sxy / sxx))
+        # Anchor the line on the median (robust to a few outlier runs).
+        intercept = median - slope * sorted(temps)[n // 2]
+    return DeltaTOffsetFit(
+        intercept=intercept, slope=slope, t_min=t_min, t_max=t_max, runs=len(runs)
+    )
+
+
+class DeltaTOffsetLearner:
+    """Collect `OffsetRun`s from supply, return and flow readings.
+
+    Called on every reading change. A run counts from the moment the pump
+    runs (flow at least `min_flow`) with the compressor idle for
+    `OFFSET_AFTER_RUN`; readings from `OFFSET_SETTLE` on are kept and their
+    median is the run's spread when the pump stops.
+    """
+
+    def __init__(self, min_flow: float) -> None:
+        """Start idle; `min_flow` (l/min) separates a running pump from the
+        placeholder flow some heat pumps report when stopped."""
+        self._min_flow = min_flow
+        self._compressor_stopped: datetime | None = None
+        self._pump_started: datetime | None = None
+        self._readings: list[tuple[float, float]] = []
+
+    def update(
+        self,
+        now: datetime,
+        *,
+        compressor_running: bool | None,
+        flow: float | None,
+        supply: float | None,
+        return_temp: float | None,
+    ) -> OffsetRun | None:
+        """Process one reading; a finished run, else None."""
+        if compressor_running is None or compressor_running:
+            self._compressor_stopped = None
+            return self._finish(keep=False)
+        if self._compressor_stopped is None:
+            self._compressor_stopped = now
+        pumping = flow is not None and flow >= self._min_flow
+        if not pumping:
+            return self._finish(keep=True)
+        if self._pump_started is None:
+            self._pump_started = now
+        if (
+            supply is not None
+            and return_temp is not None
+            and now - self._pump_started >= OFFSET_SETTLE
+            and self._pump_started - self._compressor_stopped >= OFFSET_AFTER_RUN
+        ):
+            self._readings.append(((supply + return_temp) / 2, supply - return_temp))
+        return None
+
+    def _finish(self, *, keep: bool) -> OffsetRun | None:
+        readings, self._readings = self._readings, []
+        self._pump_started = None
+        if not keep or len(readings) < OFFSET_MIN_READINGS:
+            return None
+        spreads = sorted(s for _t, s in readings)
+        temps = sorted(t for t, _s in readings)
+        return OffsetRun(
+            water_temp=temps[len(temps) // 2], spread=spreads[len(spreads) // 2]
+        )
 
 
 # --- Phase 3: emitter curve --------------------------------------------------
@@ -664,7 +950,7 @@ def fit_passes_quality_gates(
     )
 
 
-def _restore[T: (Sample, CopSample, EmitterSample)](
+def _restore[T: (Sample, CopSample, EmitterSample, OffsetRun)](
     cls: type[T], stored: dict[str, Any], key: str
 ) -> list[T]:
     """Stored rows of one sample type; rows in another layout are dropped."""
@@ -695,8 +981,12 @@ class ThermalCalibrationState:
     emitter_samples: deque[EmitterSample] = field(
         default_factory=lambda: deque(maxlen=DEFAULT_CALIBRATION_WINDOW)
     )
+    offset_runs: deque[OffsetRun] = field(
+        default_factory=lambda: deque(maxlen=OFFSET_MAX_RUNS)
+    )
     fit: FitResult | None = None
     cop_fit: CopFit | None = None
+    offset_fit: DeltaTOffsetFit | None = None
     emitter_fit: EmitterFit | None = None
     last_result: str = RESULT_NO_RESULT
     exclusions: dict[str, int] = field(
@@ -736,6 +1026,11 @@ class ThermalCalibrationState:
         self.cop_samples.append(sample)
         self.cop_fit = fit_cop(list(self.cop_samples), prior, settings=self.settings)
 
+    def record_offset_run(self, run: OffsetRun) -> None:
+        """Add one pump run without heat and refit the sensor offset."""
+        self.offset_runs.append(run)
+        self.offset_fit = fit_delta_t_offset(list(self.offset_runs))
+
     def record_emitter_sample(
         self,
         sample: EmitterSample,
@@ -771,6 +1066,7 @@ class ThermalCalibrationState:
             self.cop_fit = fit_cop(
                 list(self.cop_samples), cop_prior, settings=self.settings
             )
+        self.offset_fit = fit_delta_t_offset(list(self.offset_runs))
         if emitter_prior is not None and self.emitter_samples:
             nominal_kw, exponent, nominal_delta_t = emitter_prior
             self.emitter_fit = fit_emitter(
@@ -794,6 +1090,9 @@ class ThermalCalibrationState:
         self.emitter_samples = deque(
             _restore(EmitterSample, stored, "emitter_samples"), maxlen=maxlen
         )
+        self.offset_runs = deque(
+            _restore(OffsetRun, stored, "offset_runs"), maxlen=OFFSET_MAX_RUNS
+        )
         for key, value in (stored.get("exclusions") or {}).items():
             if key in self.exclusions:
                 self.exclusions[key] = int(value)
@@ -805,6 +1104,7 @@ class ThermalCalibrationState:
                 "samples": [s.as_list() for s in self.samples],
                 "cop_samples": [s.as_list() for s in self.cop_samples],
                 "emitter_samples": [s.as_list() for s in self.emitter_samples],
+                "offset_runs": [r.as_list() for r in self.offset_runs],
                 "exclusions": dict(self.exclusions),
             }
         )
@@ -815,8 +1115,10 @@ class ThermalCalibrationState:
         self.samples.clear()
         self.cop_samples.clear()
         self.emitter_samples.clear()
+        self.offset_runs.clear()
         self.fit = None
         self.cop_fit = None
+        self.offset_fit = None
         self.emitter_fit = None
         self.last_result = RESULT_NO_RESULT
         self.exclusions = dict.fromkeys(EXCLUSION_RESULTS, 0)

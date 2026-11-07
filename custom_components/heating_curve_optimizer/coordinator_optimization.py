@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import math
 from collections import deque
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -43,6 +44,8 @@ from .calibration import (
     STATUS_UNAVAILABLE,
     CalibrationSettings,
     CopSample,
+    CopWindow,
+    DeltaTOffsetLearner,
     EmitterSample,
     Prior,
     Sample,
@@ -73,10 +76,12 @@ from .const import (
     CONF_DEFROST_COLD_THRESHOLD,
     CONF_DEFROST_FREE_THRESHOLD,
     CONF_DEFROST_MIN_COP_MULTIPLIER,
+    CONF_DELTA_T_CORRECTION,
     CONF_DHW_ACTIVE_SENSOR,
     CONF_EMITTER_TYPE,
     CONF_ENERGY_LABEL,
     CONF_FEED_IN_PRICE_FALLBACK,
+    CONF_FLOW_SENSOR,
     CONF_GAS_BOILER_EFFICIENCY,
     CONF_GAS_CALORIFIC_VALUE,
     CONF_GAS_METER_SENSOR,
@@ -89,6 +94,8 @@ from .const import (
     CONF_HEAT_CURVE_MIN,
     CONF_HEAT_CURVE_MIN_OUTDOOR,
     CONF_HEAT_PUMP_CONTROL,
+    CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR,
+    CONF_HEAT_PUMP_THERMAL_POWER_SENSOR,
     CONF_HEATPUMP_HEADROOM,
     CONF_HOUSE_BASE_LOAD_W,
     CONF_IDLE_POWER_THRESHOLD_KW,
@@ -105,6 +112,7 @@ from .const import (
     CONF_PRICE_CHANGE_MIN_ABS,
     CONF_PRICE_CHANGE_REL,
     CONF_PRODUCTION_PRICE_SENSOR,
+    CONF_PUMP_MIN_FLOW,
     CONF_RETURN_TEMPERATURE_SENSOR,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
     CONF_VENTILATION_TYPE,
@@ -122,6 +130,7 @@ from .const import (
     DEFAULT_DEFROST_COLD_THRESHOLD,
     DEFAULT_DEFROST_FREE_THRESHOLD,
     DEFAULT_DEFROST_MIN_COP_MULTIPLIER,
+    DEFAULT_DELTA_T_CORRECTION,
     DEFAULT_EMITTER_TYPE,
     DEFAULT_FEED_IN_PRICE_FALLBACK,
     DEFAULT_GAS_BOILER_EFFICIENCY,
@@ -146,10 +155,12 @@ from .const import (
     DEFAULT_PLANNING_WINDOW,
     DEFAULT_PRICE_CHANGE_MIN_ABS,
     DEFAULT_PRICE_CHANGE_REL,
+    DEFAULT_PUMP_MIN_FLOW,
     DEFAULT_REALTIME_INTERVAL_S,
     DEFAULT_VENTILATION_TYPE,
     DOMAIN,
     HEAT_PUMP_CONTROL_FOLLOWS_PLAN,
+    PLAN_SUPPLY_TOLERANCE_K,
 )
 from .coordinator_heat import INDOOR_SOURCE_SENSOR, HeatCalculationCoordinator
 from .coordinator_weather import _update_failed
@@ -157,11 +168,13 @@ from .heatpump_model import HeatPumpConfig
 from .helpers import (
     EnergyCounterRate,
     calculate_defrost_factor,
+    delta_t_correction_k,
     extract_price_forecast_with_timestamps,
     get_sensor_value,
     heat_is_measured,
     measured_heat_kw,
     offset_ramp,
+    read_flow_l_per_min,
     read_power_kw,
     resample_to_steps,
     schedule_is_on,
@@ -309,8 +322,10 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._calibration_taint: str | None = None
         self.subentry_id = subentry_id
         self._unsub_calibration: Any = None
-        self._pending_predictions: list[tuple[datetime, float, float]] = []
-        self._accuracy: deque[tuple[datetime, float, float]] = deque(maxlen=500)
+        # (due, predicted, label-model prediction, indoor at prediction time)
+        self._pending_predictions: list[tuple[datetime, float, float, float]] = []
+        # (time, error, label-model error, persistence error) in K
+        self._accuracy: deque[tuple[datetime, float, float, float]] = deque(maxlen=500)
         self._realtime_controller: RealtimeController | None = None
         # Changes of the published on/off advice and of the PV adjustment,
         # as (time, value) - for validation in diagnostics.
@@ -324,6 +339,19 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._mass: MassModelState | None = None
         self._unsub_mass: Any = None
         self._mass_learning = False
+        # Measured COP over windows of compressor operation (calibration).
+        self._cop_window = CopWindow()
+        # Supply-return sensor offset from pump runs without compressor.
+        self._offset_learner = DeltaTOffsetLearner(
+            float(config.get(CONF_PUMP_MIN_FLOW, DEFAULT_PUMP_MIN_FLOW))
+        )
+        self._unsub_offset: Any = None
+        # Plan adherence since the last optimization run, in seconds:
+        # followed, checked, and unverifiable (no supply sensor).
+        self._plan_followed_s = 0.0
+        self._plan_checked_s = 0.0
+        self._plan_unverified_s = 0.0
+        self._plan_tick: datetime | None = None
 
         # Config-driven thresholds (read once; updated on config reload).
         self._pump_follows_plan = (
@@ -426,6 +454,22 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.hass, list(watched), self._handle_exclusion_sensor
             )
 
+        if self._heat_from_flow():
+            self._unsub_offset = async_track_state_change_event(
+                self.hass,
+                [
+                    self.config[CONF_FLOW_SENSOR],
+                    self.config[CONF_SUPPLY_TEMPERATURE_SENSOR],
+                    self.config[CONF_RETURN_TEMPERATURE_SENSOR],
+                    *(
+                        [self.config[CONF_POWER_CONSUMPTION]]
+                        if self.config.get(CONF_POWER_CONSUMPTION)
+                        else []
+                    ),
+                ],
+                self._handle_offset_reading,
+            )
+
         # The history and learning run in every zone, so diagnostics can
         # show whether the mass-air model would fit before it is switched on.
         self._mass = MassModelState(
@@ -458,6 +502,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._unsub_calibration,
             self._unsub_heat,
             self._unsub_mass,
+            self._unsub_offset,
         ):
             if unsub:
                 unsub()
@@ -466,6 +511,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._unsub_calibration = None
         self._unsub_heat = None
         self._unsub_mass = None
+        self._unsub_offset = None
         await super().async_shutdown()
 
     def inputs_ready(self) -> bool:
@@ -1023,7 +1069,6 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             outdoor_temp=float(weather_data["current_temperature"]),
             humidity=float((weather_data.get("humidity_forecast") or [80.0])[0]),
             power_kw=power_kw,
-            planned_supply=opt.supply_temps[0] if opt.supply_temps else None,
         )
         await self._maybe_record_calibration_sample(
             indoor_temp=indoor_temp,
@@ -1131,6 +1176,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ),
             "heat_pump_plan_on": plan_on,
             "heat_pump_control_follows_plan": self._pump_follows_plan,
+            **self._take_plan_adherence(),
             "heat_pump_plan_hold_until": (
                 hold_until.isoformat() if hold_until else None
             ),
@@ -1164,7 +1210,15 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         if return_temp is None:
             return None
-        spread = supply - return_temp
+        spread = (
+            supply
+            - return_temp
+            + delta_t_correction_k(
+                self.config,
+                (supply + return_temp) / 2,
+                self.learned_delta_t_correction(),
+            )
+        )
         return spread if 0.0 < spread <= MAX_WATER_DELTA_T else None
 
     def building_config(self, config: dict[str, Any]) -> BuildingConfig:
@@ -1176,7 +1230,24 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             building.air_coupling_kw_per_k = coupling
             if solar_factor is not None:
                 building.solar_factor = solar_factor
+            building.ua_w_per_k *= self.learned_ua_scale(config)
         return building
+
+    def learned_ua_scale(self, config: dict[str, Any]) -> float:
+        """Multiplier on the label-based UA learned by the mass model.
+
+        Used with the learned coupling (as the solar factor is); 1.0 with a
+        configured coupling, without a fit, or when one node predicts better.
+        """
+        fit = self._mass.fit if self._mass else None
+        if (
+            config.get(CONF_AIR_COUPLING)
+            or fit is None
+            or fit.ua_scale is None
+            or fit.mae_k >= fit.one_node_mae_k
+        ):
+            return 1.0
+        return fit.ua_scale
 
     def _one_node_building(self, config: dict[str, Any]) -> BuildingConfig:
         """Label-based building model, replaced by the calibration when applied."""
@@ -1246,8 +1317,59 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _measured_heat_kw(self) -> float | None:
         """Measured heat now (thermal power, heat meter rate, or flow)."""
         return measured_heat_kw(
-            self.hass, self.config, self._heat_counter, dt_util.utcnow()
+            self.hass,
+            self.config,
+            self._heat_counter,
+            dt_util.utcnow(),
+            self.learned_delta_t_correction(),
         )
+
+    def _heat_from_flow(self) -> bool:
+        """Heat is computed from flow and the supply-return spread."""
+        return bool(
+            not self.config.get(CONF_HEAT_PUMP_THERMAL_POWER_SENSOR)
+            and not self.config.get(CONF_HEAT_PUMP_THERMAL_ENERGY_SENSOR)
+            and self.config.get(CONF_FLOW_SENSOR)
+            and self.config.get(CONF_SUPPLY_TEMPERATURE_SENSOR)
+            and self.config.get(CONF_RETURN_TEMPERATURE_SENSOR)
+        )
+
+    def learned_delta_t_correction(self) -> Callable[[float], float] | None:
+        """The learned supply-return correction, when calibration is applied."""
+        calibration = self._calibration
+        if (
+            not self._calibration_applied()
+            or calibration is None
+            or calibration.offset_fit is None
+        ):
+            return None
+        return calibration.offset_fit.correction
+
+    @callback
+    def _handle_offset_reading(self, event: Event[EventStateChangedData]) -> None:
+        """Feed the sensor-offset learner on every flow/temperature reading."""
+        calibration = self._calibration
+        if (
+            calibration is None
+            or self.calibration_mode() == MODE_OFF
+            or not self._calibration_allowed
+        ):
+            return
+        power_kw = read_power_kw(self.hass, self.config.get(CONF_POWER_CONSUMPTION))
+        run = self._offset_learner.update(
+            dt_util.utcnow(),
+            compressor_running=(
+                None if power_kw is None else power_kw > self._idle_power_threshold_kw
+            ),
+            flow=read_flow_l_per_min(self.hass, self.config.get(CONF_FLOW_SENSOR)),
+            supply=self._measured_supply_temp(),
+            return_temp=get_sensor_value(
+                self.hass, self.config.get(CONF_RETURN_TEMPERATURE_SENSOR), None
+            ),
+        )
+        if run is not None:
+            calibration.record_offset_run(run)
+            self.hass.async_create_task(calibration.async_save())
 
     def _current_heat_kw(self, outdoor_temp: float, supply: float | None) -> float:
         """Heat the heat pump delivers now: measured, else power x COP."""
@@ -1266,7 +1388,143 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @callback
     def _handle_mass_tick(self, now: datetime) -> None:
-        self._update_mass(dt_util.utcnow())
+        now = dt_util.utcnow()
+        power_kw = read_power_kw(self.hass, self.config.get(CONF_POWER_CONSUMPTION))
+        self._track_plan_adherence(now, power_kw)
+        self._record_cop_window(now, power_kw)
+        self._update_mass(now)
+
+    def _track_plan_adherence(self, now: datetime, power_kw: float | None) -> None:
+        """Count whether the heat pump does what the current plan says.
+
+        Plan-driven pump: running exactly when the plan says on. Own
+        thermostat: not running, or running at the planned supply (with the
+        real-time adjustment) within `PLAN_SUPPLY_TOLERANCE_K`; without a
+        supply sensor that cannot be checked and counts as unverified.
+        """
+        last, self._plan_tick = self._plan_tick, now
+        data = self.data
+        if last is None or not data or power_kw is None:
+            return
+        seconds = (now - last).total_seconds()
+        if not 0 < seconds <= 300:
+            return
+        running = power_kw > self._idle_power_threshold_kw
+        followed: bool | None
+        if self._pump_follows_plan:
+            plan_on = data.get("heat_pump_plan_on")
+            followed = None if plan_on is None else running == bool(plan_on)
+        elif not running:
+            followed = True
+        else:
+            supply = self._measured_supply_temp()
+            supplies = data.get("supply_temps") or []
+            if supply is None or not supplies:
+                followed = None
+            else:
+                planned = float(supplies[0])
+                offset = int(data.get("offset") or 0)
+                effective = int(
+                    (data.get("realtime") or {}).get("effective_offset", offset)
+                )
+                low = min(planned, planned + effective - offset)
+                high = max(planned, planned + effective - offset)
+                followed = (
+                    low - PLAN_SUPPLY_TOLERANCE_K
+                    <= supply
+                    <= high + PLAN_SUPPLY_TOLERANCE_K
+                )
+        if followed is None:
+            self._plan_unverified_s += seconds
+            return
+        self._plan_checked_s += seconds
+        if followed:
+            self._plan_followed_s += seconds
+
+    def _take_plan_adherence(self) -> dict[str, Any]:
+        """Plan adherence since the previous run (for the savings total),
+        then start counting afresh."""
+        checked, followed, unverified = (
+            self._plan_checked_s,
+            self._plan_followed_s,
+            self._plan_unverified_s,
+        )
+        self._plan_checked_s = self._plan_followed_s = self._plan_unverified_s = 0.0
+        total = checked + unverified
+        return {
+            # None: nothing observed (no power reading) - nothing to book.
+            "plan_followed_fraction": (
+                round((followed + unverified) / total, 4) if total > 0 else None
+            ),
+            "plan_unverified_fraction": (
+                round(unverified / total, 4) if total > 0 else None
+            ),
+        }
+
+    def _record_cop_window(self, now: datetime, power_kw: float | None) -> None:
+        """Feed the COP window; record a finished window as a COP sample."""
+        calibration = self._calibration
+        weather = self.heat_coordinator.weather_coordinator.data
+        if (
+            calibration is None
+            or self.calibration_mode() == MODE_OFF
+            or not self._calibration_allowed
+            or not weather
+            or not heat_is_measured(self.config)
+        ):
+            return
+        outdoor = float(weather["current_temperature"])
+        humidity = float((weather.get("humidity_forecast") or [80.0])[0])
+        result = self._cop_window.update(
+            now,
+            running=power_kw is not None and power_kw >= self._min_running_power_kw,
+            heat_kw=self._measured_heat_kw(),
+            power_kw=power_kw,
+            outdoor_temp=outdoor,
+            supply_temp=self._measured_supply_temp(),
+            humidity=humidity,
+            excluded=self._active_exclusion() is not None,
+        )
+        if result is None:
+            return
+        outdoor_m, supply_m, humidity_m, cop, hours = result
+        calibration.record_cop_sample(
+            CopSample(
+                outdoor_temp=outdoor_m,
+                supply_temp=supply_m,
+                defrost_factor=self._defrost_factor(outdoor_m, humidity_m),
+                cop=cop,
+                hours=hours,
+            ),
+            self.cop_prior(),
+        )
+        self.hass.async_create_task(calibration.async_save())
+
+    def _defrost_factor(self, outdoor: float, humidity: float) -> float:
+        """The configured defrost model's COP factor."""
+        return calculate_defrost_factor(
+            outdoor,
+            humidity,
+            defrost_free_threshold=float(
+                self.config.get(
+                    CONF_DEFROST_FREE_THRESHOLD, DEFAULT_DEFROST_FREE_THRESHOLD
+                )
+            ),
+            defrost_cold_threshold=float(
+                self.config.get(
+                    CONF_DEFROST_COLD_THRESHOLD, DEFAULT_DEFROST_COLD_THRESHOLD
+                )
+            ),
+            defrost_base_penalty=float(
+                self.config.get(CONF_DEFROST_BASE_PENALTY, DEFAULT_DEFROST_BASE_PENALTY)
+            ),
+            defrost_min_cop_multiplier=float(
+                self.config.get(
+                    CONF_DEFROST_MIN_COP_MULTIPLIER,
+                    DEFAULT_DEFROST_MIN_COP_MULTIPLIER,
+                )
+            ),
+        )
 
     def _update_mass(self, now: datetime) -> None:
         """Advance the mass observer on the measured air; learn when due."""
@@ -1392,6 +1650,8 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "solar_factor": solar_factor if enabled else None,
             "learned_kw_per_k": fit.coupling_kw_per_k if fit else None,
             "learned_solar_factor": fit.solar_factor if fit else None,
+            "learned_ua_scale": fit.ua_scale if fit else None,
+            "ua_scale": self.learned_ua_scale(config) if enabled else None,
             "learned_mae_k": fit.mae_k if fit else None,
             "one_node_mae_k": fit.one_node_mae_k if fit else None,
             "learned_accepted": fit.accepted if fit else None,
@@ -1531,9 +1791,8 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         outdoor_temp: float,
         humidity: float,
         power_kw: float | None,
-        planned_supply: float | None,
     ) -> None:
-        """Phase 2/3 samples from the current steady operating point."""
+        """Emitter sample from the current steady operating point."""
         calibration = self._calibration
         if (
             calibration is None
@@ -1542,52 +1801,10 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             or self._active_exclusion() is not None
         ):
             return
+        # COP samples come from `_record_cop_window` (summed energy); this
+        # instantaneous point only feeds the emitter curve.
         measured_heat = self._measured_heat_kw()
         supply = self._measured_supply_temp()
-        if (
-            measured_heat is not None
-            and power_kw is not None
-            and power_kw >= self._min_running_power_kw
-            and measured_heat > 0
-        ):
-            operating_supply = supply if supply is not None else planned_supply
-            if operating_supply is not None:
-                calibration.record_cop_sample(
-                    CopSample(
-                        outdoor_temp=outdoor_temp,
-                        supply_temp=operating_supply,
-                        defrost_factor=calculate_defrost_factor(
-                            outdoor_temp,
-                            humidity,
-                            defrost_free_threshold=float(
-                                self.config.get(
-                                    CONF_DEFROST_FREE_THRESHOLD,
-                                    DEFAULT_DEFROST_FREE_THRESHOLD,
-                                )
-                            ),
-                            defrost_cold_threshold=float(
-                                self.config.get(
-                                    CONF_DEFROST_COLD_THRESHOLD,
-                                    DEFAULT_DEFROST_COLD_THRESHOLD,
-                                )
-                            ),
-                            defrost_base_penalty=float(
-                                self.config.get(
-                                    CONF_DEFROST_BASE_PENALTY,
-                                    DEFAULT_DEFROST_BASE_PENALTY,
-                                )
-                            ),
-                            defrost_min_cop_multiplier=float(
-                                self.config.get(
-                                    CONF_DEFROST_MIN_COP_MULTIPLIER,
-                                    DEFAULT_DEFROST_MIN_COP_MULTIPLIER,
-                                )
-                            ),
-                        ),
-                        cop=measured_heat / power_kw,
-                    ),
-                    self.cop_prior(),
-                )
         if supply is None or not indoor_is_measured:
             return
         heat = measured_heat
@@ -1818,6 +2035,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "cop_fit_mean_abs_error": round(cop_fit.mean_abs_error, 2),
                 "cop_vs_configured_pct": round(100 * (cop_fit.base_cop / base - 1)),
             }
+        result |= self._delta_t_offset_summary()
         prior_emitter = self._prior_emitter(config)
         result["assumed_emitter_power_kw"] = round(prior_emitter.nominal_power_kw, 1)
         emitter_fit = calibration.emitter_fit if calibration else None
@@ -1829,6 +2047,39 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "learned_emitter_exponent": round(emitter_fit.exponent, 2),
                 "learned_water_delta_t": round(emitter_fit.water_delta_t, 1),
                 "emitter_fit_r_squared": round(emitter_fit.r_squared, 3),
+            }
+        return result
+
+    def _delta_t_offset_summary(self) -> dict[str, Any]:
+        """Supply-return sensor offset: configured, learned, and which applies."""
+        if not self._heat_from_flow():
+            return {}
+        calibration = self._calibration
+        configured = float(
+            self.config.get(CONF_DELTA_T_CORRECTION, DEFAULT_DELTA_T_CORRECTION) or 0.0
+        )
+        offset_fit = calibration.offset_fit if calibration else None
+        result: dict[str, Any] = {
+            "configured_delta_t_correction_k": configured,
+            "delta_t_offset_runs": len(calibration.offset_runs) if calibration else 0,
+            "delta_t_correction_source": (
+                "configured"
+                if configured
+                else "learned"
+                if self.learned_delta_t_correction() is not None
+                else "none"
+            ),
+        }
+        if offset_fit is not None:
+            result |= {
+                "learned_delta_t_correction_k": round(
+                    offset_fit.correction((offset_fit.t_min + offset_fit.t_max) / 2), 2
+                ),
+                "learned_delta_t_correction_slope_k_per_k": round(-offset_fit.slope, 3),
+                "learned_delta_t_valid_range_c": [
+                    round(offset_fit.t_min, 1),
+                    round(offset_fit.t_max, 1),
+                ],
             }
         return result
 
@@ -2013,16 +2264,23 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Two predictions are kept per run: the model in use (possibly
         calibrated) and the energy-label model fed with the same planned
         heat. Their errors show whether calibration improves the model.
+        A third reference is persistence (the temperature stays as it was):
+        a model that does not beat it has no predictive skill.
         The comparison assumes the plan was carried out.
         """
         if indoor_is_measured:
             remaining = []
-            for due, predicted, predicted_label in self._pending_predictions:
+            for due, predicted, predicted_label, start in self._pending_predictions:
                 if due > now:
-                    remaining.append((due, predicted, predicted_label))
+                    remaining.append((due, predicted, predicted_label, start))
                 elif now - due <= ACCURACY_MATCH_TOLERANCE:
                     self._accuracy.append(
-                        (now, predicted - indoor_temp, predicted_label - indoor_temp)
+                        (
+                            now,
+                            predicted - indoor_temp,
+                            predicted_label - indoor_temp,
+                            start - indoor_temp,
+                        )
                     )
             self._pending_predictions = remaining
         else:
@@ -2053,7 +2311,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             elapsed += used
         if elapsed >= target_h - 1e-6:
             self._pending_predictions.append(
-                (now + self._accuracy_horizon, predicted, label_temp)
+                (now + self._accuracy_horizon, predicted, label_temp, indoor_temp)
             )
 
     def accuracy_summary(self, now: datetime) -> dict[str, Any]:
@@ -2062,10 +2320,18 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not recent:
             return {"samples": 0}
         n = len(recent)
+        mae = sum(abs(a[1]) for a in recent) / n
+        persistence = sum(abs(a[3]) for a in recent) / n
         return {
             "samples": n,
-            "mae_k": round(sum(abs(a[1]) for a in recent) / n, 3),
+            "mae_k": round(mae, 3),
             "bias_k": round(sum(a[1] for a in recent) / n, 3),
             "mae_label_model_k": round(sum(abs(a[2]) for a in recent) / n, 3),
+            # Error of "the temperature stays as it is", and the share of it
+            # the model removes (1 = perfect, 0 = no better, < 0 = worse).
+            "mae_persistence_k": round(persistence, 3),
+            "skill_vs_persistence": (
+                round(1.0 - mae / persistence, 2) if persistence > 1e-6 else None
+            ),
             "errors_k": [round(a[1], 2) for a in recent[-48:]],
         } | residual_diagnosis([a[1] for a in self._accuracy])

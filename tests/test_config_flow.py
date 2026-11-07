@@ -93,6 +93,8 @@ def _sectioned(**overrides) -> dict:
             "price_change_min_abs": 0.01,
             "min_running_power_kw": 0.3,
             "accuracy_horizon_hours": 1.0,
+            "delta_t_correction": 0.0,
+            "pump_min_flow": 6.0,
         },
     }
     for section, values in overrides.items():

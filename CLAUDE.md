@@ -99,7 +99,14 @@ docs/                         index, installation, quick-start, configuration, a
   with one zone. Windows close after 0.3 K movement; excluded on DHW, open
   window, 1 K jump, gaps. Applied fits replace UA/C/internal gains/solar
   factor (building), COP curve (heat meter) or COP scale (gas windows), and
-  the emitter curve.
+  the emitter curve. COP samples are energy windows (`CopWindow`, start to
+  stop or 1 h, defrost included). Flow-based heat is corrected by the
+  supply-return offset (`delta_t_correction`, else learned by
+  `DeltaTOffsetLearner` from pump runs without compressor, applied mode).
+- **Savings total** books the plan's savings × `plan_followed_fraction`
+  (60-s adherence check: on/off as planned, or supply within
+  `PLAN_SUPPLY_TOLERANCE_K` with own thermostat).
+- **Mass + air** learns coupling, solar factor and a `UA` scale.
 
 ## Conventions
 

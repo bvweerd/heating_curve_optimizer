@@ -18,14 +18,14 @@ and English entity names.
 | `sensor.…_planned_indoor_temperature` | °C | Disabled diagnostic. Predicted indoor temperature at the end of the current step. | `indoor_temps`, `baseline_indoor_temps`, `comfort_min/max` |
 | `sensor.…_heat_buffer` | kWh | Heat stored above the comfort floor (with *Mass + air*: in the thermal mass, above what holds the air at the floor). | `forecast` |
 | `sensor.…_cost_savings_forecast` | EUR | Disabled diagnostic. Expected savings over the horizon vs. the plain curve. | `optimized_cost_eur`, `baseline_cost_eur`, `horizon_hours`, `comfort_deficit_kh`, `baseline_comfort_deficit_kh` |
-| `sensor.…_total_cost_savings` | EUR | Disabled diagnostic. Running total of realised modelled savings (can decrease). | |
+| `sensor.…_total_cost_savings` | EUR | Disabled diagnostic. Running total of the plan's modelled savings, booked only for the share of time the heat pump followed the plan (on/off as planned, or supply within 1.5 K of the planned supply with its own thermostat). Can decrease. | `savings_if_followed_eur`, `plan_followed_hours`, `observed_hours`, `plan_followed_share` |
 | `sensor.…_real_time_heating_curve_offset` | °C | Only with grid sensors: plan + PV-surplus adjustment. | `planned_offset`, `adjustment`, `current_grid_w` |
 | `number.…_target_indoor_temperature` | °C | Primary zone setpoint (15–25). | |
 | `number.…_comfort_band_below_target` / `…_above_target` | °C | Comfort band (0.1–2). | |
 | `climate.…_heating` | | Disabled by default; the same setpoint as a thermostat card. | |
 
 | `sensor.…_calibration` | | Calibration status and results, see [Calibration](calibration.md). | `progress_pct`, `effective_energy_label`, `time_constant_hours`, … |
-| `sensor.…_model_accuracy` | K | Mean absolute error of 1-hour-ahead indoor predictions (24 h). | `mae_label_model_k`, `errors_k`, `two_mass_suspected` |
+| `sensor.…_model_accuracy` | K | Mean absolute error of 1-hour-ahead indoor predictions (24 h). | `mae_label_model_k`, `mae_persistence_k`, `skill_vs_persistence`, `errors_k`, `two_mass_suspected` |
 
 Diagnostic entities: *Value of stored heat* (shadow price, EUR/kWh) and
 *Status* (`ok`/`partial`/`initializing`/`error`, per coordinator).

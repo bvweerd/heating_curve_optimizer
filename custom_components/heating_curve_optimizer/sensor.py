@@ -568,7 +568,13 @@ def _heat_pump_thermal_power(
     power_kw = read_power_kw(hass, config.get(CONF_POWER_CONSUMPTION))
     supply = get_sensor_value(hass, config.get(CONF_SUPPLY_TEMPERATURE_SENSOR), None)
     if heat_is_measured(config):
-        heat_kw = measured_heat_kw(hass, config, counter)
+        learned = getattr(optimization_coordinator, "learned_delta_t_correction", None)
+        heat_kw = measured_heat_kw(
+            hass,
+            config,
+            counter,
+            learned_correction=learned() if callable(learned) else None,
+        )
         if heat_kw is None:
             return None
         heat_kw = max(0.0, heat_kw)
@@ -760,13 +766,18 @@ class HeatPumpThermalEnergySensor(RestoreSensor):
 class TotalCostSavingsSensor(
     CoordinatorEntity[DataUpdateCoordinator[dict[str, Any]]], RestoreSensor
 ):
-    """Running total of the modelled savings of the executed plan.
+    """Running total of the modelled savings of the plan, as far as the heat
+    pump actually followed it.
 
     On every optimization result, the elapsed time since the previous one
     is booked against the previous plan's first step: its baseline cost
-    minus its optimized cost, pro rata. Pre-heating shows up as negative
-    savings when it happens and is paid back when the building coasts
-    through expensive hours, so the total is not biased upwards.
+    minus its optimized cost, pro rata, times the share of that time the
+    heat pump did what the plan said (`plan_followed_fraction`). The
+    integration only advises: a plan nobody carries out saves nothing.
+    Pre-heating shows up as negative savings when it happens and is paid
+    back when the building coasts through expensive hours, so the total is
+    not biased upwards. What the plan would have saved if always followed
+    is kept as an attribute.
     """
 
     _attr_has_entity_name = True
@@ -791,6 +802,9 @@ class TotalCostSavingsSensor(
         self._attr_unique_id = f"{unique_id_prefix}_total_cost_savings"
         self._attr_device_info = device
         self._total = 0.0
+        self._if_followed = 0.0
+        self._followed_hours = 0.0
+        self._booked_hours = 0.0
         self._last_time: datetime | None = None
         self._last_rate_eur_per_h: float | None = None
 
@@ -803,7 +817,29 @@ class TotalCostSavingsSensor(
                 self._total = float(str(last.native_value))
             except (TypeError, ValueError):
                 self._total = 0.0
+        last_state = await self.async_get_last_state()
+        if last_state is not None:
+            attrs = last_state.attributes
+            try:
+                self._if_followed = float(attrs.get("savings_if_followed_eur", 0.0))
+                self._followed_hours = float(attrs.get("plan_followed_hours", 0.0))
+                self._booked_hours = float(attrs.get("observed_hours", 0.0))
+            except (TypeError, ValueError):
+                pass
         self._attr_native_value = round(self._total, 4)
+        self._update_attributes()
+
+    def _update_attributes(self) -> None:
+        self._attr_extra_state_attributes = {
+            "savings_if_followed_eur": round(self._if_followed, 2),
+            "plan_followed_hours": round(self._followed_hours, 2),
+            "observed_hours": round(self._booked_hours, 2),
+            "plan_followed_share": (
+                round(self._followed_hours / self._booked_hours, 3)
+                if self._booked_hours > 0
+                else None
+            ),
+        }
 
     @property
     def available(self) -> bool:
@@ -822,9 +858,16 @@ class TotalCostSavingsSensor(
             and now > self._last_time
         ):
             hours = (now - self._last_time).total_seconds() / 3600.0
+            followed = data.get("plan_followed_fraction")
             if hours <= self.MAX_GAP_HOURS:
-                self._total += self._last_rate_eur_per_h * hours
+                self._if_followed += self._last_rate_eur_per_h * hours
+                if followed is not None:
+                    share = min(1.0, max(0.0, float(followed)))
+                    self._total += self._last_rate_eur_per_h * hours * share
+                    self._followed_hours += hours * share
+                    self._booked_hours += hours
                 self._attr_native_value = round(self._total, 4)
+                self._update_attributes()
         durations = data.get("step_durations_hours") or []
         costs = data.get("cost_eur") or []
         baseline = data.get("baseline_cost_eur") or []
