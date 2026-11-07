@@ -129,6 +129,7 @@ from .const import (
     CONF_OFFSET_MAX,
     CONF_OFFSET_MIN,
     CONF_OUTDOOR_TEMP_COEFFICIENT,
+    CONF_OUTDOOR_TEMPERATURE_SENSOR,
     CONF_PLANNING_WINDOW,
     CONF_POWER_CONSUMPTION,
     CONF_PRICE_CHANGE_MIN_ABS,
@@ -327,6 +328,7 @@ _MAIN_SECTIONS: dict[str, tuple[str, ...]] = {
         CONF_SUPPLY_TEMPERATURE_SENSOR,
         CONF_RETURN_TEMPERATURE_SENSOR,
         CONF_FLOW_SENSOR,
+        CONF_OUTDOOR_TEMPERATURE_SENSOR,
         CONF_DHW_ACTIVE_SENSOR,
         CONF_GRID_IMPORT_SENSOR,
         CONF_GRID_EXPORT_SENSOR,
@@ -493,6 +495,8 @@ def build_main_schema(defaults: dict[str, Any]) -> vol.Schema:
             opt(CONF_SUPPLY_TEMPERATURE_SENSOR): _sensor(),
             opt(CONF_RETURN_TEMPERATURE_SENSOR): _sensor(),
             opt(CONF_FLOW_SENSOR): _sensor(),
+            # No device-class filter, as for the water temperatures; °C.
+            opt(CONF_OUTDOOR_TEMPERATURE_SENSOR): _sensor(),
             opt(CONF_DHW_ACTIVE_SENSOR): EntitySelector(
                 EntitySelectorConfig(domain="binary_sensor")
             ),

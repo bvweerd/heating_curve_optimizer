@@ -30,7 +30,8 @@
               "dhw_active_sensor": "Tapwaterbedrijf actief",
               "grid_import_sensor": "Netafname vermogen",
               "grid_export_sensor": "Netteruglevering vermogen",
-              "battery_power_sensors": "Vermogen thuisbatterij"
+              "battery_power_sensors": "Vermogen thuisbatterij",
+              "outdoor_temperature_sensor": "Lokale buitentemperatuur"
             },
             "data_description": {
               "power_consumption": "Vermogenssensor (W of kW) van de warmtepomp. Activeert de thermisch vermogen/energie-sensoren en thermische kalibratie.",
@@ -42,7 +43,8 @@
               "flow_sensor": "Optioneel (L/min, L/h of m³/h). Samen met aanvoer- en retourtemperatuur geeft dit de geleverde warmte: debiet × temperatuurverschil × 4,16 kJ/(L·K). Gebruikt in plaats van het COP-model voor de kalibratie, de COP-fit en de sensor voor thermisch vermogen; een thermisch-vermogensensor gaat voor.",
               "grid_import_sensor": "Actueel vermogen (W of kW). Met afname en/of teruglevering ingesteld verhoogt de realtime-offsetsensor de offset zolang er PV-overschot wordt teruggeleverd.",
               "grid_export_sensor": "Actueel vermogen (W of kW), positief tijdens teruglevering.",
-              "battery_power_sensors": "Optioneel, één sensor per batterij (W of kW), positief bij laden, zoals in Battery Controller. Ontladen telt voor de PV-overschotlaag als netafname, zodat een batterij die de warmtepomp voedt niet voor overschot wordt aangezien."
+              "battery_power_sensors": "Optioneel, één sensor per batterij (W of kW), positief bij laden, zoals in Battery Controller. Ontladen telt voor de PV-overschotlaag als netafname, zodat een batterij die de warmtepomp voedt niet voor overschot wordt aangezien.",
+              "outdoor_temperature_sensor": "Optioneel, in °C. Vervangt het weerbericht voor de actuele buitentemperatuur; het verschil corrigeert de verwachting en loopt in 6 uur uit (maximaal 5 K). Valt terug op het weerbericht als de sensor niet beschikbaar is."
             }
           },
           "heat_pump": {
@@ -256,7 +258,8 @@
               "dhw_active_sensor": "Tapwaterbedrijf actief",
               "grid_import_sensor": "Netafname vermogen",
               "grid_export_sensor": "Netteruglevering vermogen",
-              "battery_power_sensors": "Vermogen thuisbatterij"
+              "battery_power_sensors": "Vermogen thuisbatterij",
+              "outdoor_temperature_sensor": "Lokale buitentemperatuur"
             },
             "data_description": {
               "power_consumption": "Vermogenssensor (W of kW) van de warmtepomp. Activeert de thermisch vermogen/energie-sensoren en thermische kalibratie.",
@@ -268,7 +271,8 @@
               "flow_sensor": "Optioneel (L/min, L/h of m³/h). Samen met aanvoer- en retourtemperatuur geeft dit de geleverde warmte: debiet × temperatuurverschil × 4,16 kJ/(L·K). Gebruikt in plaats van het COP-model voor de kalibratie, de COP-fit en de sensor voor thermisch vermogen; een thermisch-vermogensensor gaat voor.",
               "grid_import_sensor": "Actueel vermogen (W of kW). Met afname en/of teruglevering ingesteld verhoogt de realtime-offsetsensor de offset zolang er PV-overschot wordt teruggeleverd.",
               "grid_export_sensor": "Actueel vermogen (W of kW), positief tijdens teruglevering.",
-              "battery_power_sensors": "Optioneel, één sensor per batterij (W of kW), positief bij laden, zoals in Battery Controller. Ontladen telt voor de PV-overschotlaag als netafname, zodat een batterij die de warmtepomp voedt niet voor overschot wordt aangezien."
+              "battery_power_sensors": "Optioneel, één sensor per batterij (W of kW), positief bij laden, zoals in Battery Controller. Ontladen telt voor de PV-overschotlaag als netafname, zodat een batterij die de warmtepomp voedt niet voor overschot wordt aangezien.",
+              "outdoor_temperature_sensor": "Optioneel, in °C. Vervangt het weerbericht voor de actuele buitentemperatuur; het verschil corrigeert de verwachting en loopt in 6 uur uit (maximaal 5 K). Valt terug op het weerbericht als de sensor niet beschikbaar is."
             }
           },
           "heat_pump": {

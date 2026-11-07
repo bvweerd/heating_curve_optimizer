@@ -288,6 +288,45 @@ async def test_weather_radiation_is_shifted_to_the_hour_it_describes(
     assert len(data["temperature_forecast"]) == 48
 
 
+async def test_local_outdoor_sensor_corrects_current_and_forecast(
+    hass: HomeAssistant, aioclient_mock
+) -> None:
+    from custom_components.heating_curve_optimizer.coordinator_weather import (
+        WeatherDataCoordinator,
+    )
+
+    payload = open_meteo_payload()
+    aioclient_mock.get(OPEN_METEO_URL, json=payload)
+    entry = make_entry(outdoor_temperature_sensor="sensor.station")
+    entry.add_to_hass(hass)
+    coordinator = WeatherDataCoordinator(hass, entry)
+    plain = await coordinator._async_update_data()  # no reading yet: forecast
+    assert plain["outdoor_temperature_source"] == "forecast"
+    assert plain["current_temperature"] == plain["forecast_current_temperature"]
+
+    local = plain["forecast_current_temperature"] + 2.4
+    hass.states.async_set("sensor.station", str(local))
+    data = await coordinator._async_update_data()
+    assert data["outdoor_temperature_source"] == "sensor"
+    assert data["current_temperature"] == pytest.approx(local, abs=0.01)
+    corrected = data["temperature_forecast"]
+    original = plain["temperature_forecast"]
+    assert corrected[0] - original[0] == pytest.approx(2.4, abs=0.02)
+    assert corrected[3] - original[3] == pytest.approx(1.2, abs=0.02)
+    assert corrected[6:] == original[6:]
+
+    # A sensor in the sun: the plan's correction is bounded.
+    hass.states.async_set("sensor.station", str(plain["current_temperature"] + 12))
+    data = await coordinator._async_update_data()
+    assert data["temperature_forecast"][0] - original[0] == pytest.approx(5.0, abs=0.02)
+
+    # A faulty reading falls back to the weather service.
+    hass.states.async_set("sensor.station", "-127")
+    data = await coordinator._async_update_data()
+    assert data["outdoor_temperature_source"] == "forecast"
+    assert data["temperature_forecast"] == original
+
+
 def test_total_cost_savings_books_losses_too() -> None:
     """Pre-heating costs money now and is booked as negative savings; the
     old sensor only ever added positive amounts."""
