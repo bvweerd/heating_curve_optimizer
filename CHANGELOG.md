@@ -25,6 +25,9 @@ deployments to migrate from.
 - Mass + air learns a scale on the label-based heat loss `UA` together
   with the coupling and solar factor.
 - *Model accuracy* reports the persistence error and the skill against it.
+- *Heat loss*, *Window solar gain* and *Net heat demand* use the building
+  model the optimizer uses (learned `UA`, internal gains, solar factor)
+  instead of the energy-label model.
 
 ### Optimizer
 - Algorithm review fixes:

@@ -150,6 +150,8 @@ HEAT_LOSS = HcoSensorEntityDescription(
     attrs_fn=lambda d: {
         "forecast": d.get("heat_loss_forecast", []),
         "htc_w_per_k": d.get("htc_w_per_k"),
+        "label_htc_w_per_k": d.get("label_htc_w_per_k"),
+        "building_model_source": d.get("building_model_source"),
     },
 )
 WINDOW_SOLAR_GAIN = HcoSensorEntityDescription(
@@ -158,8 +160,14 @@ WINDOW_SOLAR_GAIN = HcoSensorEntityDescription(
     device_class=SensorDeviceClass.POWER,
     native_unit_of_measurement=UnitOfPower.KILO_WATT,
     state_class=SensorStateClass.MEASUREMENT,
-    value_fn=lambda d: d.get("solar_gain"),
-    attrs_fn=lambda d: {"forecast": d.get("solar_gain_forecast", [])},
+    value_fn=lambda d: d.get("effective_solar_gain", d.get("solar_gain")),
+    attrs_fn=lambda d: {
+        "forecast": d.get(
+            "effective_solar_gain_forecast", d.get("solar_gain_forecast", [])
+        ),
+        "window_model_kw": d.get("solar_gain"),
+        "solar_factor": d.get("solar_factor"),
+    },
 )
 PV_PRODUCTION_FORECAST = HcoSensorEntityDescription(
     key="pv_production_forecast",

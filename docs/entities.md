@@ -9,8 +9,8 @@ and English entity names.
 |---|---|---|---|
 | `sensor.…_outdoor_temperature` | °C | Current outdoor temperature (open-meteo). | `forecast`, `humidity_forecast` |
 | `sensor.…_heating_curve_supply_temperature` | °C | Supply temperature of the plain heating curve now. | |
-| `sensor.…_heat_loss` | kW | Transmission + ventilation loss at the current indoor temperature. | `forecast` (at target), `htc_w_per_k` |
-| `sensor.…_window_solar_gain` | kW | Solar gain through the windows this hour. | `forecast` |
+| `sensor.…_heat_loss` | kW | Transmission + ventilation loss at the current indoor temperature, with the building model the optimizer uses (learned `UA` once calibrated or learned by the mass model). | `forecast` (at target), `htc_w_per_k`, `label_htc_w_per_k`, `building_model_source` |
+| `sensor.…_window_solar_gain` | kW | Solar gain through the windows this hour: the window model × the learned solar factor. | `forecast`, `window_model_kw`, `solar_factor` |
 | `sensor.…_net_heat_demand` | kW | Heat loss minus solar and internal gains. | `forecast`, `indoor_temperature_source` |
 | `sensor.…_pv_production_forecast` | kW | Only with PV arrays. | `forecast` |
 | `sensor.…_heating_curve_offset` | °C | **Offset to apply now.** | `offsets`, `prices`, `outdoor_forecast`, `step_start_times`, `step_minutes` |
