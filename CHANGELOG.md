@@ -33,6 +33,11 @@ deployments to migrate from.
   (state class `total`): about 0.4 kWh per defrost, 3-10 % of the heat in
   frosty weather, was counted as delivered and absorbed by the learned
   heat loss.
+- *Gas boiler cheaper* / *Heat pump cheaper* (and the price part of the
+  gas advice) switch with a dead band (5 %, at least €0.005/kWh) and a
+  one-hour hold, and wait after a restart until the plan starts from the
+  measured indoor temperature; near break-even they flipped on every
+  quarter-hour price and on every reload.
 
 ### Optimizer
 - Algorithm review fixes:

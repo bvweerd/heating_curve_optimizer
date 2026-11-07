@@ -21,7 +21,7 @@ automation; this integration never actuates hardware.
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -29,6 +29,7 @@ from homeassistant.core import Event, EventStateChangedData, HomeAssistant, call
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_COMFORT_LOOKAHEAD_HOURS,
@@ -41,7 +42,7 @@ from .const import (
     DEFAULT_GAS_COMFORT_BACKUP,
     DOMAIN,
 )
-from .coordinator_heat import HeatCalculationCoordinator
+from .coordinator_heat import INDOOR_SOURCE_SENSOR, HeatCalculationCoordinator
 from .coordinator_optimization import OptimizationCoordinator
 from .coordinator_weather import _update_failed
 from .gas_boiler_model import GasBoilerConfig, compare_heat_pump_and_gas
@@ -109,6 +110,15 @@ def _comfort_at_risk(
 # listeners on both price sensors (see async_setup).
 DEFAULT_UPDATE_INTERVAL = timedelta(minutes=15)
 
+# "Gas cheaper" switches only when the other source is clearly cheaper -
+# by this share of the gas cost or this amount, whichever is larger - and
+# not within this long of the previous switch. Near break-even (a heat
+# pump at an evening price peak) the plain comparison flipped on every
+# quarter-hour price and every small change of the planned COP.
+GAS_CHEAPER_DEADBAND_REL = 0.05
+GAS_CHEAPER_DEADBAND_ABS = 0.005  # EUR/kWh heat
+GAS_CHEAPER_MIN_HOLD = timedelta(hours=1)
+
 
 class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator comparing heat-pump vs. gas-boiler cost per kWh thermal."""
@@ -138,6 +148,9 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._electricity_price_sensor = config.get(CONF_CONSUMPTION_PRICE_SENSOR)
         self._unsub: Any = None
         self._unsub_plan: Any = None
+        # Published "gas cheaper" flag (with dead band) and since when.
+        self._gas_cheaper: bool | None = None
+        self._gas_cheaper_since: datetime | None = None
 
     async def async_setup(self) -> None:
         """Track both price sensors - either changing makes the comparison stale."""
@@ -294,9 +307,24 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         boiler = GasBoilerConfig.from_config(self.config)
         gas_cost_eur_per_kwh = boiler.cost_per_kwh_thermal(gas_price)
 
+        if not self._plan_settled(heat_data):
+            # Right after a (re)start, before the indoor sensor reports, the
+            # plan starts from the target temperature: its shadow price is a
+            # placeholder (capped at the spot cost), so nothing is compared.
+            return {
+                "available": False,
+                "reason": "waiting_for_plan",
+                "gas_price_eur_per_m3": gas_price,
+                "electricity_price_eur_per_kwh": electricity_price,
+                "gas_cost_eur_per_kwh": gas_cost_eur_per_kwh,
+            }
+
         comparison = compare_heat_pump_and_gas(
             heat_pump_cost_eur_per_kwh=heat_pump_cost_eur_per_kwh,
             gas_cost_eur_per_kwh=gas_cost_eur_per_kwh,
+        )
+        gas_cheaper = self._gas_cheaper_with_deadband(
+            comparison.savings_eur_per_kwh, gas_cost_eur_per_kwh, dt_util.utcnow()
         )
 
         comfort_at_risk, comfort_reason, lowest_planned = _comfort_at_risk(
@@ -319,7 +347,7 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         prefer_gas_boiler = (
             comfort_backup and comfort_reason == REASON_CANNOT_KEEP_UP
-        ) or (comfort_at_risk and comparison.prefer_gas)
+        ) or (comfort_at_risk and gas_cheaper)
 
         return {
             "available": True,
@@ -334,10 +362,50 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "gas_cost_eur_per_kwh": comparison.gas_cost_eur_per_kwh,
             "savings_eur_per_kwh": comparison.savings_eur_per_kwh,
             "savings_pct": comparison.savings_pct,
-            "gas_cheaper": comparison.prefer_gas,
+            "gas_cheaper": gas_cheaper,
+            # The plain comparison, without dead band and hold time.
+            "gas_cheaper_now": comparison.prefer_gas,
+            "gas_cheaper_since": (
+                self._gas_cheaper_since.isoformat() if self._gas_cheaper_since else None
+            ),
             "comfort_backup": comfort_backup,
             "comfort_at_risk": comfort_at_risk,
             "comfort_reason": comfort_reason,
             "lowest_planned_indoor_temp": lowest_planned,
             "prefer_gas_boiler": prefer_gas_boiler,
         }
+
+    def _plan_settled(self, heat_data: dict[str, Any]) -> bool:
+        """Whether the plan starts from the measured indoor temperature (or
+        no indoor sensor is configured)."""
+        if not self.heat_coordinator.has_real_indoor_sensor:
+            return True
+        return heat_data.get("indoor_temperature_source") == INDOOR_SOURCE_SENSOR
+
+    def _gas_cheaper_with_deadband(
+        self, savings_eur_per_kwh: float, gas_cost_eur_per_kwh: float, now: datetime
+    ) -> bool:
+        """The "gas cheaper" flag with a dead band and a minimum hold time.
+
+        `savings_eur_per_kwh` is heat pump cost minus gas cost. The first
+        comparison sets the flag plainly; after that it only switches when
+        the other source is cheaper by more than the dead band and the
+        previous switch is at least `GAS_CHEAPER_MIN_HOLD` ago.
+        """
+        if self._gas_cheaper is None or self._gas_cheaper_since is None:
+            self._gas_cheaper = savings_eur_per_kwh > 0
+            self._gas_cheaper_since = now
+            return self._gas_cheaper
+        margin = max(
+            GAS_CHEAPER_DEADBAND_ABS,
+            GAS_CHEAPER_DEADBAND_REL * max(gas_cost_eur_per_kwh, 0.0),
+        )
+        held = now - self._gas_cheaper_since >= GAS_CHEAPER_MIN_HOLD
+        if self._gas_cheaper:
+            switch = savings_eur_per_kwh < -margin
+        else:
+            switch = savings_eur_per_kwh > margin
+        if switch and held:
+            self._gas_cheaper = not self._gas_cheaper
+            self._gas_cheaper_since = now
+        return self._gas_cheaper

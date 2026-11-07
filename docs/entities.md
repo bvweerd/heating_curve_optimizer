@@ -57,7 +57,7 @@ heat pump plan active.
 | `sensor.gas_boiler_cost_per_kwh` | EUR/kWh | Gas price / calorific value / efficiency. |
 | `sensor.gas_boiler_savings_per_kwh` | EUR/kWh | Heat pump cost − gas cost (positive: gas cheaper). |
 | `binary_sensor.gas_boiler_advised` | | Run advice: on when the gas boiler should heat now. See [hybrid gas boiler](algorithm.md#hybrid-gas-boiler). |
-| `binary_sensor.gas_boiler_cheaper` | | Price comparison only: on while gas is cheaper per kWh of heat. |
+| `binary_sensor.gas_boiler_cheaper` | | Price comparison only: on while gas is cheaper per kWh of heat. Switches only when the other source is cheaper by more than 5 % (at least €0.005/kWh) and at least an hour after the previous switch; unavailable after a restart until the plan starts from the measured indoor temperature. Attributes `gas_cheaper_now` (plain comparison) and `gas_cheaper_since`. |
 
 ## Service
 
