@@ -39,8 +39,11 @@ deployments to migrate from.
   measured indoor temperature; near break-even they flipped on every
   quarter-hour price and on every reload.
 - The heat pump's *Cost per kWh* shows the cost of heat made now
-  (electricity price / COP); the shadow price and the cost the gas
-  comparison uses are attributes.
+  (electricity price / COP); the shadow price and the plan's marginal cost
+  are attributes.
+- *Gas boiler cheaper* / *Heat pump cheaper* compare heat made now; the
+  gas advice keeps comparing with the plan's marginal heat
+  (`gas_cheaper_than_plan`). Dutch name *Voordeliger* → *Goedkoper*.
 
 ### Optimizer
 - Algorithm review fixes:

@@ -263,7 +263,7 @@ async def test_hybrid_run_advice_and_cheaper_binary_sensors(
     # The state is the cost of heat made now; the gas comparison's cost
     # (the plan's marginal heat) is at most that.
     hp_cost = hass.states.get(hp_cost_id)
-    compared = hp_cost.attributes["cost_compared_with_gas_eur_per_kwh"]
+    compared = hp_cost.attributes["heat_pump_plan_cost_eur_per_kwh"]
     assert compared <= float(hp_cost.state) + 1e-6
 
     gas_device = _device(hass, entry, f"{entry.entry_id}_gas_boiler")

@@ -148,9 +148,9 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._electricity_price_sensor = config.get(CONF_CONSUMPTION_PRICE_SENSOR)
         self._unsub: Any = None
         self._unsub_plan: Any = None
-        # Published "gas cheaper" flag (with dead band) and since when.
-        self._gas_cheaper: bool | None = None
-        self._gas_cheaper_since: datetime | None = None
+        # Published flags (with dead band) and since when, per comparison:
+        # "now" (heat made now) and "plan" (the plan's marginal heat).
+        self._flags: dict[str, tuple[bool, datetime]] = {}
 
     async def async_setup(self) -> None:
         """Track both price sensors - either changing makes the comparison stale."""
@@ -319,12 +319,22 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "gas_cost_eur_per_kwh": gas_cost_eur_per_kwh,
             }
 
+        now = dt_util.utcnow()
+        # Heat made now: what "gas cheaper" / "heat pump cheaper" show.
+        now_comparison = compare_heat_pump_and_gas(
+            heat_pump_cost_eur_per_kwh=spot_cost_eur_per_kwh,
+            gas_cost_eur_per_kwh=gas_cost_eur_per_kwh,
+        )
+        gas_cheaper = self._flag_with_deadband(
+            "now", now_comparison.savings_eur_per_kwh, gas_cost_eur_per_kwh, now
+        )
+        # The plan's marginal heat: what the gas advice decides on.
         comparison = compare_heat_pump_and_gas(
             heat_pump_cost_eur_per_kwh=heat_pump_cost_eur_per_kwh,
             gas_cost_eur_per_kwh=gas_cost_eur_per_kwh,
         )
-        gas_cheaper = self._gas_cheaper_with_deadband(
-            comparison.savings_eur_per_kwh, gas_cost_eur_per_kwh, dt_util.utcnow()
+        gas_cheaper_than_plan = self._flag_with_deadband(
+            "plan", comparison.savings_eur_per_kwh, gas_cost_eur_per_kwh, now
         )
 
         comfort_at_risk, comfort_reason, lowest_planned = _comfort_at_risk(
@@ -347,7 +357,7 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         prefer_gas_boiler = (
             comfort_backup and comfort_reason == REASON_CANNOT_KEEP_UP
-        ) or (comfort_at_risk and gas_cheaper)
+        ) or (comfort_at_risk and gas_cheaper_than_plan)
 
         return {
             "available": True,
@@ -356,18 +366,19 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "heat_pump_cop": cop,
             "supply_temp": supply_temp,
             "outdoor_temp": outdoor_temp,
+            # The plan's marginal heat (shadow price, at most the cost now).
             "heat_pump_cost_eur_per_kwh": comparison.heat_pump_cost_eur_per_kwh,
             "heat_pump_cost_now_eur_per_kwh": spot_cost_eur_per_kwh,
             "shadow_price_eur_per_kwh": shadow_price,
             "gas_cost_eur_per_kwh": comparison.gas_cost_eur_per_kwh,
-            "savings_eur_per_kwh": comparison.savings_eur_per_kwh,
-            "savings_pct": comparison.savings_pct,
+            # Heat made now vs. gas (positive: gas cheaper).
+            "savings_eur_per_kwh": now_comparison.savings_eur_per_kwh,
+            "savings_pct": now_comparison.savings_pct,
             "gas_cheaper": gas_cheaper,
-            # The plain comparison, without dead band and hold time.
-            "gas_cheaper_now": comparison.prefer_gas,
-            "gas_cheaper_since": (
-                self._gas_cheaper_since.isoformat() if self._gas_cheaper_since else None
-            ),
+            "gas_cheaper_since": self._flag_since("now"),
+            # The plan's marginal heat vs. gas: the advice's price check.
+            "plan_savings_eur_per_kwh": comparison.savings_eur_per_kwh,
+            "gas_cheaper_than_plan": gas_cheaper_than_plan,
             "comfort_backup": comfort_backup,
             "comfort_at_risk": comfort_at_risk,
             "comfort_reason": comfort_reason,
@@ -382,30 +393,37 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return True
         return heat_data.get("indoor_temperature_source") == INDOOR_SOURCE_SENSOR
 
-    def _gas_cheaper_with_deadband(
-        self, savings_eur_per_kwh: float, gas_cost_eur_per_kwh: float, now: datetime
+    def _flag_since(self, key: str) -> str | None:
+        flag = self._flags.get(key)
+        return flag[1].isoformat() if flag else None
+
+    def _flag_with_deadband(
+        self,
+        key: str,
+        savings_eur_per_kwh: float,
+        gas_cost_eur_per_kwh: float,
+        now: datetime,
     ) -> bool:
-        """The "gas cheaper" flag with a dead band and a minimum hold time.
+        """A "gas cheaper" flag with a dead band and a minimum hold time.
 
         `savings_eur_per_kwh` is heat pump cost minus gas cost. The first
         comparison sets the flag plainly; after that it only switches when
         the other source is cheaper by more than the dead band and the
         previous switch is at least `GAS_CHEAPER_MIN_HOLD` ago.
         """
-        if self._gas_cheaper is None or self._gas_cheaper_since is None:
-            self._gas_cheaper = savings_eur_per_kwh > 0
-            self._gas_cheaper_since = now
-            return self._gas_cheaper
+        flag = self._flags.get(key)
+        if flag is None:
+            self._flags[key] = (savings_eur_per_kwh > 0, now)
+            return savings_eur_per_kwh > 0
+        cheaper, since = flag
         margin = max(
             GAS_CHEAPER_DEADBAND_ABS,
             GAS_CHEAPER_DEADBAND_REL * max(gas_cost_eur_per_kwh, 0.0),
         )
-        held = now - self._gas_cheaper_since >= GAS_CHEAPER_MIN_HOLD
-        if self._gas_cheaper:
-            switch = savings_eur_per_kwh < -margin
-        else:
-            switch = savings_eur_per_kwh > margin
-        if switch and held:
-            self._gas_cheaper = not self._gas_cheaper
-            self._gas_cheaper_since = now
-        return self._gas_cheaper
+        switch = (
+            savings_eur_per_kwh < -margin if cheaper else savings_eur_per_kwh > margin
+        )
+        if switch and now - since >= GAS_CHEAPER_MIN_HOLD:
+            self._flags[key] = (not cheaper, now)
+            return not cheaper
+        return cheaper
