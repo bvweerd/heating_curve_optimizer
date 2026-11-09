@@ -12,7 +12,8 @@ temperature stays inside a comfort band you choose.
 
 ## What it does
 
-Every 15 minutes (and whenever the price or a setpoint changes) it:
+Every 15 minutes (and at each new price period, or whenever the price or a
+setpoint changes) it:
 
 1. reads the weather forecast from [open-meteo.com](https://open-meteo.com)
    and your electricity price forecast;

@@ -5,7 +5,7 @@
 ```
 Weather (30 min, open-meteo)
   └─ Heat calculation, per zone (5 min): heat loss, solar gain, internal gains, PV
-       └─ Optimization, per zone (15 min, on price change, on setpoint change)
+       └─ Optimization, per zone (15 min, at each price boundary, on price change, on setpoint change)
             └─ Gas boiler comparison (optional)
 ```
 
@@ -286,6 +286,13 @@ cheap heat already stored, not with the peak price; without heat demand
 the heat pump cost is 0 and gas is never cheaper. The attributes
 `heat_pump_cost_now_eur_per_kwh` and `shadow_price_eur_per_kwh` on the heat
 pump *Cost per kWh* sensor show both parts.
+
+*Gas cheaper* and the price check of the advice switch only when the other
+source is clearly cheaper (by 5 % of the gas cost, at least €0.005/kWh) and
+at least an hour after the previous switch; a switch held back by that hour
+is made as soon as it has passed. The plan is re-optimized at every price
+boundary, so the comparison uses the COP and shadow price of the new period
+right away.
 
 The attributes `comfort_at_risk`, `comfort_reason`
 (`below_comfort_band` / `heat_pump_cannot_keep_up`), `gas_cheaper` and
