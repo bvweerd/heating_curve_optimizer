@@ -167,8 +167,14 @@ COMFORTABLE_PLAN = {
 @pytest.mark.parametrize(
     ("heat", "plan", "gas_price", "expected", "reason"),
     [
-        # Comfortable, gas cheaper: stay on the heat pump.
+        # Comfortable and the plan coasts, gas cheaper: no heat to replace.
         ({}, {}, "0.10", False, None),
+        ({}, {"heat_pump_plan_on": False}, "0.10", False, None),
+        # The plan heats now to hold the band, gas cheaper: gas.
+        ({}, {"heat_pump_plan_on": True}, "0.10", True, None),
+        ({}, {"thermal_power_kw": [2.5]}, "0.10", True, None),
+        # The plan heats now, heat pump cheaper: heat pump.
+        ({}, {"heat_pump_plan_on": True}, "3.00", False, None),
         # House already below the comfort band, gas cheaper: gas.
         ({"indoor_temperature": 19.3}, {}, "0.10", True, "below_comfort_band"),
         # Plan predicts the heat pump cannot keep up, gas cheaper: gas.
@@ -240,7 +246,7 @@ COMFORTABLE_PLAN = {
         ),
     ],
 )
-async def test_heat_pump_first_policy(
+async def test_gas_advice_policy(
     hass: HomeAssistant, heat, plan, gas_price, expected, reason
 ):
     hass.states.async_set("sensor.gas_price", gas_price)

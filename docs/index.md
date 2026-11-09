@@ -42,7 +42,7 @@ whenever the thermal mass allows it.
 - Calibration of the building, COP curve and emitters from your own
   measurements, with a status and accuracy sensor to follow the results.
 - Optional real-time PV-surplus layer and hybrid gas-boiler advice
-  (heat pump first).
+  (the cheaper source for the heat needed now).
 - Multiple heating zones (heating circuits).
 
 ## Where to go next
