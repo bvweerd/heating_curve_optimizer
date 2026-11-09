@@ -42,6 +42,9 @@ deployments to migrate from.
   switch held back by the one-hour hold is made as soon as the hour has
   passed; before, both waited for the next 15-minute poll or a large price
   change, so the advice lagged the price periods by minutes.
+- *Active supply temperature* (with grid sensors): the heating curve now at
+  the active offset, i.e. including the PV-surplus adjustment, in whole
+  degrees. *Planned supply temperature* stays the plan's own.
 - The heat pump's *Cost per kWh* shows the cost of heat made now
   (electricity price / COP); the shadow price and the plan's marginal cost
   are attributes.

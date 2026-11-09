@@ -20,6 +20,7 @@ and English entity names.
 | `sensor.…_cost_savings_forecast` | EUR | Disabled diagnostic. Expected savings over the horizon vs. the plain curve. | `optimized_cost_eur`, `baseline_cost_eur`, `horizon_hours`, `comfort_deficit_kh`, `baseline_comfort_deficit_kh` |
 | `sensor.…_total_cost_savings` | EUR | Disabled diagnostic. Running total of the plan's modelled savings, booked only for the share of time the heat pump followed the plan (on/off as planned, or supply within 1.5 K of the planned supply with its own thermostat). Can decrease. | `savings_if_followed_eur`, `plan_followed_hours`, `observed_hours`, `plan_followed_share` |
 | `sensor.…_real_time_heating_curve_offset` | °C | Only with grid sensors: plan + PV-surplus adjustment. | `planned_offset`, `adjustment`, `current_grid_w` |
+| `sensor.…_active_supply_temperature` | °C | Only with grid sensors: supply temperature of the heating curve now at the active offset (plan + PV-surplus adjustment), in whole degrees. | `effective_supply_temp`, `planned_supply_temp`, `effective_offset` |
 | `number.…_target_indoor_temperature` | °C | Primary zone setpoint (15–25). | |
 | `number.…_comfort_band_below_target` / `…_above_target` | °C | Comfort band (0.1–2). | |
 | `climate.…_heating` | | Disabled by default; the same setpoint as a thermostat card. | |
