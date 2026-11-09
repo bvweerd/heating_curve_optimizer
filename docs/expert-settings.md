@@ -625,7 +625,8 @@ standby power from fans or controls.
 | Range | > 0 |
 
 Relative price change (compared to the last optimisation run) that triggers
-an immediate re-optimisation outside the normal 15-minute cycle. A value of
+an immediate re-optimisation outside the normal 15-minute cycle (the plan is
+re-optimised at every price boundary regardless). A value of
 0.10 means a price move of more than 10 % triggers a new plan.
 
 **Lower** (e.g., to 0.05) for more responsive re-planning when prices change
