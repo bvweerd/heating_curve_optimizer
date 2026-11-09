@@ -40,6 +40,9 @@
       "shadow_price": {
         "default": "mdi:scale-balance"
       },
+      "active_supply_temperature": {
+        "default": "mdi:thermometer-water"
+      },
       "realtime_offset": {
         "default": "mdi:solar-power-variant"
       },
