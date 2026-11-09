@@ -82,11 +82,13 @@ docs/                         index, installation, quick-start, configuration, a
   unreadable → full band + repair issue `comfort_schedule_unavailable_*`.
 - **Indoor temperature fallback** is the target temperature; a configured
   but unavailable sensor raises repair issue `indoor_sensor_unavailable_*`.
-- **Hybrid** (heat pump first, gas as comfort backup): gas when the plan
-  is still below the band after 3 h (`heat_pump_cannot_keep_up`, any
-  price unless `gas_comfort_backup` is off), or when below/dipping below the band but recovering
-  (`below_comfort_band`) and gas is cheaper per kWh of heat (heat pump at
-  the plan's `cop[0]`).
+- **Hybrid** (cheaper source for the heat needed now, gas as comfort
+  backup): gas when the plan is still below the band after 3 h
+  (`heat_pump_cannot_keep_up`, any price unless `gas_comfort_backup` is
+  off), or when the plan heats now (`heat_needed_now`, from
+  `heat_pump_plan_on`) or the house is below/dipping below the band, and
+  gas is cheaper than the plan's marginal heat (shadow price capped at
+  price / `cop[0]`). The plan itself stays heat-pump-only.
 - **Optimization data keys** (consumed by sensors, gas boiler, diagnostics):
   `offset, offsets, supply_temps, indoor_temps, cop, cost_eur,
   baseline_*, cost_savings_eur, shadow_price_eur_per_kwh,

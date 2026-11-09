@@ -90,10 +90,11 @@ class HeatPumpPlanActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
 class GasBoilerPreferredBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Run advice for the gas boiler.
 
-    Heat pump first, gas as comfort backup: on when the gas boiler should
-    actually heat - either the heat pump cannot restore the comfort band, or
-    comfort is at risk and gas is cheaper per kWh of heat. See
-    gas_boiler_coordinator.py. Advisory only.
+    Cheapest source for the heat needed now, gas as comfort backup: on when
+    the gas boiler should actually heat - either the heat pump cannot
+    restore the comfort band, or the plan heats now (or comfort is at risk)
+    and gas is cheaper per kWh of heat. See gas_boiler_coordinator.py.
+    Advisory only.
     """
 
     _attr_has_entity_name = True
@@ -131,6 +132,7 @@ class GasBoilerPreferredBinarySensor(CoordinatorEntity, BinarySensorEntity):
             return {}
         data = self.coordinator.data
         return {
+            "heat_needed_now": data.get("heat_needed_now"),
             "comfort_at_risk": data.get("comfort_at_risk"),
             "comfort_reason": data.get("comfort_reason"),
             "gas_cheaper_than_plan": data.get("gas_cheaper_than_plan"),

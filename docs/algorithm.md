@@ -262,14 +262,14 @@ result is the *Real-time heating curve offset* sensor.
 
 ## Hybrid gas boiler
 
-Policy: **heat pump first, gas as comfort backup.** The *Gas boiler
-preferred* binary sensor is decided from the heat-pump-only plan over the
-next 3 hours:
+Policy: **the cheaper source makes the heat needed now, gas as comfort
+backup.** The *Gas boiler preferred* binary sensor is decided from the
+heat-pump-only plan:
 
 | Situation | Gas boiler |
 |---|---|
-| Indoor temperature inside the comfort band and the plan stays there | Off, even when gas is cheaper. |
-| Below the band now (measured, > 0.1 °C) or a planned dip, but the plan is back in the band within 3 hours | On only if gas is cheaper per kWh of heat. |
+| The plan coasts now (no heat, house in the band) | Off: there is no heat to replace. |
+| The plan heats now - also to hold the bottom of the band - or the house is below the band now (measured, > 0.1 °C) or dips below it within 3 hours | On only if gas is cheaper per kWh of heat. |
 | The plan is still below the band after 3 hours: the heat pump cannot restore comfort | On, regardless of price (setting *Gas as comfort backup*, default on). With the setting off: only if gas is cheaper. |
 
 "The band" is the per-step band: a planned dip during an away setback does
@@ -294,6 +294,8 @@ is made as soon as it has passed. The plan is re-optimized at every price
 boundary, so the comparison uses the COP and shadow price of the new period
 right away.
 
-The attributes `comfort_at_risk`, `comfort_reason`
-(`below_comfort_band` / `heat_pump_cannot_keep_up`), `gas_cheaper` and
-`lowest_planned_indoor_temp` show why the sensor is on or off.
+The plan itself is computed for the heat pump alone; gas replaces the heat
+it would make now. The attributes `heat_needed_now`, `comfort_at_risk`,
+`comfort_reason` (`below_comfort_band` / `heat_pump_cannot_keep_up`),
+`gas_cheaper_than_plan` and `lowest_planned_indoor_temp` show why the
+sensor is on or off.

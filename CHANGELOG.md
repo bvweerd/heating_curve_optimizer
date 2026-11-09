@@ -45,6 +45,11 @@ deployments to migrate from.
 - *Active supply temperature* (with grid sensors): the heating curve now at
   the active offset, i.e. including the PV-surplus adjustment, in whole
   degrees. *Planned supply temperature* stays the plan's own.
+- Gas advice: the cheaper source makes the heat the plan needs now. Gas is
+  advised whenever the plan heats now (also to hold the bottom of the band)
+  and gas is cheaper than that heat, not only when comfort is at risk;
+  before, a house held at the floor by the heat pump at an evening price
+  never got gas, however much cheaper. New attribute `heat_needed_now`.
 - The heat pump's *Cost per kWh* shows the cost of heat made now
   (electricity price / COP); the shadow price and the plan's marginal cost
   are attributes.

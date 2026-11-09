@@ -94,10 +94,10 @@ A wrong fit can be cleared with `heating_curve_optimizer.reset_thermal_calibrati
 
 ## Gas boiler advised never turns on
 
-That is the intended heat-pump-first behaviour while the house stays
-comfortable, or recovers within 3 hours while the heat pump is cheaper.
-Check `comfort_at_risk`, `comfort_reason` and `gas_cheaper` on the binary
-sensor.
+It stays off while the plan coasts (no heat needed now) or while the
+heat pump makes the heat needed now more cheaply than gas. Check
+`heat_needed_now`, `gas_cheaper_than_plan` and `comfort_reason` on the
+binary sensor.
 
 ## Gas boiler cheaper is off during an expensive evening
 
