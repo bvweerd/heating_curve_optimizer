@@ -776,6 +776,9 @@
       "model_accuracy": {
         "name": "Model accuracy"
       },
+      "active_supply_temperature": {
+        "name": "Active supply temperature"
+      },
       "realtime_offset": {
         "name": "Active offset"
       },

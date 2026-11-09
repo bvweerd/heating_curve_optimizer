@@ -104,6 +104,16 @@ def _first(data: dict[str, Any], key: str) -> Any:
     return values[0] if values else None
 
 
+def _whole(value: Any) -> int | None:
+    return None if value is None else round(float(value))
+
+
+def _active_supply(data: dict[str, Any]) -> Any:
+    """Supply at the active offset; the plan's without a live adjustment."""
+    active = (data.get("realtime") or {}).get("effective_supply_temp")
+    return active if active is not None else _first(data, "supply_temps")
+
+
 def _step_attrs(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "step_start_times": data.get("step_start_times", []),
@@ -349,6 +359,23 @@ REALTIME_OFFSET = HcoSensorEntityDescription(
         "current_grid_w": (d.get("realtime") or {}).get("current_grid_w"),
         "battery_discharge_w": (d.get("realtime") or {}).get("battery_discharge_w"),
         "shadow_price_eur_per_kwh": d.get("shadow_price_eur_per_kwh"),
+    },
+)
+
+ACTIVE_SUPPLY_TEMPERATURE = HcoSensorEntityDescription(
+    key="active_supply_temperature",
+    translation_key="active_supply_temperature",
+    device_class=SensorDeviceClass.TEMPERATURE,
+    native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+    state_class=SensorStateClass.MEASUREMENT,
+    suggested_display_precision=0,
+    value_fn=lambda d: _whole(_active_supply(d)),
+    attrs_fn=lambda d: {
+        "effective_supply_temp": _active_supply(d),
+        "planned_supply_temp": _first(d, "supply_temps"),
+        "effective_offset": (d.get("realtime") or {}).get(
+            "effective_offset", d.get("offset")
+        ),
     },
 )
 
@@ -940,7 +967,7 @@ async def async_setup_entry(
             MODEL_ACCURACY,
         ]
         if config.get(CONF_GRID_IMPORT_SENSOR) or config.get(CONF_GRID_EXPORT_SENSOR):
-            optimization_descriptions.append(REALTIME_OFFSET)
+            optimization_descriptions += [REALTIME_OFFSET, ACTIVE_SUPPLY_TEMPERATURE]
         entities += _optimization_entities(
             optimization, optimization_descriptions, prefix, device
         )

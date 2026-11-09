@@ -715,6 +715,9 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             offset_max=self._offset_max,
         )
         action["battery_discharge_w"] = round(discharge_w, 1)
+        action["effective_supply_temp"] = self._effective_supply_temp(
+            data, int(action["effective_offset"])
+        )
         if not self._realtime_log or self._realtime_log[-1][1] != action["adjustment"]:
             self._realtime_log.append(
                 (
@@ -724,6 +727,19 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
             )
         return action
+
+    def _effective_supply_temp(
+        self, data: dict[str, Any], effective_offset: int
+    ) -> float | None:
+        """Supply temperature of the curve now at the active offset, bounded
+        like the plan's (`ThermalModel.step`)."""
+        baseline = data.get("baseline_supply_temps") or []
+        if not baseline:
+            return None
+        water_min, water_max = self._curve()[:2]
+        return round(
+            min(water_max, max(water_min, float(baseline[0]) + effective_offset)), 2
+        )
 
     def _log_offset(self, data: dict[str, Any]) -> None:
         """Record a change of the published (planned, effective) offset."""

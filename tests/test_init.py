@@ -513,6 +513,22 @@ async def test_replan_keeps_the_surplus_adjustment(
     realtime = coordinator.data["realtime"]
     assert realtime["adjustment"] == 1
     assert realtime["planned_offset"] == coordinator.data["offset"]
+    # Active supply: the curve now at the active offset, within the curve.
+    expected = min(
+        45.0,
+        max(
+            25.0,
+            coordinator.data["baseline_supply_temps"][0] + realtime["effective_offset"],
+        ),
+    )
+    assert realtime["effective_supply_temp"] == pytest.approx(expected, abs=0.01)
+    coordinator.async_update_listeners()
+    await hass.async_block_till_done()
+    state = _state(hass, "sensor", f"{entry.entry_id}_active_supply_temperature")
+    assert float(state.state) == round(expected)
+    assert (
+        state.attributes["planned_supply_temp"] == coordinator.data["supply_temps"][0]
+    )
     await hass.config_entries.async_unload(entry.entry_id)
 
 
