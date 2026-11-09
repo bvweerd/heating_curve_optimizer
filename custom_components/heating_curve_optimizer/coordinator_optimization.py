@@ -15,6 +15,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers import storage
 from homeassistant.helpers.event import (
+    async_track_point_in_utc_time,
     async_track_state_change_event,
     async_track_time_interval,
 )
@@ -306,6 +307,9 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._unsub: Any = None
         self._unsub_realtime: Any = None
         self._unsub_heat: Any = None
+        # Re-plan at the next price boundary: step 0 then ends and its COP,
+        # supply temperature and shadow price belong to the old period.
+        self._unsub_boundary: Any = None
         self._last_price: float | None = None
         self._last_heat_indoor: float | None = None
         self._last_heat_source: str | None = None
@@ -503,9 +507,11 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._unsub_heat,
             self._unsub_mass,
             self._unsub_offset,
+            self._unsub_boundary,
         ):
             if unsub:
                 unsub()
+        self._unsub_boundary = None
         self._unsub = None
         self._unsub_realtime = None
         self._unsub_calibration = None
@@ -581,6 +587,26 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ):
             await self.async_request_refresh()
         self._last_price = new_price
+
+    def _schedule_boundary_refresh(self, boundary: datetime) -> None:
+        """Re-optimize when the current price period ends.
+
+        The price sensor may not change at the boundary (equal price) or
+        change by less than the re-plan threshold, and the 15-minute poll
+        is not aligned to the periods: without this the plan's first step
+        (and the gas comparison built on it) would lag the new period.
+        """
+        if self._unsub_boundary:
+            self._unsub_boundary()
+
+        @callback
+        def _at_boundary(_now: datetime) -> None:
+            self._unsub_boundary = None
+            self.hass.async_create_task(self.async_request_refresh())
+
+        self._unsub_boundary = async_track_point_in_utc_time(
+            self.hass, _at_boundary, boundary
+        )
 
     def _exclusion_sensors(self) -> dict[str, str]:
         """Binary sensors whose "on" state invalidates a calibration window."""
@@ -982,6 +1008,11 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "price_data_extraction_failed",
                 translation_placeholders={"sensor": str(self._price_sensor)},
             )
+        self._schedule_boundary_refresh(
+            step_starts[1]
+            if len(step_starts) > 1
+            else step_starts[0] + timedelta(hours=durations[0])
+        )
 
         def align(values: list[float], start: datetime, minutes: float) -> list[float]:
             return resample_to_steps(values, start, minutes, step_starts, durations)

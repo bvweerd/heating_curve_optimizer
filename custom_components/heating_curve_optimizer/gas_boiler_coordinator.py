@@ -27,7 +27,10 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import (
+    async_track_point_in_utc_time,
+    async_track_state_change_event,
+)
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
@@ -114,7 +117,8 @@ DEFAULT_UPDATE_INTERVAL = timedelta(minutes=15)
 # by this share of the gas cost or this amount, whichever is larger - and
 # not within this long of the previous switch. Near break-even (a heat
 # pump at an evening price peak) the plain comparison flipped on every
-# quarter-hour price and every small change of the planned COP.
+# quarter-hour price and every small change of the planned COP. A switch
+# held back only by the hold time is made the moment the hold ends.
 GAS_CHEAPER_DEADBAND_REL = 0.05
 GAS_CHEAPER_DEADBAND_ABS = 0.005  # EUR/kWh heat
 GAS_CHEAPER_MIN_HOLD = timedelta(hours=1)
@@ -151,6 +155,9 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Published flags (with dead band) and since when, per comparison:
         # "now" (heat made now) and "plan" (the plan's marginal heat).
         self._flags: dict[str, tuple[bool, datetime]] = {}
+        # When a switch held back by the hold time becomes due (this run).
+        self._switch_due: list[datetime] = []
+        self._unsub_hold: Any = None
 
     async def async_setup(self) -> None:
         """Track both price sensors - either changing makes the comparison stale."""
@@ -196,11 +203,12 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_shutdown(self) -> None:
         """Clean up event tracking."""
-        for unsub in (self._unsub, self._unsub_plan):
+        for unsub in (self._unsub, self._unsub_plan, self._unsub_hold):
             if unsub:
                 unsub()
         self._unsub = None
         self._unsub_plan = None
+        self._unsub_hold = None
         await super().async_shutdown()
 
     def _read_gas_price_eur_per_m3(self) -> float | None:
@@ -320,6 +328,7 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             }
 
         now = dt_util.utcnow()
+        self._switch_due = []
         # Heat made now: what "gas cheaper" / "heat pump cheaper" show.
         now_comparison = compare_heat_pump_and_gas(
             heat_pump_cost_eur_per_kwh=spot_cost_eur_per_kwh,
@@ -336,6 +345,8 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         gas_cheaper_than_plan = self._flag_with_deadband(
             "plan", comparison.savings_eur_per_kwh, gas_cost_eur_per_kwh, now
         )
+
+        self._schedule_hold_refresh()
 
         comfort_at_risk, comfort_reason, lowest_planned = _comfort_at_risk(
             heat_data,
@@ -393,6 +404,24 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return True
         return heat_data.get("indoor_temperature_source") == INDOOR_SOURCE_SENSOR
 
+    def _schedule_hold_refresh(self) -> None:
+        """Re-compare when the earliest held-back switch is allowed, rather
+        than at the next price change or poll."""
+        if self._unsub_hold:
+            self._unsub_hold()
+            self._unsub_hold = None
+        if not self._switch_due:
+            return
+
+        @callback
+        def _hold_ended(_now: datetime) -> None:
+            self._unsub_hold = None
+            self.hass.async_create_task(self.async_request_refresh())
+
+        self._unsub_hold = async_track_point_in_utc_time(
+            self.hass, _hold_ended, min(self._switch_due)
+        )
+
     def _flag_since(self, key: str) -> str | None:
         flag = self._flags.get(key)
         return flag[1].isoformat() if flag else None
@@ -426,4 +455,6 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if switch and now - since >= GAS_CHEAPER_MIN_HOLD:
             self._flags[key] = (not cheaper, now)
             return not cheaper
+        if switch:
+            self._switch_due.append(since + GAS_CHEAPER_MIN_HOLD)
         return cheaper

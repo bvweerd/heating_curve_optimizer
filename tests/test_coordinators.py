@@ -523,3 +523,26 @@ async def test_realtime_update_keeps_the_poll_scheduled(hass: HomeAssistant) -> 
     assert "realtime" in coordinator.data
     listener.assert_called_once()
     unsub()
+
+
+async def test_replans_at_the_next_price_boundary(hass: HomeAssistant) -> None:
+    """The first step ends at the price boundary: re-plan there, even when
+    the price does not change enough to trigger a re-plan by itself."""
+    from unittest.mock import AsyncMock
+
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    coordinator = _optimization_coordinator(hass)
+    coordinator.async_request_refresh = AsyncMock()
+    boundary = dt_util.utcnow() + timedelta(minutes=10)
+    coordinator._schedule_boundary_refresh(boundary - timedelta(minutes=5))
+    coordinator._schedule_boundary_refresh(boundary)  # replaces the first
+
+    async_fire_time_changed(hass, boundary - timedelta(minutes=4))
+    await hass.async_block_till_done()
+    coordinator.async_request_refresh.assert_not_called()
+
+    async_fire_time_changed(hass, boundary + timedelta(seconds=1))
+    await hass.async_block_till_done()
+    coordinator.async_request_refresh.assert_called_once()
+    assert coordinator._unsub_boundary is None

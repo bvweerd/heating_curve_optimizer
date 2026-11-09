@@ -38,6 +38,10 @@ deployments to migrate from.
   one-hour hold, and wait after a restart until the plan starts from the
   measured indoor temperature; near break-even they flipped on every
   quarter-hour price and on every reload.
+- The plan is re-optimized at every price boundary, and a gas comparison
+  switch held back by the one-hour hold is made as soon as the hour has
+  passed; before, both waited for the next 15-minute poll or a large price
+  change, so the advice lagged the price periods by minutes.
 - The heat pump's *Cost per kWh* shows the cost of heat made now
   (electricity price / COP); the shadow price and the plan's marginal cost
   are attributes.

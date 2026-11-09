@@ -425,3 +425,40 @@ async def test_cheaper_compares_heat_made_now_and_advice_the_plan(
     assert data["savings_eur_per_kwh"] > 0
     assert data["gas_cheaper_than_plan"] is False
     assert data["prefer_gas_boiler"] is False
+
+
+async def test_held_back_switch_is_made_when_the_hold_ends(hass: HomeAssistant):
+    """A switch blocked only by the hold time triggers a re-compare at the
+    end of the hold, not at the next price change or poll."""
+    from datetime import timedelta
+    from unittest.mock import AsyncMock
+
+    from homeassistant.util import dt as dt_util
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    from custom_components.heating_curve_optimizer.gas_boiler_coordinator import (
+        GAS_CHEAPER_MIN_HOLD,
+    )
+
+    hass.states.async_set("sensor.gas_price", "1.20")  # 0.1365 EUR/kWh heat
+    hass.states.async_set("sensor.elec_price", "0.20")
+    coordinator = _make_coordinator(
+        hass, optimization_data={"supply_temps": [30.0], "cop": [4.0]}
+    )
+    data = await coordinator._async_update_data()
+    assert data["gas_cheaper"] is False
+    switched_at = dt_util.parse_datetime(data["gas_cheaper_since"])
+    assert coordinator._unsub_hold is None
+
+    hass.states.async_set("sensor.elec_price", "0.60")  # heat pump 0.15
+    data = await coordinator._async_update_data()
+    assert data["gas_cheaper"] is False  # held
+    assert coordinator._unsub_hold is not None
+
+    coordinator.async_request_refresh = AsyncMock()
+    async_fire_time_changed(
+        hass, switched_at + GAS_CHEAPER_MIN_HOLD + timedelta(seconds=1)
+    )
+    await hass.async_block_till_done()
+    coordinator.async_request_refresh.assert_called_once()
+    await coordinator.async_shutdown()
