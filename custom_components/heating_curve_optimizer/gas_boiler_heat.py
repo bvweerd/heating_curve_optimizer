@@ -52,12 +52,14 @@ def heating_signal_on(hass: Any, entity_id: str | None) -> bool:
     A climate entity counts when its ``hvac_action`` is heating; a binary
     sensor, switch or input boolean when it is on.
     """
-    state = hass.states.get(entity_id) if entity_id else None
+    if not entity_id:
+        return False
+    state = hass.states.get(entity_id)
     if state is None:
         return False
     if entity_id.startswith("climate."):
-        return state.attributes.get("hvac_action") in HEATING_ACTIONS
-    return state.state == "on"
+        return bool(state.attributes.get("hvac_action") in HEATING_ACTIONS)
+    return bool(state.state == "on")
 
 
 @dataclass

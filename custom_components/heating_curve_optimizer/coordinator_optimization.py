@@ -84,10 +84,10 @@ from .const import (
     CONF_FEED_IN_PRICE_FALLBACK,
     CONF_FLOW_SENSOR,
     CONF_GAS_BOILER_EFFICIENCY,
-    CONF_GAS_CALORIFIC_VALUE,
     CONF_GAS_BOILER_HEAT_OUTPUT_KW,
     CONF_GAS_BOILER_HEAT_POWER_SENSOR,
     CONF_GAS_BOILER_HEATING_SENSOR,
+    CONF_GAS_CALORIFIC_VALUE,
     CONF_GAS_METER_SENSOR,
     CONF_GAS_MIN_WINDOW_HOURS,
     CONF_GRID_EXPORT_SENSOR,
@@ -357,7 +357,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._mass_learning = False
         # Gas boiler output learned from the gas meter (gas_boiler_heat.py).
         self._gas_output = GasBoilerOutputLearner()
-        self._gas_output_store: storage.Store | None = None
+        self._gas_output_store: storage.Store[dict[str, Any]] | None = None
         # Measured COP over windows of compressor operation (calibration).
         self._cop_window = CopWindow()
         # Supply-return sensor offset from pump runs without compressor.
@@ -1625,8 +1625,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             air=float(heat_data["indoor_temperature"]),
             outdoor=outdoor,
             solar_kw=float(heat_data.get("solar_gain", 0.0)),
-            heat_kw=self._current_heat_kw(outdoor, supply)
-            + self._gas_boiler_heat_kw(),
+            heat_kw=self._current_heat_kw(outdoor, supply) + self._gas_boiler_heat_kw(),
             power_kw=read_power_kw(self.hass, self.config.get(CONF_POWER_CONSUMPTION)),
             supply=self._measured_supply_temp(),
         )

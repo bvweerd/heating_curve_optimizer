@@ -109,9 +109,7 @@ def test_skips_steps_with_tap_water_or_too_little_heating():
     learner = GasBoilerOutputLearner()
     learner.tick(T0, heating=False, dhw=False, counter_kwh=1000.0)
     # Gas used while tap water ran: not a heating sample.
-    changed, now = _run(
-        learner, 60, heating=True, dhw=True, counter=1004.0, start=T0
-    )
+    changed, now = _run(learner, 60, heating=True, dhw=True, counter=1004.0, start=T0)
     assert not changed and learner.learned_kw is None
     # Gas used with only 5 min of heating: too short to trust.
     changed, now = _run(learner, 5, heating=True, counter=None, start=now)
