@@ -420,6 +420,8 @@ GAS_BOILER_COST_SAVINGS = HcoSensorEntityDescription(
         "savings_pct": d.get("savings_pct"),
         "prefer_gas_boiler": d.get("prefer_gas_boiler"),
         "gas_cheaper": d.get("gas_cheaper"),
+        "heat_pump_cheaper": d.get("heat_pump_cheaper"),
+        "close_call": d.get("close_call"),
         "comfort_at_risk": d.get("comfort_at_risk"),
     },
 )

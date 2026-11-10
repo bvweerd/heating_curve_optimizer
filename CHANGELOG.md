@@ -56,6 +56,12 @@ deployments to migrate from.
 - *Gas boiler cheaper* / *Heat pump cheaper* compare heat made now; the
   gas advice keeps comparing with the plan's marginal heat
   (`gas_cheaper_than_plan`). Dutch name *Voordeliger* → *Goedkoper*.
+- *Gas boiler cheaper* / *Heat pump cheaper* are both off within the dead
+  band (new attribute `close_call`; `gas_cheaper_since` → `price_verdict_since`)
+  instead of holding their last state. On a tie, "gas cheaper" stuck on
+  from an earlier peak while the advice's own flag stuck on "heat pump",
+  with identical prices. The hysteresis and one-hour hold now apply only
+  to the gas advice.
 - Optional local outdoor temperature sensor: replaces the weather service
   for the current temperature and corrects the forecast, fading out over
   6 hours (at most 5 K).
