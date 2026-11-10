@@ -613,8 +613,9 @@
             "gas_meter_sensor": "Gas meter",
             "comfort_lookahead_hours": "Comfort lookahead",
             "comfort_tolerance_c": "Comfort tolerance",
-            "gas_boiler_heating_sensor": "Gas boiler heating sensor",
-            "gas_boiler_heat_output_kw": "Gas boiler heat output"
+            "gas_boiler_heating_sensor": "Boiler heats the house",
+            "gas_boiler_heat_output_kw": "Boiler heat output",
+            "gas_boiler_heat_power_sensor": "Boiler heat power"
           },
           "data_description": {
             "gas_price_sensor": "Current gas price in EUR/m³.",
@@ -624,8 +625,9 @@
             "gas_comfort_backup": "On: recommend the gas boiler whenever the heat pump cannot restore the comfort band within 3 hours, even if gas is more expensive. Off: only when gas is also cheaper.",
             "comfort_lookahead_hours": "How far ahead the plan is checked for comfort breaches before recommending gas.",
             "comfort_tolerance_c": "Tolerance below comfort floor before the plan counts as a breach.",
-            "gas_boiler_heating_sensor": "Optional binary sensor, on while the boiler fires for space heating (not tap water), e.g. a template of OpenTherm flame and CH mode. Its heat goes into the building model, so a gas run fills the heat buffer.",
-            "gas_boiler_heat_output_kw": "Heat the boiler delivers while the heating sensor is on, in kW. Estimate it as gas used (kWh) × efficiency / hours with the flame on."
+            "gas_boiler_heating_sensor": "Optional: on while the boiler heats the house, not tap water. A binary sensor, switch or climate entity (heating when its hvac_action is heating). Its heat goes into the building model, so heating on gas fills the heat buffer.",
+            "gas_boiler_heat_output_kw": "Heat the boiler delivers while it heats the house (kW). With a gas meter the output is learned from gas use / heating hours and this is only the start value.",
+            "gas_boiler_heat_power_sensor": "Optional: the heat the boiler delivers now (W or kW), e.g. from a heat meter, ems-esp or ebusd. Measured, so it beats the estimate below."
           }
         },
         "reconfigure": {
@@ -638,8 +640,9 @@
             "gas_meter_sensor": "Gas meter",
             "comfort_lookahead_hours": "Comfort lookahead",
             "comfort_tolerance_c": "Comfort tolerance",
-            "gas_boiler_heating_sensor": "Gas boiler heating sensor",
-            "gas_boiler_heat_output_kw": "Gas boiler heat output"
+            "gas_boiler_heating_sensor": "Boiler heats the house",
+            "gas_boiler_heat_output_kw": "Boiler heat output",
+            "gas_boiler_heat_power_sensor": "Boiler heat power"
           },
           "data_description": {
             "gas_price_sensor": "Current gas price in EUR/m³.",
@@ -649,8 +652,9 @@
             "gas_comfort_backup": "On: recommend the gas boiler whenever the heat pump cannot restore the comfort band within 3 hours, even if gas is more expensive. Off: only when gas is also cheaper.",
             "comfort_lookahead_hours": "How far ahead the plan is checked for comfort breaches before recommending gas.",
             "comfort_tolerance_c": "Tolerance below comfort floor before the plan counts as a breach.",
-            "gas_boiler_heating_sensor": "Optional binary sensor, on while the boiler fires for space heating (not tap water), e.g. a template of OpenTherm flame and CH mode. Its heat goes into the building model, so a gas run fills the heat buffer.",
-            "gas_boiler_heat_output_kw": "Heat the boiler delivers while the heating sensor is on, in kW. Estimate it as gas used (kWh) × efficiency / hours with the flame on."
+            "gas_boiler_heating_sensor": "Optional: on while the boiler heats the house, not tap water. A binary sensor, switch or climate entity (heating when its hvac_action is heating). Its heat goes into the building model, so heating on gas fills the heat buffer.",
+            "gas_boiler_heat_output_kw": "Heat the boiler delivers while it heats the house (kW). With a gas meter the output is learned from gas use / heating hours and this is only the start value.",
+            "gas_boiler_heat_power_sensor": "Optional: the heat the boiler delivers now (W or kW), e.g. from a heat meter, ems-esp or ebusd. Measured, so it beats the estimate below."
           }
         }
       },

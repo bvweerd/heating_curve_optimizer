@@ -86,6 +86,7 @@ from .const import (
     CONF_GAS_BOILER_EFFICIENCY,
     CONF_GAS_CALORIFIC_VALUE,
     CONF_GAS_BOILER_HEAT_OUTPUT_KW,
+    CONF_GAS_BOILER_HEAT_POWER_SENSOR,
     CONF_GAS_BOILER_HEATING_SENSOR,
     CONF_GAS_METER_SENSOR,
     CONF_GAS_MIN_WINDOW_HOURS,
@@ -168,6 +169,14 @@ from .const import (
 )
 from .coordinator_heat import INDOOR_SOURCE_SENSOR, HeatCalculationCoordinator
 from .coordinator_weather import _update_failed
+from .gas_boiler_heat import (
+    SOURCE_NONE,
+    SOURCE_SENSOR,
+    GasBoilerOutputLearner,
+    gas_boiler_heat_kw,
+    heating_signal_on,
+)
+from .gas_boiler_heat import STORAGE_VERSION as GAS_OUTPUT_STORAGE_VERSION
 from .heatpump_model import HeatPumpConfig
 from .helpers import (
     EnergyCounterRate,
@@ -346,6 +355,9 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._mass: MassModelState | None = None
         self._unsub_mass: Any = None
         self._mass_learning = False
+        # Gas boiler output learned from the gas meter (gas_boiler_heat.py).
+        self._gas_output = GasBoilerOutputLearner()
+        self._gas_output_store: storage.Store | None = None
         # Measured COP over windows of compressor operation (calibration).
         self._cop_window = CopWindow()
         # Supply-return sensor offset from pump runs without compressor.
@@ -487,6 +499,12 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         )
         await self._mass.async_load()
+        self._gas_output_store = storage.Store(
+            self.hass, GAS_OUTPUT_STORAGE_VERSION, f"{DOMAIN}_{self.zone_id}_gas_output"
+        )
+        self._gas_output = GasBoilerOutputLearner.from_dict(
+            await self._gas_output_store.async_load()
+        )
         self._unsub_mass = async_track_time_interval(
             self.hass, self._handle_mass_tick, timedelta(seconds=60)
         )
@@ -1448,6 +1466,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         power_kw = read_power_kw(self.hass, self.config.get(CONF_POWER_CONSUMPTION))
         self._track_plan_adherence(now, power_kw)
         self._record_cop_window(now, power_kw)
+        self._learn_gas_output(now)
         self._update_mass(now)
 
     def _track_plan_adherence(self, now: datetime, power_kw: float | None) -> None:
@@ -1817,23 +1836,68 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             heatpump.cop_compensation_factor *= self._modelled_heat_scale()
         return heatpump
 
+    def _dhw_active(self) -> bool:
+        sensor = self.config.get(CONF_DHW_ACTIVE_SENSOR)
+        state = self.hass.states.get(sensor) if sensor else None
+        return state is not None and state.state == "on"
+
+    def _gas_boiler_output_kw(self) -> tuple[float, str]:
+        """The boiler's heat output while it heats: learned from the gas
+        meter once there is enough of it, else the configured value."""
+        configured = float(
+            self.config.get(
+                CONF_GAS_BOILER_HEAT_OUTPUT_KW, DEFAULT_GAS_BOILER_HEAT_OUTPUT_KW
+            )
+        )
+        return self._gas_output.output_kw(configured)
+
     def _gas_boiler_heat_kw(self) -> float:
-        """Heat the gas boiler puts into the heating now: its configured
-        output while its heating sensor is on, else 0.
+        """Heat the gas boiler puts into the space heating now (kW).
 
         Without this a gas run warms the house with no heat in the model:
         the mass estimate lags (a negative buffer right after heating on
         gas) and the learned heat loss comes out too low.
         """
-        sensor = self.config.get(CONF_GAS_BOILER_HEATING_SENSOR)
-        state = self.hass.states.get(sensor) if sensor else None
-        if state is None or state.state != "on":
-            return 0.0
-        return float(
-            self.config.get(
-                CONF_GAS_BOILER_HEAT_OUTPUT_KW, DEFAULT_GAS_BOILER_HEAT_OUTPUT_KW
-            )
+        return gas_boiler_heat_kw(
+            self.hass,
+            power_sensor=self.config.get(CONF_GAS_BOILER_HEAT_POWER_SENSOR),
+            heating_sensor=self.config.get(CONF_GAS_BOILER_HEATING_SENSOR),
+            dhw_on=self._dhw_active(),
+            output_kw=self._gas_boiler_output_kw()[0],
         )
+
+    def _learn_gas_output(self, now: datetime) -> None:
+        """Learn the boiler output from gas meter steps and heating time
+        (only with a heating signal, a gas meter and no power sensor)."""
+        heating_sensor = self.config.get(CONF_GAS_BOILER_HEATING_SENSOR)
+        if (
+            not heating_sensor
+            or not self.config.get(CONF_GAS_METER_SENSOR)
+            or self.config.get(CONF_GAS_BOILER_HEAT_POWER_SENSOR)
+        ):
+            return
+        dhw = self._dhw_active()
+        changed = self._gas_output.tick(
+            now,
+            heating=heating_signal_on(self.hass, heating_sensor) and not dhw,
+            dhw=dhw,
+            counter_kwh=self._gas_heat_counter_kwh(),
+        )
+        if changed and self._gas_output_store is not None:
+            self._gas_output_store.async_delay_save(self._gas_output.as_dict, 60)
+
+    def _gas_boiler_heat_summary(self) -> dict[str, Any]:
+        """Where the gas boiler's heat in the building model comes from."""
+        if self.config.get(CONF_GAS_BOILER_HEAT_POWER_SENSOR):
+            return {"gas_boiler_heat_source": SOURCE_SENSOR}
+        if not self.config.get(CONF_GAS_BOILER_HEATING_SENSOR):
+            return {"gas_boiler_heat_source": SOURCE_NONE}
+        output, source = self._gas_boiler_output_kw()
+        return {
+            "gas_boiler_heat_source": source,
+            "gas_boiler_output_kw": round(output, 2),
+            "gas_boiler_output_learned_hours": round(self._gas_output.learned_hours, 1),
+        }
 
     def _gas_heat_counter_kwh(self) -> float | None:
         """Cumulative heat delivered by the gas boiler, from its gas meter."""
@@ -2111,6 +2175,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "cop_vs_configured_pct": round(100 * (cop_fit.base_cop / base - 1)),
             }
         result |= self._delta_t_offset_summary()
+        result |= self._gas_boiler_heat_summary()
         prior_emitter = self._prior_emitter(config)
         result["assumed_emitter_power_kw"] = round(prior_emitter.nominal_power_kw, 1)
         emitter_fit = calibration.emitter_fit if calibration else None

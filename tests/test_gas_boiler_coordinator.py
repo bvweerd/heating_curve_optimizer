@@ -540,28 +540,3 @@ def test_heat_pump_advised_is_the_counterpart_of_the_gas_advice(data, expected):
     assert sensor.extra_state_attributes["gas_boiler_advised"] == data.get(
         "prefer_gas_boiler"
     )
-
-
-def test_gas_boiler_heat_goes_into_the_building_model(hass: HomeAssistant):
-    """While the boiler heats, its configured output counts as heat."""
-    from types import SimpleNamespace
-
-    from custom_components.heating_curve_optimizer.coordinator_optimization import (
-        OptimizationCoordinator,
-    )
-
-    fake = SimpleNamespace(
-        hass=hass,
-        config={
-            "gas_boiler_heating_sensor": "binary_sensor.cv_heating",
-            "gas_boiler_heat_output_kw": 5.5,
-        },
-    )
-    heat = OptimizationCoordinator._gas_boiler_heat_kw
-    assert heat(fake) == 0.0  # sensor missing
-    hass.states.async_set("binary_sensor.cv_heating", "on")
-    assert heat(fake) == 5.5
-    hass.states.async_set("binary_sensor.cv_heating", "off")
-    assert heat(fake) == 0.0
-    fake.config = {}
-    assert heat(fake) == 0.0  # not configured

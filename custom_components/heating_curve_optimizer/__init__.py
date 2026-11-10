@@ -22,6 +22,7 @@ from homeassistant.helpers.start import async_at_started
 from .const import (
     CONF_GAS_BOILER_EFFICIENCY,
     CONF_GAS_BOILER_HEAT_OUTPUT_KW,
+    CONF_GAS_BOILER_HEAT_POWER_SENSOR,
     CONF_GAS_BOILER_HEATING_SENSOR,
     CONF_GAS_CALORIFIC_VALUE,
     CONF_GAS_METER_SENSOR,
@@ -277,6 +278,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     CONF_GAS_METER_SENSOR,
                     CONF_GAS_BOILER_EFFICIENCY,
                     CONF_GAS_CALORIFIC_VALUE,
+                    CONF_GAS_BOILER_HEAT_POWER_SENSOR,
                     CONF_GAS_BOILER_HEATING_SENSOR,
                     CONF_GAS_BOILER_HEAT_OUTPUT_KW,
                 )

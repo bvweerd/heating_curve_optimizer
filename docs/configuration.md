@@ -135,13 +135,34 @@ backup** (default on): recommend the boiler whenever the heat pump cannot
 restore the comfort band within 3 hours, even if gas is more expensive.
 Switch it off to use gas only when it is also cheaper.
 
-**Gas boiler heating sensor** (optional) and **gas boiler heat output**
-(default 6 kW): a binary sensor that is on while the boiler fires for
-space heating - not for tap water - and the heat it then delivers. That
-heat goes into the building model (thermal mass, buffer, learned heat
-loss), which otherwise sees a gas run as the house warming up on its own.
-With OpenTherm, a template such as flame on, CH mode on and DHW mode off.
-Estimate the output from the gas meter over a few heating hours: gas
-(kWh) × efficiency / hours with the flame on. See
+**Gas boiler heat in the building model.** Heat from the boiler goes into
+the building model (thermal mass, heat buffer, learned heat loss), which
+otherwise sees a gas run as the house warming up on its own: the buffer
+goes negative right after heating on gas and the learned heat loss comes
+out low. The integration uses the best source you have:
+
+| You have | Boiler heat |
+|---|---|
+| **Boiler heat power** sensor (W/kW: heat meter, ems-esp, ebusd) | measured |
+| **Boiler heats the house** signal + **gas meter** | signal × output, the output **learned** per gas meter step: gas heat / hours the signal was on |
+| **Boiler heats the house** signal only | signal × **boiler heat output** (default 6 kW) |
+| neither | none; the mass estimate only follows the measured air |
+
+*Boiler heats the house* is a binary sensor, switch or climate entity
+(heating while its `hvac_action` is `heating`). It must not be on for tap
+water: a gas meter cannot tell heating from tap water, so the signal and
+the main entry's **DHW active** sensor make that split. While DHW is
+active the boiler counts as not heating the house (a combi boiler gives
+tap water priority), and meter steps with tap water are not learned from.
+Examples:
+
+- OpenTherm gateway: a template that is on with flame on, CH mode on and
+  DHW mode off; DHW active = the gateway's DHW mode.
+- A smart thermostat that drives the boiler: its climate entity.
+- A boiler switched by a relay: that switch.
+
+The learned output, its source and the hours behind it are attributes of
+the calibration sensor (`gas_boiler_output_kw`, `gas_boiler_heat_source`,
+`gas_boiler_output_learned_hours`). See
 [How it works](algorithm.md#hybrid-gas-boiler) for when the boiler is
 recommended.

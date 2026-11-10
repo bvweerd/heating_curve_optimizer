@@ -86,6 +86,7 @@ from .const import (
     CONF_GAS_CALORIFIC_VALUE,
     CONF_GAS_COMFORT_BACKUP,
     CONF_GAS_BOILER_HEAT_OUTPUT_KW,
+    CONF_GAS_BOILER_HEAT_POWER_SENSOR,
     CONF_GAS_BOILER_HEATING_SENSOR,
     CONF_GAS_METER_SENSOR,
     CONF_GAS_MIN_WINDOW_HOURS,
@@ -1182,9 +1183,17 @@ def build_gas_boiler_schema(defaults: dict[str, Any]) -> vol.Schema:
                 description=_suggested(defaults, CONF_GAS_METER_SENSOR),
             ): _sensor(["gas", "energy"]),
             vol.Optional(
+                CONF_GAS_BOILER_HEAT_POWER_SENSOR,
+                description=_suggested(defaults, CONF_GAS_BOILER_HEAT_POWER_SENSOR),
+            ): _sensor("power"),
+            vol.Optional(
                 CONF_GAS_BOILER_HEATING_SENSOR,
                 description=_suggested(defaults, CONF_GAS_BOILER_HEATING_SENSOR),
-            ): EntitySelector(EntitySelectorConfig(domain="binary_sensor")),
+            ): EntitySelector(
+                EntitySelectorConfig(
+                    domain=["binary_sensor", "switch", "input_boolean", "climate"]
+                )
+            ),
             vol.Required(
                 CONF_GAS_BOILER_HEAT_OUTPUT_KW,
                 description=_suggested(
@@ -1227,6 +1236,9 @@ def normalize_gas_boiler_input(user_input: dict[str, Any]) -> dict[str, Any]:
             user_input.get(CONF_GAS_COMFORT_BACKUP, DEFAULT_GAS_COMFORT_BACKUP)
         ),
         CONF_GAS_METER_SENSOR: user_input.get(CONF_GAS_METER_SENSOR),
+        CONF_GAS_BOILER_HEAT_POWER_SENSOR: user_input.get(
+            CONF_GAS_BOILER_HEAT_POWER_SENSOR
+        ),
         CONF_GAS_BOILER_HEATING_SENSOR: user_input.get(CONF_GAS_BOILER_HEATING_SENSOR),
         CONF_GAS_BOILER_HEAT_OUTPUT_KW: float(
             user_input.get(
