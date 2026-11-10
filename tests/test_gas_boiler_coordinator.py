@@ -516,3 +516,27 @@ async def test_held_back_switch_is_made_when_the_hold_ends(hass: HomeAssistant):
     await hass.async_block_till_done()
     coordinator.async_request_refresh.assert_called_once()
     await coordinator.async_shutdown()
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        ({"heat_needed_now": True, "prefer_gas_boiler": False}, True),
+        ({"heat_needed_now": True, "prefer_gas_boiler": True}, False),
+        ({"heat_needed_now": False, "prefer_gas_boiler": False}, False),
+        ({"heat_needed_now": False, "comfort_at_risk": True}, True),
+    ],
+)
+def test_heat_pump_advised_is_the_counterpart_of_the_gas_advice(data, expected):
+    """Heat needed now and gas not advised: the heat pump makes it."""
+    from custom_components.heating_curve_optimizer.binary_sensor import (
+        HeatPumpAdvisedBinarySensor,
+    )
+
+    coordinator = MagicMock()
+    coordinator.data = {"available": True, **data}
+    sensor = HeatPumpAdvisedBinarySensor(coordinator, "entry", MagicMock())
+    assert sensor.is_on is expected
+    assert sensor.extra_state_attributes["gas_boiler_advised"] == data.get(
+        "prefer_gas_boiler"
+    )

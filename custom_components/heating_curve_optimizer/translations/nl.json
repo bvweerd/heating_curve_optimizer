@@ -612,7 +612,10 @@
             "gas_comfort_backup": "Gas als comfort-backup",
             "gas_meter_sensor": "Gasmeter",
             "comfort_lookahead_hours": "Comfort-vooruitblik",
-            "comfort_tolerance_c": "Comfort-tolerantie"
+            "comfort_tolerance_c": "Comfort-tolerantie",
+            "gas_boiler_heating_sensor": "Ketel verwarmt het huis",
+            "gas_boiler_heat_output_kw": "Vermogen ketel",
+            "gas_boiler_heat_power_sensor": "Warmtevermogen ketel"
           },
           "data_description": {
             "gas_price_sensor": "Actuele gasprijs in EUR/m³.",
@@ -621,7 +624,10 @@
             "gas_meter_sensor": "Optionele cumulatieve gasmeter (m³ of kWh). Periodes op gas geven een absolute warmtemeting waarmee het COP-niveau van de warmtepomp geijkt wordt. Grove (bijv. uurlijkse) updates zijn geen probleem. Alleen betrouwbaar als de ketel niet ook tapwater verwarmt.",
             "gas_comfort_backup": "Aan: adviseer de gasketel zodra de warmtepomp de comfortband niet binnen 3 uur herstelt, ook als gas duurder is. Uit: alleen als gas ook goedkoper is.",
             "comfort_lookahead_hours": "Hoe ver vooruit het plan wordt gecontroleerd op comfortschendingen.",
-            "comfort_tolerance_c": "Tolerantie onder comfortvloer voordat het plan als schending telt."
+            "comfort_tolerance_c": "Tolerantie onder comfortvloer voordat het plan als schending telt.",
+            "gas_boiler_heating_sensor": "Optioneel: aan zolang de ketel het huis verwarmt, niet het tapwater. Een binaire sensor, schakelaar of climate-entiteit (verwarmt als hvac_action heating is). De warmte gaat het gebouwmodel in, zodat stoken op gas de warmtereserve vult.",
+            "gas_boiler_heat_output_kw": "Warmte die de ketel levert zolang hij het huis verwarmt (kW). Met een gasmeter wordt het vermogen geleerd uit gasverbruik / branduren en is dit alleen de startwaarde.",
+            "gas_boiler_heat_power_sensor": "Optioneel: de warmte die de ketel nu levert (W of kW), bijv. van een warmtemeter, ems-esp of ebusd. Gemeten, dus beter dan de schatting hieronder."
           }
         },
         "reconfigure": {
@@ -633,7 +639,10 @@
             "gas_comfort_backup": "Gas als comfort-backup",
             "gas_meter_sensor": "Gasmeter",
             "comfort_lookahead_hours": "Comfort-vooruitblik",
-            "comfort_tolerance_c": "Comfort-tolerantie"
+            "comfort_tolerance_c": "Comfort-tolerantie",
+            "gas_boiler_heating_sensor": "Ketel verwarmt het huis",
+            "gas_boiler_heat_output_kw": "Vermogen ketel",
+            "gas_boiler_heat_power_sensor": "Warmtevermogen ketel"
           },
           "data_description": {
             "gas_price_sensor": "Actuele gasprijs in EUR/m³.",
@@ -642,7 +651,10 @@
             "gas_meter_sensor": "Optionele cumulatieve gasmeter (m³ of kWh). Periodes op gas geven een absolute warmtemeting waarmee het COP-niveau van de warmtepomp geijkt wordt. Grove (bijv. uurlijkse) updates zijn geen probleem. Alleen betrouwbaar als de ketel niet ook tapwater verwarmt.",
             "gas_comfort_backup": "Aan: adviseer de gasketel zodra de warmtepomp de comfortband niet binnen 3 uur herstelt, ook als gas duurder is. Uit: alleen als gas ook goedkoper is.",
             "comfort_lookahead_hours": "Hoe ver vooruit het plan wordt gecontroleerd op comfortschendingen.",
-            "comfort_tolerance_c": "Tolerantie onder comfortvloer voordat het plan als schending telt."
+            "comfort_tolerance_c": "Tolerantie onder comfortvloer voordat het plan als schending telt.",
+            "gas_boiler_heating_sensor": "Optioneel: aan zolang de ketel het huis verwarmt, niet het tapwater. Een binaire sensor, schakelaar of climate-entiteit (verwarmt als hvac_action heating is). De warmte gaat het gebouwmodel in, zodat stoken op gas de warmtereserve vult.",
+            "gas_boiler_heat_output_kw": "Warmte die de ketel levert zolang hij het huis verwarmt (kW). Met een gasmeter wordt het vermogen geleerd uit gasverbruik / branduren en is dit alleen de startwaarde.",
+            "gas_boiler_heat_power_sensor": "Optioneel: de warmte die de ketel nu levert (W of kW), bijv. van een warmtemeter, ems-esp of ebusd. Gemeten, dus beter dan de schatting hieronder."
           }
         }
       },
@@ -809,10 +821,7 @@
     },
     "binary_sensor": {
       "heat_pump_plan_active": {
-        "name": "Warmtepomp planning actief"
-      },
-      "plan_active": {
-        "name": "Planning actief"
+        "name": "Warmtevraag volgens plan"
       },
       "heat_pump_cheaper": {
         "name": "Goedkoper"
@@ -822,6 +831,9 @@
       },
       "gas_boiler_cheaper": {
         "name": "Goedkoper"
+      },
+      "heat_pump_advised": {
+        "name": "Inzetten"
       }
     },
     "number": {
