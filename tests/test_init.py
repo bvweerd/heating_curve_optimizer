@@ -249,10 +249,12 @@ async def test_hybrid_run_advice_and_cheaper_binary_sensors(
     assert gas_cheaper is not None and gas_cheaper.state in ("on", "off")
 
     # Heat pump: plan-active advice already exists; the price comparison is
-    # the exact mirror of the gas boiler's.
+    # the counterpart of the gas boiler's: never both on, both off on a tie.
     hp_cheaper = _state(hass, "binary_sensor", f"{entry.entry_id}_heat_pump_cheaper")
     assert hp_cheaper is not None and hp_cheaper.state in ("on", "off")
-    assert hp_cheaper.state != gas_cheaper.state
+    assert not (hp_cheaper.state == "on" and gas_cheaper.state == "on")
+    if hp_cheaper.state == gas_cheaper.state:
+        assert gas_cheaper.attributes["close_call"] is True
 
     # The heat pump's own cost per kWh lives on the heat-pump device; the
     # gas cost stays on the gas boiler's device.

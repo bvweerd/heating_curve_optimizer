@@ -389,7 +389,55 @@ async def test_no_comparison_until_the_plan_uses_the_measured_indoor_temp(
     assert data["available"] is True
 
 
-def test_gas_cheaper_has_a_dead_band_and_a_hold_time(hass: HomeAssistant):
+@pytest.mark.parametrize(
+    ("elec_price", "verdict"),
+    [
+        ("0.40", "heat_pump"),  # 0.40 / 3.29 = 0.122: clearly cheaper
+        ("0.451", "close_call"),  # 0.137 vs. gas 0.1365: a tie
+        ("0.50", "gas"),  # 0.152: gas clearly cheaper
+    ],
+)
+async def test_price_comparison_has_a_neutral_dead_band(
+    hass: HomeAssistant, elec_price: str, verdict: str
+):
+    """Within the dead band neither source is cheaper, so "gas cheaper" and
+    "heat pump cheaper" are both off and cannot contradict the gas advice."""
+    hass.states.async_set("sensor.gas_price", "1.20")  # 0.1365 EUR/kWh heat
+    hass.states.async_set("sensor.elec_price", elec_price)
+    coordinator = _make_coordinator(
+        hass, optimization_data={"supply_temps": [30.0], "cop": [3.29]}
+    )
+    data = await coordinator._async_update_data()
+    assert data["price_verdict"] == verdict
+    assert data["gas_cheaper"] is (verdict == "gas")
+    assert data["heat_pump_cheaper"] is (verdict == "heat_pump")
+    assert data["close_call"] is (verdict == "close_call")
+    assert data["price_verdict_since"] is not None
+
+
+async def test_price_verdict_follows_the_price_without_history(
+    hass: HomeAssistant,
+):
+    """Unlike the advice's flag the price comparison does not stick: once
+    the difference is back inside the band, it says close call again."""
+    hass.states.async_set("sensor.gas_price", "1.20")
+    hass.states.async_set("sensor.elec_price", "0.52")
+    coordinator = _make_coordinator(
+        hass, optimization_data={"supply_temps": [30.0], "cop": [3.29]}
+    )
+    data = await coordinator._async_update_data()
+    assert data["gas_cheaper"] is True
+    since = data["price_verdict_since"]
+    data = await coordinator._async_update_data()
+    assert data["price_verdict_since"] == since  # unchanged verdict
+    hass.states.async_set("sensor.elec_price", "0.451")
+    data = await coordinator._async_update_data()
+    assert data["close_call"] is True
+    assert data["gas_cheaper"] is False
+    assert data["heat_pump_cheaper"] is False
+
+
+def test_gas_advice_flag_has_a_dead_band_and_a_hold_time(hass: HomeAssistant):
     from datetime import UTC, datetime, timedelta
 
     coordinator = _make_coordinator(hass)
@@ -397,7 +445,7 @@ def test_gas_cheaper_has_a_dead_band_and_a_hold_time(hass: HomeAssistant):
     gas = 0.136  # dead band: 5 % = 0.0068 EUR/kWh
 
     def flag(savings, gas_cost, now):
-        return coordinator._flag_with_deadband("now", savings, gas_cost, now)
+        return coordinator._flag_with_deadband("plan", savings, gas_cost, now)
 
     assert flag(-0.01, gas, t0) is False  # first: plain comparison
     assert flag(0.002, gas, t0 + timedelta(hours=2)) is False  # within band
@@ -439,7 +487,6 @@ async def test_held_back_switch_is_made_when_the_hold_ends(hass: HomeAssistant):
     from datetime import timedelta
     from unittest.mock import AsyncMock
 
-    from homeassistant.util import dt as dt_util
     from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
     from custom_components.heating_curve_optimizer.gas_boiler_coordinator import (
@@ -452,13 +499,14 @@ async def test_held_back_switch_is_made_when_the_hold_ends(hass: HomeAssistant):
         hass, optimization_data={"supply_temps": [30.0], "cop": [4.0]}
     )
     data = await coordinator._async_update_data()
-    assert data["gas_cheaper"] is False
-    switched_at = dt_util.parse_datetime(data["gas_cheaper_since"])
+    assert data["gas_cheaper_than_plan"] is False
+    switched_at = coordinator._flags["plan"][1]
     assert coordinator._unsub_hold is None
 
     hass.states.async_set("sensor.elec_price", "0.60")  # heat pump 0.15
     data = await coordinator._async_update_data()
-    assert data["gas_cheaper"] is False  # held
+    assert data["gas_cheaper_than_plan"] is False  # held
+    assert data["gas_cheaper"] is True  # the price comparison has no hold
     assert coordinator._unsub_hold is not None
 
     coordinator.async_request_refresh = AsyncMock()

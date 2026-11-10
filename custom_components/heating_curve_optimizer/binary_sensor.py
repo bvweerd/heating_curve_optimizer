@@ -145,9 +145,9 @@ class GasBoilerPreferredBinarySensor(CoordinatorEntity, BinarySensorEntity):
 
 
 class GasBoilerCheaperBinarySensor(CoordinatorEntity, BinarySensorEntity):
-    """Pure price comparison: on when gas is cheaper per kWh of heat made
-    now (electricity price / planned COP vs. gas), with a dead band and a
-    hold time.
+    """Pure price comparison: on when gas is clearly cheaper per kWh of heat
+    made now (electricity price / planned COP vs. gas). Within the dead band
+    neither this nor HeatPumpCheaperBinarySensor is on (`close_call`).
 
     Unlike GasBoilerPreferredBinarySensor this ignores comfort and the plan:
     a pre-heated house can coast through a peak on heat bought earlier, so
@@ -193,15 +193,17 @@ class GasBoilerCheaperBinarySensor(CoordinatorEntity, BinarySensorEntity):
             "gas_cost_eur_per_kwh": data.get("gas_cost_eur_per_kwh"),
             "savings_eur_per_kwh": data.get("savings_eur_per_kwh"),
             "savings_pct": data.get("savings_pct"),
-            "gas_cheaper_since": data.get("gas_cheaper_since"),
+            "close_call": data.get("close_call"),
+            "price_verdict_since": data.get("price_verdict_since"),
         }
 
 
 class HeatPumpCheaperBinarySensor(CoordinatorEntity, BinarySensorEntity):
-    """Pure price comparison: on when the heat pump is cheaper per kWh of heat.
+    """Pure price comparison: on when the heat pump is clearly cheaper per
+    kWh of heat made now.
 
-    The mirror of GasBoilerCheaperBinarySensor, so the heat pump has the same
-    "voordeliger" signal as the gas boiler in a hybrid setup.
+    The counterpart of GasBoilerCheaperBinarySensor: at most one of the two
+    is on; within the dead band (a tie) both are off.
     """
 
     _attr_has_entity_name = True
@@ -219,7 +221,7 @@ class HeatPumpCheaperBinarySensor(CoordinatorEntity, BinarySensorEntity):
         """Return True when the heat pump is the cheaper heat source."""
         if not self.coordinator.data:
             return False
-        return not bool(self.coordinator.data.get("gas_cheaper", False))
+        return bool(self.coordinator.data.get("heat_pump_cheaper", False))
 
     @property
     def available(self) -> bool:
@@ -243,7 +245,8 @@ class HeatPumpCheaperBinarySensor(CoordinatorEntity, BinarySensorEntity):
             "gas_cost_eur_per_kwh": data.get("gas_cost_eur_per_kwh"),
             "savings_eur_per_kwh": data.get("savings_eur_per_kwh"),
             "savings_pct": data.get("savings_pct"),
-            "gas_cheaper_since": data.get("gas_cheaper_since"),
+            "close_call": data.get("close_call"),
+            "price_verdict_since": data.get("price_verdict_since"),
         }
 
 
