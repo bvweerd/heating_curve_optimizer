@@ -329,3 +329,27 @@ async def test_pv_import_takes_over_battery_controller_name(
         },
     )
     assert result["title"] == "Garage roof"
+
+
+def test_gas_boiler_input_keeps_heating_sensor_and_output():
+    from custom_components.heating_curve_optimizer.config_flow import (
+        normalize_gas_boiler_input,
+    )
+
+    base = {
+        "gas_price_sensor": "sensor.gas_price",
+        "gas_boiler_efficiency": 0.9,
+        "gas_calorific_value_kwh_per_m3": 9.77,
+    }
+    data = normalize_gas_boiler_input(base)
+    assert data["gas_boiler_heating_sensor"] is None
+    assert data["gas_boiler_heat_output_kw"] == 6.0
+    data = normalize_gas_boiler_input(
+        base
+        | {
+            "gas_boiler_heating_sensor": "binary_sensor.cv_heating",
+            "gas_boiler_heat_output_kw": 5.5,
+        }
+    )
+    assert data["gas_boiler_heating_sensor"] == "binary_sensor.cv_heating"
+    assert data["gas_boiler_heat_output_kw"] == 5.5

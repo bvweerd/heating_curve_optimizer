@@ -21,6 +21,9 @@ from homeassistant.helpers.start import async_at_started
 
 from .const import (
     CONF_GAS_BOILER_EFFICIENCY,
+    CONF_GAS_BOILER_HEAT_OUTPUT_KW,
+    CONF_GAS_BOILER_HEAT_POWER_SENSOR,
+    CONF_GAS_BOILER_HEATING_SENSOR,
     CONF_GAS_CALORIFIC_VALUE,
     CONF_GAS_METER_SENSOR,
     DOMAIN,
@@ -265,7 +268,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for subentry in entry.subentries.values()
         if subentry.subentry_type == PV_SUBENTRY_TYPE
     ]
-    # The gas boiler's meter is a calibration input for every zone.
+    # The gas boiler's meter (calibration) and its heating sensor (heat into
+    # the building model) are inputs for every zone.
     for subentry in entry.subentries.values():
         if subentry.subentry_type == GAS_SUBENTRY_TYPE:
             config |= {
@@ -274,6 +278,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     CONF_GAS_METER_SENSOR,
                     CONF_GAS_BOILER_EFFICIENCY,
                     CONF_GAS_CALORIFIC_VALUE,
+                    CONF_GAS_BOILER_HEAT_POWER_SENSOR,
+                    CONF_GAS_BOILER_HEATING_SENSOR,
+                    CONF_GAS_BOILER_HEAT_OUTPUT_KW,
                 )
                 if subentry.data.get(key) is not None
             }

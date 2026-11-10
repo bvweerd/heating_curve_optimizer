@@ -63,6 +63,14 @@ CONF_GAS_METER_SENSOR = "gas_meter_sensor"
 # comfort band, regardless of price. Off: gas only when it is also cheaper.
 CONF_GAS_COMFORT_BACKUP = "gas_comfort_backup"
 DEFAULT_GAS_COMFORT_BACKUP = True
+# Heat the gas boiler puts into the space heating, for the building model
+# (see gas_boiler_heat.py): a heat power sensor of the boiler, or a "boiler
+# heats the house" signal (binary sensor, switch or climate entity) times
+# the output, which is learned from the gas meter when there is one.
+CONF_GAS_BOILER_HEAT_POWER_SENSOR = "gas_boiler_heat_power_sensor"
+CONF_GAS_BOILER_HEATING_SENSOR = "gas_boiler_heating_sensor"
+CONF_GAS_BOILER_HEAT_OUTPUT_KW = "gas_boiler_heat_output_kw"
+DEFAULT_GAS_BOILER_HEAT_OUTPUT_KW = 6.0
 
 # 90%: typical Dutch HR-combi boiler at non-optimal (higher) return
 # temperatures. A well-tuned condensing unit at a low return temperature can
