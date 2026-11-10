@@ -612,7 +612,9 @@
             "gas_comfort_backup": "Gas as comfort backup",
             "gas_meter_sensor": "Gas meter",
             "comfort_lookahead_hours": "Comfort lookahead",
-            "comfort_tolerance_c": "Comfort tolerance"
+            "comfort_tolerance_c": "Comfort tolerance",
+            "gas_boiler_heating_sensor": "Gas boiler heating sensor",
+            "gas_boiler_heat_output_kw": "Gas boiler heat output"
           },
           "data_description": {
             "gas_price_sensor": "Current gas price in EUR/m³.",
@@ -621,7 +623,9 @@
             "gas_meter_sensor": "Optional cumulative gas meter (m³ or kWh). Periods on gas give an absolute heat measurement that calibrates the heat pump's COP level. Coarse (e.g. hourly) updates are fine. Only reliable if the boiler does not also heat tap water.",
             "gas_comfort_backup": "On: recommend the gas boiler whenever the heat pump cannot restore the comfort band within 3 hours, even if gas is more expensive. Off: only when gas is also cheaper.",
             "comfort_lookahead_hours": "How far ahead the plan is checked for comfort breaches before recommending gas.",
-            "comfort_tolerance_c": "Tolerance below comfort floor before the plan counts as a breach."
+            "comfort_tolerance_c": "Tolerance below comfort floor before the plan counts as a breach.",
+            "gas_boiler_heating_sensor": "Optional binary sensor, on while the boiler fires for space heating (not tap water), e.g. a template of OpenTherm flame and CH mode. Its heat goes into the building model, so a gas run fills the heat buffer.",
+            "gas_boiler_heat_output_kw": "Heat the boiler delivers while the heating sensor is on, in kW. Estimate it as gas used (kWh) × efficiency / hours with the flame on."
           }
         },
         "reconfigure": {
@@ -633,7 +637,9 @@
             "gas_comfort_backup": "Gas as comfort backup",
             "gas_meter_sensor": "Gas meter",
             "comfort_lookahead_hours": "Comfort lookahead",
-            "comfort_tolerance_c": "Comfort tolerance"
+            "comfort_tolerance_c": "Comfort tolerance",
+            "gas_boiler_heating_sensor": "Gas boiler heating sensor",
+            "gas_boiler_heat_output_kw": "Gas boiler heat output"
           },
           "data_description": {
             "gas_price_sensor": "Current gas price in EUR/m³.",
@@ -642,7 +648,9 @@
             "gas_meter_sensor": "Optional cumulative gas meter (m³ or kWh). Periods on gas give an absolute heat measurement that calibrates the heat pump's COP level. Coarse (e.g. hourly) updates are fine. Only reliable if the boiler does not also heat tap water.",
             "gas_comfort_backup": "On: recommend the gas boiler whenever the heat pump cannot restore the comfort band within 3 hours, even if gas is more expensive. Off: only when gas is also cheaper.",
             "comfort_lookahead_hours": "How far ahead the plan is checked for comfort breaches before recommending gas.",
-            "comfort_tolerance_c": "Tolerance below comfort floor before the plan counts as a breach."
+            "comfort_tolerance_c": "Tolerance below comfort floor before the plan counts as a breach.",
+            "gas_boiler_heating_sensor": "Optional binary sensor, on while the boiler fires for space heating (not tap water), e.g. a template of OpenTherm flame and CH mode. Its heat goes into the building model, so a gas run fills the heat buffer.",
+            "gas_boiler_heat_output_kw": "Heat the boiler delivers while the heating sensor is on, in kW. Estimate it as gas used (kWh) × efficiency / hours with the flame on."
           }
         }
       },
@@ -809,10 +817,7 @@
     },
     "binary_sensor": {
       "heat_pump_plan_active": {
-        "name": "Heat pump plan active"
-      },
-      "plan_active": {
-        "name": "Plan active"
+        "name": "Planned heat demand"
       },
       "heat_pump_cheaper": {
         "name": "Cheaper"
@@ -822,6 +827,9 @@
       },
       "gas_boiler_cheaper": {
         "name": "Cheaper"
+      },
+      "heat_pump_advised": {
+        "name": "Advised"
       }
     },
     "number": {

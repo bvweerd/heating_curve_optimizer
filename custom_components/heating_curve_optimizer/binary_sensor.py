@@ -20,7 +20,9 @@ PARALLEL_UPDATES = 0
 
 
 class HeatPumpPlanActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
-    """Advisory: does the price-optimized plan call for heat right now.
+    """Advisory: does the price-optimized plan call for heat right now,
+    whichever source makes it. With a gas boiler, *Heat pump advised* and
+    *Gas boiler advised* say which one.
 
     Off while the building can
     coast on its thermal buffer, solar and internal gains without leaving
@@ -42,11 +44,7 @@ class HeatPumpPlanActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
         device: DeviceInfo,
         translation_key: str = "heat_pump_plan_active",
     ) -> None:
-        """Initialize the binary sensor.
-
-        On the heat-pump device the name drops "heat pump" (``plan_active``),
-        since Home Assistant prefixes the device name.
-        """
+        """Initialize the binary sensor."""
         super().__init__(coordinator)
         self._entry_id = entry_id
         self._attr_unique_id = f"{entry_id}_heat_pump_plan_active"
@@ -198,6 +196,59 @@ class GasBoilerCheaperBinarySensor(CoordinatorEntity, BinarySensorEntity):
         }
 
 
+class HeatPumpAdvisedBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Run advice for the heat pump in a hybrid setup: on when the plan
+    needs heat now (or comfort is at risk) and the gas boiler is not
+    advised. The counterpart of GasBoilerPreferredBinarySensor - never both
+    on, so the two sources are not run in parallel. Advisory only.
+    """
+
+    _attr_device_class = BinarySensorDeviceClass.RUNNING
+    _attr_has_entity_name = True
+    _attr_translation_key = "heat_pump_advised"
+    _attr_should_poll = False
+
+    def __init__(self, coordinator: Any, entry_id: str, device: DeviceInfo) -> None:
+        """Initialize the binary sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry_id}_heat_pump_advised"
+        self._attr_device_info = device
+
+    @property
+    def is_on(self) -> bool:
+        """Return True when the heat pump should make the heat needed now."""
+        data = self.coordinator.data
+        if not data:
+            return False
+        heat_needed = bool(data.get("heat_needed_now")) or bool(
+            data.get("comfort_at_risk")
+        )
+        return heat_needed and not data.get("prefer_gas_boiler", False)
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return (
+            self.coordinator.last_update_success
+            and self.coordinator.data is not None
+            and bool(self.coordinator.data.get("available", False))
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return why the heat pump is (not) advised."""
+        if not self.coordinator.data:
+            return {}
+        data = self.coordinator.data
+        return {
+            "heat_needed_now": data.get("heat_needed_now"),
+            "comfort_at_risk": data.get("comfort_at_risk"),
+            "gas_boiler_advised": data.get("prefer_gas_boiler"),
+            "heat_pump_plan_cost_eur_per_kwh": data.get("heat_pump_cost_eur_per_kwh"),
+            "gas_cost_eur_per_kwh": data.get("gas_cost_eur_per_kwh"),
+        }
+
+
 class HeatPumpCheaperBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Pure price comparison: on when the heat pump is clearly cheaper per
     kWh of heat made now.
@@ -264,11 +315,12 @@ async def async_setup_entry(
     primary_entities: list[Any] = []
     if runtime_data.optimization_coordinator is not None:
         primary_entities.append(
+            # Heat demand, not a heat-pump advice: on the main device, since
+            # with a gas boiler either source may make the heat.
             HeatPumpPlanActiveBinarySensor(
                 runtime_data.optimization_coordinator,
                 entry.entry_id,
-                runtime_data.heatpump_device,
-                translation_key="plan_active",
+                runtime_data.device,
             )
         )
     if primary_entities:
@@ -307,6 +359,11 @@ async def async_setup_entry(
                     runtime_data.gas_boiler_coordinator,
                     entry.entry_id,
                     runtime_data.heatpump_device,
-                )
+                ),
+                HeatPumpAdvisedBinarySensor(
+                    runtime_data.gas_boiler_coordinator,
+                    entry.entry_id,
+                    runtime_data.heatpump_device,
+                ),
             ]
         )

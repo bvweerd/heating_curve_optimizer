@@ -16,6 +16,7 @@ and English entity names.
 | `sensor.…_heating_curve_offset` | °C | **Offset to apply now.** | `offsets`, `prices`, `outdoor_forecast`, `step_start_times`, `step_minutes` |
 | `sensor.…_optimized_supply_temperature` | °C | Planned supply temperature now. | `supply_temps`, `baseline_supply_temps` |
 | `sensor.…_planned_indoor_temperature` | °C | Disabled diagnostic. Predicted indoor temperature at the end of the current step. | `indoor_temps`, `baseline_indoor_temps`, `comfort_min/max` |
+| `binary_sensor.…_planned_heat_demand` | | *Planned heat demand* (unique id `…_heat_pump_plan_active`): on while the optimized plan calls for heat now, whichever source makes it; off while it plans to coast on buffer, solar or internal gains. Switches ahead of the event, since the plan covers the whole horizon - see [Algorithm](algorithm.md#run-advice). With a gas boiler, *Heat pump advised* / *Gas boiler advised* say which source. | `changes_at`, `changes_in_minutes`, `hold_until`, `planned_supply_temperature`, `buffer_kwh` |
 | `sensor.…_heat_buffer` | kWh | Heat stored above the comfort floor (with *Mass + air*: in the thermal mass, above what holds the air at the floor). | `forecast` |
 | `sensor.…_cost_savings_forecast` | EUR | Disabled diagnostic. Expected savings over the horizon vs. the plain curve. | `optimized_cost_eur`, `baseline_cost_eur`, `horizon_hours`, `comfort_deficit_kh`, `baseline_comfort_deficit_kh` |
 | `sensor.…_total_cost_savings` | EUR | Disabled diagnostic. Running total of the plan's modelled savings, booked only for the share of time the heat pump followed the plan (on/off as planned, or supply within 1.5 K of the planned supply with its own thermostat). Can decrease. | `savings_if_followed_eur`, `plan_followed_hours`, `observed_hours`, `plan_followed_share` |
@@ -38,11 +39,11 @@ itself; its settings stay in the main entry.
 
 | Entity | Unit | Description | Key attributes |
 |---|---|---|---|
-| `binary_sensor.heat_pump_plan_active` | | On while the optimized plan calls for heat now; off while it plans to coast on buffer, solar or internal gains. Switches ahead of the event, since the plan covers the whole horizon - see [Algorithm](algorithm.md#run-advice). | `changes_at`, `changes_in_minutes`, `hold_until`, `planned_supply_temperature`, `buffer_kwh` |
 | `sensor.heat_pump_expected_cop` | | COP of the planned operating point now. | `cop`, `baseline_cop`, `cop_delta_now` |
 | `sensor.heat_pump_thermal_power` | kW | Only with a power sensor: measured heat, or electrical power × COP. Negative during a defrost when measured. | `cop`, `supply_temperature` |
 | `sensor.heat_pump_thermal_energy` | kWh | Only with a power sensor: cumulative net heat delivered (a defrost steps it back; state class `total`). | |
 | `sensor.heat_pump_cost_per_kwh` | EUR/kWh | Only with a gas boiler: cost of a kWh of heat made now (electricity price / planned COP). The gas advice uses the plan's marginal cost instead (`heat_pump_plan_cost_eur_per_kwh`: the shadow price, at most this), see [hybrid gas boiler](algorithm.md#hybrid-gas-boiler). | `shadow_price_eur_per_kwh`, `heat_pump_plan_cost_eur_per_kwh`, `heat_pump_cop` |
+| `binary_sensor.heat_pump_advised` | | Only with a gas boiler: run advice, on while heat is needed now (or comfort is at risk) and the gas boiler is not advised. Never on together with *Gas boiler advised*. | `heat_needed_now`, `comfort_at_risk`, `gas_boiler_advised` |
 | `binary_sensor.heat_pump_cheaper` | | Only with a gas boiler: on while heat made now by the heat pump is clearly cheaper than gas (by more than 5 %, at least €0.005/kWh). The counterpart of *Gas boiler cheaper*: on a tie both are off and `close_call` is true. | `heat_pump_cost_now_eur_per_kwh`, `gas_cost_eur_per_kwh`, `close_call`, `price_verdict_since` |
 
 ## Additional zones

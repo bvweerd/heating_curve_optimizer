@@ -85,6 +85,8 @@ from .const import (
     CONF_GAS_BOILER_EFFICIENCY,
     CONF_GAS_CALORIFIC_VALUE,
     CONF_GAS_COMFORT_BACKUP,
+    CONF_GAS_BOILER_HEAT_OUTPUT_KW,
+    CONF_GAS_BOILER_HEATING_SENSOR,
     CONF_GAS_METER_SENSOR,
     CONF_GAS_MIN_WINDOW_HOURS,
     CONF_GAS_PRICE_SENSOR,
@@ -180,6 +182,7 @@ from .const import (
     DEFAULT_EMITTER_TYPE,
     DEFAULT_FEED_IN_PRICE_FALLBACK,
     DEFAULT_GAS_BOILER_EFFICIENCY,
+    DEFAULT_GAS_BOILER_HEAT_OUTPUT_KW,
     DEFAULT_GAS_CALORIFIC_VALUE_KWH_PER_M3,
     DEFAULT_GAS_COMFORT_BACKUP,
     DEFAULT_GAS_MIN_WINDOW_HOURS,
@@ -1178,6 +1181,18 @@ def build_gas_boiler_schema(defaults: dict[str, Any]) -> vol.Schema:
                 CONF_GAS_METER_SENSOR,
                 description=_suggested(defaults, CONF_GAS_METER_SENSOR),
             ): _sensor(["gas", "energy"]),
+            vol.Optional(
+                CONF_GAS_BOILER_HEATING_SENSOR,
+                description=_suggested(defaults, CONF_GAS_BOILER_HEATING_SENSOR),
+            ): EntitySelector(EntitySelectorConfig(domain="binary_sensor")),
+            vol.Required(
+                CONF_GAS_BOILER_HEAT_OUTPUT_KW,
+                description=_suggested(
+                    defaults,
+                    CONF_GAS_BOILER_HEAT_OUTPUT_KW,
+                    DEFAULT_GAS_BOILER_HEAT_OUTPUT_KW,
+                ),
+            ): _number(0.5, 60.0, 0.1, "kW"),
             vol.Required(
                 CONF_GAS_COMFORT_BACKUP,
                 description=_suggested(
@@ -1212,6 +1227,12 @@ def normalize_gas_boiler_input(user_input: dict[str, Any]) -> dict[str, Any]:
             user_input.get(CONF_GAS_COMFORT_BACKUP, DEFAULT_GAS_COMFORT_BACKUP)
         ),
         CONF_GAS_METER_SENSOR: user_input.get(CONF_GAS_METER_SENSOR),
+        CONF_GAS_BOILER_HEATING_SENSOR: user_input.get(CONF_GAS_BOILER_HEATING_SENSOR),
+        CONF_GAS_BOILER_HEAT_OUTPUT_KW: float(
+            user_input.get(
+                CONF_GAS_BOILER_HEAT_OUTPUT_KW, DEFAULT_GAS_BOILER_HEAT_OUTPUT_KW
+            )
+        ),
         CONF_COMFORT_LOOKAHEAD_HOURS: float(
             user_input.get(
                 CONF_COMFORT_LOOKAHEAD_HOURS, DEFAULT_COMFORT_LOOKAHEAD_HOURS

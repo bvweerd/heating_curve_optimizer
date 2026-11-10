@@ -85,6 +85,8 @@ from .const import (
     CONF_FLOW_SENSOR,
     CONF_GAS_BOILER_EFFICIENCY,
     CONF_GAS_CALORIFIC_VALUE,
+    CONF_GAS_BOILER_HEAT_OUTPUT_KW,
+    CONF_GAS_BOILER_HEATING_SENSOR,
     CONF_GAS_METER_SENSOR,
     CONF_GAS_MIN_WINDOW_HOURS,
     CONF_GRID_EXPORT_SENSOR,
@@ -135,6 +137,7 @@ from .const import (
     DEFAULT_EMITTER_TYPE,
     DEFAULT_FEED_IN_PRICE_FALLBACK,
     DEFAULT_GAS_BOILER_EFFICIENCY,
+    DEFAULT_GAS_BOILER_HEAT_OUTPUT_KW,
     DEFAULT_GAS_CALORIFIC_VALUE_KWH_PER_M3,
     DEFAULT_GAS_MIN_WINDOW_HOURS,
     DEFAULT_HARD_FLOOR_PENALTY,
@@ -1603,7 +1606,8 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             air=float(heat_data["indoor_temperature"]),
             outdoor=outdoor,
             solar_kw=float(heat_data.get("solar_gain", 0.0)),
-            heat_kw=self._current_heat_kw(outdoor, supply),
+            heat_kw=self._current_heat_kw(outdoor, supply)
+            + self._gas_boiler_heat_kw(),
             power_kw=read_power_kw(self.hass, self.config.get(CONF_POWER_CONSUMPTION)),
             supply=self._measured_supply_temp(),
         )
@@ -1812,6 +1816,24 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             heatpump.cop_compensation_factor *= self._modelled_heat_scale()
         return heatpump
+
+    def _gas_boiler_heat_kw(self) -> float:
+        """Heat the gas boiler puts into the heating now: its configured
+        output while its heating sensor is on, else 0.
+
+        Without this a gas run warms the house with no heat in the model:
+        the mass estimate lags (a negative buffer right after heating on
+        gas) and the learned heat loss comes out too low.
+        """
+        sensor = self.config.get(CONF_GAS_BOILER_HEATING_SENSOR)
+        state = self.hass.states.get(sensor) if sensor else None
+        if state is None or state.state != "on":
+            return 0.0
+        return float(
+            self.config.get(
+                CONF_GAS_BOILER_HEAT_OUTPUT_KW, DEFAULT_GAS_BOILER_HEAT_OUTPUT_KW
+            )
+        )
 
     def _gas_heat_counter_kwh(self) -> float | None:
         """Cumulative heat delivered by the gas boiler, from its gas meter."""
@@ -2229,6 +2251,9 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await calibration.async_save()
             return
 
+        if not self.config.get(CONF_GAS_METER_SENSOR):
+            # With a gas meter the window's gas heat is measured below.
+            heat_kw += self._gas_boiler_heat_kw()
         current = {
             "heat_kw": heat_kw,  # net: a defrost counts negative
             "solar_kw": max(0.0, solar_gain_kw),

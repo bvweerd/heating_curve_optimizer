@@ -133,6 +133,15 @@ meter** (m³ or kWh, used to calibrate the heat pump's COP level, see
 [Calibration](calibration.md)) and **Gas as comfort
 backup** (default on): recommend the boiler whenever the heat pump cannot
 restore the comfort band within 3 hours, even if gas is more expensive.
-Switch it off to use gas only when it is also cheaper. See
+Switch it off to use gas only when it is also cheaper.
+
+**Gas boiler heating sensor** (optional) and **gas boiler heat output**
+(default 6 kW): a binary sensor that is on while the boiler fires for
+space heating - not for tap water - and the heat it then delivers. That
+heat goes into the building model (thermal mass, buffer, learned heat
+loss), which otherwise sees a gas run as the house warming up on its own.
+With OpenTherm, a template such as flame on, CH mode on and DHW mode off.
+Estimate the output from the gas meter over a few heating hours: gas
+(kWh) × efficiency / hours with the flame on. See
 [How it works](algorithm.md#hybrid-gas-boiler) for when the boiler is
 recommended.

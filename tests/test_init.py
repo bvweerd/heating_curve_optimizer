@@ -256,6 +256,11 @@ async def test_hybrid_run_advice_and_cheaper_binary_sensors(
     if hp_cheaper.state == gas_cheaper.state:
         assert gas_cheaper.attributes["close_call"] is True
 
+    # Run advice per source: never both.
+    hp_advised = _state(hass, "binary_sensor", f"{entry.entry_id}_heat_pump_advised")
+    assert hp_advised is not None and hp_advised.state in ("on", "off")
+    assert not (hp_advised.state == "on" and gas_advice.state == "on")
+
     # The heat pump's own cost per kWh lives on the heat-pump device; the
     # gas cost stays on the gas boiler's device.
     hp_device = _device(hass, entry, f"{entry.entry_id}_heat_pump")
@@ -293,12 +298,12 @@ async def test_power_sensor_enables_thermal_sensors(
     registry_entity = er.async_get(hass).async_get(thermal_id)
     assert registry_entity is not None and registry_entity.device_id == device.id
 
-    # The primary zone's plan-active advice also belongs to the heat pump.
+    # The planned heat demand is source-neutral: on the main device.
     plan_id = _entity_id(
         hass, "binary_sensor", f"{entry.entry_id}_heat_pump_plan_active"
     )
     plan_entity = er.async_get(hass).async_get(plan_id)
-    assert plan_entity is not None and plan_entity.device_id == device.id
+    assert plan_entity is not None and plan_entity.device_id != device.id
 
     # The planned COP is a heat-pump property, so it lives there as well.
     cop_id = _entity_id(hass, "sensor", f"{entry.entry_id}_planned_cop")
@@ -316,14 +321,15 @@ async def test_heat_pump_device_exists_without_power_sensor(
 
     device = _device(hass, entry, f"{entry.entry_id}_heat_pump")
     assert device.name == "Heat pump"
+    cop_id = _entity_id(hass, "sensor", f"{entry.entry_id}_planned_cop")
+    cop_entity = er.async_get(hass).async_get(cop_id)
+    assert cop_entity is not None and cop_entity.device_id == device.id
     plan_id = _entity_id(
         hass, "binary_sensor", f"{entry.entry_id}_heat_pump_plan_active"
     )
-    plan_entity = er.async_get(hass).async_get(plan_id)
-    assert plan_entity is not None and plan_entity.device_id == device.id
     state = hass.states.get(plan_id)
     assert state is not None
-    assert state.attributes["friendly_name"] == "Heat pump Plan active"
+    assert state.attributes["friendly_name"].endswith("Planned heat demand")
 
 
 async def test_indoor_change_reoptimizes_without_waiting_for_the_poll(

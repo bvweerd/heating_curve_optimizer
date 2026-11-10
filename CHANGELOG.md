@@ -56,6 +56,15 @@ deployments to migrate from.
 - *Gas boiler cheaper* / *Heat pump cheaper* compare heat made now; the
   gas advice keeps comparing with the plan's marginal heat
   (`gas_cheaper_than_plan`). Dutch name *Voordeliger* → *Goedkoper*.
+- Hybrid advice per source: new *Heat pump advised* (heat needed now and
+  gas not advised), the counterpart of *Gas boiler advised*. *Heat pump
+  plan active* is renamed *Planned heat demand* and moves to the main
+  device: it says heat is needed, not which source makes it (unique id
+  and entity id unchanged).
+- Gas boiler heat in the building model: new optional *gas boiler heating
+  sensor* and *heat output* (default 6 kW). Before, a gas run warmed the
+  house with no heat in the model, so the thermal buffer went negative
+  right after heating on gas and the learned heat loss came out low.
 - *Gas boiler cheaper* / *Heat pump cheaper* are both off within the dead
   band (new attribute `close_call`; `gas_cheaper_since` → `price_verdict_since`)
   instead of holding their last state. On a tie, "gas cheaper" stuck on
