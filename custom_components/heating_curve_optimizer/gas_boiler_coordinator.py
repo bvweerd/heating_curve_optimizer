@@ -124,15 +124,32 @@ def _comfort_at_risk(
 # listeners on both price sensors (see async_setup).
 DEFAULT_UPDATE_INTERVAL = timedelta(minutes=15)
 
-# "Gas cheaper" switches only when the other source is clearly cheaper -
-# by this share of the gas cost or this amount, whichever is larger - and
-# not within this long of the previous switch. Near break-even (a heat
-# pump at an evening price peak) the plain comparison flipped on every
-# quarter-hour price and every small change of the planned COP. A switch
-# held back only by the hold time is made the moment the hold ends.
+# A source counts as cheaper only when it is clearly cheaper: by this share
+# of the gas cost or this amount, whichever is larger. Near break-even (a
+# heat pump at an evening price peak) the plain comparison flipped on every
+# quarter-hour price and every small change of the planned COP.
+# - The price comparison of heat made now ("gas cheaper" / "heat pump
+#   cheaper") has three outcomes: inside the band neither is cheaper
+#   (`close_call`), so the two flags never contradict the advice on a tie.
+# - The gas advice keeps a flag with the band as hysteresis and a minimum
+#   hold between switches; a switch held back only by the hold time is made
+#   the moment the hold ends.
 GAS_CHEAPER_DEADBAND_REL = 0.05
 GAS_CHEAPER_DEADBAND_ABS = 0.005  # EUR/kWh heat
 GAS_CHEAPER_MIN_HOLD = timedelta(hours=1)
+
+VERDICT_GAS = "gas"
+VERDICT_HEAT_PUMP = "heat_pump"
+VERDICT_CLOSE_CALL = "close_call"
+
+
+def _dead_band(gas_cost_eur_per_kwh: float) -> float:
+    """Price difference (EUR/kWh heat) below which neither source counts as
+    cheaper."""
+    return max(
+        GAS_CHEAPER_DEADBAND_ABS,
+        GAS_CHEAPER_DEADBAND_REL * max(gas_cost_eur_per_kwh, 0.0),
+    )
 
 
 class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -163,9 +180,12 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._electricity_price_sensor = config.get(CONF_CONSUMPTION_PRICE_SENSOR)
         self._unsub: Any = None
         self._unsub_plan: Any = None
-        # Published flags (with dead band) and since when, per comparison:
-        # "now" (heat made now) and "plan" (the plan's marginal heat).
+        # The gas advice's price flag (hysteresis, hold) and since when,
+        # per comparison key ("plan": the plan's marginal heat).
         self._flags: dict[str, tuple[bool, datetime]] = {}
+        # Price verdict for heat made now ("gas", "heat_pump" or
+        # "close_call") and since when it holds.
+        self._verdict_now: tuple[str, datetime] | None = None
         # When a switch held back by the hold time becomes due (this run).
         self._switch_due: list[datetime] = []
         self._unsub_hold: Any = None
@@ -345,8 +365,8 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             heat_pump_cost_eur_per_kwh=spot_cost_eur_per_kwh,
             gas_cost_eur_per_kwh=gas_cost_eur_per_kwh,
         )
-        gas_cheaper = self._flag_with_deadband(
-            "now", now_comparison.savings_eur_per_kwh, gas_cost_eur_per_kwh, now
+        verdict_now = self._price_verdict(
+            now_comparison.savings_eur_per_kwh, gas_cost_eur_per_kwh, now
         )
         # The plan's marginal heat: what the gas advice decides on.
         comparison = compare_heat_pump_and_gas(
@@ -397,8 +417,14 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Heat made now vs. gas (positive: gas cheaper).
             "savings_eur_per_kwh": now_comparison.savings_eur_per_kwh,
             "savings_pct": now_comparison.savings_pct,
-            "gas_cheaper": gas_cheaper,
-            "gas_cheaper_since": self._flag_since("now"),
+            # Only one of these is on, or neither inside the dead band.
+            "gas_cheaper": verdict_now == VERDICT_GAS,
+            "heat_pump_cheaper": verdict_now == VERDICT_HEAT_PUMP,
+            "close_call": verdict_now == VERDICT_CLOSE_CALL,
+            "price_verdict": verdict_now,
+            "price_verdict_since": (
+                self._verdict_now[1].isoformat() if self._verdict_now else None
+            ),
             # The plan's marginal heat vs. gas: the advice's price check.
             "plan_savings_eur_per_kwh": comparison.savings_eur_per_kwh,
             "gas_cheaper_than_plan": gas_cheaper_than_plan,
@@ -435,9 +461,25 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.hass, _hold_ended, min(self._switch_due)
         )
 
-    def _flag_since(self, key: str) -> str | None:
-        flag = self._flags.get(key)
-        return flag[1].isoformat() if flag else None
+    def _price_verdict(
+        self, savings_eur_per_kwh: float, gas_cost_eur_per_kwh: float, now: datetime
+    ) -> str:
+        """Which source is clearly cheaper for heat made now.
+
+        `savings_eur_per_kwh` is heat pump cost minus gas cost. Within the
+        dead band neither is: `VERDICT_CLOSE_CALL`. No hold time - the band
+        itself keeps a tie from flipping both flags.
+        """
+        margin = _dead_band(gas_cost_eur_per_kwh)
+        if savings_eur_per_kwh > margin:
+            verdict = VERDICT_GAS
+        elif savings_eur_per_kwh < -margin:
+            verdict = VERDICT_HEAT_PUMP
+        else:
+            verdict = VERDICT_CLOSE_CALL
+        if self._verdict_now is None or self._verdict_now[0] != verdict:
+            self._verdict_now = (verdict, now)
+        return verdict
 
     def _flag_with_deadband(
         self,
@@ -458,10 +500,7 @@ class GasBoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._flags[key] = (savings_eur_per_kwh > 0, now)
             return savings_eur_per_kwh > 0
         cheaper, since = flag
-        margin = max(
-            GAS_CHEAPER_DEADBAND_ABS,
-            GAS_CHEAPER_DEADBAND_REL * max(gas_cost_eur_per_kwh, 0.0),
-        )
+        margin = _dead_band(gas_cost_eur_per_kwh)
         switch = (
             savings_eur_per_kwh < -margin if cheaper else savings_eur_per_kwh > margin
         )
