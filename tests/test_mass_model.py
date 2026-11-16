@@ -287,7 +287,8 @@ async def test_diagnostics_carry_the_validation_history(
         "heat_kw",
     ]
     assert len(validation["history"]) == 2
-    assert len(validation["history"][0]) == 6
+    assert len(validation["history"][0]) == 7
+    assert validation["history_columns"][-1] == "excluded"
     assert validation["history_end"] is not None
     # The first published advice is logged.
     assert validation["plan_advice_changes"]
@@ -326,3 +327,96 @@ async def test_cop_model_far_from_measured_raises_a_repair_issue(
     assert issue in ir.async_get(hass).issues
     coordinator._update_cop_model_issue(1.05)
     assert issue not in ir.async_get(hass).issues
+
+
+def _fireplace_history(mark: bool) -> list[HistorySample]:
+    """The synthetic house plus a fireplace (5 kW, 18-22 h on 3 of 5 days)
+    whose heat the model never sees; `mark` flags those samples excluded."""
+    truth = _building()
+    truth.air_coupling_kw_per_k = 8.0
+    step = 5 / 60
+    mass = 20.0
+    samples = []
+    for i in range(5 * 288):
+        day, hour = divmod(i * 5 / 60, 24)
+        outdoor = 6.0 + 4.0 * math.sin((hour - 9) / 24 * 2 * math.pi)
+        solar = (
+            max(0.0, 4.0 * math.sin((hour - 7) / 10 * math.pi))
+            if 7 < hour < 17
+            else 0.0
+        )
+        heat = 6.0 if (2 <= hour < 5 or 19 <= hour < 21) else 0.0
+        fire = 5.0 if (18 <= hour < 22 and day in (1, 2, 4)) else 0.0
+        air = truth.air_temp(mass, outdoor_temp=outdoor, solar_gain_kw=solar + fire)
+        samples.append(
+            HistorySample(air, outdoor, solar, heat, excluded=mark and fire > 0)
+        )
+        mass = truth.next_mass_temp(
+            mass,
+            outdoor_temp=outdoor,
+            heat_input_kw=heat,
+            solar_gain_kw=solar + fire,
+            step_hours=step,
+        )
+    return samples
+
+
+def test_learning_skips_excluded_fireplace_evenings():
+    """Unseen fireplace heat in the history: with the evenings flagged the
+    fit finds the true coupling and beats the one-node model as without a
+    fireplace; the prediction error is lower than with them included."""
+    marked = fit_air_coupling(_fireplace_history(True), _building())
+    unmarked = fit_air_coupling(_fireplace_history(False), _building())
+    assert marked is not None and unmarked is not None
+    assert marked.coupling_kw_per_k == 8.0
+    assert marked.accepted
+    assert marked.mae_k < unmarked.mae_k
+
+
+def test_all_excluded_history_gives_no_fit():
+    history = [
+        HistorySample(s.air, s.outdoor, s.solar_kw, s.heat_kw, excluded=True)
+        for s in _synthetic_history(8.0)
+    ]
+    assert fit_air_coupling(history, _building()) is None
+
+
+def test_measured_cop_ratio_ignores_excluded_samples():
+    from custom_components.heating_curve_optimizer.mass_model import (
+        measured_cop_ratio,
+    )
+
+    heatpump = HeatPumpConfig()
+    cop = heatpump.cop_at(supply_temp=30.0, outdoor_temp=8.0)
+    good = [HistorySample(20.0, 8.0, 0.0, cop * 1.0, 1.0, 30.0) for _ in range(30)]
+    # Tap water: heat to the tank, not measured as space heat.
+    tap = [
+        HistorySample(20.0, 8.0, 0.0, 0.1, 1.0, 30.0, excluded=True) for _ in range(60)
+    ]
+    assert measured_cop_ratio(good + tap, heatpump) == pytest.approx(1.0)
+
+
+async def test_exclusion_flag_is_stored_and_old_rows_still_load():
+    from custom_components.heating_curve_optimizer.mass_model import MassModelState
+
+    store = _FakeStore()
+    state = MassModelState(store)  # type: ignore[arg-type]
+    building = _building(8.0)
+    start = dt_util.utcnow()
+    for minute in range(6):
+        state.update(
+            start + timedelta(minutes=minute),
+            building,
+            air=20.0,
+            outdoor=5.0,
+            solar_kw=0.0,
+            heat_kw=0.0,
+            excluded=minute == 2,  # one excluded minute taints the bucket
+        )
+    assert state.history[-1].excluded is True
+    assert store.saved["history"][-1][6] == 1
+
+    old = {"history": [[20.0, 5.0, 0.0, 1.0, None, None]]}
+    restored = MassModelState(_FakeStore(old))  # type: ignore[arg-type]
+    await restored.async_load()
+    assert restored.history[0].excluded is False
