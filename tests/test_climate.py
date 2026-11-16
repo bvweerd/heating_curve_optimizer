@@ -170,3 +170,18 @@ async def test_async_setup_entry_creates_entity_with_primary_zone(
     (entities,) = async_add_entities.call_args[0]
     assert len(entities) == 1
     assert isinstance(entities[0], HeatingOptimizerClimate)
+
+
+def test_temperatures_use_the_native_names():
+    """Home Assistant 2026.11 reads ``native_*``; older releases get the same
+    values under the old names (see climate.NATIVE_TEMPERATURES)."""
+    from custom_components.heating_curve_optimizer.climate import (
+        NATIVE_TEMPERATURES,
+        HeatingOptimizerClimate,
+    )
+
+    assert "native_current_temperature" in HeatingOptimizerClimate.__dict__
+    assert "native_target_temperature" in HeatingOptimizerClimate.__dict__
+    assert ("current_temperature" in HeatingOptimizerClimate.__dict__) is (
+        not NATIVE_TEMPERATURES
+    )
