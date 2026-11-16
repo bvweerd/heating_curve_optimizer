@@ -40,9 +40,14 @@ gives the **heat loss coefficient** `UA`, the **thermal mass** `C`, a
 `g`. The fit is pulled towards the energy-label estimate while there are few
 samples; that pull fades as evidence accumulates.
 
-Windows are discarded when tap water was heated, a window or door was open,
-the indoor temperature jumped more than 1 °C between two runs, or there was
-a gap in the data.
+Windows are discarded when tap water was heated, windows or doors were open
+for more than 10 minutes in total, the indoor temperature jumped more than
+1 °C between two runs, or there was a gap in the data. A door opened for a
+moment (letting the dog out, a delivery) is tolerated: it moves little heat,
+and discarding hours of observation for it would leave a household that
+uses its doors without calibration. Elsewhere (mass model, energy signature)
+a contact only counts as open once it has been open for 5 minutes, so a
+burning fireplace on a contact is still left out.
 
 !!! note "Without a heat meter"
     Heat is then electrical power × the COP model. If the COP model is, say,

@@ -122,6 +122,46 @@ EXCLUSION_RESULTS = (
     RESULT_ELAPSED_GAP,
 )
 
+# A door that is opened for a moment (letting the dog out, a delivery) moves
+# little heat; dropping hours of observation for it would leave a household
+# that uses its doors without calibration. An opening only counts as
+# "open" once it has lasted WINDOW_OPEN_GRACE, and an observation window is
+# only discarded once its contacts were open for WINDOW_OPEN_TOLERANCE in
+# total. A fireplace on a contact is on for far longer and still counts.
+WINDOW_OPEN_GRACE = timedelta(minutes=5)
+WINDOW_OPEN_TOLERANCE = timedelta(minutes=10)
+
+
+@dataclass
+class OpenTime:
+    """Total open time of window and door contacts since the last reset.
+
+    Two contacts open at the same time count twice: more air is exchanged.
+    """
+
+    total_s: float = 0.0
+    _open_since: dict[str, datetime] = field(default_factory=dict)
+
+    def opened(self, entity_id: str, at: datetime) -> None:
+        self._open_since.setdefault(entity_id, at)
+
+    def closed(self, entity_id: str, at: datetime) -> None:
+        start = self._open_since.pop(entity_id, None)
+        if start is not None:
+            self.total_s += max((at - start).total_seconds(), 0.0)
+
+    def seconds(self, now: datetime) -> float:
+        """Open time so far, including contacts that are still open."""
+        return self.total_s + sum(
+            max((now - start).total_seconds(), 0.0)
+            for start in self._open_since.values()
+        )
+
+    def reset(self, now: datetime) -> None:
+        """Start counting afresh; contacts still open count from `now`."""
+        self.total_s = 0.0
+        self._open_since = dict.fromkeys(self._open_since, now)
+
 
 @dataclass(frozen=True)
 class CalibrationSettings:

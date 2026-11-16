@@ -69,6 +69,11 @@ deployments to migrate from.
 - Climate entity uses the `native_*` temperature names of Home Assistant
   2026.11 (the old ones stop working in 2027.11); older releases still get
   the old names.
+- Brief door and window openings no longer discard calibration windows:
+  a window is only dropped once its contacts were open for 10 minutes in
+  total, and the mass model and energy signature only count a contact
+  that has been open for 5 minutes. With a frequently used door almost no
+  window survived before (#239).
 - Exclusion sensors (open window, fireplace, tap water) now also keep
   their periods out of the mass model's learning (coupling, solar factor,
   UA scale) and the measured COP ratio; the observer still follows the
