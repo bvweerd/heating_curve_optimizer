@@ -312,8 +312,8 @@ def test_mass_learning_finds_a_lower_heat_loss_than_the_label() -> None:
 def test_mass_learning_keeps_the_label_heat_loss_when_it_is_right() -> None:
     fit = fit_air_coupling(_synthetic_history(8.0), _building())
     assert fit is not None and fit.ua_scale == pytest.approx(1.0)
-    # History samples stay a plain 6-field layout (storage unchanged).
-    assert len(vars(HistorySample(20.0, 5.0, 0.0, 0.0))) == 6
+    # History samples: six measured fields plus the exclusion flag.
+    assert len(vars(HistorySample(20.0, 5.0, 0.0, 0.0))) == 7
 
 
 def test_cop_fit_keeps_the_prior_k_when_supply_follows_the_curve() -> None:
