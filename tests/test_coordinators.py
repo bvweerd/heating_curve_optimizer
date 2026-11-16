@@ -546,3 +546,82 @@ async def test_replans_at_the_next_price_boundary(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
     coordinator.async_request_refresh.assert_called_once()
     assert coordinator._unsub_boundary is None
+
+
+async def _gas_window(hass: HomeAssistant, coordinator, heating: str) -> float:
+    """Run a 2 h window in which the gas meter rises 1 m³; return its gas_kw."""
+    hass.states.async_set("sensor.gas", "100.0", {"unit_of_measurement": "m³"})
+    hass.states.async_set("binary_sensor.cv_heating", heating)
+    start = dt_util.utcnow()
+    temps = [20.0, 20.1, 20.2, 20.25, 20.3, 20.35, 20.4, 20.45, 20.5]
+    for i, temp in enumerate(temps):
+        if i == len(temps) - 1:
+            hass.states.async_set("sensor.gas", "101.0", {"unit_of_measurement": "m³"})
+        await coordinator._maybe_record_calibration_sample(
+            indoor_temp=temp,
+            now=start + timedelta(minutes=15 * i),
+            **(CALIBRATION_KWARGS | {"power_kw": 0.0}),
+        )
+    return coordinator.thermal_calibration.samples[-1].gas_kw
+
+
+async def test_gas_without_heating_signal_is_not_space_heat(
+    hass: HomeAssistant,
+) -> None:
+    """With a heating signal the meter's gas (a shower, cooking) does not
+    count while the boiler did not heat the house."""
+    coordinator = _calibrating_coordinator(
+        hass,
+        gas_meter_sensor="sensor.gas",
+        gas_boiler_heating_sensor="binary_sensor.cv_heating",
+        gas_boiler_heat_output_kw=6.0,
+    )
+    assert await _gas_window(hass, coordinator, "off") == 0.0
+
+
+async def test_gas_with_heating_signal_is_signal_times_output(
+    hass: HomeAssistant,
+) -> None:
+    coordinator = _calibrating_coordinator(
+        hass,
+        gas_meter_sensor="sensor.gas",
+        gas_boiler_heating_sensor="binary_sensor.cv_heating",
+        gas_boiler_heat_output_kw=6.0,
+    )
+    assert await _gas_window(hass, coordinator, "on") == pytest.approx(6.0)
+
+
+def test_a_usable_energy_signature_carries_the_building_model(
+    hass: HomeAssistant,
+) -> None:
+    from custom_components.heating_curve_optimizer.energy_signature import (
+        SignatureFit,
+    )
+
+    coordinator = _calibrating_coordinator(
+        hass,
+        calibration_mode="apply",
+        indoor_temperature_sensor="sensor.indoor",
+        power_consumption="sensor.power",
+    )
+    config = coordinator.heat_coordinator.effective_config()
+    label_ua = coordinator.building_config(config).ua_w_per_k
+    coordinator._signature.fit = SignatureFit(
+        ua_w_per_k=130.0,
+        internal_gain_kw=0.4,
+        solar_factor=0.6,
+        r_squared=0.9,
+        days=14,
+        delta_t_spread=3.0,
+        mean_abs_error_kwh=2.0,
+        usable=True,
+        reason=None,
+    )
+    building = coordinator.building_config(config)
+    assert label_ua != 130.0
+    assert building.ua_w_per_k == 130.0
+    assert building.internal_gain_kw == 0.4
+    assert coordinator.calibration_status() == "applied"
+    summary = coordinator.calibration_summary(config)
+    assert summary["signature_used"] is True
+    assert summary["signature_ua_w_per_k"] == 130.0

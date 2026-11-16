@@ -169,6 +169,9 @@ from .const import (
 )
 from .coordinator_heat import INDOOR_SOURCE_SENSOR, HeatCalculationCoordinator
 from .coordinator_weather import _update_failed
+from .energy_signature import MIN_DAYS as SIGNATURE_MIN_DAYS
+from .energy_signature import STORAGE_VERSION as SIGNATURE_STORAGE_VERSION
+from .energy_signature import EnergySignature, SignaturePrior
 from .gas_boiler_heat import (
     SOURCE_NONE,
     SOURCE_SENSOR,
@@ -196,6 +199,7 @@ from .helpers import (
 from .mass_model import (
     COP_RATIO_PLAUSIBLE,
     DEFAULT_AIR_COUPLING_W_PER_M2_K,
+    UA_SCALE_GRID,
     MassModelState,
     fit_air_coupling,
     measured_cop_ratio,
@@ -358,6 +362,9 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Gas boiler output learned from the gas meter (gas_boiler_heat.py).
         self._gas_output = GasBoilerOutputLearner()
         self._gas_output_store: storage.Store[dict[str, Any]] | None = None
+        # Daily heat balances: UA, internal gains, solar (energy_signature.py).
+        self._signature = EnergySignature()
+        self._signature_store: storage.Store[dict[str, Any]] | None = None
         # Measured COP over windows of compressor operation (calibration).
         self._cop_window = CopWindow()
         # Supply-return sensor offset from pump runs without compressor.
@@ -505,6 +512,15 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._gas_output = GasBoilerOutputLearner.from_dict(
             await self._gas_output_store.async_load()
         )
+        self._signature_store = storage.Store(
+            self.hass,
+            SIGNATURE_STORAGE_VERSION,
+            f"{DOMAIN}_{self.zone_id}_energy_signature",
+        )
+        self._signature = EnergySignature.from_dict(
+            await self._signature_store.async_load()
+        )
+        self._signature.refit(self._signature_prior())
         self._unsub_mass = async_track_time_interval(
             self.hass, self._handle_mass_tick, timedelta(seconds=60)
         )
@@ -1310,6 +1326,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         fit = self._mass.fit if self._mass else None
         if (
             config.get(CONF_AIR_COUPLING)
+            or self._signature_usable()
             or fit is None
             or fit.ua_scale is None
             or fit.mae_k >= fit.one_node_mae_k
@@ -1332,6 +1349,14 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             building.internal_gain_kw = fit.internal_gain_kw
             building.solar_factor = fit.solar_factor
             building.time_constant_hours = fit.time_constant_hours
+        signature = self._signature.fit
+        if self._signature_usable() and signature is not None:
+            building.ua_w_per_k = signature.ua_w_per_k
+            building.internal_gain_kw = signature.internal_gain_kw
+            building.solar_factor = signature.solar_factor
+            building.time_constant_hours = building.thermal_mass_kwh_per_k / (
+                signature.ua_w_per_k / 1000.0
+            )
         return building
 
     # ------------------------------------------------------------------
@@ -1467,6 +1492,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._track_plan_adherence(now, power_kw)
         self._record_cop_window(now, power_kw)
         self._learn_gas_output(now)
+        self._update_signature(now)
         self._update_mass(now)
 
     def _track_plan_adherence(self, now: datetime, power_kw: float | None) -> None:
@@ -1601,6 +1627,77 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ),
         )
 
+    def _signature_prior(self) -> SignaturePrior:
+        """The label model the energy signature is pulled towards."""
+        building = BuildingConfig.from_config(self.heat_coordinator.effective_config())
+        return SignaturePrior(
+            ua_w_per_k=building.ua_w_per_k,
+            internal_gain_kw=building.internal_gain_kw,
+            solar_factor=building.solar_factor,
+            thermal_mass_kwh_per_k=building.thermal_mass_kwh_per_k,
+            area_m2=building.area_m2,
+        )
+
+    def _signature_usable(self) -> bool:
+        """Whether the energy signature replaces UA, internal gains and the
+        solar factor of the building model."""
+        fit = self._signature.fit
+        return (
+            self.calibration_mode() == MODE_APPLY
+            and self._calibration_allowed
+            and fit is not None
+            and fit.usable
+        )
+
+    def _signature_summary(self) -> dict[str, Any]:
+        """The energy signature in the calibration attributes."""
+        fit = self._signature.fit
+        result: dict[str, Any] = {
+            "signature_days": len(self._signature.days),
+            "signature_days_needed": SIGNATURE_MIN_DAYS,
+            "signature_rejected_days": dict(self._signature.rejected),
+            "signature_used": self._signature_usable(),
+        }
+        if fit is not None:
+            result |= {
+                "signature_ua_w_per_k": round(fit.ua_w_per_k, 1),
+                "signature_internal_gain_w": round(fit.internal_gain_kw * 1000.0),
+                "signature_solar_factor": round(fit.solar_factor, 3),
+                "signature_r_squared": round(fit.r_squared, 3),
+                "signature_delta_t_spread_k": round(fit.delta_t_spread, 2),
+                "signature_mean_abs_error_kwh": round(fit.mean_abs_error_kwh, 1),
+                "signature_reason": fit.reason,
+            }
+        return result
+
+    def _update_signature(self, now: datetime) -> None:
+        """Add one minute to today's heat balance; refit at a day change."""
+        heat_data = self.heat_coordinator.data
+        weather = self.heat_coordinator.weather_coordinator.data
+        if (
+            not heat_data
+            or not weather
+            or heat_data.get("indoor_temperature_source") != INDOOR_SOURCE_SENSOR
+        ):
+            return
+        outdoor = float(weather["current_temperature"])
+        supply = self._measured_supply_temp()
+        closed = self._signature.tick(
+            now,
+            dt_util.as_local(now).date(),
+            heat_kw=self._current_heat_kw(outdoor, supply) + self._gas_boiler_heat_kw(),
+            indoor=float(heat_data["indoor_temperature"]),
+            outdoor=outdoor,
+            solar_kw=float(heat_data.get("solar_gain", 0.0)),
+            excluded=self._active_exclusion() is not None,
+        )
+        if closed is not None:
+            self._signature.refit(self._signature_prior())
+        if self._signature_store is not None:
+            self._signature_store.async_delay_save(
+                self._signature.as_dict, 10 if closed else 900
+            )
+
     def _update_mass(self, now: datetime) -> None:
         """Advance the mass observer on the measured air; learn when due."""
         mass = self._mass
@@ -1702,8 +1799,11 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if mass is None:
                 return
             building.air_coupling_kw_per_k = 0.0
+            # With the energy signature applied the UA is known; the mass
+            # model then only learns the dynamics.
+            ua_scales = (1.0,) if self._signature_usable() else UA_SCALE_GRID
             fit = await self.hass.async_add_executor_job(
-                fit_air_coupling, list(mass.history), building
+                fit_air_coupling, list(mass.history), building, ua_scales
             )
             mass.set_fit(now, fit)
         finally:
@@ -1838,6 +1938,21 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             heatpump.cop_compensation_factor *= self._modelled_heat_scale()
         return heatpump
+
+    def _gas_heat_from_meter(self) -> bool:
+        """Whether calibration windows take the boiler's heat from the gas
+        meter: only without a heat power sensor or heating signal.
+
+        A gas meter also counts tap water and cooking; with a signal the
+        window takes the boiler heat while the signal was on (signal x
+        output, the output learned from the meter), so a shower in a window
+        on the heat pump is not mistaken for space heating.
+        """
+        return bool(
+            self.config.get(CONF_GAS_METER_SENSOR)
+            and not self.config.get(CONF_GAS_BOILER_HEAT_POWER_SENSOR)
+            and not self.config.get(CONF_GAS_BOILER_HEATING_SENSOR)
+        )
 
     def _dhw_active(self) -> bool:
         sensor = self.config.get(CONF_DHW_ACTIVE_SENSOR)
@@ -2089,6 +2204,14 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             or not self._calibration_inputs_available()
         ):
             return STATUS_UNAVAILABLE
+        signature = self._signature.fit
+        if signature is not None and signature.usable:
+            # The daily energy signature carries the building model.
+            return (
+                STATUS_APPLIED
+                if self.calibration_mode() == MODE_APPLY
+                else STATUS_READY
+            )
         if calibration.sample_count < MIN_SAMPLES_TO_APPLY:
             return STATUS_COLLECTING
         if not calibration.ready:
@@ -2126,6 +2249,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             summary["last_result"] = RESULT_MULTI_ZONE
         # With the mass-air model the building fit is shown, not used.
         summary["building_fit_used"] = self._building_fit_usable()
+        summary |= self._signature_summary()
         summary |= self._cop_and_emitter_summary(config)
         if fit is None:
             return summary
@@ -2319,13 +2443,13 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await calibration.async_save()
             return
 
-        if not self.config.get(CONF_GAS_METER_SENSOR):
-            # With a gas meter the window's gas heat is measured below.
-            heat_kw += self._gas_boiler_heat_kw()
         current = {
             "heat_kw": heat_kw,  # net: a defrost counts negative
             "solar_kw": max(0.0, solar_gain_kw),
             "delta_t": indoor_temp - outdoor_temp,
+            # Gas boiler heat from its power sensor or heating signal; 0
+            # without either (then the gas meter is used, see below).
+            "gas_kw": self._gas_boiler_heat_kw(),
         }
         if snapshot is None:
             self._calibration_snapshot = {
@@ -2354,9 +2478,10 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         moved = indoor_temp - snapshot["start_indoor"]
         # A gas meter reports in coarse steps; a longer window keeps one
         # step from dominating the window's gas heat.
+        gas_from_meter = self._gas_heat_from_meter()
         min_hours = (
             self._gas_min_window_hours
-            if self.config.get(CONF_GAS_METER_SENSOR)
+            if gas_from_meter
             else self._calibration_min_hours
         )
         if abs(moved) < MIN_INDOOR_TEMP_DELTA_C or elapsed_h < min_hours:
@@ -2365,8 +2490,9 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._calibration_snapshot = None
             return
 
-        gas_kw = 0.0
-        if self.config.get(CONF_GAS_METER_SENSOR):
+        integrals = snapshot["integrals"]
+        gas_kw = integrals["gas_kw"] / elapsed_h
+        if gas_from_meter:
             gas_end = self._gas_heat_counter_kwh()
             gas_start = snapshot["gas_start_kwh"]
             if gas_start is None or gas_end is None or gas_end < gas_start:
@@ -2375,7 +2501,6 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return
             gas_kw = (gas_end - gas_start) / elapsed_h
 
-        integrals = snapshot["integrals"]
         calibration.record_sample(
             Sample(
                 delta_t=integrals["delta_t"] / elapsed_h,
