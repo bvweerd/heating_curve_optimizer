@@ -50,6 +50,11 @@ TARGET_TEMP_MIN = 15.0
 TARGET_TEMP_MAX = 25.0
 TARGET_TEMP_STEP = 0.5
 
+# Home Assistant 2026.11 moved climate temperatures to ``native_*`` names
+# (the old ones stop working in 2027.11); older releases, which this
+# integration still supports, only read the old names.
+NATIVE_TEMPERATURES = hasattr(ClimateEntity, "native_target_temperature")
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -83,7 +88,7 @@ class HeatingOptimizerClimate(
 
     _attr_has_entity_name = True
     _attr_translation_key = "heating"
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_hvac_modes = [HVACMode.HEAT]  # noqa: RUF012
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
     _attr_min_temp = TARGET_TEMP_MIN
@@ -113,7 +118,7 @@ class HeatingOptimizerClimate(
         )
 
     @property
-    def current_temperature(self) -> float | None:
+    def native_current_temperature(self) -> float | None:
         """Return the current indoor temperature, if a real sensor is configured."""
         if not self.coordinator.data or not self.coordinator.has_real_indoor_sensor:
             return None
@@ -121,7 +126,7 @@ class HeatingOptimizerClimate(
         return float(value) if value is not None else None
 
     @property
-    def target_temperature(self) -> float | None:
+    def native_target_temperature(self) -> float | None:
         """Return the target indoor temperature (same value number.py manages)."""
         if not self.coordinator.data:
             return None
@@ -190,3 +195,16 @@ class HeatingOptimizerClimate(
             {"entity_id": entity_id, "value": temperature},
             blocking=True,
         )
+
+
+if not NATIVE_TEMPERATURES:
+    # Before Home Assistant 2026.11: expose the same values under the old
+    # names. Attached after the class body so a release with the native
+    # names never sees the deprecated ones.
+    _OLD_NAMES: dict[str, Any] = {
+        "_attr_temperature_unit": UnitOfTemperature.CELSIUS,
+        "current_temperature": HeatingOptimizerClimate.native_current_temperature,
+        "target_temperature": HeatingOptimizerClimate.native_target_temperature,
+    }
+    for _name, _value in _OLD_NAMES.items():
+        setattr(HeatingOptimizerClimate, _name, _value)
