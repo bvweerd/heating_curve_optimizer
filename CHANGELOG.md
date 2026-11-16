@@ -56,6 +56,16 @@ deployments to migrate from.
 - *Gas boiler cheaper* / *Heat pump cheaper* compare heat made now; the
   gas advice keeps comparing with the plan's marginal heat
   (`gas_cheaper_than_plan`). Dutch name *Voordeliger* → *Goedkoper*.
+- Energy signature: daily heat balances (heat pump + gas boiler heat,
+  indoor-outdoor difference, solar, indoor change) give UA, internal gains
+  and the solar factor. Once 10 clean days pass the quality gates it
+  replaces them in the building model (with *Mass + air* the mass model
+  then keeps UA fixed and learns only the dynamics) and the calibration is
+  *applied*. The short-window fit could not get there with floor heating
+  (R² ~0.1). New `signature_*` calibration attributes.
+- Calibration windows take the gas boiler's heat from the heating signal
+  (or power sensor) when one is set, not from the gas meter: tap water and
+  cooking no longer count as space heating.
 - Climate entity uses the `native_*` temperature names of Home Assistant
   2026.11 (the old ones stop working in 2027.11); older releases still get
   the old names.
