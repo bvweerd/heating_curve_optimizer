@@ -87,7 +87,7 @@ offset of −4 … +4 °C on top of it.
 | Glazing U-value | 1.2 | Determines the solar heat gain coefficient. |
 | Target temperature, comfort band below/above | 20 °C, 0.3, 0.5 | The optimizer keeps the indoor temperature between target − below and target + above. Deviations are penalised quadratically (50 €/K²/h). |
 | Indoor temperature sensor | — | Strongly recommended. Without it the optimizer assumes the room is at its target temperature and calibration is disabled. An unavailable sensor raises a repair issue. |
-| Window and door contacts | — | Optional binary sensors; periods with an open window are left out of calibration. |
+| Window and door contacts | — | Optional binary sensors; periods with an open window are left out of calibration and of the mass model's learning. Also usable for other heat the model does not see, such as a fireplace or wood stove that is burning. |
 | Home schedule | — | Optional [schedule helper](https://www.home-assistant.io/integrations/schedule/), on while someone is home. See [Away periods](#away-periods). |
 | Away setback | 2 °C | How far the bottom of the comfort band drops while the home schedule is off. |
 | Calibration | Observe | Off / Observe / Apply, see [Calibration](calibration.md). |

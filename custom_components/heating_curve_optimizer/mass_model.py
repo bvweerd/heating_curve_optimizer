@@ -64,6 +64,9 @@ class HistorySample:
 
     The power and supply fields are not used for learning; they are kept so
     a diagnostics download can be replayed offline (measured COP, backtest).
+    `excluded`: an exclusion sensor (open window, fireplace, tap water) was
+    on during the sample - heat the model does not see moved the air, so
+    learning skips it.
     """
 
     air: float
@@ -72,6 +75,7 @@ class HistorySample:
     heat_kw: float
     power_kw: float | None = None
     supply: float | None = None
+    excluded: bool = False
 
 
 @dataclass
@@ -126,7 +130,7 @@ def _replay(
         mass = _observe(model, mass, sample.air, sample.heat_kw, step)
 
     errors: list[float] = []
-    for start in range(0, len(samples) - horizon, hourly):
+    for start in _prediction_starts(samples, horizon, hourly):
         mass = observed[start]
         for i in range(start, start + horizon):
             sample = samples[i]
@@ -145,6 +149,20 @@ def _replay(
         )
         errors.append(abs(predicted - end.air))
     return sum(errors) / len(errors) if errors else float("inf")
+
+
+def _prediction_starts(
+    samples: list[HistorySample], horizon: int, hourly: int
+) -> list[int]:
+    """Hourly starts of the prediction windows with no excluded sample: a
+    window through a fireplace evening or an open window would score the
+    model on heat it cannot see. The observer still runs through them."""
+    excluded = [s.excluded for s in samples]
+    return [
+        start
+        for start in range(0, len(samples) - horizon, hourly)
+        if not any(excluded[start : start + horizon + 1])
+    ]
 
 
 def _observe(
@@ -170,10 +188,15 @@ def fit_air_coupling(
     None without enough history or heating to judge; `accepted` when the
     best coupling clearly beats the one-node model.
     """
-    if len(samples) < MIN_HISTORY_SAMPLES:
+    usable = [s for s in samples if not s.excluded]
+    if len(usable) < MIN_HISTORY_SAMPLES:
         return None
-    heating = sum(1 for s in samples if s.heat_kw > 0.1) / len(samples)
+    heating = sum(1 for s in usable if s.heat_kw > 0.1) / len(usable)
     if heating < MIN_HEATING_SHARE:
+        return None
+    horizon = int(timedelta(hours=PREDICTION_HOURS) / HISTORY_INTERVAL)
+    hourly = int(timedelta(hours=1) / HISTORY_INTERVAL)
+    if not _prediction_starts(samples, horizon, hourly):
         return None
 
     def candidate(solar: float, ua: float) -> BuildingConfig:
@@ -246,7 +269,8 @@ def measured_cop_ratio(
         (s.heat_kw / s.power_kw)
         / heatpump.cop_at(supply_temp=s.supply, outdoor_temp=s.outdoor)
         for s in samples
-        if s.power_kw is not None
+        if not s.excluded
+        and s.power_kw is not None
         and s.power_kw >= min_running_power_kw
         and s.supply is not None
         and s.heat_kw > 0
@@ -272,6 +296,7 @@ class MassModelState:
             tuple[float, float, float, float, float | None, float | None]
         ] = []
         self._bucket_start: datetime | None = None
+        self._bucket_excluded = False
         self.last_bucket_time: datetime | None = None
         self.fit: CouplingFit | None = None
         self.fitted_at: datetime | None = None
@@ -282,7 +307,10 @@ class MassModelState:
         if not data:
             return
         for row in data.get("history", []):
-            self.history.append(HistorySample(*row))
+            # Rows stored before `excluded` existed have six fields.
+            sample = HistorySample(*row)
+            sample.excluded = bool(sample.excluded)
+            self.history.append(sample)
         if fit := data.get("fit"):
             self.fit = CouplingFit(**fit)
         if fitted_at := data.get("fitted_at"):
@@ -290,7 +318,8 @@ class MassModelState:
 
     def history_rows(self) -> list[list[float | None]]:
         """The history as compact rows (oldest first), for storage and
-        diagnostics: air, outdoor, solar_kw, heat_kw, power_kw, supply."""
+        diagnostics: air, outdoor, solar_kw, heat_kw, power_kw, supply,
+        excluded (0/1)."""
         return [
             [
                 round(s.air, 3),
@@ -299,6 +328,7 @@ class MassModelState:
                 round(s.heat_kw, 3),
                 None if s.power_kw is None else round(s.power_kw, 3),
                 None if s.supply is None else round(s.supply, 2),
+                1 if s.excluded else 0,
             ]
             for s in self.history
         ]
@@ -321,6 +351,7 @@ class MassModelState:
         heat_kw: float,
         power_kw: float | None = None,
         supply: float | None = None,
+        excluded: bool = False,
     ) -> None:
         """Advance the observer to `now` and collect the history sample.
 
@@ -344,6 +375,7 @@ class MassModelState:
         if self._bucket_start is None:
             self._bucket_start = now
         self._bucket.append((air, outdoor, solar_kw, heat_kw, power_kw, supply))
+        self._bucket_excluded |= excluded
         if now - self._bucket_start >= HISTORY_INTERVAL:
             air_m, outdoor_m, solar_m, heat_m, power_m, supply_m = _averages(
                 self._bucket
@@ -356,9 +388,11 @@ class MassModelState:
                     float(heat_m or 0.0),
                     power_m,
                     supply_m,
+                    self._bucket_excluded,
                 )
             )
             self._bucket = []
+            self._bucket_excluded = False
             self._bucket_start = now
             self.last_bucket_time = now
             self._store.async_delay_save(self._data, 600)

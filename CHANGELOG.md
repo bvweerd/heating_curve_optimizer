@@ -56,6 +56,12 @@ deployments to migrate from.
 - *Gas boiler cheaper* / *Heat pump cheaper* compare heat made now; the
   gas advice keeps comparing with the plan's marginal heat
   (`gas_cheaper_than_plan`). Dutch name *Voordeliger* → *Goedkoper*.
+- Exclusion sensors (open window, fireplace, tap water) now also keep
+  their periods out of the mass model's learning (coupling, solar factor,
+  UA scale) and the measured COP ratio; the observer still follows the
+  air through them. Before, a fireplace evening taught the model that the
+  house warms up without heat. History rows get an `excluded` column;
+  stored history without it still loads.
 - Hybrid advice per source: new *Heat pump advised* (heat needed now and
   gas not advised), the counterpart of *Gas boiler advised*. *Heat pump
   plan active* is renamed *Planned heat demand* and moves to the main

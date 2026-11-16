@@ -1628,6 +1628,9 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             heat_kw=self._current_heat_kw(outdoor, supply) + self._gas_boiler_heat_kw(),
             power_kw=read_power_kw(self.hass, self.config.get(CONF_POWER_CONSUMPTION)),
             supply=self._measured_supply_temp(),
+            # Open window, fireplace, tap water: the observer follows the
+            # air through it, the coupling fit leaves it out.
+            excluded=self._active_exclusion() is not None,
         )
         due = mass.fitted_at is None or now - mass.fitted_at >= MASS_LEARN_INTERVAL
         if due and not self._mass_learning:
@@ -1678,6 +1681,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "heat_kw",
                 "power_kw",
                 "supply",
+                "excluded",
             ],
             "history_end": (
                 self._mass.last_bucket_time.isoformat()
