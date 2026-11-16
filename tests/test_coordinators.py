@@ -11,7 +11,9 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.heating_curve_optimizer.calibration import (
     RESULT_EXCLUDED_DHW,
+    RESULT_EXCLUDED_WINDOW,
     RESULT_NO_INDOOR_SENSOR,
+    OpenTime,
     ThermalCalibrationState,
 )
 from custom_components.heating_curve_optimizer.coordinator_optimization import (
@@ -216,6 +218,85 @@ async def test_tap_water_run_discards_the_window(hass: HomeAssistant) -> None:
     assert calibration.last_result == RESULT_EXCLUDED_DHW
     assert calibration.exclusions[RESULT_EXCLUDED_DHW] == 1
     assert coordinator._calibration_snapshot is None
+
+
+def _contact_event(hass: HomeAssistant, entity_id: str, state: str) -> MagicMock:
+    hass.states.async_set(entity_id, state)
+    event = MagicMock()
+    event.data = {"entity_id": entity_id, "new_state": hass.states.get(entity_id)}
+    return event
+
+
+async def test_short_door_opening_keeps_the_window(hass: HomeAssistant) -> None:
+    """Letting the dog out must not throw away hours of observation."""
+    coordinator = _calibrating_coordinator(
+        hass, window_sensors=["binary_sensor.front_door"]
+    )
+    start = dt_util.utcnow()
+    temps = [20.0, 20.05, 20.1, 20.2, 20.35]
+    for i, temp in enumerate(temps):
+        if i == 2:
+            await coordinator._handle_exclusion_sensor(
+                _contact_event(hass, "binary_sensor.front_door", "on")
+            )
+            # Open right now: within the grace, not an exclusion.
+            assert coordinator._active_exclusion() is None
+            await coordinator._handle_exclusion_sensor(
+                _contact_event(hass, "binary_sensor.front_door", "off")
+            )
+        await coordinator._maybe_record_calibration_sample(
+            indoor_temp=temp,
+            now=start + timedelta(minutes=15 * i),
+            **CALIBRATION_KWARGS,
+        )
+    calibration = coordinator.thermal_calibration
+    assert calibration.sample_count == 1
+    assert calibration.exclusions[RESULT_EXCLUDED_WINDOW] == 0
+
+
+async def test_long_opening_discards_the_window(hass: HomeAssistant) -> None:
+    coordinator = _calibrating_coordinator(
+        hass, window_sensors=["binary_sensor.front_door"]
+    )
+    start = dt_util.utcnow()
+    await coordinator._maybe_record_calibration_sample(
+        indoor_temp=20.0, now=start, **CALIBRATION_KWARGS
+    )
+    # Several openings, 12 minutes in total within the window.
+    coordinator._open_time.total_s = 12 * 60
+    await coordinator._maybe_record_calibration_sample(
+        indoor_temp=20.1, now=start + timedelta(minutes=15), **CALIBRATION_KWARGS
+    )
+    calibration = coordinator.thermal_calibration
+    assert calibration.last_result == RESULT_EXCLUDED_WINDOW
+    assert coordinator._calibration_snapshot is None
+
+
+async def test_window_open_past_the_grace_is_an_exclusion(
+    hass: HomeAssistant,
+) -> None:
+    coordinator = _calibrating_coordinator(
+        hass, window_sensors=["binary_sensor.fireplace"]
+    )
+    hass.states.async_set("binary_sensor.fireplace", "on")
+    assert coordinator._active_exclusion() is None
+    state = hass.states.get("binary_sensor.fireplace")
+    state.last_changed = dt_util.utcnow() - timedelta(minutes=6)
+    assert coordinator._active_exclusion() == RESULT_EXCLUDED_WINDOW
+
+
+def test_open_time_counts_open_contacts_and_resets() -> None:
+    t0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    open_time = OpenTime()
+    open_time.opened("a", t0)
+    open_time.closed("a", t0 + timedelta(minutes=2))
+    open_time.opened("b", t0 + timedelta(minutes=5))
+    assert open_time.seconds(t0 + timedelta(minutes=8)) == pytest.approx(300)
+    open_time.reset(t0 + timedelta(minutes=8))
+    # "b" is still open and counts from the reset on.
+    assert open_time.seconds(t0 + timedelta(minutes=9)) == pytest.approx(60)
+    open_time.closed("unknown", t0)  # a close without an open is ignored
+    assert open_time.total_s == 0.0
 
 
 async def test_calibration_off_records_nothing(hass: HomeAssistant) -> None:
