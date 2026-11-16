@@ -52,6 +52,36 @@ a gap in the data.
     are what the optimizer uses, so calibration is worthwhile without a heat
     meter.
 
+### Energy signature (daily heat balance)
+
+Short windows fail on slow buildings: with floor heating most of a window's
+heat goes into the screed and reaches the air hours later, so the air
+temperature in the window says little about the heat put in (R² stays far
+below 0.5). Over a whole day what the mass stores is small next to what
+flows through it. Every day the integration therefore also adds up
+
+```
+Q_heat (kWh/day) = UA · ΔT · 24 h − g · 24 h − s · Q_solar + C · Δ(indoor)
+```
+
+with the heat pump's heat plus the gas boiler's (see
+[configuration](configuration.md#gas-boiler-hybrid)), the mean indoor–outdoor
+difference, the modelled window gain and the change of the indoor
+temperature over the day (`C` from the label). Fitting it over days with
+different outdoor temperatures gives `UA`, the internal gains `g` and the
+solar factor `s` - the building's energy signature. The fit is pulled
+towards the label while there are few days.
+
+A day counts when at least 22 hours were recorded and an exclusion sensor
+(open window, fireplace, tap water) was on for at most 30 minutes. The
+signature is used once it has **10 days** with a spread of the daily
+indoor–outdoor difference of at least 1.5 K, R² ≥ 0.5 and plausible values
+(as below). It then replaces `UA`, `g` and `s` of the building model - also
+with *Mass + air*, where the mass model then only learns the coupling and
+the solar factor, with `UA` fixed - and the calibration status becomes
+*applied*. The attributes `signature_*` of the calibration sensor show the
+days, the result and why it is not used yet (`signature_reason`).
+
 ### COP level from the gas meter (phase 2b)
 
 On a hybrid system, windows heated by the boiler contain an absolute heat
@@ -59,8 +89,14 @@ measurement: gas volume × calorific value × efficiency. With at least five
 such windows the fit also learns the **COP scale** – how far the COP model
 is off. Coarse meter updates are fine: the gas meter is read at the start
 and end of each window, and windows are at least 2 hours long when a gas
-meter is configured. This is only reliable if the boiler does not also heat
-tap water.
+meter is configured.
+
+A gas meter also counts tap water and cooking. With a **boiler heats the
+house** signal (or a boiler heat power sensor) the windows take the boiler
+heat from that instead - the signal times the output learned from the gas
+meter - so gas used while the boiler did not heat the house is not counted.
+Without such a signal the meter is used as is, which is only reliable if
+the boiler does not also heat tap water.
 
 ### COP curve from a heat meter (phase 2a)
 

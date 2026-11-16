@@ -179,14 +179,18 @@ def _observe(
 
 
 def fit_air_coupling(
-    samples: list[HistorySample], building: BuildingConfig
+    samples: list[HistorySample],
+    building: BuildingConfig,
+    ua_scales: tuple[float, ...] = UA_SCALE_GRID,
 ) -> CouplingFit | None:
     """Grid search for the coupling and solar factor that predict the air
     best, 6 h ahead, against the one-node model with its own best solar
     factor.
 
     None without enough history or heating to judge; `accepted` when the
-    best coupling clearly beats the one-node model.
+    best coupling clearly beats the one-node model. `ua_scales`: the
+    multipliers on the building's UA to search; (1.0,) keeps a UA known from
+    elsewhere (the energy signature).
     """
     usable = [s for s in samples if not s.excluded]
     if len(usable) < MIN_HISTORY_SAMPLES:
@@ -219,9 +223,7 @@ def fit_air_coupling(
             )
 
         _mae, h, m = coupling_and_sun(1.0)
-        _mae, ua = min(
-            (_replay(samples, candidate(m, ua), h), ua) for ua in UA_SCALE_GRID
-        )
+        _mae, ua = min((_replay(samples, candidate(m, ua), h), ua) for ua in ua_scales)
         mae, h, m = coupling_and_sun(ua)
         return mae, h, m, ua
 
