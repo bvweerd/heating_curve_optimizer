@@ -56,6 +56,9 @@ deployments to migrate from.
 - *Gas boiler cheaper* / *Heat pump cheaper* compare heat made now; the
   gas advice keeps comparing with the plan's marginal heat
   (`gas_cheaper_than_plan`). Dutch name *Voordeliger* → *Goedkoper*.
+- Climate entity uses the `native_*` temperature names of Home Assistant
+  2026.11 (the old ones stop working in 2027.11); older releases still get
+  the old names.
 - Exclusion sensors (open window, fireplace, tap water) now also keep
   their periods out of the mass model's learning (coupling, solar factor,
   UA scale) and the measured COP ratio; the observer still follows the
