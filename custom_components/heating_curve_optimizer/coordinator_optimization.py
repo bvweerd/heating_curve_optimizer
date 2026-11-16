@@ -43,11 +43,14 @@ from .calibration import (
     STATUS_PROVISIONAL,
     STATUS_READY,
     STATUS_UNAVAILABLE,
+    WINDOW_OPEN_GRACE,
+    WINDOW_OPEN_TOLERANCE,
     CalibrationSettings,
     CopSample,
     CopWindow,
     DeltaTOffsetLearner,
     EmitterSample,
+    OpenTime,
     Prior,
     Sample,
     ThermalCalibrationState,
@@ -340,6 +343,8 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._calibration_snapshot: dict[str, Any] | None = None
         self._calibration_allowed = calibration_allowed
         self._calibration_taint: str | None = None
+        # Window/door open time within the current calibration window.
+        self._open_time = OpenTime()
         self.subentry_id = subentry_id
         self._unsub_calibration: Any = None
         # (due, predicted, label-model prediction, indoor at prediction time)
@@ -475,6 +480,10 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         watched = self._exclusion_sensors()
+        for entity_id in self.config.get(CONF_WINDOW_SENSORS) or []:
+            state = self.hass.states.get(entity_id)
+            if state is not None and state.state == "on":
+                self._open_time.opened(entity_id, state.last_changed)
         if watched:
             self._unsub_calibration = async_track_state_change_event(
                 self.hass, list(watched), self._handle_exclusion_sensor
@@ -657,18 +666,34 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _handle_exclusion_sensor(
         self, event: Event[EventStateChangedData]
     ) -> None:
-        """Remember that tap water or an open window disturbed this window."""
+        """Remember tap water in this window; time window/door openings."""
+        entity_id = event.data["entity_id"]
         new_state = event.data.get("new_state")
-        if new_state is not None and new_state.state == "on":
-            self._calibration_taint = self._exclusion_sensors().get(
-                event.data["entity_id"], RESULT_EXCLUDED_WINDOW
-            )
+        is_on = new_state is not None and new_state.state == "on"
+        if self._exclusion_sensors().get(entity_id) == RESULT_EXCLUDED_DHW:
+            if is_on:
+                self._calibration_taint = RESULT_EXCLUDED_DHW
+            return
+        if new_state is not None and is_on:
+            self._open_time.opened(entity_id, new_state.last_changed)
+        else:
+            self._open_time.closed(entity_id, dt_util.utcnow())
 
     def _active_exclusion(self) -> str | None:
-        """An exclusion reason that is active right now, if any."""
+        """An exclusion reason that is active right now, if any.
+
+        Tap water counts at once; a window or door only once it has been
+        open for WINDOW_OPEN_GRACE, so a door opened for a moment does not
+        disturb the learning.
+        """
+        now = dt_util.utcnow()
         for entity_id, reason in self._exclusion_sensors().items():
             state = self.hass.states.get(entity_id)
-            if state is not None and state.state == "on":
+            if state is None or state.state != "on":
+                continue
+            if reason != RESULT_EXCLUDED_WINDOW:
+                return reason
+            if now - state.last_changed >= WINDOW_OPEN_GRACE:
                 return reason
         return None
 
@@ -2433,6 +2458,11 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         snapshot = self._calibration_snapshot
         if (
             snapshot is not None
+            and self._open_time.seconds(now) > WINDOW_OPEN_TOLERANCE.total_seconds()
+        ):
+            exclusion = exclusion or RESULT_EXCLUDED_WINDOW
+        if (
+            snapshot is not None
             and abs(indoor_temp - snapshot["last_indoor"])
             > self._calibration_max_jump_c
         ):
@@ -2452,6 +2482,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "gas_kw": self._gas_boiler_heat_kw(),
         }
         if snapshot is None:
+            self._open_time.reset(now)
             self._calibration_snapshot = {
                 "gas_start_kwh": self._gas_heat_counter_kwh(),
                 "start": now,
