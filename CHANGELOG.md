@@ -79,6 +79,8 @@ deployments to migrate from.
 - The energy signature leaves out the hours of a fireplace or open window
   (and two hours after) instead of the whole day.
 - `cop_reason` shows why the learned COP curve is not used.
+- The outdoor temperature coefficient can be set up to 0.3 (was 0.2), the
+  same limit as for the learned COP curve.
 - Resetting the calibration also clears the energy signature and the mass
   model's history.
 - Brief door and window openings no longer discard calibration windows:
