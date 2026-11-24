@@ -386,6 +386,8 @@ def fit_building(
     samples: list[Sample],
     prior: Prior,
     settings: CalibrationSettings | None = None,
+    *,
+    heat_measured: bool = False,
 ) -> FitResult | None:
     """Ridge least-squares fit of (C, UA, s, g[, φ]), regularised to the prior.
 
@@ -393,13 +395,35 @@ def fit_building(
 
     ``φ`` (heat pump heat scale − 1) is only included when enough windows
     contain absolute gas heat; without them it is not identifiable (every
-    parameter could be scaled together) and is fixed at 0.
+    parameter could be scaled together) and is fixed at 0. It is also 0 with
+    measured heat (there is no COP model to scale), and when the result is
+    outside its bounds: φ = −1 with everything else 0 solves the equation
+    whatever the house does (Q_hp is on both sides), and little or wrong gas
+    heat (tap water, cooking) lets the fit run there - with a high R².
     """
     if settings is None:
         settings = CalibrationSettings()
     if len(samples) < 2:
         return None
-    use_gas = sum(1 for s in samples if s.gas_kw > 0.1) >= MIN_GAS_SAMPLES
+    use_gas = (
+        not heat_measured
+        and sum(1 for s in samples if s.gas_kw > 0.1) >= MIN_GAS_SAMPLES
+    )
+    fit = _fit_building(samples, prior, settings, use_gas)
+    if use_gas:
+        low, high = settings.cop_scale_bounds
+        if fit is None or not low <= fit.cop_scale <= high:
+            fit = _fit_building(samples, prior, settings, False)
+    return fit
+
+
+def _fit_building(
+    samples: list[Sample],
+    prior: Prior,
+    settings: CalibrationSettings,
+    use_gas: bool,
+) -> FitResult | None:
+    """The least-squares fit of `fit_building`, with or without φ."""
     # Each parameter expressed relative to its prior, so one ridge strength
     # fits all of them.
     scales = [
@@ -517,17 +541,28 @@ class CopFit:
     r_squared: float
     mean_abs_error: float
 
-    def usable_with(self, settings: CalibrationSettings | None = None) -> bool:
-        """Whether this COP fit is usable, given the settings."""
+    def unusable_reason(
+        self, settings: CalibrationSettings | None = None
+    ) -> str | None:
+        """Why this COP fit is not used; None when it is usable."""
         min_samples = (
             settings.min_cop_samples if settings is not None else MIN_COP_SAMPLES
         )
-        return (
-            self.sample_count >= min_samples
-            and 1.0 <= self.base_cop <= 9.0
-            and 0.0 <= self.k_factor <= 0.4
-            and -0.05 <= self.outdoor_coefficient <= 0.3
-        )
+        if self.sample_count < min_samples:
+            return "too_few_samples"
+        if not 1.0 <= self.base_cop <= 9.0:
+            return "implausible_base_cop"
+        if not 0.0 <= self.k_factor <= 0.4:
+            return "implausible_k_factor"
+        # A COP that rises faster with the outdoor temperature than a heat
+        # pump can points at the heat measurement, not at the heat pump.
+        if not -0.05 <= self.outdoor_coefficient <= 0.3:
+            return "implausible_outdoor_coefficient"
+        return None
+
+    def usable_with(self, settings: CalibrationSettings | None = None) -> bool:
+        """Whether this COP fit is usable, given the settings."""
+        return self.unusable_reason(settings) is None
 
     @property
     def usable(self) -> bool:
@@ -1024,6 +1059,7 @@ class ThermalCalibrationState:
     offset_runs: deque[OffsetRun] = field(
         default_factory=lambda: deque(maxlen=OFFSET_MAX_RUNS)
     )
+    heat_measured: bool = False
     fit: FitResult | None = None
     cop_fit: CopFit | None = None
     offset_fit: DeltaTOffsetFit | None = None
@@ -1051,7 +1087,12 @@ class ThermalCalibrationState:
     def record_sample(self, sample: Sample, prior: Prior) -> FitResult | None:
         """Add one building observation and refit."""
         self.samples.append(sample)
-        fit = fit_building(list(self.samples), prior, settings=self.settings)
+        fit = fit_building(
+            list(self.samples),
+            prior,
+            settings=self.settings,
+            heat_measured=self.heat_measured,
+        )
         if fit is None:
             self.last_result = RESULT_SINGULAR
             return None
@@ -1098,7 +1139,12 @@ class ThermalCalibrationState:
     ) -> None:
         """Refit stored samples against (possibly changed) priors."""
         self.fit = (
-            fit_building(list(self.samples), prior, settings=self.settings)
+            fit_building(
+                list(self.samples),
+                prior,
+                settings=self.settings,
+                heat_measured=self.heat_measured,
+            )
             if self.samples
             else None
         )

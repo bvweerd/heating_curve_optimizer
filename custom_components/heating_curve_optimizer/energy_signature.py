@@ -18,8 +18,11 @@ with a small daily air change enters). The fit is pulled towards the prior
 only used once it passes the gates below. The dynamics (how fast the air
 follows the mass) stay with the mass model.
 
-Days with an exclusion (open window, fireplace, tap water) for more than a
-short while, or with too little coverage, are not used.
+Hours with an exclusion (open window, fireplace, tap water) are left out of
+the balance, and after a long one also the hours in which its heat is still
+in the air. A day counts with what is left when that is enough; it weighs
+less, because the storage term is larger next to fewer hours. Days with too
+little coverage are not used.
 """
 
 from __future__ import annotations
@@ -32,7 +35,11 @@ from typing import Any
 STORAGE_VERSION = 1
 
 MIN_COVERAGE_HOURS = 22.0
-MAX_EXCLUDED_HOURS = 0.5
+MIN_CLEAN_HOURS = 12.0
+# An exclusion this long leaves heat (or cold) in the air that the storage
+# term does not describe; this long afterwards is left out as well.
+LONG_EXCLUSION_HOURS = 0.5
+SETTLE_HOURS = 2.0
 MAX_TICK_HOURS = 0.1  # a longer step is a gap (restart, missed ticks)
 MAX_DAYS = 60
 MIN_DAYS = 10
@@ -51,13 +58,14 @@ REJECT_EXCLUDED = "excluded"
 
 @dataclass
 class DaySample:
-    """One day's balance, scaled to 24 h of coverage."""
+    """One day's balance over its clean hours, scaled to 24 h."""
 
     day: str
     delta_t: float  # mean indoor - outdoor, K
     heat_kwh: float  # heat pump + gas boiler heat
     solar_kwh: float  # modelled window gain before the solar factor
-    indoor_change: float  # indoor at the end - at the start, K
+    indoor_change: float  # indoor change over the clean hours, K per 24 h
+    hours: float = 24.0  # clean hours behind it
 
 
 @dataclass
@@ -92,6 +100,7 @@ class _Day:
     solar_kwh: float = 0.0
     indoor_start: float | None = None
     indoor_last: float | None = None
+    indoor_change: float = 0.0  # over the clean steps
 
 
 @dataclass
@@ -105,6 +114,9 @@ class EnergySignature:
     fit: SignatureFit | None = None
     _current: _Day | None = None
     _last_tick: datetime | None = None
+    _last_indoor: float | None = None
+    _exclusion_hours: float = 0.0  # length of the exclusion going on
+    _settle_hours: float = 0.0  # still to leave out after a long one
 
     def tick(
         self,
@@ -128,32 +140,51 @@ class EnergySignature:
             self._current = _Day(day=day, indoor_start=indoor)
         current = self._current
         last, self._last_tick = self._last_tick, now
+        last_indoor, self._last_indoor = self._last_indoor, indoor
         if last is not None:
             hours = (now - last).total_seconds() / 3600.0
             if 0 < hours <= MAX_TICK_HOURS:
                 current.hours += hours
-                current.heat_kwh += heat_kw * hours
-                current.delta_t_h += (indoor - outdoor) * hours
-                current.solar_kwh += max(solar_kw, 0.0) * hours
-                if excluded:
+                if self._leave_out(excluded, hours):
                     current.excluded_hours += hours
+                else:
+                    current.heat_kwh += heat_kw * hours
+                    current.delta_t_h += (indoor - outdoor) * hours
+                    current.solar_kwh += max(solar_kw, 0.0) * hours
+                    if last_indoor is not None:
+                        current.indoor_change += indoor - last_indoor
         current.indoor_last = indoor
         return closed
+
+    def _leave_out(self, excluded: bool, hours: float) -> bool:
+        """Whether this step is excluded or settling after an exclusion."""
+        if excluded:
+            self._exclusion_hours += hours
+            if self._exclusion_hours >= LONG_EXCLUSION_HOURS:
+                self._settle_hours = SETTLE_HOURS
+            return True
+        self._exclusion_hours = 0.0
+        if self._settle_hours > 0:
+            self._settle_hours -= hours
+            return True
+        return False
 
     def _close(self, day: _Day) -> DaySample | None:
         if day.hours < MIN_COVERAGE_HOURS:
             self.rejected[REJECT_COVERAGE] += 1
             return None
-        if day.excluded_hours > MAX_EXCLUDED_HOURS:
+        clean = day.hours - day.excluded_hours
+        if clean < MIN_CLEAN_HOURS:
             self.rejected[REJECT_EXCLUDED] += 1
             return None
-        scale = 24.0 / day.hours
+        scale = 24.0 / clean
         sample = DaySample(
             day=day.day,
-            delta_t=day.delta_t_h / day.hours,
+            delta_t=day.delta_t_h / clean,
             heat_kwh=day.heat_kwh * scale,
             solar_kwh=day.solar_kwh * scale,
-            indoor_change=(day.indoor_last or 0.0) - (day.indoor_start or 0.0),
+            indoor_change=day.indoor_change * scale,
+            hours=clean,
         )
         self.days.append(sample)
         return sample
@@ -169,6 +200,8 @@ class EnergySignature:
             "days": [asdict(d) for d in self.days],
             "rejected": dict(self.rejected),
             "current": asdict(self._current) if self._current else None,
+            "exclusion_hours": self._exclusion_hours,
+            "settle_hours": self._settle_hours,
             "last_tick": self._last_tick.isoformat() if self._last_tick else None,
         }
 
@@ -180,8 +213,12 @@ class EnergySignature:
         for row in data.get("days", []):
             state.days.append(DaySample(**row))
         state.rejected.update(data.get("rejected") or {})
-        if current := data.get("current"):
+        # A day in progress from before `indoor_change` was summed is dropped.
+        current = data.get("current")
+        if current and "indoor_change" in current:
             state._current = _Day(**current)
+        state._exclusion_hours = float(data.get("exclusion_hours", 0.0))
+        state._settle_hours = float(data.get("settle_hours", 0.0))
         if last := data.get("last_tick"):
             state._last_tick = datetime.fromisoformat(last)
         return state
@@ -221,17 +258,18 @@ def fit_signature(days: list[DaySample], prior: SignaturePrior) -> SignatureFit 
         PRIOR_INTERNAL_SD_KW,
         PRIOR_SOLAR_SD,
     ]
-    w = 1.0 / DAY_SD_KWH**2
+    # A part day, scaled to 24 h, has the scatter scaled along.
+    ws = [(d.hours / 24.0 / DAY_SD_KWH) ** 2 for d in days]
     matrix = [
         [
-            w * sum(r[i] * r[j] for r in rows)
+            sum(w * r[i] * r[j] for w, r in zip(ws, rows, strict=True))
             + (1.0 / prior_sd[i] ** 2 if i == j else 0)
             for j in range(3)
         ]
         for i in range(3)
     ]
     vector = [
-        w * sum(r[i] * y for r, y in zip(rows, ys, strict=True))
+        sum(w * r[i] * y for w, r, y in zip(ws, rows, ys, strict=True))
         + prior_theta[i] / prior_sd[i] ** 2
         for i in range(3)
     ]

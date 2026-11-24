@@ -706,3 +706,34 @@ def test_a_usable_energy_signature_carries_the_building_model(
     summary = coordinator.calibration_summary(config)
     assert summary["signature_used"] is True
     assert summary["signature_ua_w_per_k"] == 130.0
+
+
+def test_underfloor_calibration_waits_for_the_signature(hass: HomeAssistant) -> None:
+    """Short windows do not decide the status with underfloor heating."""
+    coordinator = _calibrating_coordinator(
+        hass,
+        calibration_mode="apply",
+        emitter_type="underfloor",
+        indoor_temperature_sensor="sensor.indoor",
+        power_consumption="sensor.power",
+    )
+    assert coordinator._short_windows_apply() is False
+    assert coordinator.calibration_status() == "collecting"
+    summary = coordinator.calibration_summary(
+        coordinator.heat_coordinator.effective_config()
+    )
+    assert summary["short_windows_used"] is False
+    assert summary["progress_pct"] == 0
+
+
+async def test_reset_clears_the_signature_and_the_mass_model(
+    hass: HomeAssistant,
+) -> None:
+    coordinator = _calibrating_coordinator(hass)
+    coordinator._signature.rejected["coverage"] = 3
+    coordinator._mass = MagicMock()
+    coordinator._mass.async_reset = AsyncMock()
+    coordinator.async_request_refresh = AsyncMock()
+    await coordinator.async_reset_thermal_calibration()
+    assert coordinator._signature.rejected["coverage"] == 0
+    coordinator._mass.async_reset.assert_awaited_once()

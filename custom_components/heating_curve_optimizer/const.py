@@ -405,6 +405,7 @@ THERMAL_MASS_WH_PER_M2_K = {
 # the design point. exponent follows the standard EN 442 radiator exponent
 # (~1.3) vs. the flatter underfloor/fan-coil curves.
 CONF_EMITTER_TYPE = "emitter_type"
+EMITTER_UNDERFLOOR = "underfloor"
 DEFAULT_EMITTER_TYPE = "radiator"
 EMITTER_EXPONENT_MAP = {
     "radiator": 1.3,

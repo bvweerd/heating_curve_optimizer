@@ -11,6 +11,7 @@ import pytest
 from custom_components.heating_curve_optimizer.calibration import (
     MIN_SAMPLES_TO_APPLY,
     RESULT_EXCLUDED_DHW,
+    CopFit,
     CopSample,
     EmitterSample,
     Prior,
@@ -87,6 +88,43 @@ def test_gas_windows_calibrate_the_cop_scale() -> None:
     assert fit is not None
     assert fit.cop_scale == pytest.approx(0.8, abs=0.05)
     assert fit.ua_w_per_k == pytest.approx(400.0, rel=0.08)
+
+
+def _degenerate_samples() -> list[Sample]:
+    """Heat that does not follow the room air (a screed), with a little gas
+    from tap water in some windows."""
+    rng = random.Random(3)
+    return [
+        Sample(
+            rng.uniform(8.0, 16.0),
+            rng.choice([0.0, rng.uniform(1.0, 6.0)]),
+            rng.uniform(0.0, 2.0),
+            rng.uniform(-0.3, 0.3),
+            0.4 if i % 10 == 0 else 0.0,
+        )
+        for i in range(200)
+    ]
+
+
+def test_a_little_gas_does_not_scale_the_heat_away() -> None:
+    fit = fit_building(_degenerate_samples(), PRIOR)
+    assert fit is not None
+    assert fit.cop_scale == 1.0
+    assert fit.r_squared < 0.5
+
+
+def test_measured_heat_is_never_scaled() -> None:
+    samples = _samples(ua=400.0, mass=12.0, cop_scale=0.8, gas_share=0.3, n=200)
+    fit = fit_building(samples, PRIOR, heat_measured=True)
+    assert fit is not None
+    assert fit.cop_scale == 1.0
+
+
+def test_the_cop_fit_says_why_it_is_not_used() -> None:
+    fit = CopFit(1.44, 0.336, 0.095, 204, 0.79, 0.48)
+    assert fit.unusable_reason() == "implausible_outdoor_coefficient"
+    assert CopFit(2.5, 0.1, 0.06, 3, 0.8, 0.2).unusable_reason() == "too_few_samples"
+    assert CopFit(2.5, 0.1, 0.06, 50, 0.8, 0.2).usable
 
 
 def test_without_gas_the_scale_is_absorbed_but_time_constant_holds() -> None:

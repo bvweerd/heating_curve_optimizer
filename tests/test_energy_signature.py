@@ -109,9 +109,9 @@ def test_a_full_day_is_closed_as_a_24h_balance():
     assert len(sig.days) == 1
 
 
-def test_days_with_a_fireplace_or_gaps_are_rejected():
+def test_days_with_little_left_are_rejected():
     sig = EnergySignature()
-    _run_day(sig, date(2026, 11, 16), excluded_minutes=120)
+    _run_day(sig, date(2026, 11, 16), excluded_minutes=660)
     _run_day(sig, date(2026, 11, 17), start=T0 + timedelta(days=1), minutes=600)
     sig.tick(
         T0 + timedelta(days=2),
@@ -125,6 +125,49 @@ def test_days_with_a_fireplace_or_gaps_are_rejected():
     assert len(sig.days) == 0
     assert sig.rejected[REJECT_EXCLUDED] == 1
     assert sig.rejected[REJECT_COVERAGE] == 1
+
+
+def test_a_fireplace_costs_its_hours_not_the_day():
+    sig = EnergySignature()
+    _run_day(sig, date(2026, 11, 16), excluded_minutes=120)
+    closed = sig.tick(
+        T0 + timedelta(days=1),
+        date(2026, 11, 17),
+        heat_kw=1.5,
+        indoor=20.2,
+        outdoor=6.0,
+        solar_kw=0.0,
+        excluded=False,
+    )
+    assert closed is not None
+    # 2 h of fire and 2 h of settling are left out; the rest is scaled.
+    assert closed.hours == pytest.approx(20.0, abs=0.1)
+    assert closed.heat_kwh == pytest.approx(36.0, rel=0.01)
+
+
+def test_a_short_exclusion_does_not_settle():
+    sig = EnergySignature()
+    _run_day(sig, date(2026, 11, 16), excluded_minutes=10)
+    assert sig.as_dict()["current"]["excluded_hours"] == pytest.approx(9 / 60)
+
+
+def test_part_days_weigh_less():
+    days = _days(14)
+    off = days[0]
+    off.heat_kwh += 40.0
+    full = fit_signature(days, LABEL)
+    off.hours = 12.0
+    part = fit_signature(days, LABEL)
+    clean = fit_signature(_days(14), LABEL)
+    assert full and part and clean
+    assert abs(part.ua_w_per_k - clean.ua_w_per_k) < abs(
+        full.ua_w_per_k - clean.ua_w_per_k
+    )
+
+
+def test_a_day_in_progress_from_the_old_layout_is_dropped():
+    old = {"current": {"day": "2026-11-16", "hours": 9.0, "heat_kwh": 5.0}}
+    assert EnergySignature.from_dict(old)._current is None
 
 
 def test_the_day_in_progress_survives_a_restart():
