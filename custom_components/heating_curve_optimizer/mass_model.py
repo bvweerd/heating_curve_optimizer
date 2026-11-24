@@ -34,6 +34,7 @@ from homeassistant.helpers import storage
 from homeassistant.util import dt as dt_util
 
 from .building_model import BuildingConfig
+from .delayed_save import PeriodicSave
 from .heatpump_model import HeatPumpConfig
 
 # Default coupling per m² floor area when nothing is learned or set.
@@ -55,6 +56,7 @@ PREDICTION_HOURS = 6
 # A gap longer than this restarts the observer from the measured air.
 MAX_OBSERVER_GAP = timedelta(minutes=30)
 STORAGE_VERSION = 1
+SAVE_INTERVAL = 1800  # s, between writes of the history
 
 
 @dataclass
@@ -291,6 +293,8 @@ class MassModelState:
     def __init__(self, store: storage.Store[dict[str, Any]]) -> None:
         """Initialize from an (unloaded) store."""
         self._store = store
+        self._save = PeriodicSave(store, SAVE_INTERVAL)
+        self._loaded = False
         self.mass_temp: float | None = None
         self._mass_time: datetime | None = None
         self.history: deque[HistorySample] = deque(maxlen=HISTORY_LENGTH)
@@ -306,6 +310,7 @@ class MassModelState:
     async def async_load(self) -> None:
         """Restore the history and the last fit."""
         data = await self._store.async_load()
+        self._loaded = True
         if not data:
             return
         for row in data.get("history", []):
@@ -317,6 +322,23 @@ class MassModelState:
             self.fit = CouplingFit(**fit)
         if fitted_at := data.get("fitted_at"):
             self.fitted_at = dt_util.parse_datetime(fitted_at)
+
+    async def async_flush(self) -> None:
+        """Write the state now (unload); not before it was loaded."""
+        if not self._loaded:
+            return
+        await self._save.flush(self._data())
+
+    async def async_reset(self) -> None:
+        """Forget the history and the learned fit; the observer keeps its
+        mass temperature (it follows the measured air)."""
+        self.history.clear()
+        self._bucket = []
+        self._bucket_start = None
+        self._bucket_excluded = False
+        self.fit = None
+        self.fitted_at = None
+        await self.async_flush()
 
     def history_rows(self) -> list[list[float | None]]:
         """The history as compact rows (oldest first), for storage and
@@ -397,10 +419,10 @@ class MassModelState:
             self._bucket_excluded = False
             self._bucket_start = now
             self.last_bucket_time = now
-            self._store.async_delay_save(self._data, 600)
+            self._save.request(now, self._data)
 
     def set_fit(self, now: datetime, fit: CouplingFit | None) -> None:
         """Store a fit computed (in the executor) by `fit_air_coupling`."""
         self.fit = fit
         self.fitted_at = now
-        self._store.async_delay_save(self._data, 10)
+        self._save.request_soon(now, self._data)
