@@ -77,9 +77,10 @@ different outdoor temperatures gives `UA`, the internal gains `g` and the
 solar factor `s` - the building's energy signature. The fit is pulled
 towards the label while there are few days.
 
-A day counts when at least 22 hours were recorded and an exclusion sensor
-(open window, fireplace, tap water) was on for at most 30 minutes. The
-signature is used once it has **10 days** with a spread of the daily
+Hours in which an exclusion sensor (open window, fireplace, tap water) was on
+are left out, and after an exclusion of half an hour or more also the next
+two hours. A day counts when at least 22 hours were recorded and 12 are left;
+a part day weighs less. The signature is used once it has **10 days** with a spread of the daily
 indoor–outdoor difference of at least 1.5 K, R² ≥ 0.5 and plausible values
 (as below). It then replaces `UA`, `g` and `s` of the building model - also
 with *Mass + air*, where the mass model then only learns the coupling and
@@ -92,7 +93,8 @@ days, the result and why it is not used yet (`signature_reason`).
 On a hybrid system, windows heated by the boiler contain an absolute heat
 measurement: gas volume × calorific value × efficiency. With at least five
 such windows the fit also learns the **COP scale** – how far the COP model
-is off. Coarse meter updates are fine: the gas meter is read at the start
+is off - unless the heat is measured (nothing to scale) or the scale falls
+outside its bounds (then the fit is made without it). Coarse meter updates are fine: the gas meter is read at the start
 and end of each window, and windows are at least 2 hours long when a gas
 meter is configured.
 
@@ -184,7 +186,12 @@ A building fit is used only when all hold:
 - plausible values: `UA` and `C` within 0.3–3× the label estimate, solar
   factor 0–2.5, internal gains 0–12 W/m², COP scale 0.5–1.5.
 
-The COP curve needs 20 samples and a plausible result; the emitter curve 20
+With underfloor heating or *Mass + air* the short windows are shown but not
+used; the energy signature carries the building model.
+
+The COP curve needs 20 samples and a plausible result (`cop_reason` says why
+it is not used; a COP that rises more than 0.3 per °C outdoors points at the
+heat measurement); the emitter curve 20
 samples, R² ≥ 0.5 and an exponent of 0.9–1.6.
 
 ## Modes
@@ -198,7 +205,8 @@ Set per heating zone (*Calibration*):
 | Apply | The learned models are used as soon as they pass the quality checks. |
 
 The service `heating_curve_optimizer.reset_thermal_calibration` discards
-everything learned.
+everything learned, including the energy signature and the mass model's
+history. Use it after changing how heat is measured.
 
 ## Following the results
 

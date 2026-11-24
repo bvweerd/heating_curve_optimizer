@@ -167,11 +167,13 @@ from .const import (
     DEFAULT_REALTIME_INTERVAL_S,
     DEFAULT_VENTILATION_TYPE,
     DOMAIN,
+    EMITTER_UNDERFLOOR,
     HEAT_PUMP_CONTROL_FOLLOWS_PLAN,
     PLAN_SUPPLY_TOLERANCE_K,
 )
 from .coordinator_heat import INDOOR_SOURCE_SENSOR, HeatCalculationCoordinator
 from .coordinator_weather import _update_failed
+from .delayed_save import PeriodicSave
 from .energy_signature import MIN_DAYS as SIGNATURE_MIN_DAYS
 from .energy_signature import STORAGE_VERSION as SIGNATURE_STORAGE_VERSION
 from .energy_signature import EnergySignature, SignaturePrior
@@ -215,6 +217,8 @@ from .thermal_optimizer import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+SIGNATURE_SAVE_INTERVAL = 900  # s
 
 # Model accuracy match tolerance and window (not user-configurable).
 ACCURACY_MATCH_TOLERANCE = timedelta(minutes=30)
@@ -369,7 +373,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._gas_output_store: storage.Store[dict[str, Any]] | None = None
         # Daily heat balances: UA, internal gains, solar (energy_signature.py).
         self._signature = EnergySignature()
-        self._signature_store: storage.Store[dict[str, Any]] | None = None
+        self._signature_save: PeriodicSave | None = None
         # Measured COP over windows of compressor operation (calibration).
         self._cop_window = CopWindow()
         # Supply-return sensor offset from pump runs without compressor.
@@ -444,6 +448,13 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
         await self._calibration.async_reset()
         self._calibration_snapshot = None
+        # The heat balance and the mass model learn from the same heat
+        # measurement: a reset after changing it must clear them too.
+        self._signature = EnergySignature()
+        if self._signature_save is not None:
+            await self._signature_save.flush(self._signature.as_dict())
+        if self._mass is not None:
+            await self._mass.async_reset()
         await self.async_request_refresh()
 
     async def async_setup(self) -> None:
@@ -466,6 +477,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 f"{DOMAIN}_{self.zone_id}_thermal_calibration",
             ),
             settings=CalibrationSettings.from_config(self.config),
+            heat_measured=heat_is_measured(self.config),
         )
         await self._calibration.async_load()
         prior_emitter = self._prior_emitter(self.heat_coordinator.effective_config())
@@ -521,14 +533,13 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._gas_output = GasBoilerOutputLearner.from_dict(
             await self._gas_output_store.async_load()
         )
-        self._signature_store = storage.Store(
+        signature_store: storage.Store[dict[str, Any]] = storage.Store(
             self.hass,
             SIGNATURE_STORAGE_VERSION,
             f"{DOMAIN}_{self.zone_id}_energy_signature",
         )
-        self._signature = EnergySignature.from_dict(
-            await self._signature_store.async_load()
-        )
+        self._signature = EnergySignature.from_dict(await signature_store.async_load())
+        self._signature_save = PeriodicSave(signature_store, SIGNATURE_SAVE_INTERVAL)
         self._signature.refit(self._signature_prior())
         self._unsub_mass = async_track_time_interval(
             self.hass, self._handle_mass_tick, timedelta(seconds=60)
@@ -564,6 +575,12 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._unsub_heat = None
         self._unsub_mass = None
         self._unsub_offset = None
+        # Write what is learned: a pending write of this (old) coordinator
+        # would otherwise overwrite what its successor saves.
+        if self._signature_save is not None:
+            await self._signature_save.flush(self._signature_data())
+        if self._mass is not None:
+            await self._mass.async_flush()
         await super().async_shutdown()
 
     def inputs_ready(self) -> bool:
@@ -1391,9 +1408,8 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _building_fit_usable(self) -> bool:
         """Whether the applied building fit replaces the label model.
 
-        Not with the mass-air model: the fit is a one-node model of the room
-        air, whose apparent thermal mass is not the mass the heat pump
-        heats. The COP scale and the emitter curve still apply.
+        Not with the mass-air model or underfloor heating, see
+        `_short_windows_apply`. The COP scale and the emitter curve still apply.
         """
         calibration = self._calibration
         return (
@@ -1402,8 +1418,21 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             and calibration is not None
             and calibration.ready
             and calibration.fit is not None
-            and not self._mass_model_enabled()
+            and self._short_windows_apply()
         )
+
+    def _short_windows_apply(self) -> bool:
+        """Whether short observation windows can describe the building.
+
+        They model the room air as one node. With underfloor heating most of
+        a window's heat goes into the screed, and the mass-air model heats
+        the mass, not the air: there the energy signature carries the
+        building model.
+        """
+        emitter = self.heat_coordinator.effective_config().get(
+            CONF_EMITTER_TYPE, DEFAULT_EMITTER_TYPE
+        )
+        return not self._mass_model_enabled() and emitter != EMITTER_UNDERFLOOR
 
     def _mass_model_enabled(self) -> bool:
         return self.config.get(CONF_BUILDING_MODEL) == BUILDING_MODEL_MASS_AIR
@@ -1718,10 +1747,14 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         if closed is not None:
             self._signature.refit(self._signature_prior())
-        if self._signature_store is not None:
-            self._signature_store.async_delay_save(
-                self._signature.as_dict, 10 if closed else 900
-            )
+        if self._signature_save is not None:
+            if closed is not None:
+                self._signature_save.request_soon(now, self._signature_data)
+            else:
+                self._signature_save.request(now, self._signature_data)
+
+    def _signature_data(self) -> dict[str, Any]:
+        return self._signature.as_dict()
 
     def _update_mass(self, now: datetime) -> None:
         """Advance the mass observer on the measured air; learn when due."""
@@ -2237,6 +2270,12 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if self.calibration_mode() == MODE_APPLY
                 else STATUS_READY
             )
+        if not self._short_windows_apply():
+            return (
+                STATUS_COLLECTING
+                if len(self._signature.days) < SIGNATURE_MIN_DAYS
+                else STATUS_PROVISIONAL
+            )
         if calibration.sample_count < MIN_SAMPLES_TO_APPLY:
             return STATUS_COLLECTING
         if not calibration.ready:
@@ -2253,12 +2292,15 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "mode": self.calibration_mode(),
             "sample_count": calibration.sample_count if calibration else 0,
             "samples_needed": MIN_SAMPLES_TO_APPLY,
+            "short_windows_used": self._short_windows_apply(),
             "progress_pct": min(
                 100,
                 round(
                     100
                     * (calibration.sample_count if calibration else 0)
                     / MIN_SAMPLES_TO_APPLY
+                    if self._short_windows_apply()
+                    else 100 * len(self._signature.days) / SIGNATURE_MIN_DAYS
                 ),
             ),
             "last_result": calibration.last_result if calibration else None,
@@ -2320,6 +2362,7 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             result |= {
                 "cop_samples": cop_fit.sample_count,
                 "cop_usable": cop_fit.usable,
+                "cop_reason": cop_fit.unusable_reason(),
                 "learned_cop_at_a0_w35": round(cop_fit.base_cop, 2),
                 "learned_k_factor": round(cop_fit.k_factor, 3),
                 "learned_outdoor_coefficient": round(cop_fit.outdoor_coefficient, 3),
@@ -2379,11 +2422,31 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Offer to start using a calibration that is ready (observe mode)."""
         issue_id = f"calibration_ready_{self.zone_id}"
         calibration = self._calibration
-        if (
-            self.calibration_mode() == MODE_OBSERVE
+        # (UA W/K, time constant h, samples or days) of what would be used.
+        ready: tuple[float, float, int] | None = None
+        signature = self._signature.fit
+        if signature is not None and signature.usable:
+            mass = self.calibration_prior().thermal_mass_kwh_per_k
+            ready = (
+                signature.ua_w_per_k,
+                mass / (signature.ua_w_per_k / 1000.0),
+                signature.days,
+            )
+        elif (
+            self._short_windows_apply()
             and calibration is not None
             and calibration.ready
             and calibration.fit is not None
+        ):
+            ready = (
+                calibration.fit.ua_w_per_k,
+                calibration.fit.time_constant_hours,
+                calibration.sample_count,
+            )
+        if (
+            self.calibration_mode() == MODE_OBSERVE
+            and calibration is not None
+            and ready is not None
             and self.config_entry is not None
             and self.subentry_id is not None
         ):
@@ -2396,9 +2459,9 @@ class OptimizationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 translation_key="calibration_ready",
                 translation_placeholders={
                     "zone": str(self.config.get("name", "")),
-                    "ua": f"{calibration.fit.ua_w_per_k:.0f}",
-                    "tau": f"{calibration.fit.time_constant_hours:.0f}",
-                    "samples": str(calibration.sample_count),
+                    "ua": f"{ready[0]:.0f}",
+                    "tau": f"{ready[1]:.0f}",
+                    "samples": str(ready[2]),
                 },
                 data={
                     "entry_id": self.config_entry.entry_id,

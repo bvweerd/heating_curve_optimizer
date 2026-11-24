@@ -69,6 +69,18 @@ deployments to migrate from.
 - Climate entity uses the `native_*` temperature names of Home Assistant
   2026.11 (the old ones stop working in 2027.11); older releases still get
   the old names.
+- The energy signature and the mass model's history are written every 15
+  and 30 minutes. They were only written on a clean stop, because every
+  update postponed the pending write; a crash lost everything since.
+- The building fit no longer scales measured heat away: with a few windows
+  of (tap water) gas it could pick a heat scale near 0, with an R² of 0.99.
+- Underfloor heating and *Mass + air* no longer use the short calibration
+  windows; status and progress follow the energy signature.
+- The energy signature leaves out the hours of a fireplace or open window
+  (and two hours after) instead of the whole day.
+- `cop_reason` shows why the learned COP curve is not used.
+- Resetting the calibration also clears the energy signature and the mass
+  model's history.
 - Brief door and window openings no longer discard calibration windows:
   a window is only dropped once its contacts were open for 10 minutes in
   total, and the mass model and energy signature only count a contact
