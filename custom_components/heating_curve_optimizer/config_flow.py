@@ -517,7 +517,7 @@ def build_main_schema(defaults: dict[str, Any]) -> vol.Schema:
         {
             req(CONF_BASE_COP): _number(1.0, 8.0, 0.05),
             req(CONF_K_FACTOR): _number(0.0, 0.3, 0.005),
-            req(CONF_OUTDOOR_TEMP_COEFFICIENT): _number(0.0, 0.2, 0.005),
+            req(CONF_OUTDOOR_TEMP_COEFFICIENT): _number(0.0, 0.3, 0.005),
             req(CONF_COP_COMPENSATION_FACTOR): _number(0.5, 1.2, 0.01),
             opt(CONF_HEAT_PUMP_MAX_THERMAL_POWER): _number(1.0, 50.0, 0.5, "kW"),
             req(CONF_HEAT_PUMP_CONTROL): _select(
