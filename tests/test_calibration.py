@@ -187,6 +187,8 @@ def test_effective_energy_label_matches_label_estimate() -> None:
 
     ua = calculate_htc_from_energy_label("B", 150, ventilation_type="natural")
     assert effective_energy_label(ua, 150, "natural", 2.5) == "B"
+    top = calculate_htc_from_energy_label("A+++", 150, ventilation_type="natural")
+    assert effective_energy_label(top, 150, "natural", 2.5) == "A+++"
 
 
 async def test_state_persists_and_resets() -> None:

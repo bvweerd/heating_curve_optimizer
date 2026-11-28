@@ -18,6 +18,11 @@ deployments to migrate from.
   which made ventilation more than half of the label heat loss: a 159 m²
   A+ house went from 226 to 159 W/K, in line with its measured 150-175 W/K.
   Unknown (older) ventilation keys fall back to natural.
+- Energy label table follows the NTA 8800 classes: A++++ added, D/E/F/G
+  at their class midpoints (270/312/358/420 instead of 275/340/420/500
+  kWh/m², which used wrong class bounds). A++++/A+++/A++ keep the upper
+  bound of their class: a low EP2 there reflects solar panels and the heat
+  pump, and the midpoint would undercut the loss of the glazing alone.
 - Mass + air searches coupling, solar factor and UA scale on the full grid;
   searched one or two at a time it stopped a grid step short when the
   label UA was off.

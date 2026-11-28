@@ -214,6 +214,7 @@ VENTILATION_TYPES: dict[str, dict[str, float | str]] = {
 # Envelope leakage (infiltration) in the heating season by energy label,
 # in ACH: newer and better insulated houses are also tighter.
 INFILTRATION_ACH = {
+    "A++++": 0.10,
     "A+++": 0.10,
     "A++": 0.15,
     "A+": 0.20,
@@ -239,27 +240,36 @@ DEFAULT_PV_TILT = 35.0  # degrees - typical for Netherlands
 DEFAULT_PV_EFFICIENCY_FACTOR = 0.85
 
 # Allowed energy labels
-ENERGY_LABELS = ["A+++", "A++", "A+", "A", "B", "C", "D", "E", "F", "G"]
+ENERGY_LABELS = ["A++++", "A+++", "A++", "A+", "A", "B", "C", "D", "E", "F", "G"]
 
-# Mapping energy label -> primary energy consumption (kWh/m²/year)
-# Based on NTA 8800 standard (since Jan 2021)
-# Using midpoint values for each label range
+# Mapping energy label -> primary fossil energy use (EP2, kWh/m²/year) as
+# a measure of the transmission loss. NTA 8800 classes (since 2021):
+# A++++ <0, A+++ 0-50, A++ 50-75, A+ 75-105, A 105-160, B 160-190,
+# C 190-250, D 250-290, E 290-335, F 335-380, G >380.
+# Class midpoints, except at the top: there a low EP2 comes from solar
+# panels and a heat pump rather than insulation (A++++ is below zero), so
+# A++++, A+++ and A++ use the upper bound of their class and A++++ the
+# A+++ value; the midpoints would give a transmission loss below what the
+# glazing alone loses. G has no upper bound: 420, as far above 380 as the
+# F midpoint is below it.
 ENERGY_LABEL_CONSUMPTION = {
-    "A+++": 50,  # Very low energy (passive house level)
-    "A++": 75,  # Very low energy
-    "A+": 90,  # Very low energy
-    "A": 132,  # 105-160 kWh/m²/year (midpoint)
-    "B": 175,  # 160-190 kWh/m²/year (midpoint)
-    "C": 220,  # 190-250 kWh/m²/year (midpoint)
-    "D": 275,  # 250-300 kWh/m²/year (midpoint)
-    "E": 340,  # 300-380 kWh/m²/year (midpoint)
-    "F": 420,  # 380-460 kWh/m²/year (midpoint)
-    "G": 500,  # >460 kWh/m²/year (estimate)
+    "A++++": 50,
+    "A+++": 50,
+    "A++": 75,
+    "A+": 90,
+    "A": 132,
+    "B": 175,
+    "C": 220,
+    "D": 270,
+    "E": 312,
+    "F": 358,
+    "G": 420,
 }
 
 # Heating fraction of total primary energy by label
 # Better insulated homes have relatively more DHW energy use
 HEATING_FRACTION_MAP = {
+    "A++++": 0.40,
     "A+++": 0.40,  # Passive house: excellent insulation, DHW is major portion
     "A++": 0.42,
     "A+": 0.45,
@@ -337,7 +347,7 @@ def calculate_htc_from_energy_label(
     - HTC (W/K) = H_T + H_V
 
     Args:
-        energy_label: Energy label (A+++, A++, A+, A, B, C, D, E, F, G)
+        energy_label: Energy label (A++++ ... G, see ENERGY_LABELS)
         area_m2: Floor area in m²
         heating_degree_days: Heating degree-days for the climate (default: NL)
         ventilation_type: Ventilation system type (default: natural)

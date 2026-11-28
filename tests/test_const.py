@@ -192,3 +192,19 @@ def test_a_plus_natural_matches_a_measured_house():
     """159 m² A+ with natural ventilation, measured 150-175 W/K."""
     htc = calculate_htc_from_energy_label("A+", 159, ventilation_type="natural")
     assert 150 < htc < 170
+
+
+def test_label_estimates_rise_with_worse_labels():
+    """Every worse NTA 8800 class loses at least as much heat."""
+    from custom_components.heating_curve_optimizer.const import ENERGY_LABELS
+
+    htcs = [calculate_htc_from_energy_label(label, 150) for label in ENERGY_LABELS]
+    assert htcs == sorted(htcs)
+    assert len(set(htcs)) == len(htcs) - 1  # only A++++ and A+++ coincide
+
+
+def test_a_plus_four_is_estimated_as_a_plus_three():
+    """Below zero EP2 says solar panels, not insulation."""
+    assert calculate_htc_from_energy_label("A++++", 150) == (
+        calculate_htc_from_energy_label("A+++", 150)
+    )

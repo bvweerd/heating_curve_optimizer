@@ -1225,6 +1225,7 @@ def effective_energy_label(
             ceiling_height=ceiling_height,
         )
         error = abs(math.log(estimate / ua_w_per_k)) if estimate > 0 else math.inf
-        if error < best_error:
+        # `<=`: A++++ and A+++ share one estimate, report the plainer one.
+        if error <= best_error:
             best_label, best_error = label, error
     return best_label
