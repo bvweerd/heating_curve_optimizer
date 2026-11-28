@@ -75,8 +75,8 @@ offset of −4 … +4 °C on top of it.
 |---|---|---|
 | Name | — | |
 | Heated floor area | — | m². |
-| Energy label | C | Converted to a heat loss coefficient (NTA 8800 energy use × heating share / degree days), plus ventilation loss. Replaced by the calibrated value once learned. |
-| Ventilation | natural (standard) | Air change rate for the ventilation loss. |
+| Energy label | C | Starting point for the heat loss: NTA 8800 energy use × heating share / degree days as the transmission loss, plus ventilation and envelope leakage (tighter for better labels). The label measures primary energy, not insulation, so this is an estimate; the energy signature and the mass model replace it once learned. |
+| Ventilation | natural | The system in the house: natural (grilles, windows), mechanical exhaust, balanced, or balanced with heat recovery. Its average winter air change plus leakage from the label give the ventilation loss. |
 | Ceiling height | 2.5 m | Volume for the ventilation loss. |
 | Construction | medium | Thermal mass: light 40, medium 90, heavy 165 Wh/(m²·K). |
 | Heat emitters | radiators | Emitter exponent: radiators 1.3, underfloor 1.1, fan coils 1.0. |

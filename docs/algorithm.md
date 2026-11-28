@@ -29,8 +29,8 @@ The zone is one thermal mass `C` (kWh/K) that loses heat through `UA`
 C · dT_in/dt = Q_heat_pump + Q_solar + Q_internal − UA · (T_in − T_out)
 ```
 
-- `UA` comes from the energy label (transmission) plus ventilation, until
-  calibration replaces it.
+- `UA` comes from the energy label (transmission) plus ventilation and
+  envelope leakage (by label), until calibration replaces it.
 - `C` comes from floor area × construction class.
 - `Q_solar` is the irradiance on each vertical window (sun position, direct
   and diffuse radiation) × glass area × solar heat gain coefficient.
@@ -71,8 +71,9 @@ room air every minute: `C · dT_mass/dt = Q − H · (T_mass − T_air,measured)
 solar, heat), and every 6 hours a grid search replays the observer and
 predicts the air 6 hours ahead from every hour, for each candidate `H`
 together with a solar factor (0.3–1.2 × the building's) and a scale on the
-label-based heat loss `UA` (0.5–1.5×): first `H` and sun at the label
-`UA`, then the `UA` scale, then `H` and sun again at that scale. The sun reaches
+label-based heat loss `UA` (0.5–1.5×), all combinations: `H` trades off
+against both the sun and `UA`, so searched one at a time it stops a step
+short. The sun reaches
 the air directly in this model, so a window gain that is too high (low
 autumn sun, shading) shows as a warm error and is learned away. Once there
 are 3 days of history with some heating, the best `H`, solar factor and

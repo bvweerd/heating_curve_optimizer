@@ -684,15 +684,10 @@
     },
     "ventilation_type": {
       "options": {
-        "none": "None/minimal",
-        "natural_low": "Natural ventilation (basic)",
-        "natural_standard": "Natural ventilation (standard)",
-        "natural_leaky": "Natural ventilation (leaky)",
+        "natural": "Natural ventilation (grilles, windows)",
         "mechanical_exhaust": "Mechanical exhaust",
-        "balanced_no_recovery": "Balanced (no heat recovery)",
-        "heat_recovery_50": "Heat recovery 50% efficiency",
-        "heat_recovery_70": "Heat recovery 70% efficiency",
-        "heat_recovery_90": "Heat recovery 90% efficiency"
+        "balanced": "Balanced (no heat recovery)",
+        "heat_recovery": "Balanced with heat recovery"
       }
     },
     "thermal_mass_class": {

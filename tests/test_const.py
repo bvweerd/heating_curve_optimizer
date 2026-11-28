@@ -12,14 +12,13 @@ def test_calculate_ventilation_htc_natural():
     """Test ventilation HTC calculation for natural ventilation."""
     htc = calculate_ventilation_htc(
         area_m2=150,
-        ventilation_type="natural_standard",
+        ventilation_type="natural",
         ceiling_height=2.5,
     )
     # Volume = 150 * 2.5 = 375 m³
-    # ACH for natural_standard = 1.0
-    # H_v = 1.2 * 1.005 * 375 * 1.0 / 3.6 ≈ 125.6 W/K
-    assert htc > 0
-    assert 120 < htc < 130
+    # ACH = 0.3 (natural) + 0.45 (leakage, label C) = 0.75
+    # H_v = 1.2 * 1.005 * 375 * 0.75 / 3.6 ≈ 94.2 W/K
+    assert 93 < htc < 95
 
 
 def test_calculate_ventilation_htc_mechanical_exhaust():
@@ -46,24 +45,24 @@ def test_calculate_ventilation_htc_heat_recovery():
     """Test ventilation HTC for heat recovery ventilation."""
     htc = calculate_ventilation_htc(
         area_m2=150,
-        ventilation_type="heat_recovery_70",
+        ventilation_type="heat_recovery",
         ceiling_height=2.5,
     )
     # Heat recovery should have lower HTC due to efficiency
     assert htc > 0
-    natural_htc = calculate_ventilation_htc(150, "natural_standard", 2.5)
+    natural_htc = calculate_ventilation_htc(150, "natural", 2.5)
     assert htc < natural_htc
 
 
 def test_calculate_ventilation_htc_invalid_type():
     """Test ventilation HTC with invalid ventilation type."""
-    # Should fallback to default (natural_standard)
+    # Should fallback to default (natural)
     htc = calculate_ventilation_htc(
         area_m2=150,
         ventilation_type="invalid_type",
         ceiling_height=2.5,
     )
-    # Should return same as natural_standard ventilation
+    # Should return same as natural ventilation
     natural_htc = calculate_ventilation_htc(150, DEFAULT_VENTILATION_TYPE, 2.5)
     assert htc == natural_htc
 
@@ -73,7 +72,7 @@ def test_calculate_htc_from_energy_label_a_plus():
     htc = calculate_htc_from_energy_label(
         energy_label="A+",
         area_m2=150,
-        ventilation_type="natural_standard",
+        ventilation_type="natural",
         ceiling_height=2.5,
     )
     assert htc > 0
@@ -81,7 +80,7 @@ def test_calculate_htc_from_energy_label_a_plus():
     htc_c = calculate_htc_from_energy_label(
         energy_label="C",
         area_m2=150,
-        ventilation_type="natural_standard",
+        ventilation_type="natural",
         ceiling_height=2.5,
     )
     assert htc < htc_c
@@ -92,7 +91,7 @@ def test_calculate_htc_from_energy_label_c():
     htc = calculate_htc_from_energy_label(
         energy_label="C",
         area_m2=150,
-        ventilation_type="natural_standard",
+        ventilation_type="natural",
         ceiling_height=2.5,
     )
     assert htc > 0
@@ -103,7 +102,7 @@ def test_calculate_htc_from_energy_label_g():
     htc = calculate_htc_from_energy_label(
         energy_label="G",
         area_m2=150,
-        ventilation_type="natural_standard",
+        ventilation_type="natural",
         ceiling_height=2.5,
     )
     assert htc > 0
@@ -116,13 +115,13 @@ def test_calculate_htc_with_different_ventilation():
     htc_natural = calculate_htc_from_energy_label(
         energy_label="C",
         area_m2=150,
-        ventilation_type="natural_standard",
+        ventilation_type="natural",
         ceiling_height=2.5,
     )
     htc_hr = calculate_htc_from_energy_label(
         energy_label="C",
         area_m2=150,
-        ventilation_type="heat_recovery_70",
+        ventilation_type="heat_recovery",
         ceiling_height=2.5,
     )
     # Heat recovery should result in lower total HTC
@@ -135,7 +134,7 @@ def test_calculate_htc_with_zero_degree_days():
     htc = calculate_htc_from_energy_label(
         energy_label="C",
         area_m2=150,
-        ventilation_type="natural_standard",
+        ventilation_type="natural",
         ceiling_height=2.5,
         heating_degree_days=0,
     )
@@ -156,14 +155,40 @@ def test_calculate_htc_different_ceiling_heights():
     htc_low = calculate_htc_from_energy_label(
         energy_label="C",
         area_m2=150,
-        ventilation_type="natural_standard",
+        ventilation_type="natural",
         ceiling_height=2.0,
     )
     htc_high = calculate_htc_from_energy_label(
         energy_label="C",
         area_m2=150,
-        ventilation_type="natural_standard",
+        ventilation_type="natural",
         ceiling_height=3.0,
     )
     # Higher ceiling = larger volume = more ventilation heat loss
     assert htc_high > htc_low
+
+
+def test_leakage_follows_the_label():
+    """A better label means a tighter envelope: less ventilation loss."""
+    tight = calculate_ventilation_htc(150, "natural", 2.5, energy_label="A+")
+    leaky = calculate_ventilation_htc(150, "natural", 2.5, energy_label="G")
+    assert tight < leaky
+    # ACH 0.3 + 0.2 = 0.5 -> 1.2 * 1.005 * 375 * 0.5 / 3.6 ≈ 62.8 W/K
+    assert 62 < tight < 64
+
+
+def test_heat_recovery_only_reduces_the_system_flow():
+    """Leakage is not recovered, so WTW never removes the whole loss."""
+    hr = calculate_ventilation_htc(150, "heat_recovery", 2.5, energy_label="A+")
+    leakage_only = 1.2 * 1.005 * 375 * 0.2 / 3.6
+    assert (
+        leakage_only
+        < hr
+        < calculate_ventilation_htc(150, "balanced", 2.5, energy_label="A+")
+    )
+
+
+def test_a_plus_natural_matches_a_measured_house():
+    """159 m² A+ with natural ventilation, measured 150-175 W/K."""
+    htc = calculate_htc_from_energy_label("A+", 159, ventilation_type="natural")
+    assert 150 < htc < 170

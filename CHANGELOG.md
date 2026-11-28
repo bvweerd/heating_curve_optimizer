@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 First release of the redesigned integration. There are no earlier
 deployments to migrate from.
 
+### Building model
+- Ventilation: one *natural* type instead of basic/standard/leaky, one
+  heat-recovery type instead of 50/70/90 %, with average winter air
+  changes (natural 0.3, mechanical 0.4) plus envelope leakage from the
+  energy label (A+++ 0.10 … G 0.85 ACH). Natural standard used 1.0 ACH,
+  which made ventilation more than half of the label heat loss: a 159 m²
+  A+ house went from 226 to 159 W/K, in line with its measured 150-175 W/K.
+  Unknown (older) ventilation keys fall back to natural.
+- Mass + air searches coupling, solar factor and UA scale on the full grid;
+  searched one or two at a time it stopped a grid step short when the
+  label UA was off.
+
 ### Measurement and accounting
 - COP samples sum heat and electricity over windows of compressor
   operation (start to stop, at most an hour), including start-up and

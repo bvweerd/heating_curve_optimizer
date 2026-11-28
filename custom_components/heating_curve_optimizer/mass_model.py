@@ -44,7 +44,7 @@ AIR_COUPLING_GRID = (2.0, 3.0, 4.0, 5.0, 6.5, 8.0, 10.0, 13.0, 17.0, 22.0, 30.0)
 # Multipliers on the building's solar factor searched with the coupling:
 # low sun is shaded more than the window model knows.
 SOLAR_FACTOR_GRID = (0.3, 0.45, 0.6, 0.75, 0.9, 1.0, 1.2)
-# Multipliers on the label-based heat loss UA, searched after the coupling.
+# Multipliers on the label-based heat loss UA, searched with the coupling.
 UA_SCALE_GRID = (0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.15, 1.3, 1.5)
 HISTORY_INTERVAL = timedelta(minutes=5)
 HISTORY_LENGTH = int(timedelta(days=14) / HISTORY_INTERVAL)
@@ -212,21 +212,19 @@ def fit_air_coupling(
         return model
 
     def search(coupling: float | None) -> tuple[float, float, float, float]:
-        """(mae, coupling, solar multiplier, UA scale): coupling and sun at
-        the label UA, then the UA scale, then coupling and sun again at that
-        scale. Coordinate-wise: the full grid would be ~4x the replays."""
+        """(mae, coupling, solar multiplier, UA scale) over the full grid.
+
+        The coupling trades off against both the UA scale and the sun (it
+        sets how fast the air follows the outdoor temperature and the sun):
+        searched one or two at a time, the search stops in a wrong corner
+        when the label UA is off."""
         couplings = AIR_COUPLING_GRID if coupling is None else (coupling,)
-
-        def coupling_and_sun(ua: float) -> tuple[float, float, float]:
-            return min(
-                (_replay(samples, candidate(m, ua), h), h, m)
-                for h in couplings
-                for m in SOLAR_FACTOR_GRID
-            )
-
-        _mae, h, m = coupling_and_sun(1.0)
-        _mae, ua = min((_replay(samples, candidate(m, ua), h), ua) for ua in ua_scales)
-        mae, h, m = coupling_and_sun(ua)
+        mae, h, m, ua = min(
+            (_replay(samples, candidate(sun, scale), c), c, sun, scale)
+            for c in couplings
+            for sun in SOLAR_FACTOR_GRID
+            for scale in ua_scales
+        )
         return mae, h, m, ua
 
     one_node, _h, _m, _ua = search(0.0)

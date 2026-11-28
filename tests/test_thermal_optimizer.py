@@ -174,8 +174,8 @@ def test_own_thermostat_full_output_below_its_band():
         "building": building,
         "heatpump": heatpump,
         "emitter": emitter,
-        "outdoor_temps": [-5.0] * 8,
-        "prices": [0.10] * 4 + [0.50] * 4,
+        "outdoor_temps": [-5.0] * 10,
+        "prices": [0.10] * 6 + [0.50] * 4,
         "initial_indoor_temp": 19.9,
         "water_min": 25.0,
         "water_max": 45.0,
@@ -186,7 +186,7 @@ def test_own_thermostat_full_output_below_its_band():
     }
     result = optimize_thermal_schedule(**common)
     # Cheap first: the plan warms the room up to the hold point.
-    assert max(result.indoor_temps[:4]) == pytest.approx(20.15, abs=0.02)
+    assert max(result.indoor_temps[:6]) == pytest.approx(20.15, abs=0.02)
 
 
 def _a_plus_underfloor() -> tuple[BuildingConfig, HeatPumpConfig, EmitterConfig]:
@@ -815,7 +815,15 @@ def test_away_setback_coasts_and_is_back_in_band_on_return():
     assert min(setback.indoor_temps[2:11]) < building.comfort_min - 0.3
     assert min(setback.indoor_temps[2:11]) >= 17.7 - 0.05
     assert setback.indoor_temps[11] >= building.comfort_min - 0.05
-    assert setback.total_cost_eur < home.total_cost_eur
+    # Cheaper, counting the heat left in the house at the end of the
+    # horizon at the shadow price (the plans need not end equally warm).
+    extra_heat_kwh = building.thermal_mass_kwh_per_k * (
+        setback.indoor_temps[-1] - home.indoor_temps[-1]
+    )
+    assert (
+        setback.total_cost_eur - extra_heat_kwh * home.shadow_price_eur_per_kwh
+        < home.total_cost_eur
+    )
     # A floor equal to the band is the same as no schedule.
     same = optimize_thermal_schedule(
         **common, comfort_min_per_step=[building.comfort_min] * horizon

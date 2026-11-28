@@ -175,54 +175,55 @@ DEFAULT_INDOOR_TEMP_HYSTERESIS_UPPER = (
 DEFAULT_OFFSET_DELTA_T = 30
 
 # Default ventilation and building settings
-DEFAULT_VENTILATION_TYPE = "natural_standard"
+DEFAULT_VENTILATION_TYPE = "natural"
 DEFAULT_CEILING_HEIGHT = 2.5  # meters
 
-# Ventilation types and their effective Air Changes per Hour (ACH)
-# ACH represents the volume of air exchanged per hour
-# For heat recovery systems, effective ACH accounts for recovered heat
+# Ventilation systems a user can recognise in the house, with the air
+# changes per hour (ACH) they add on average in the heating season (not
+# the design capacity: windows closed, grilles as used in winter) and the
+# share of that heat a heat-recovery unit gives back. Leakage through the
+# building envelope comes on top, from the energy label (`INFILTRATION_ACH`):
+# nobody knows their house's air tightness, the label is a fair proxy.
 VENTILATION_TYPES: dict[str, dict[str, float | str]] = {
-    "none": {"ach": 0.2, "name_nl": "Geen/minimaal", "name_en": "None/minimal"},
-    "natural_low": {
-        "ach": 0.5,
-        "name_nl": "Natuurlijke ventilatie (basis)",
-        "name_en": "Natural ventilation (basic)",
-    },
-    "natural_standard": {
-        "ach": 1.0,
-        "name_nl": "Natuurlijke ventilatie (standaard)",
-        "name_en": "Natural ventilation (standard)",
-    },
-    "natural_leaky": {
-        "ach": 1.5,
-        "name_nl": "Natuurlijke ventilatie (lekkage)",
-        "name_en": "Natural ventilation (leaky)",
+    "natural": {
+        "ach": 0.3,
+        "recovery": 0.0,
+        "name_nl": "Natuurlijke ventilatie (roosters, ramen)",
+        "name_en": "Natural ventilation (grilles, windows)",
     },
     "mechanical_exhaust": {
-        "ach": 0.7,
+        "ach": 0.4,
+        "recovery": 0.0,
         "name_nl": "Mechanische afzuiging",
         "name_en": "Mechanical exhaust",
     },
-    "balanced_no_recovery": {
-        "ach": 0.8,
+    "balanced": {
+        "ach": 0.4,
+        "recovery": 0.0,
         "name_nl": "Gebalanceerd (zonder WTW)",
         "name_en": "Balanced (no heat recovery)",
     },
-    "heat_recovery_50": {
+    "heat_recovery": {
         "ach": 0.4,
-        "name_nl": "WTW 50% rendement",
-        "name_en": "Heat recovery 50% efficiency",
+        "recovery": 0.8,
+        "name_nl": "Gebalanceerd met WTW",
+        "name_en": "Balanced with heat recovery",
     },
-    "heat_recovery_70": {
-        "ach": 0.24,
-        "name_nl": "WTW 70% rendement",
-        "name_en": "Heat recovery 70% efficiency",
-    },
-    "heat_recovery_90": {
-        "ach": 0.08,
-        "name_nl": "WTW 90% rendement",
-        "name_en": "Heat recovery 90% efficiency",
-    },
+}
+
+# Envelope leakage (infiltration) in the heating season by energy label,
+# in ACH: newer and better insulated houses are also tighter.
+INFILTRATION_ACH = {
+    "A+++": 0.10,
+    "A++": 0.15,
+    "A+": 0.20,
+    "A": 0.25,
+    "B": 0.35,
+    "C": 0.45,
+    "D": 0.55,
+    "E": 0.65,
+    "F": 0.75,
+    "G": 0.85,
 }
 
 # PV arrays (config subentries), one per orientation.
@@ -279,45 +280,35 @@ def calculate_ventilation_htc(
     area_m2: float,
     ventilation_type: str = DEFAULT_VENTILATION_TYPE,
     ceiling_height: float = DEFAULT_CEILING_HEIGHT,
+    energy_label: str = "C",
 ) -> float:
     """
     Calculate ventilation Heat Transfer Coefficient (H_V).
 
-    This calculates the heat loss through ventilation and air infiltration
-    based on the ventilation system type and building volume.
+    Heat loss through the ventilation system plus envelope leakage.
 
     Formula:
-    - Volume (m³) = Area × Ceiling height
-    - H_V (W/K) = ρ × c × Volume × ACH / 3.6
-      where ρ = 1.2 kg/m³ (air density)
-            c = 1.005 kJ/(kg·K) (specific heat of air)
-            ACH = Air Changes per Hour from ventilation type
+    - ACH = system ACH x (1 - heat recovery) + infiltration ACH (by label)
+    - H_V (W/K) = rho x c x volume x ACH / 3.6, with rho = 1.2 kg/m3 and
+      c = 1.005 kJ/(kg K); /3.6 converts kJ/h to W
 
     Args:
         area_m2: Floor area in m²
-        ventilation_type: Ventilation system type key from VENTILATION_TYPES
+        ventilation_type: Key from VENTILATION_TYPES (unknown: natural)
         ceiling_height: Ceiling height in meters (default: 2.5m)
+        energy_label: Energy label, for the envelope leakage
 
     Returns:
         Ventilation Heat Transfer Coefficient in W/K
     """
-    # Get ACH for this ventilation type
-    vent_data = VENTILATION_TYPES.get(ventilation_type)
-    if vent_data is None:
-        # Fallback to standard natural ventilation
-        vent_data = VENTILATION_TYPES[DEFAULT_VENTILATION_TYPE]
-    ach = float(vent_data["ach"])
-
-    # Calculate building volume
+    vent_data = VENTILATION_TYPES.get(
+        ventilation_type, VENTILATION_TYPES[DEFAULT_VENTILATION_TYPE]
+    )
+    infiltration = INFILTRATION_ACH.get(energy_label.upper(), INFILTRATION_ACH["C"])
+    ach = float(vent_data["ach"]) * (1.0 - float(vent_data["recovery"]))
+    ach += infiltration
     volume = area_m2 * ceiling_height
-
-    # Calculate ventilation HTC
-    # ρ (air density) = 1.2 kg/m³
-    # c (specific heat) = 1.005 kJ/(kg·K)
-    # Division by 3.6 converts kJ to W and hours to seconds
-    rho = 1.2  # kg/m³
-    c = 1.005  # kJ/(kg·K)
-    h_v = rho * c * volume * ach / 3.6
+    h_v = 1.2 * 1.005 * volume * ach / 3.6
 
     return h_v
 
@@ -332,24 +323,24 @@ def calculate_htc_from_energy_label(
     """
     Calculate total Heat Transfer Coefficient (HTC) from energy label.
 
-    This converts the energy label (primary energy in kWh/m²/year) to the
-    total building heat loss coefficient (W/K) using heating degree-days.
-
-    The total HTC includes both transmission losses (through building fabric)
-    and ventilation losses (air exchange), following ISO 13789:
-        HTC_total = H_T + H_V
+    The label measures primary fossil energy (NTA 8800), which depends on
+    the installation and solar panels as much as on the insulation, so it
+    cannot be converted to heat loss exactly. Its scale, spread over the
+    degree-days, is used as an estimate of the transmission loss (fabric);
+    ventilation and leakage come on top (ISO 13789: HTC = H_T + H_V). It is
+    a starting point that calibration replaces.
 
     Formula:
-    - Annual heating energy (kWh) = Label energy × Area × Heating fraction
-    - H_T (W/K) = Annual heating energy × 1000 / (HDD × 24)
-    - H_V (W/K) = Ventilation heat loss coefficient (see calculate_ventilation_htc)
+    - H_T (W/K) = Label energy × Area × Heating fraction × 1000 / (HDD × 24)
+    - H_V (W/K) = ventilation system + leakage by label
+      (see calculate_ventilation_htc)
     - HTC (W/K) = H_T + H_V
 
     Args:
         energy_label: Energy label (A+++, A++, A+, A, B, C, D, E, F, G)
         area_m2: Floor area in m²
         heating_degree_days: Heating degree-days for the climate (default: NL)
-        ventilation_type: Ventilation system type (default: natural_standard)
+        ventilation_type: Ventilation system type (default: natural)
         ceiling_height: Ceiling height in meters (default: 2.5m)
 
     Returns:
@@ -370,7 +361,9 @@ def calculate_htc_from_energy_label(
     h_t = annual_heating_energy * 1000.0 / (heating_degree_days * 24.0)
 
     # Calculate ventilation HTC
-    h_v = calculate_ventilation_htc(area_m2, ventilation_type, ceiling_height)
+    h_v = calculate_ventilation_htc(
+        area_m2, ventilation_type, ceiling_height, energy_label
+    )
 
     # Total HTC = transmission + ventilation (ISO 13789)
     htc_total = h_t + h_v
